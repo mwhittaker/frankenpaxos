@@ -18,6 +18,8 @@ import io.netty.channel.Channel
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.buffer.Unpooled
+import io.netty.channel.ChannelFutureListener
+import io.netty.channel.ChannelFuture
 
 case class NettyTcpAddress(socketAddress: SocketAddress) extends zeno.Address
 
@@ -28,9 +30,43 @@ class NettyTcpTimer extends zeno.Timer {
   def reset(): Unit = ???
 }
 
-class NettyTcpTransport extends Transport[NettyTcpTransport] {
+class NettyTcpTransport(private val logger: Logger)
+    extends Transport[NettyTcpTransport] {
   private class ServerHandler(private val actor: Actor[NettyTcpTransport])
       extends ChannelInboundHandlerAdapter {
+    override def channelActive(ctx: ChannelHandlerContext): Unit = {
+      println("channelActive " + Thread.currentThread().getId());
+      ctx.fireChannelActive();
+    }
+
+    override def channelInactive(ctx: ChannelHandlerContext): Unit = {
+      println("channelInactive " + Thread.currentThread.getId());
+      ctx.fireChannelInactive();
+    }
+
+    override def channelReadComplete(ctx: ChannelHandlerContext): Unit = {
+      println("channelReadComplete " + Thread.currentThread.getId());
+      ctx.fireChannelReadComplete();
+    }
+
+    override def channelRegistered(ctx: ChannelHandlerContext): Unit = {
+      println("channelRegistered " + Thread.currentThread.getId());
+      ctx.fireChannelRegistered();
+    }
+
+    override def channelUnregistered(ctx: ChannelHandlerContext): Unit = {
+      println("channelUnregistered " + Thread.currentThread.getId());
+      ctx.fireChannelUnregistered();
+    }
+
+    override def exceptionCaught(
+        ctx: ChannelHandlerContext,
+        exn: java.lang.Throwable
+    ): Unit = {
+      println("exceptionCaught " + Thread.currentThread.getId());
+      ctx.fireExceptionCaught(exn);
+    }
+
     override def channelRead(ctx: ChannelHandlerContext, msg: Object): Unit = { // (2)
       val localAddress = NettyTcpAddress(ctx.channel.localAddress)
       val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress)
@@ -51,6 +87,22 @@ class NettyTcpTransport extends Transport[NettyTcpTransport] {
         case _ =>
           // TODO(mwhittaker): Handle more gracefully.
           ???
+      }
+    }
+  }
+
+  private class LogFailureFutureListener(message: String)
+      extends ChannelFutureListener {
+    override def operationComplete(future: ChannelFuture): Unit = {
+      if (future.isSuccess()) {
+        return;
+      }
+
+      if (future.isCancelled()) {
+        logger.warn(s"Future was cancelled: $message");
+      } else {
+        logger.warn(s"Future failed: $message");
+        logger.warn(future.cause().getStackTraceString);
       }
     }
   }
@@ -117,7 +169,14 @@ class NettyTcpTransport extends Transport[NettyTcpTransport] {
     assert(actors.put(address, actor).isEmpty);
 
     // Launch the server.
-    serverBootstrap.bind(address.socketAddress).sync();
+    serverBootstrap
+      .bind(address.socketAddress)
+      .addListener(
+        new LogFailureFutureListener(
+          s"A socket could not be bound to ${address.socketAddress}."
+        )
+      );
+
     Try(())
   }
 

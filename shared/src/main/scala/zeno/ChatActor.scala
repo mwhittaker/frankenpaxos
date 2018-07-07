@@ -19,9 +19,10 @@ class ChatServerActor[Transport <: zeno.Transport[Transport]](
 
 object ChatServerMain {
   def main(args: Array[String]): Unit = {
-    val transport = new NettyTcpTransport();
+    val logger = new ScalaLoggingLogger("")
+    val transport = new NettyTcpTransport(logger);
     val address = NettyTcpAddress(
-      new InetSocketAddress(InetAddress.getLocalHost(), 9000)
+      new InetSocketAddress(InetAddress.getLocalHost(), 2)
     );
     val chatServer = new ChatServerActor[NettyTcpTransport](address, transport);
     transport.run();

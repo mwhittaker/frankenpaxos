@@ -14,8 +14,10 @@ name := "zeno"
 //   "io.netty" % "netty-all" % "4.1.25.Final",
 // )
 libraryDependencies ++= Seq(
-  "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",
+  "ch.qos.logback" % "logback-classic" % "1.2.3",
+  "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
   "io.netty" % "netty-all" % "4.1.25.Final",
+  "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",
 )
 
 lazy val zeno = crossProject(JSPlatform, JVMPlatform)
@@ -23,8 +25,10 @@ lazy val zeno = crossProject(JSPlatform, JVMPlatform)
   .settings(
     name := "zeno",
     libraryDependencies ++= Seq(
-      "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",
+      "ch.qos.logback" % "logback-classic" % "1.2.3",
+      "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
       "io.netty" % "netty-all" % "4.1.25.Final",
+      "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",
     )
   )
   .jvmSettings()
