@@ -8,6 +8,8 @@ abstract class Actor[Transport <: zeno.Transport[Transport]](
     address: Transport#Address,
     transport: Transport
 ) {
+  transport.register(address, this);
+
   def html(): String
 
   def receive(src: Transport#Address, msg: String): Unit

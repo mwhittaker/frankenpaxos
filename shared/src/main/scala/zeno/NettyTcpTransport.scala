@@ -13,27 +13,38 @@ import io.netty.channel.ChannelOption
 import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.channel.ChannelHandlerContext
 import io.netty.buffer.ByteBuf
+import java.util.concurrent.TimeUnit
+import io.netty.channel.Channel
+import io.netty.bootstrap.Bootstrap
+import io.netty.channel.socket.nio.NioSocketChannel
+import io.netty.buffer.Unpooled
+
+case class NettyTcpAddress(socketAddress: SocketAddress) extends zeno.Address
+
+class NettyTcpTimer extends zeno.Timer {
+  def name(): String = ???
+  def start(): Unit = ???
+  def stop(): Unit = ???
+  def reset(): Unit = ???
+}
 
 class NettyTcpTransport extends Transport[NettyTcpTransport] {
-  case class NettyTcpAddress(socketAddress: SocketAddress) extends zeno.Address
-
-  class NettyTcpTimer extends zeno.Timer {
-    def name(): String = ???
-    def start(): Unit = ???
-    def stop(): Unit = ???
-    def reset(): Unit = ???
-  }
-
-  type Address = NettyTcpAddress
-  type Timer = NettyTcpTimer
-
-  class ServerHandler(private val actor: Actor[NettyTcpTransport])
+  private class ServerHandler(private val actor: Actor[NettyTcpTransport])
       extends ChannelInboundHandlerAdapter {
     override def channelRead(ctx: ChannelHandlerContext, msg: Object): Unit = { // (2)
+      val localAddress = NettyTcpAddress(ctx.channel.localAddress)
+      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress)
+      if (!channels.contains((localAddress, remoteAddress))) {
+        channels.put(
+          (localAddress, remoteAddress),
+          ctx.channel
+        )
+      }
+
       msg match {
         case buf: ByteBuf => {
           actor.receive(
-            NettyTcpAddress(ctx.channel.localAddress),
+            remoteAddress,
             buf.toString(io.netty.util.CharsetUtil.US_ASCII)
           )
         }
@@ -44,32 +55,24 @@ class NettyTcpTransport extends Transport[NettyTcpTransport] {
     }
   }
 
+  type Address = NettyTcpAddress
+  type Timer = NettyTcpTimer
+
   // Map from (src, dst) addresses to channel
   // queue of timers
-  private val eventLoop: EventLoopGroup = new NioEventLoopGroup(1);
-  private var serverBootstrap = new ServerBootstrap();
+  private val bossEventLoop = new NioEventLoopGroup();
+  private val workerEventLoop = new NioEventLoopGroup(1);
+  private val serverBootstrap = new ServerBootstrap();
+  private val clientBootstrap = new Bootstrap();
+
   private val actors =
     new HashMap[NettyTcpTransport#Address, Actor[NettyTcpTransport]]();
-
-  // try {
-  //   var b = new ServerBootstrap();
-  //
-  //   // Bind and start to accept incoming connections.
-  //   val channels = new scala.collection.mutable.ListBuffer[Channel]();
-  //   for (port <- Seq(8000, 8001, 8002, 8003)) {
-  //     var f: ChannelFuture = b.bind(port).sync();
-  //     println(s"Server listening on port $port.");
-  //     channels += f.channel();
-  //   }
-  //
-  //   // Wait until the server sockets are closed.
-  //   for (channel <- channels) {
-  //     channel.closeFuture().sync();
-  //   }
+  private val channels =
+    new HashMap[(NettyTcpTransport#Address, NettyTcpTransport#Address), Channel]
 
   // Constructor
   serverBootstrap
-    .group(eventLoop)
+    .group(bossEventLoop, workerEventLoop)
     .channel(classOf[NioServerSocketChannel])
     .childHandler(new ChannelInitializer[SocketChannel]() { // (4)
       @throws(classOf[Exception])
@@ -87,6 +90,17 @@ class NettyTcpTransport extends Transport[NettyTcpTransport] {
     })
     .option[Integer](ChannelOption.SO_BACKLOG, 128)
     .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true);
+
+  clientBootstrap
+    .group(bossEventLoop)
+    .channel(classOf[NioSocketChannel])
+    .option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
+    .handler(new ChannelInitializer[SocketChannel]() {
+      @throws(classOf[Exception])
+      override def initChannel(ch: SocketChannel) {
+        // ch.pipeline().addLast(new TimeClientHandler());
+      }
+    });
 
   def register(
       address: NettyTcpTransport#Address,
@@ -113,7 +127,23 @@ class NettyTcpTransport extends Transport[NettyTcpTransport] {
       src: NettyTcpTransport#Address,
       dst: NettyTcpTransport#Address,
       msg: String
-  ): Unit = ???
+  ): Unit = {
+    val channel = channels.get((src, dst)) match {
+      case Some(channel) => channel
+      case None =>
+        val channel =
+          clientBootstrap.connect(dst.socketAddress).sync().channel();
+        channels.put((src, dst), channel);
+        channel
+    }
 
-  def run(): Unit = {}
+    val buf = Unpooled.buffer(1000);
+    buf.writeBytes(msg.getBytes());
+    channel.writeAndFlush(buf).sync();
+  }
+
+  def run(): Unit = {
+    // bossEventLoop.terminationFuture().sync()
+    // assert(bossEventLoop.awaitTermination(0, TimeUnit.SECONDS));
+  }
 }
