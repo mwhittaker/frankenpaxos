@@ -1,0 +1,11 @@
+syntax = "proto2";
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "zeno.examples"
+};
+
+message EchoMessage {
+  required string message = 1;
+}
