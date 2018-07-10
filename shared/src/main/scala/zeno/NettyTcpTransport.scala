@@ -1,42 +1,85 @@
 package zeno
 
+import io.netty.bootstrap.Bootstrap
 import io.netty.bootstrap.ServerBootstrap
+import io.netty.buffer.ByteBuf
+import io.netty.buffer.Unpooled
+import io.netty.channel.Channel
+import io.netty.channel.ChannelDuplexHandler
+import io.netty.channel.ChannelFuture
+import io.netty.channel.ChannelFutureListener
+import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.ChannelInboundHandlerAdapter
+import io.netty.channel.ChannelInitializer
+import io.netty.channel.ChannelOption
+import io.netty.channel.ChannelOutboundHandlerAdapter
+import io.netty.channel.ChannelOutboundInvoker
+import io.netty.channel.ChannelPromise
 import io.netty.channel.EventLoopGroup
 import io.netty.channel.nio.NioEventLoopGroup
-import java.net.SocketAddress;
-import scala.collection.mutable.HashMap;
-import scala.util.Try;
-import io.netty.channel.socket.nio.NioServerSocketChannel
-import io.netty.channel.ChannelInitializer
 import io.netty.channel.socket.SocketChannel
-import io.netty.channel.ChannelOption
-import io.netty.channel.ChannelInboundHandlerAdapter
-import io.netty.channel.ChannelHandlerContext
-import io.netty.buffer.ByteBuf
-import java.util.concurrent.TimeUnit
-import io.netty.channel.Channel
-import io.netty.bootstrap.Bootstrap
+import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.buffer.Unpooled
-import io.netty.channel.ChannelFutureListener
-import io.netty.channel.ChannelFuture
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder
+import io.netty.handler.codec.LengthFieldPrepender
 import io.netty.handler.codec.bytes.ByteArrayDecoder
 import io.netty.handler.codec.bytes.ByteArrayEncoder
-import io.netty.handler.codec.LengthFieldPrepender
-import io.netty.channel.ChannelOutboundHandlerAdapter
-import io.netty.channel.ChannelPromise
-import io.netty.channel.ChannelOutboundInvoker
-import io.netty.channel.ChannelDuplexHandler
 import io.netty.handler.logging.LoggingHandler
+import io.netty.util.concurrent.ScheduledFuture
+import java.net.SocketAddress;
+import java.util.concurrent.Callable
+import java.util.concurrent.TimeUnit
+import scala.collection.mutable.HashMap;
+import scala.util.Try;
 
 case class NettyTcpAddress(socketAddress: SocketAddress) extends zeno.Address
 
-class NettyTcpTimer extends zeno.Timer {
-  def name(): String = ???
-  def start(): Unit = ???
-  def stop(): Unit = ???
-  def reset(): Unit = ???
+// TODO(mwhittaker): Make constructor private.
+class NettyTcpTimer(
+    eventLoop: EventLoopGroup,
+    logger: Logger,
+    name: String,
+    delay: java.time.Duration,
+    f: () => Unit
+) extends zeno.Timer {
+  private var scheduledFuture: Option[ScheduledFuture[Unit]] = None
+
+  def name(): String = {
+    name
+  }
+
+  def start(): Unit = {
+    scheduledFuture match {
+      case Some(_) =>
+        logger.warn(
+          s"Attempting to start timer $name, but the timer is already started."
+        );
+      case None =>
+        val callable = new Callable[Unit]() {
+          override def call(): Unit = {
+            scheduledFuture = None;
+            f();
+          }
+        };
+        scheduledFuture = Some(
+          eventLoop.schedule(
+            callable,
+            delay.toNanos(),
+            java.util.concurrent.TimeUnit.NANOSECONDS
+          )
+        );
+    }
+  }
+
+  def stop(): Unit = {
+    scheduledFuture match {
+      case Some(future) => future.cancel(false);
+      case None =>
+        logger.warn(
+          s"Attempting to stop timer $name, but the timer is already stopped."
+        );
+    }
+  }
 }
 
 class NettyTcpTransport(private val logger: Logger)
@@ -225,8 +268,6 @@ class NettyTcpTransport(private val logger: Logger)
       );
   }
 
-  def timer(duration: java.time.Duration): NettyTcpTransport#Timer = ???
-
   def send(
       src: NettyTcpTransport#Address,
       dst: NettyTcpTransport#Address,
@@ -309,5 +350,13 @@ class NettyTcpTransport(private val logger: Logger)
           );
       }
     }
+  }
+
+  def timer(
+      name: String,
+      delay: java.time.Duration,
+      f: () => Unit
+  ): NettyTcpTransport#Timer = {
+    new NettyTcpTimer(workerEventLoop, logger, name, delay, f)
   }
 }

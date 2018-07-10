@@ -7,6 +7,6 @@ trait Transport[Self <: Transport[Self]] {
   type Timer <: zeno.Timer
 
   def register(address: Self#Address, actor: Actor[Self]): Unit
-  def timer(duration: java.time.Duration): Self#Timer
   def send(src: Self#Address, dst: Self#Address, msg: String): Unit
+  def timer(name: String, delay: java.time.Duration, f: () => Unit): Self#Timer
 }

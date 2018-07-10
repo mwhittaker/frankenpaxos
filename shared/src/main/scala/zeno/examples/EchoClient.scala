@@ -14,6 +14,12 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
     transport: Transport
 ) extends Actor(srcAddress, transport) {
   println(s"Echo client listening on $srcAddress.")
+  var pingTimer: Transport#Timer =
+    transport.timer("pingTimer", java.time.Duration.ofSeconds(1), () => {
+      send(dstAddress, "ping");
+      pingTimer.start()
+    });
+  pingTimer.start();
 
   override def html(): String = { "" }
 

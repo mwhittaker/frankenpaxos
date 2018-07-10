@@ -14,10 +14,6 @@ abstract class Actor[Transport <: zeno.Transport[Transport]](
 
   def receive(src: Transport#Address, msg: String): Unit
 
-  def timer(duration: java.time.Duration): Transport#Timer = {
-    transport.timer(duration)
-  }
-
   def send(dst: Transport#Address, msg: String): Unit = {
     transport.send(address, dst, msg)
   }
