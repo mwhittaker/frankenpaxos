@@ -16,19 +16,20 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
   println(s"Echo client listening on $srcAddress.")
   var pingTimer: Transport#Timer =
     transport.timer("pingTimer", java.time.Duration.ofSeconds(1), () => {
-      send(dstAddress, "ping");
+      send(dstAddress, EchoRequest(msg = "ping").toByteArray);
       pingTimer.start()
     });
   pingTimer.start();
 
   override def html(): String = { "" }
 
-  override def receive(src: Transport#Address, msg: String): Unit = {
-    println(s"Received $msg from $src.");
+  override def receive(src: Transport#Address, bytes: Array[Byte]): Unit = {
+    val reply = EchoReply.parseFrom(bytes);
+    println(s"Received $bytes from $src.");
   }
 
   def echo(msg: String): Unit = {
-    send(dstAddress, msg);
+    send(dstAddress, EchoRequest(msg = msg).toByteArray);
   }
 }
 

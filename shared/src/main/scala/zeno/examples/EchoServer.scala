@@ -1,12 +1,12 @@
-package zeno.examples
+package zeno.examples;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import zeno.Actor;
-import zeno.ScalaLoggingLogger
+import zeno.NettyTcpAddress;
+import zeno.NettyTcpTransport;
 import zeno.PrintLogger;
-import zeno.NettyTcpTransport
-import zeno.NettyTcpAddress
+import zeno.ScalaLoggingLogger;
 
 class EchoServerActor[Transport <: zeno.Transport[Transport]](
     address: Transport#Address,
@@ -16,9 +16,10 @@ class EchoServerActor[Transport <: zeno.Transport[Transport]](
 
   override def html(): String = { "" }
 
-  override def receive(src: Transport#Address, msg: String): Unit = {
-    println(s"Received $msg from $src.");
-    send(src, msg);
+  override def receive(src: Transport#Address, bytes: Array[Byte]): Unit = {
+    val request = EchoRequest.parseFrom(bytes);
+    println(s"Received ${request.msg} from $src.");
+    send(src, request.toByteArray);
   }
 }
 

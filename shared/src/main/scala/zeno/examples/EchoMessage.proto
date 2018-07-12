@@ -4,8 +4,13 @@ import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
   package_name: "zeno.examples"
+  flat_package: true
 };
 
-message EchoMessage {
-  required string message = 1;
+message EchoRequest {
+  required string msg = 1;
+}
+
+message EchoReply {
+  required string msg = 1;
 }

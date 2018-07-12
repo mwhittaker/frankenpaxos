@@ -12,9 +12,9 @@ abstract class Actor[Transport <: zeno.Transport[Transport]](
 
   def html(): String
 
-  def receive(src: Transport#Address, msg: String): Unit
+  def receive(src: Transport#Address, msg: Array[Byte]): Unit
 
-  def send(dst: Transport#Address, msg: String): Unit = {
+  def send(dst: Transport#Address, msg: Array[Byte]): Unit = {
     transport.send(address, dst, msg)
   }
 }

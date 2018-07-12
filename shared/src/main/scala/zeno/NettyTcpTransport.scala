@@ -93,7 +93,7 @@ class NettyTcpTransport(private val logger: Logger)
       // TODO(mwhittaker): Think about automatically deserializing into a proto.
       msg match {
         case bytes: Array[Byte] => {
-          actor.receive(remoteAddress, new String(bytes, "ASCII"))
+          actor.receive(remoteAddress, bytes);
         }
         case _ =>
           val err = "A message was received that wasn't of type Array[Byte]. " +
@@ -126,10 +126,18 @@ class NettyTcpTransport(private val logger: Logger)
       actor: Actor[NettyTcpTransport]
   ) extends CommonHandler(actor) {
     override def channelUnregistered(ctx: ChannelHandlerContext): Unit = {
-      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress());
-      unregisterActor(NettyTcpAddress(ctx.channel.localAddress()));
-      unregisterChannel(localAddress, remoteAddress);
-      ctx.fireChannelUnregistered();
+      if (ctx.channel.localAddress() != null &&
+          ctx.channel.remoteAddress() != null) {
+        val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress());
+        unregisterActor(NettyTcpAddress(ctx.channel.localAddress()));
+        unregisterChannel(localAddress, remoteAddress);
+        ctx.fireChannelUnregistered();
+      } else {
+        logger.warn(
+          "Unregistering a channel with null source or destination " +
+            "addresses. The connection must have failed."
+        );
+      }
     }
   }
 
@@ -271,7 +279,7 @@ class NettyTcpTransport(private val logger: Logger)
   def send(
       src: NettyTcpTransport#Address,
       dst: NettyTcpTransport#Address,
-      msg: String
+      bytes: Array[Byte]
   ): Unit = {
     val actor = actors.get(src) match {
       case Some(actor) => actor
@@ -287,7 +295,7 @@ class NettyTcpTransport(private val logger: Logger)
       case Some(channel) => {
         logger.info("Existing channel found for write")
         channel
-          .writeAndFlush(msg.getBytes())
+          .writeAndFlush(bytes)
           .addListener(
             new LogFailureFutureListener(
               s"Unable to send message from $src to $dst."
@@ -339,7 +347,7 @@ class NettyTcpTransport(private val logger: Logger)
                 registerChannel(src, dst, future.channel);
 
                 future.channel
-                  .writeAndFlush(msg.getBytes())
+                  .writeAndFlush(bytes)
                   .addListener(
                     new LogFailureFutureListener(
                       s"Unable to send message from $src to $dst."
