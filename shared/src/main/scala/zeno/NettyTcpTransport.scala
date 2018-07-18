@@ -44,11 +44,11 @@ class NettyTcpTimer(
 ) extends zeno.Timer {
   private var scheduledFuture: Option[ScheduledFuture[Unit]] = None
 
-  def name(): String = {
+  override def name(): String = {
     name
   }
 
-  def start(): Unit = {
+  override def start(): Unit = {
     scheduledFuture match {
       case Some(_) =>
         logger.warn(
@@ -71,7 +71,7 @@ class NettyTcpTimer(
     }
   }
 
-  def stop(): Unit = {
+  override def stop(): Unit = {
     scheduledFuture match {
       case Some(future) => future.cancel(false);
       case None =>

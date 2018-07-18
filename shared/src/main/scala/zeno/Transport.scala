@@ -1,7 +1,5 @@
 package zeno
 
-import scala.util.Try;
-
 trait Transport[Self <: Transport[Self]] {
   type Address <: zeno.Address
   type Timer <: zeno.Timer
