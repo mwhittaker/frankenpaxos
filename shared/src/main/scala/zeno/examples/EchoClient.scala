@@ -2,12 +2,14 @@ package zeno.examples
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import scala.scalajs.js.annotation._;
 import zeno.Actor;
-import zeno.ScalaLoggingLogger
-import zeno.PrintLogger;
-import zeno.NettyTcpTransport
 import zeno.NettyTcpAddress
+import zeno.NettyTcpTransport
+import zeno.PrintLogger;
+import zeno.ScalaLoggingLogger
 
+@JSExportAll
 class EchoClientActor[Transport <: zeno.Transport[Transport]](
     srcAddress: Transport#Address,
     dstAddress: Transport#Address,
@@ -30,28 +32,5 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
 
   def echo(msg: String): Unit = {
     send(dstAddress, EchoRequest(msg = msg).toByteArray);
-  }
-}
-
-object EchoClientMain {
-  def main(args: Array[String]): Unit = {
-    val logger = new PrintLogger()
-    val transport = new NettyTcpTransport(logger);
-    val srcAddress = NettyTcpAddress(
-      new InetSocketAddress(InetAddress.getLocalHost(), 9001)
-    );
-    val dstAddress = NettyTcpAddress(
-      new InetSocketAddress(InetAddress.getLocalHost(), 9000)
-    );
-    val chatClient =
-      new EchoClientActor[NettyTcpTransport](srcAddress, dstAddress, transport);
-    var ok = true
-    while (ok) {
-      val line = readLine()
-      ok = line != null
-      if (ok) {
-        chatClient.echo(line)
-      }
-    }
   }
 }

@@ -22,14 +22,3 @@ class EchoServerActor[Transport <: zeno.Transport[Transport]](
     send(src, request.toByteArray);
   }
 }
-
-object EchoServerMain {
-  def main(args: Array[String]): Unit = {
-    val logger = new PrintLogger()
-    val transport = new NettyTcpTransport(logger);
-    val address = NettyTcpAddress(
-      new InetSocketAddress(InetAddress.getLocalHost(), 9000)
-    );
-    val chatServer = new EchoServerActor[NettyTcpTransport](address, transport);
-  }
-}

@@ -1,7 +1,11 @@
 package zeno
 
-import scala.collection.mutable.HashMap;
 import scala.collection.mutable.Buffer;
+import scala.collection.mutable.HashMap;
+import scala.scalajs.js.annotation._;
+
+import scala.scalajs.js
+import js.JSConverters._
 
 case class FakeTransportAddress(address: String) extends zeno.Address
 
@@ -40,6 +44,7 @@ class FakeTransportTimer(
   }
 }
 
+@JSExportAll
 class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
   type Address = FakeTransportAddress
   type Timer = FakeTransportTimer
@@ -84,5 +89,14 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
       f: () => Unit
   ): FakeTransport#Timer = {
     new FakeTransportTimer(name, delay, f, logger)
+  }
+
+  def bufferedMessages(
+      addr: FakeTransport#Address
+  ): Buffer[BufferedMessage] = {
+    buffers.lift(addr) match {
+      case Some(messages) => messages
+      case None           => Buffer()
+    }
   }
 }
