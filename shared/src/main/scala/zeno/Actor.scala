@@ -5,8 +5,8 @@ import io.netty.buffer.ByteBuf;
 
 @JSExportAll
 abstract class Actor[Transport <: zeno.Transport[Transport]](
-    address: Transport#Address,
-    transport: Transport
+    val address: Transport#Address,
+    val transport: Transport
 ) {
   transport.register(address, this);
 
