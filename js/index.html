@@ -4,7 +4,13 @@
   <title>Hello, World!</title>
 </head>
 <body>
-  <p> Hello!  </p>
+  <div id="app">
+    <div>{{bufferedRecvs}}</div>
+  </div>
+
+  <!-- development version, includes helpful console warnings -->
   <script type="text/javascript" src="./target/scala-2.12/zeno-fastopt.js"></script>
+  <script type="text/javascript" src="src/main/js/z.js"></script>
+  <script type="text/javascript" src="index.js"></script>
 </body>
 </html>

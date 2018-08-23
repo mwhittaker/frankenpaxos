@@ -17,4 +17,12 @@ abstract class Actor[Transport <: zeno.Transport[Transport]](
   def send(dst: Transport#Address, msg: Array[Byte]): Unit = {
     transport.send(address, dst, msg)
   }
+
+  def timer(
+      name: String,
+      delay: java.time.Duration,
+      f: () => Unit
+  ): Transport#Timer = {
+    transport.timer(address, name, delay, f)
+  }
 }

@@ -361,6 +361,7 @@ class NettyTcpTransport(private val logger: Logger)
   }
 
   def timer(
+      address: NettyTcpTransport#Address,
       name: String,
       delay: java.time.Duration,
       f: () => Unit
