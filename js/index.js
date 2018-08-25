@@ -10,48 +10,26 @@ function main() {
   nodes[Echo.clientB.address] = snap.circle(200, 300, 20);
   nodes[Echo.clientC.address] = snap.circle(300, 300, 20);
 
-  function on_send(app, message) {
-    let timeout = 100 + (Math.random() * 350);
-    // console.log('Delaying message by ' + timeout);
-
+  function config_message(app, message) {
     let src = nodes[message.src];
     let dst = nodes[message.dst];
-    let msg = snap.circle(src.attr("cx"), src.attr("cy"), 10);
-    msg.animate({cx: dst.attr("cx"), cy: dst.attr("cy")}, timeout, () => {
-      msg.remove();
-      app.transport.deliverMessage(message);
-      app.refresh();
-    });
-
-    // setTimeout(() => {
-    //   app.transport.deliverMessage(message);
-    //   app.refresh();
-    // }, timeout);
+    return {
+      svg_message: snap.circle(src.attr("cx"), src.attr("cy"), 10),
+      animate_args: {cx: dst.attr("cx"), cy: dst.attr("cy")},
+      timeout: 350 + Math.random() * 100,
+      drop: Math.random() <= 0.1,
+    };
   }
 
-  function on_timer_stop(app, timer) {
-    clearTimeout(timers[timer.address][timer.name()]);
-  }
+  function on_timer_stop(timer) {}
 
-  function on_timer_start(app, timer) {
-    if (!(timer.address in timers)) {
-      timers[timer.address] = {}
-    }
+  function on_timer_start(timer) {}
 
-    timers[timer.address][timer.name()] = setTimeout(() => {
-      timer.stop();
-      timer.run();
-      app.refresh();
-    }, timer.delayMilliseconds());
-  }
-
-  let app = new z.App(Echo.transport, {
-    on_send: on_send,
+  let app = new z.SimulatedApp(Echo.transport, {
+    config_message: config_message,
     on_timer_stop: on_timer_stop,
     on_timer_start: on_timer_start,
   });
-  app.refresh();
-  app.refresh();
 }
 
 window.onload = main
