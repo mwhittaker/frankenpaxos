@@ -126,8 +126,8 @@ zenojs.SimulatedApp = class SimulatedApp {
 
         this.timers[timer.address][timer.name()] = setTimeout(() => {
           animated_app.run_timer(timer);
-          this.callbacks.on_timer_start(timer);
         }, timer.delayMilliseconds());
+        this.callbacks.on_timer_start(timer);
       },
       on_timer_stop: (animated_app, timer) => {
         clearTimeout(this.timers[timer.address][timer.name()]);
@@ -135,5 +135,84 @@ zenojs.SimulatedApp = class SimulatedApp {
       },
     };
     this.animated_app = new zenojs.AnimatedApp(transport, animated_app_callbacks);
+  }
+}
+
+// config_message(app, Message) -> {svg_message: svg object, animate_args, animate args, timeout, drop: }[drop]
+//
+// on_send(app, Message)
+// on_receive(app, Message)
+// on_deliver(app, Message)
+// on_timer_start(app, Message)
+// on_timer_stop(app, Message)
+zenojs.ClickthroughApp = class ClickthroughApp {
+  constructor(transport, callbacks) {
+    this.transport = transport;
+    this.callbacks = callbacks;
+
+    this.timers = {};
+    this.messages = {};
+
+    let animated_app_callbacks = {
+      config_message: this.callbacks.config_message,
+
+      on_send: (animated_app, message) => {
+        this.callbacks.on_send(this, message);
+      },
+
+      on_receive: (animated_app, message) => {
+        if (!(message.dst in this.messages)) {
+          this.messages[message.dst] = [];
+        }
+        this.messages[message.dst].push(message);
+        this.callbacks.on_receive(this, message);
+      },
+
+      on_deliver: (animated_app, message) => {
+        this.callbacks.on_deliver(this, message);
+      },
+
+      on_timer_start: (animated_app, timer) => {
+        if (!(timer.address in this.timers)) {
+          this.timers[timer.address] = {};
+        }
+        this.timers[timer.address][timer.name] = {
+          timer: timer,
+          active: true,
+        }
+
+        this.callbacks.on_timer_start(this, timer);
+      },
+
+      on_timer_stop: (animated_app, timer) => {
+        if (!(timer.address in this.timers)) {
+          this.timers[timer.address] = {};
+        }
+        this.timers[timer.address][timer.name] = {
+          timer: timer,
+          active: false,
+        }
+
+        this.callbacks.on_timer_stop(this, timer);
+      },
+    };
+    this.animated_app = new zenojs.AnimatedApp(transport, animated_app_callbacks);
+  }
+
+  deliver_message(message, index) {
+    this.animated_app.deliver_message(message);
+    this.drop_message(message, index);
+  }
+
+  drop_message(message, index) {
+    this.messages[message.dst].splice(index, 1);
+  }
+
+  duplicate_message(message, index) {
+    this.messages[message.dst].splice(index + 1, 0, message);
+  }
+
+  run_timer(timer) {
+    this.animated_app.run_timer(timer);
   }
 }

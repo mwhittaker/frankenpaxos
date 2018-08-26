@@ -11,8 +11,6 @@ abstract class Actor[Transport <: zeno.Transport[Transport]](
 ) {
   transport.register(address, this);
 
-  def html(): String
-
   def receive(src: Transport#Address, msg: Array[Byte]): Unit
 
   def send(dst: Transport#Address, msg: Array[Byte]): Unit = {

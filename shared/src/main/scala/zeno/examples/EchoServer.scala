@@ -16,8 +16,6 @@ class EchoServerActor[Transport <: zeno.Transport[Transport]](
 
   println(s"Echo server listening on $address.")
 
-  override def html(): String = { "" }
-
   override def receive(src: Transport#Address, bytes: Array[Byte]): Unit = {
     numMessagesReceived += 1
     val request = EchoRequest.parseFrom(bytes)

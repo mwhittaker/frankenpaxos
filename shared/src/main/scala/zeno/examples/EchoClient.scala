@@ -26,8 +26,6 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
   println(s"Echo client listening on $srcAddress.")
   pingTimer.start();
 
-  override def html(): String = { "" }
-
   override def receive(src: Transport#Address, bytes: Array[Byte]): Unit = {
     numMessagesReceived += 1
     val reply = EchoReply.parseFrom(bytes)

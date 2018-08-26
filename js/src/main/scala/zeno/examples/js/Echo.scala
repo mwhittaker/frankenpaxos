@@ -10,8 +10,7 @@ import zeno.examples.EchoClientActor
 import zeno.examples.EchoServerActor
 
 @JSExportAll
-@JSExportTopLevel("zeno.examples.js.Echo")
-object Echo {
+class Echo {
   // Transport.
   val logger = new JsLogger()
   val transport = new JsTransport(logger);
@@ -36,4 +35,16 @@ object Echo {
     transport,
     new JsLogger()
   );
+}
+
+@JSExportAll
+@JSExportTopLevel("zeno.examples.js.SimulatedEcho")
+object SimulatedEcho {
+  val Echo = new Echo();
+}
+
+@JSExportAll
+@JSExportTopLevel("zeno.examples.js.ClickthroughEcho")
+object ClickthroughEcho {
+  val Echo = new Echo();
 }

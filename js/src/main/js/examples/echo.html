@@ -4,7 +4,12 @@
   <title>Echo</title>
   <link href="style.css" rel="stylesheet">
   <style type="text/css">
-    #animation {
+    .app {
+      margin-top: 16pt;
+      margin-bottom: 16pt;
+    }
+
+    .animation {
       display: block;
       margin-left: auto;
       margin-right: auto;
@@ -32,21 +37,77 @@
   <div id="container">
     <h1>Echo</h1>
 
-    <svg id="animation"></svg>
+    <!-- Simulated app. -->
+    <div class="app" id="simulated">
+      <h2>Simulated App</h2>
 
-    <div id="app">
-      <div class="node">
-        <div class="node_name">
-          name: {{vue_node.name}}
+      <svg id="simulated_animation" class="animation"></svg>
+
+      <div id="simulated_app">
+        <div class="node">
+          <div class="node_name">
+            name: {{vue_node.name}}
+          </div>
+
+          <div class="node_count">
+            num_messages_received: {{vue_node.num_messages_received}}
+          </div>
+
+          <div class="node_log">
+            <div v-for="l in vue_node.log">{{l}}</div>
+          </div>
         </div>
+      </div>
+    </div>
 
-        <div class="node_count">
-          num_messages_received: {{vue_node.num_messages_received}}
-        </div>
+    <!-- Clickthrough app. -->
+    <div class="app" id="clickthrough">
+      <h2>Clickthrough App</h2>
 
-        <div>log:</div>
-        <div class="node_log">
-          <div v-for="l in vue_node.log">{{l}}</div>
+      <svg id="clickthrough_animation" class="animation"></svg>
+
+      <div id="clickthrough_app">
+        <div class="node">
+          <div class="node_name">
+            name: {{vue_node.name}}
+          </div>
+
+          <div class="node_count">
+            num_messages_received: {{vue_node.num_messages_received}}
+          </div>
+
+          <div class="node_log">
+            <div v-for="l in vue_node.log">{{l}}</div>
+          </div>
+
+          <div class="timers">
+            <div v-for="timer in vue_node.timers">
+              <button class="timer_trigger"
+                      :disabled="!timer.active"
+                      v-on:click="trigger(timer.timer)">Trigger</button>
+              <span class="timer_name">{{timer.timer.name()}}</span>
+            </div>
+          </div>
+
+          <div class="messages">
+            <div v-for="(message, index) in vue_node.messages">
+              <button class="message_deliver"
+                      v-on:click="deliver(message, index)">
+                Deliver
+              </button>
+              <button class="message_drop"
+                      v-on:click="drop(message, index)">
+                Drop
+              </button>
+              <button class="message_duplicate"
+                      v-on:click="duplicate(message, index)">
+                Duplicate
+              </button>
+              <span class="message_src">{{message.src.address}}</span>
+              <span class="message_dst">{{message.dst.address}}</span>
+              <span class="message_bytes">{{message.bytes}}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
