@@ -1,22 +1,54 @@
-html {
-  font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
+/* Generic ********************************************************************/
+.zeno-node {
+  border: 1pt solid black;
 }
 
-#container {
-  font-size: 18px;
-  background: #FEFEFE;
-  padding-left: 1em;
-  padding-right: 1em;
-  max-width: 44em;
-  line-height: 27px;
-  padding-top: 20px;
-  padding-bottom: 20px;
-  margin-left: auto;
-  margin-right: auto;
+.zeno-box {
+  padding: 12pt;
 }
+
+.zeno-box-title {
+  margin-top: 0pt;
+  margin-bottom: 6pt;
+  margin-right: 0pt;
+  margin-left: 0pt;
+}
+
+.zeno-hr {
+  border: 0pt;
+  height: 1px;
+  background: #bdc3c7;
+  width: 95%;
+  margin-top: 0pt;
+  margin-bottom: 0pt;
+}
+
+/* Logs ***********************************************************************/
+.zeno-log {
+  overflow: scroll;
+  height: 100px;
+  border: 1pt solid black;
+  font-size: 10pt;
+}
+
+.zeno-log-entry {}
 
 .zeno-log-FATAL { background: black; color: white; }
 .zeno-log-ERROR { color: #c0392b; }
 .zeno-log-WARN { color: #e67e22; }
 .zeno-log-INFO { color: #27ae60; }
 .zeno-log-DEBUG { color: #2c3e50; }
+
+/* Timers *********************************************************************/
+.zeno-timers {}
+.zeno-timers-trigger {}
+.zeno-timers-name {}
+
+/* Messages *******************************************************************/
+.zeno-messages {}
+.zeno-messages-deliver {}
+.zeno-messages-drop {}
+.zeno-messages-duplicate {}
+.zeno-messages-src {}
+.zeno-messages-dst {}
+.zeno-messages-text {}

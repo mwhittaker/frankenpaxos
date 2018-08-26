@@ -258,6 +258,20 @@ Vue.component('zeno-timers', {
   `
 });
 
+Vue.component('zeno-simulated-node', {
+  // node is an object {log} with fields described in the components above.
+  props: ['node'],
+  template: `
+    <div class="zeno-node">
+      <slot></slot>
+
+      <div class="zeno-box">
+        <h3 class="zeno-box-title">Log</h3>
+        <zeno-log v-bind:log='node.log'></zeno-log>
+      </div>
+    </div>
+  `
+});
 
 Vue.component('zeno-messages', {
   props: [
@@ -295,3 +309,43 @@ Vue.component('zeno-messages', {
     </div>
   `
 });
+
+Vue.component('zeno-clickthrough-node', {
+  // node is an object {actor; log; timers; messages} with fields described in
+  // the components above.
+  props: ['node'],
+  template: `
+    <div class="zeno-node">
+      <slot></slot>
+
+      <div class="zeno-box">
+        <h3 class="zeno-box-title">Log</h3>
+        <zeno-log v-bind:log='node.log'></zeno-log>
+      </div>
+
+      <hr class="zeno-hr"></hr>
+
+      <div class="zeno-box">
+        <h3 class="zeno-box-title">Timers</h3>
+        <zeno-timers
+          v-bind:timers='node.timers'
+          v-on:timer-trigger='$emit("timer-trigger", $event)'>
+        </zeno-timers>
+      </div>
+
+      <hr class="zeno-hr"></hr>
+
+      <div class="zeno-box">
+        <h3 class="zeno-box-title">Messages</h3>
+        <zeno-messages
+          v-bind:actor='node.actor'
+          v-bind:messages='node.messages'
+          v-on:message-deliver='$emit("message-deliver", $event)'
+          v-on:message-drop='$emit("message-drop", $event)'
+          v-on:message-duplicate='$emit("message-duplicate", $event)'>
+        </zeno-messages>
+      </div>
+    </div>
+  `
+});
+

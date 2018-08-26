@@ -1,40 +1,42 @@
-class SimulatedVueNode {
-  constructor(name, num_messages_received, log) {
-    this.name = name;
-    this.num_messages_received = num_messages_received || 0;
-    this.log = log || [];
-  }
-}
-
 function simulated_app() {
   let Echo = zeno.examples.js.SimulatedEcho.Echo;
   let snap = Snap('#simulated_animation');
 
+  let node = (info) => {
+    return {
+      actor: info.actor,
+      name: info.name,
+      svg: info.svg,
+      num_messages_received: 0,
+      log: [],
+    };
+  }
   let nodes = {};
-  nodes[Echo.server.address] = {
+  nodes[Echo.server.address] = node({
     actor: Echo.server,
+    name: 'Server',
     svg: snap.circle(150, 50, 20).attr(
         {fill: '#e74c3c', stroke: 'black', 'stroke-width': '3pt'}),
-    vue_node: new SimulatedVueNode('Server'),
-  }
-  nodes[Echo.clientA.address] = {
+  });
+  nodes[Echo.clientA.address] = node({
     actor: Echo.clientA,
+    name: 'Client A',
     svg: snap.circle(75, 150, 20).attr(
         {fill: '#3498db', stroke: 'black', 'stroke-width': '3pt'}),
-    vue_node: new SimulatedVueNode('Client A'),
-  }
-  nodes[Echo.clientB.address] = {
+  });
+  nodes[Echo.clientB.address] = node({
     actor: Echo.clientB,
+    name: 'Client B',
     svg: snap.circle(225, 150, 20).attr(
         {fill: '#2ecc71', stroke: 'black', 'stroke-width': '3pt'}),
-    vue_node: new SimulatedVueNode('Client B'),
-  }
+  });
 
   // Add node titles.
   snap.text(150, 20, 'Server').attr({'text-anchor': 'middle'});
   snap.text(75, 190, 'Client A').attr({'text-anchor': 'middle'});
   snap.text(225, 190, 'Client B').attr({'text-anchor': 'middle'});
 
+  // Create the vue app.
   let vue_app = new Vue({
     el: '#simulated_app',
     data: { node: nodes[Echo.server.address] },
@@ -65,13 +67,12 @@ function simulated_app() {
     on_deliver: (app, message) => {
       for (let node of Object.values(nodes)) {
         // Update num_messages_received.
-        node.vue_node.num_messages_received = node.actor.numMessagesReceived;
+        node.num_messages_received = node.actor.numMessagesReceived;
 
         // Update log.
         for (let log_entry of node.actor.logger.bufferedLogsJs()) {
-          // TODO(mwhittaker): Color logs.
           // TODO(mwhittaker): Append logs and autoscroll.
-          node.vue_node.log.unshift(log_entry);
+          node.log.unshift(log_entry);
         }
         node.actor.logger.clearBufferedLogs();
       }
@@ -95,25 +96,37 @@ function clickthrough_app() {
   let Echo = zeno.examples.js.ClickthroughEcho.Echo;
   let snap = Snap('#clickthrough_animation');
 
+  // Create nodes.
+  let node = (info) => {
+    return {
+      actor: info.actor,
+      name: info.name,
+      svg: info.svg,
+      num_messages_received: 0,
+      log: [],
+      timers: [],
+      messages: [],
+    };
+  }
   let nodes = {};
-  nodes[Echo.server.address] = {
+  nodes[Echo.server.address] = node({
     actor: Echo.server,
+    name: 'Server',
     svg: snap.circle(150, 50, 20).attr(
         {fill: '#e74c3c', stroke: 'black', 'stroke-width': '3pt'}),
-    vue_node: new ClickthroughVueNode('Server'),
-  }
-  nodes[Echo.clientA.address] = {
+  });
+  nodes[Echo.clientA.address] = node({
     actor: Echo.clientA,
+    name: 'Client A',
     svg: snap.circle(75, 150, 20).attr(
         {fill: '#3498db', stroke: 'black', 'stroke-width': '3pt'}),
-    vue_node: new ClickthroughVueNode('Client A'),
-  }
-  nodes[Echo.clientB.address] = {
+  });
+  nodes[Echo.clientB.address] = node({
     actor: Echo.clientB,
+    name: 'Client B',
     svg: snap.circle(225, 150, 20).attr(
         {fill: '#2ecc71', stroke: 'black', 'stroke-width': '3pt'}),
-    vue_node: new ClickthroughVueNode('Client B'),
-  }
+  });
 
   // Add node titles.
   snap.text(150, 20, 'Server').attr({'text-anchor': 'middle'});
@@ -136,33 +149,34 @@ function clickthrough_app() {
     },
     on_send: (app, message) => {},
     on_receive: (app, message) => {
-      nodes[message.dst].vue_node.messages = app.messages[message.dst];
+      nodes[message.dst].messages = app.messages[message.dst];
     },
     on_deliver: (app, message) => {
       let node = nodes[message.dst];
 
       // Update num_messages_received.
-      node.vue_node.num_messages_received = node.actor.numMessagesReceived;
+      node.num_messages_received = node.actor.numMessagesReceived;
 
       // Update log.
       for (let log_entry of node.actor.logger.bufferedLogsJs()) {
         // TODO(mwhittaker): Color logs.
         // TODO(mwhittaker): Append logs and autoscroll.
-        node.vue_node.log.unshift(log_entry);
+        node.log.unshift(log_entry);
       }
       node.actor.logger.clearBufferedLogs();
 
       // Update messages.
-      node.vue_node.messages = app.messages[message.dst];
+      node.messages = app.messages[message.dst];
     },
     on_timer_stop: (app, timer) => {
-      nodes[timer.address].vue_node.timers = app.get_timers(timer.address);
+      nodes[timer.address].timers = app.get_timers(timer.address);
     },
     on_timer_start: (app, timer) => {
-      nodes[timer.address].vue_node.timers = app.get_timers(timer.address);
+      nodes[timer.address].timers = app.get_timers(timer.address);
     },
   });
 
+  // Create the vue app.
   let vue_app = new Vue({
     el: '#clickthrough_app',
     data: {
