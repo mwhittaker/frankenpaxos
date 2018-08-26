@@ -150,7 +150,12 @@ zenojs.ClickthroughApp = class ClickthroughApp {
     this.transport = transport;
     this.callbacks = callbacks;
 
+    // timers is of type Dict[JsTransportAddress, Dict[String, Timer]]. For
+    // every timer `t` of actor `a`, we have `timers[a.address][t.name] == t`.
     this.timers = {};
+
+    // timers maps an actor's address to a list of all the actor's received
+    // (but not yet delivered) messages.
     this.messages = {};
 
     let animated_app_callbacks = {
@@ -176,11 +181,7 @@ zenojs.ClickthroughApp = class ClickthroughApp {
         if (!(timer.address in this.timers)) {
           this.timers[timer.address] = {};
         }
-        this.timers[timer.address][timer.name] = {
-          timer: timer,
-          active: true,
-        }
-
+        this.timers[timer.address][timer.name] = timer;
         this.callbacks.on_timer_start(this, timer);
       },
 
@@ -188,15 +189,23 @@ zenojs.ClickthroughApp = class ClickthroughApp {
         if (!(timer.address in this.timers)) {
           this.timers[timer.address] = {};
         }
-        this.timers[timer.address][timer.name] = {
-          timer: timer,
-          active: false,
-        }
-
+        this.timers[timer.address][timer.name] = timer;
         this.callbacks.on_timer_stop(this, timer);
       },
     };
     this.animated_app = new zenojs.AnimatedApp(transport, animated_app_callbacks);
+  }
+
+  get_timers(address) {
+    return Object.values(this.timers[address]);
+  }
+
+  get_messages(address) {
+    return this.messages[address];
+  }
+
+  run_timer(timer) {
+    this.animated_app.run_timer(timer);
   }
 
   deliver_message(message, index) {
@@ -211,8 +220,78 @@ zenojs.ClickthroughApp = class ClickthroughApp {
   duplicate_message(message, index) {
     this.messages[message.dst].splice(index + 1, 0, message);
   }
-
-  run_timer(timer) {
-    this.animated_app.run_timer(timer);
-  }
 }
+
+
+Vue.component('zeno-log', {
+  // log is a list of JsLogEntry. See JsLogger.scala for more information on
+  // JsLogEntry.
+  props: ['log'],
+  template: `
+    <div class="zeno-log">
+      <div v-for="log_entry in log" class="zeno-log-entry">
+        <span v-bind:class="'zeno-log-' + log_entry.typ.toString()">
+          [{{log_entry.typ.toString()}}]
+        </span>
+        {{log_entry.text}}
+      </div>
+    </div>
+  `
+});
+
+
+Vue.component('zeno-timers', {
+  // timers is a list of JsTransportTimer. See JsTransport.scala for more
+  // information on JsTransportTimer.
+  props: ['timers'],
+  template: `
+    <div class="zeno-timers">
+      <div v-for="timer in timers">
+        <button class="zeno-timers-trigger"
+                v-bind:disabled="!timer.running"
+                v-on:click="$emit('timer-trigger', timer)">
+          Trigger
+        </button>
+        <span class="zeno-timers-name">{{timer.name()}}</span>
+      </div>
+    </div>
+  `
+});
+
+
+Vue.component('zeno-messages', {
+  props: [
+    // actor is an Actor.
+    'actor',
+
+    // messages is a list of JsTransport.Message. See JsTransport.scala for
+    // more information on JsTransport.Message.
+    'messages',
+  ],
+  template: `
+    <div class="zeno-messages">
+      <div v-for="(message, index) in messages">
+        <button
+            class="zeno-messages-deliver"
+            v-on:click="$emit('message-deliver', {message:message, index:index})">
+          Deliver
+        </button>
+        <button
+            class="zeno-messages-drop"
+            v-on:click="$emit('message-drop', {message:message, index:index})">
+          Drop
+        </button>
+        <button
+            class="zeno-messages-duplicate"
+            v-on:click="$emit('message-duplicate', {message:message, index:index})">
+          Duplicate
+        </button>
+        <span class="zeno-messages-src">{{message.src.address}}</span>
+        <span class="zeno-messages-dst">{{message.dst.address}}</span>
+        <span class="zeno-messages-text">
+          {{actor.parseInboundMessageToString(message.bytes)}}
+        </span>
+      </div>
+    </div>
+  `
+});

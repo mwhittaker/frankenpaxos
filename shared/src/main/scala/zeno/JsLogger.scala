@@ -15,7 +15,7 @@ object JsLogEntryType extends Enumeration {
 }
 
 @JSExportAll
-case class JsLogEntry(typ: JsLogEntryType.Value, entry: String)
+case class JsLogEntry(typ: JsLogEntryType.Value, text: String)
 
 @JSExportAll
 class JsLogger extends Logger {

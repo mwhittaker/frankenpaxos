@@ -156,10 +156,10 @@ function clickthrough_app() {
       node.vue_node.messages = app.messages[message.dst];
     },
     on_timer_stop: (app, timer) => {
-      nodes[timer.address].vue_node.timers = app.timers[timer.address];
+      nodes[timer.address].vue_node.timers = app.get_timers(timer.address);
     },
     on_timer_start: (app, timer) => {
-      nodes[timer.address].vue_node.timers = app.timers[timer.address];
+      nodes[timer.address].vue_node.timers = app.get_timers(timer.address);
     },
   });
 
@@ -172,14 +172,14 @@ function clickthrough_app() {
       trigger: function(timer) {
         clickthrough_app.run_timer(timer);
       },
-      deliver: function(message, index) {
-        clickthrough_app.deliver_message(message, index);
+      deliver: function(e) {
+        clickthrough_app.deliver_message(e.message, e.index);
       },
-      drop: function(message, index) {
-        clickthrough_app.drop_message(message, index);
+      drop: function(e) {
+        clickthrough_app.drop_message(e.message, e.index);
       },
-      duplicate: function(message, index) {
-        clickthrough_app.duplicate_message(message, index);
+      duplicate: function(e) {
+        clickthrough_app.duplicate_message(e.message, e.index);
       },
     }
   });
