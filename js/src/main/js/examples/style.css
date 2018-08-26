@@ -15,3 +15,8 @@ html {
   margin-right: auto;
 }
 
+.FATAL { background: black; color: white; }
+.ERROR { color: #c0392b; }
+.WARN { color: #e67e22; }
+.INFO { color: #27ae60; }
+.DEBUG { color: #2c3e50; }

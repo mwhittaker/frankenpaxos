@@ -54,7 +54,10 @@
           </div>
 
           <div class="node_log">
-            <div v-for="l in vue_node.log">{{l}}</div>
+            <div v-for="l in vue_node.log">
+              <span :class="l.typ.toString()">[{{l.typ.toString()}}]</span>
+              {{l.entry}}
+            </div>
           </div>
         </div>
       </div>
@@ -77,7 +80,10 @@
           </div>
 
           <div class="node_log">
-            <div v-for="l in vue_node.log">{{l}}</div>
+            <div v-for="l in vue_node.log">
+              <span :class="l.typ.toString()">[{{l.typ.toString()}}]</span>
+              {{l.entry}}
+            </div>
           </div>
 
           <div class="timers">
