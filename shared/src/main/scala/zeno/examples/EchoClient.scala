@@ -29,7 +29,7 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
   override def receive(src: Transport#Address, bytes: Array[Byte]): Unit = {
     numMessagesReceived += 1
     val reply = EchoReply.parseFrom(bytes)
-    logger.info(s"[$srcAddress] Received ${reply.msg} from $src.")
+    logger.info(s"Received ${reply.msg} from $src.")
   }
 
   def echo(msg: String): Unit = {
