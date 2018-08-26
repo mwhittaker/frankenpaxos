@@ -33,6 +33,10 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
     EchoReply.parseFrom(bytes)
   }
 
+  override def parseInboundMessageToString(bytes: Array[Byte]): String = {
+    parseInboundMessage(bytes).toProtoString
+  }
+
   override def serializeOutboundMessage(
       message: OutboundMessage
   ): Array[Byte] = {

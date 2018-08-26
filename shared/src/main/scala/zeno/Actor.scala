@@ -12,6 +12,7 @@ abstract class Actor[Transport <: zeno.Transport[Transport]](
   type InboundMessage
   type OutboundMessage
   def parseInboundMessage(bytes: Array[Byte]): InboundMessage
+  def parseInboundMessageToString(bytes: Array[Byte]): String = { "" }
   def serializeOutboundMessage(message: OutboundMessage): Array[Byte]
   def receive(src: Transport#Address, message: InboundMessage): Unit
 

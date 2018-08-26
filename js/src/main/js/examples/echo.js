@@ -37,13 +37,13 @@ function simulated_app() {
 
   let vue_app = new Vue({
     el: '#simulated_app',
-    data: { vue_node: nodes[Echo.server.address].vue_node },
+    data: { node: nodes[Echo.server.address] },
   });
 
   // Select a node by clicking it.
   for (let node of Object.values(nodes)) {
     node.svg.node.onclick = () => {
-      vue_app.vue_node = node.vue_node;
+      vue_app.node = node;
     }
   }
 
@@ -166,7 +166,7 @@ function clickthrough_app() {
   let vue_app = new Vue({
     el: '#clickthrough_app',
     data: {
-      vue_node: nodes[Echo.server.address].vue_node,
+      node: nodes[Echo.server.address],
     },
     methods: {
       trigger: function(timer) {
@@ -187,7 +187,7 @@ function clickthrough_app() {
   // Select a node by clicking it.
   for (let node of Object.values(nodes)) {
     node.svg.node.onclick = () => {
-      vue_app.vue_node = node.vue_node;
+      vue_app.node = node;
     }
   }
 }

@@ -46,15 +46,15 @@
       <div id="simulated_app">
         <div class="node">
           <div class="node_name">
-            name: {{vue_node.name}}
+            name: {{node.vue_node.name}}
           </div>
 
           <div class="node_count">
-            num_messages_received: {{vue_node.num_messages_received}}
+            num_messages_received: {{node.vue_node.num_messages_received}}
           </div>
 
           <div class="node_log">
-            <div v-for="l in vue_node.log">
+            <div v-for="l in node.vue_node.log">
               <span :class="l.typ.toString()">[{{l.typ.toString()}}]</span>
               {{l.entry}}
             </div>
@@ -72,22 +72,22 @@
       <div id="clickthrough_app">
         <div class="node">
           <div class="node_name">
-            name: {{vue_node.name}}
+            name: {{node.vue_node.name}}
           </div>
 
           <div class="node_count">
-            num_messages_received: {{vue_node.num_messages_received}}
+            num_messages_received: {{node.vue_node.num_messages_received}}
           </div>
 
           <div class="node_log">
-            <div v-for="l in vue_node.log">
+            <div v-for="l in node.vue_node.log">
               <span :class="l.typ.toString()">[{{l.typ.toString()}}]</span>
               {{l.entry}}
             </div>
           </div>
 
           <div class="timers">
-            <div v-for="timer in vue_node.timers">
+            <div v-for="timer in node.vue_node.timers">
               <button class="timer_trigger"
                       :disabled="!timer.active"
                       v-on:click="trigger(timer.timer)">Trigger</button>
@@ -96,7 +96,7 @@
           </div>
 
           <div class="messages">
-            <div v-for="(message, index) in vue_node.messages">
+            <div v-for="(message, index) in node.vue_node.messages">
               <button class="message_deliver"
                       v-on:click="deliver(message, index)">
                 Deliver
@@ -111,7 +111,7 @@
               </button>
               <span class="message_src">{{message.src.address}}</span>
               <span class="message_dst">{{message.dst.address}}</span>
-              <span class="message_bytes">{{message.bytes}}</span>
+              <span class="message_bytes">'{{node.actor.parseInboundMessageToString(message.bytes)}}'</span>
             </div>
           </div>
         </div>
