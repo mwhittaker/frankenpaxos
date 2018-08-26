@@ -35,18 +35,18 @@
     <svg id="animation"></svg>
 
     <div id="app">
-      <div class="node" v-for="node in nodes">
+      <div class="node">
         <div class="node_name">
-          name: {{node.vue_node.name}}
+          name: {{vue_node.name}}
         </div>
 
         <div class="node_count">
-          num_messages_received: {{node.vue_node.num_messages_received}}
+          num_messages_received: {{vue_node.num_messages_received}}
         </div>
 
         <div>log:</div>
         <div class="node_log">
-          <div v-for="l in node.vue_node.log">{{l}}</div>
+          <div v-for="l in vue_node.log">{{l}}</div>
         </div>
       </div>
     </div>
