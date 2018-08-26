@@ -20,19 +20,20 @@ object Echo {
   val serverAddress = JsTransportAddress("server")
   val serverLogger = new JsLogger()
   val server =
-    new EchoServerActor[JsTransport](serverAddress, transport, logger);
+    new EchoServerActor[JsTransport](serverAddress, transport, serverLogger);
 
   // Clients.
-  val clientLoggers = mutable.Buffer[JsLogger]();
-  val clients = mutable.Buffer[JsLogger]();
-  for (name <- Seq("a", "b", "c")) {
-    val clientLogger = new JsLogger()
-    clientLoggers += clientLogger
-    clients += new EchoClientActor[JsTransport](
-      JsTransportAddress(s"client $name"),
-      serverAddress,
-      transport,
-      clientLogger
-    );
-  }
+  val clientA = new EchoClientActor[JsTransport](
+    new JsTransportAddress("client a"),
+    serverAddress,
+    transport,
+    new JsLogger()
+  );
+
+  val clientB = new EchoClientActor[JsTransport](
+    new JsTransportAddress("client b"),
+    serverAddress,
+    transport,
+    new JsLogger()
+  );
 }

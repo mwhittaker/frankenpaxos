@@ -10,7 +10,7 @@
       margin-right: auto;
       width: 300px;
       height: 200px;
-      border: 1pt solid black;
+      // border: 1pt solid black;
     }
 
     .node {
@@ -36,10 +36,17 @@
 
     <div id="app">
       <div class="node" v-for="node in nodes">
-        <div class="node_name">name: {{node.name}}</div>
+        <div class="node_name">
+          name: {{node.vue_node.name}}
+        </div>
+
+        <div class="node_count">
+          num_messages_received: {{node.vue_node.num_messages_received}}
+        </div>
+
         <div>log:</div>
         <div class="node_log">
-          <div v-for="l in node.log">{{l}}</div>
+          <div v-for="l in node.vue_node.log">{{l}}</div>
         </div>
       </div>
     </div>
