@@ -1,0 +1,17 @@
+html {
+  font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+
+#container {
+  font-size: 18px;
+  background: #FEFEFE;
+  padding-left: 1em;
+  padding-right: 1em;
+  max-width: 44em;
+  line-height: 27px;
+  padding-top: 20px;
+  padding-bottom: 20px;
+  margin-left: auto;
+  margin-right: auto;
+}
+

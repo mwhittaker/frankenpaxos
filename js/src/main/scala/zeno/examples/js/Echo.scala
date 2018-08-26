@@ -1,34 +1,38 @@
 package zeno.examples.js
 
-import scala.scalajs.js.annotation._;
-import zeno.Actor;
-import zeno.JsTransport;
-import zeno.JsTransportAddress;
-import zeno.PrintLogger;
-import zeno.ScalaLoggingLogger;
-import zeno.examples.EchoClientActor;
-import zeno.examples.EchoServerActor;
+import scala.collection.mutable
+import scala.scalajs.js.annotation._
+import zeno.Actor
+import zeno.JsLogger
+import zeno.JsTransport
+import zeno.JsTransportAddress
+import zeno.examples.EchoClientActor
+import zeno.examples.EchoServerActor
 
 @JSExportAll
 @JSExportTopLevel("zeno.examples.js.Echo")
 object Echo {
-  val logger = new PrintLogger()
+  // Transport.
+  val logger = new JsLogger()
   val transport = new JsTransport(logger);
+
+  // Server.
   val serverAddress = JsTransportAddress("server")
-  val clientA = new EchoClientActor[JsTransport](
-    JsTransportAddress("client a"),
-    serverAddress,
-    transport
-  );
-  val clientB = new EchoClientActor[JsTransport](
-    JsTransportAddress("client b"),
-    serverAddress,
-    transport
-  );
-  val clientC = new EchoClientActor[JsTransport](
-    JsTransportAddress("client c"),
-    serverAddress,
-    transport
-  );
-  val server = new EchoServerActor[JsTransport](serverAddress, transport);
+  val serverLogger = new JsLogger()
+  val server =
+    new EchoServerActor[JsTransport](serverAddress, transport, logger);
+
+  // Clients.
+  val clientLoggers = mutable.Buffer[JsLogger]();
+  val clients = mutable.Buffer[JsLogger]();
+  for (name <- Seq("a", "b", "c")) {
+    val clientLogger = new JsLogger()
+    clientLoggers += clientLogger
+    clients += new EchoClientActor[JsTransport](
+      JsTransportAddress(s"client $name"),
+      serverAddress,
+      transport,
+      clientLogger
+    );
+  }
 }

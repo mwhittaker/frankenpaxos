@@ -1,19 +1,19 @@
 package zeno.examples
 
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import scala.scalajs.js.annotation._;
-import zeno.Actor;
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import scala.scalajs.js.annotation._
+import zeno.Actor
+import zeno.Logger
 import zeno.NettyTcpAddress
 import zeno.NettyTcpTransport
-import zeno.PrintLogger;
-import zeno.ScalaLoggingLogger
 
 @JSExportAll
 class EchoClientActor[Transport <: zeno.Transport[Transport]](
     srcAddress: Transport#Address,
     dstAddress: Transport#Address,
-    transport: Transport
+    transport: Transport,
+    logger: Logger
 ) extends Actor(srcAddress, transport) {
   println(s"Echo client listening on $srcAddress.")
   var pingTimer: Transport#Timer =
@@ -27,7 +27,7 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
 
   override def receive(src: Transport#Address, bytes: Array[Byte]): Unit = {
     val reply = EchoReply.parseFrom(bytes);
-    println(s"[$srcAddress] Received ${reply.msg} from $src.");
+    logger.info(s"[$srcAddress] Received ${reply.msg} from $src.");
   }
 
   def echo(msg: String): Unit = {

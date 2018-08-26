@@ -19,8 +19,12 @@ object EchoClientMain {
     val dstAddress = NettyTcpAddress(
       new InetSocketAddress(InetAddress.getLocalHost(), 9000)
     );
-    val chatClient =
-      new EchoClientActor[NettyTcpTransport](srcAddress, dstAddress, transport);
+    val chatClient = new EchoClientActor[NettyTcpTransport](
+      srcAddress,
+      dstAddress,
+      transport,
+      logger
+    );
     var ok = true
     while (ok) {
       val line = readLine()

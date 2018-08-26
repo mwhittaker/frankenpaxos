@@ -16,6 +16,7 @@ object EchoServerMain {
     val address = NettyTcpAddress(
       new InetSocketAddress(InetAddress.getLocalHost(), 9000)
     );
-    val chatServer = new EchoServerActor[NettyTcpTransport](address, transport);
+    val chatServer =
+      new EchoServerActor[NettyTcpTransport](address, transport, logger);
   }
 }

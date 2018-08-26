@@ -1,10 +1,10 @@
-// The z namespace.
-let z = {};
+// The zenojs namespace.
+let zenojs = {};
 
 // on_send(app, Message)
 // on_timer_stop(app, Timer)
 // on_timer_start(app, Timer)
-z.App = class App {
+zenojs.App = class App {
   constructor(transport, callbacks) {
     this.transport = transport;
     this.callbacks = callbacks;
@@ -41,25 +41,37 @@ z.App = class App {
   }
 }
 
-// config_message(app, Message) -> {svg_message: svg object, animate_args, animate args, timeout, drop: }[drop]
+// config_message(app, Message) -> {
+//  svg_message: svg object,
+//  animate_args,
+//  animate args,
+//  timeout,
+//  drop:
+// }
+//
+// on_send(app, Message)
+// on_deliver(app, Message)
 // on_receive(app, Message)
 // on_timer_start(app, Message)
 // on_timer_stop(app, Message)
-z.AnimatedApp = class AnimatedApp {
+zenojs.AnimatedApp = class AnimatedApp {
   constructor(transport, callbacks) {
     this.transport = transport;
     this.callbacks = callbacks;
 
-    let app_callbacks = {
+    this.app = new zenojs.App(transport, {
       on_send: (app, message) => {
-        let config = this.callbacks.config_message(this, message);
-        if (config.drop) {
-          return;
+        let {svg_message, animate_args, timeout, drop} =
+            this.callbacks.config_message(this, message);
+        if (drop) {
+          svg_message.remove();
+        } else {
+          svg_message.animate(animate_args, timeout, () => {
+            this.callbacks.on_receive(this, message);
+            svg_message.remove();
+          });
         }
-        config.svg_message.animate(config.animate_args, config.timeout, () => {
-          this.callbacks.on_receive(this, message);
-          config.svg_message.remove();
-        });
+        this.callbacks.on_send(message);
       },
       on_timer_start: (app, timer) => {
         this.callbacks.on_timer_start(this, timer);
@@ -67,14 +79,14 @@ z.AnimatedApp = class AnimatedApp {
       on_timer_stop: (app, timer) => {
         this.callbacks.on_timer_stop(this, timer);
       },
-    };
-    this.app = new z.App(transport, app_callbacks);
+    });
     this.app.refresh();
   }
 
   deliver_message(message) {
     this.transport.deliverMessage(message);
     this.app.refresh();
+    this.callbacks.on_deliver(this, message);
   }
 
   run_timer(timer) {
@@ -85,9 +97,12 @@ z.AnimatedApp = class AnimatedApp {
 }
 
 // config_message(app, Message) -> {svg_message: svg object, animate_args, animate args, timeout, drop: }[drop]
-// on_timer_start(app, Timer)
-// on_timer_stop(app, Timer)
-z.SimulatedApp = class SimulatedApp {
+//
+// on_send(app, Message)
+// on_deliver(app, Message)
+// on_timer_start(app, Message)
+// on_timer_stop(app, Message)
+zenojs.SimulatedApp = class SimulatedApp {
   constructor(transport, callbacks) {
     this.transport = transport;
     this.callbacks = callbacks;
@@ -95,8 +110,14 @@ z.SimulatedApp = class SimulatedApp {
 
     let animated_app_callbacks = {
       config_message: this.callbacks.config_message,
+      on_send: (animated_app, message) => {
+        this.callbacks.on_send(this, message);
+      },
       on_receive: (animated_app, message) => {
         animated_app.deliver_message(message);
+      },
+      on_deliver: (animated_app, message) => {
+        this.callbacks.on_deliver(this, message);
       },
       on_timer_start: (animated_app, timer) => {
         if (!(timer.address in this.timers)) {
@@ -113,6 +134,6 @@ z.SimulatedApp = class SimulatedApp {
         this.callbacks.on_timer_stop(timer);
       },
     };
-    this.animated_app = new z.AnimatedApp(transport, animated_app_callbacks);
+    this.animated_app = new zenojs.AnimatedApp(transport, animated_app_callbacks);
   }
 }

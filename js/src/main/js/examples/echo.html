@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Echo</title>
+  <link href="style.css" rel="stylesheet">
+  <style type="text/css">
+    #animation {
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+      width: 300px;
+      height: 200px;
+      border: 1pt solid black;
+    }
+
+    .node {
+      border: 1pt solid black;
+      margin: 12pt;
+      padding: 12pt;
+      font-family: DejaVu Sans Mono,monospace;
+    }
+
+    .node_log {
+      overflow: scroll;
+      height: 100px;
+      border: 1pt solid black;
+      font-size: 10pt;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1>Echo</h1>
+
+    <svg id="animation"></svg>
+
+    <div id="app">
+      <div class="node" v-for="node in nodes">
+        <div class="node_name">name: {{node.name}}</div>
+        <div>log:</div>
+        <div class="node_log">
+          <div v-for="l in node.log">{{l}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.5.1/snap.svg.js"></script>
+  <script type="text/javascript" src="/js/target/scala-2.12/zeno-fastopt.js"></script>
+  <script type="text/javascript" src="/js/src/main/js/zenojs.js"></script>
+  <script type="text/javascript" src="/js/src/main/js/examples/echo.js"></script>
+</body>
+</html>
