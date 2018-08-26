@@ -71,8 +71,7 @@ function simulated_app() {
 
         // Update log.
         for (let log_entry of node.actor.logger.bufferedLogsJs()) {
-          // TODO(mwhittaker): Append logs and autoscroll.
-          node.log.unshift(log_entry);
+          node.log.push(log_entry);
         }
         node.actor.logger.clearBufferedLogs();
       }
@@ -159,9 +158,7 @@ function clickthrough_app() {
 
       // Update log.
       for (let log_entry of node.actor.logger.bufferedLogsJs()) {
-        // TODO(mwhittaker): Color logs.
-        // TODO(mwhittaker): Append logs and autoscroll.
-        node.log.unshift(log_entry);
+        node.log.push(log_entry);
       }
       node.actor.logger.clearBufferedLogs();
 

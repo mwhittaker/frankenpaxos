@@ -227,6 +227,9 @@ Vue.component('zeno-log', {
   // log is a list of JsLogEntry. See JsLogger.scala for more information on
   // JsLogEntry.
   props: ['log'],
+  updated: function() {
+    this.$el.scrollTop = this.$el.scrollHeight;
+  },
   template: `
     <div class="zeno-log">
       <div v-for="log_entry in log" class="zeno-log-entry">
@@ -247,11 +250,9 @@ Vue.component('zeno-timers', {
   template: `
     <div class="zeno-timers">
       <div v-for="timer in timers">
-        <button class="zeno-timers-trigger"
-                v-bind:disabled="!timer.running"
-                v-on:click="$emit('timer-trigger', timer)">
-          Trigger
-        </button>
+        <a class="zeno-button zeno-timers-trigger"
+           v-bind:disabled="!timer.running"
+           v-on:click="$emit('timer-trigger', timer)">Trigger</a>
         <span class="zeno-timers-name">{{timer.name()}}</span>
       </div>
     </div>
@@ -285,26 +286,21 @@ Vue.component('zeno-messages', {
   template: `
     <div class="zeno-messages">
       <div v-for="(message, index) in messages">
-        <button
-            class="zeno-messages-deliver"
-            v-on:click="$emit('message-deliver', {message:message, index:index})">
-          Deliver
-        </button>
-        <button
-            class="zeno-messages-drop"
-            v-on:click="$emit('message-drop', {message:message, index:index})">
-          Drop
-        </button>
-        <button
-            class="zeno-messages-duplicate"
-            v-on:click="$emit('message-duplicate', {message:message, index:index})">
-          Duplicate
-        </button>
-        <span class="zeno-messages-src">{{message.src.address}}</span>
-        <span class="zeno-messages-dst">{{message.dst.address}}</span>
-        <span class="zeno-messages-text">
-          {{actor.parseInboundMessageToString(message.bytes)}}
-        </span>
+        <div class="zeno-messages-message">
+          <a class="zeno-button zeno-messages-deliver"
+             v-on:click="$emit('message-deliver', {message:message, index:index})">
+            Deliver</a>
+          <a class="zeno-button zeno-messages-drop"
+             v-on:click="$emit('message-drop', {message:message, index:index})">
+            Drop</a>
+          <a class="zeno-button zeno-messages-duplicate"
+             v-on:click="$emit('message-duplicate', {message:message, index:index})">
+            Duplicate</a>
+          <span class="zeno-messages-src">from {{message.src.address}}</span>
+          <div class="zeno-messages-text">
+            {{actor.parseInboundMessageToString(message.bytes)}}
+          </div>
+        </div>
       </div>
     </div>
   `
