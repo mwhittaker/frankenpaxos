@@ -101,7 +101,7 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
 
   def deliverMessage(msg: Message): Unit = {
     actors.get(msg.dst) match {
-      case Some(actor) => actor.receive(msg.src, msg.bytes)
+      case Some(actor) => actor.receiveImpl(msg.src, msg.bytes)
       case None =>
         logger.warn(
           s"Attempting to deliver a message to an actor at address " +

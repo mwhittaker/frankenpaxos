@@ -15,24 +15,36 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
     transport: Transport,
     logger: Logger
 ) extends Actor(srcAddress, transport, logger) {
+  type InboundMessage = EchoReply;
+  type OutboundMessage = EchoRequest;
+
   var numMessagesReceived: Int = 0
 
   private val pingTimer: Transport#Timer =
     timer("pingTimer", java.time.Duration.ofSeconds(1), () => {
-      send(dstAddress, EchoRequest(msg = "ping").toByteArray);
+      send(dstAddress, EchoRequest(msg = "ping"));
       pingTimer.start()
     });
 
   println(s"Echo client listening on $srcAddress.")
   pingTimer.start();
 
-  override def receive(src: Transport#Address, bytes: Array[Byte]): Unit = {
+  override def parseInboundMessage(bytes: Array[Byte]): InboundMessage = {
+    EchoReply.parseFrom(bytes)
+  }
+
+  override def serializeOutboundMessage(
+      message: OutboundMessage
+  ): Array[Byte] = {
+    message.toByteArray
+  }
+
+  override def receive(src: Transport#Address, reply: InboundMessage): Unit = {
     numMessagesReceived += 1
-    val reply = EchoReply.parseFrom(bytes)
     logger.info(s"Received ${reply.msg} from $src.")
   }
 
   def echo(msg: String): Unit = {
-    send(dstAddress, EchoRequest(msg = msg).toByteArray);
+    send(dstAddress, EchoRequest(msg = msg))
   }
 }

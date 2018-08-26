@@ -12,14 +12,26 @@ class EchoServerActor[Transport <: zeno.Transport[Transport]](
     transport: Transport,
     logger: Logger
 ) extends Actor(address, transport, logger) {
+  type InboundMessage = EchoRequest;
+  type OutboundMessage = EchoReply;
+
   var numMessagesReceived: Int = 0
 
   println(s"Echo server listening on $address.")
 
-  override def receive(src: Transport#Address, bytes: Array[Byte]): Unit = {
+  override def parseInboundMessage(bytes: Array[Byte]): InboundMessage = {
+    EchoRequest.parseFrom(bytes)
+  }
+
+  override def serializeOutboundMessage(
+      message: OutboundMessage
+  ): Array[Byte] = {
+    message.toByteArray
+  }
+
+  override def receive(src: Transport#Address, request: EchoRequest): Unit = {
     numMessagesReceived += 1
-    val request = EchoRequest.parseFrom(bytes)
     logger.info(s"Received ${request.msg} from $src.")
-    send(src, request.toByteArray)
+    send(src, EchoReply(msg = request.msg))
   }
 }

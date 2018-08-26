@@ -4,7 +4,10 @@ trait Transport[Self <: Transport[Self]] {
   type Address <: zeno.Address
   type Timer <: zeno.Timer
 
-  def register(address: Self#Address, actor: Actor[Self]): Unit
+  def register(
+      address: Self#Address,
+      actor: Actor[Self]
+  ): Unit
   def send(src: Self#Address, dst: Self#Address, bytes: Array[Byte]): Unit
   def timer(
       address: Self#Address,

@@ -93,7 +93,7 @@ class NettyTcpTransport(private val logger: Logger)
       // TODO(mwhittaker): Think about automatically deserializing into a proto.
       msg match {
         case bytes: Array[Byte] => {
-          actor.receive(remoteAddress, bytes);
+          actor.receiveImpl(remoteAddress, bytes);
         }
         case _ =>
           val err = "A message was received that wasn't of type Array[Byte]. " +
@@ -262,7 +262,7 @@ class NettyTcpTransport(private val logger: Logger)
           );
           channel.pipeline.addLast("bytesDecoder", new ByteArrayDecoder());
           channel.pipeline.addLast(new ServerHandler(actor));
-          channel.pipeline.addLast(new LoggingHandler());
+          // channel.pipeline.addLast(new LoggingHandler());
           channel.pipeline.addLast("frameEncoder", new LengthFieldPrepender(4));
           channel.pipeline.addLast("bytesEncoder", new ByteArrayEncoder());
         }
@@ -317,7 +317,7 @@ class NettyTcpTransport(private val logger: Logger)
               channel.pipeline
                 .addLast("bytesDecoder", new ByteArrayDecoder());
               channel.pipeline.addLast(new ClientHandler(src, actor));
-              channel.pipeline.addLast(new LoggingHandler());
+              // channel.pipeline.addLast(new LoggingHandler());
               channel.pipeline
                 .addLast("frameEncoder", new LengthFieldPrepender(4));
               channel.pipeline
