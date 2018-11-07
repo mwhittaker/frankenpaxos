@@ -3,7 +3,7 @@ package zeno
 import scala.collection.mutable.Buffer
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters._
-import scala.scalajs.js.annotation._;
+import scala.scalajs.js.annotation._
 
 @JSExportAll
 object JsLogEntryType extends Enumeration {
@@ -19,28 +19,27 @@ case class JsLogEntry(typ: JsLogEntryType.Value, text: String)
 
 @JSExportAll
 class JsLogger extends Logger {
-  private val bufferedLogs = Buffer[JsLogEntry]()
-  def bufferedLogsJs(): js.Array[JsLogEntry] = { bufferedLogs.toJSArray }
-  def clearBufferedLogs(): Unit = { bufferedLogs.clear() }
+  private val log = Buffer[JsLogEntry]()
+  def logJs(): js.Array[JsLogEntry] = { log.toJSArray }
 
   override def fatal(message: String): Unit = {
     // TODO(mwhittaker): Crash program.
-    bufferedLogs += JsLogEntry(JsLogEntryType.Fatal, s"$message")
+    log += JsLogEntry(JsLogEntryType.Fatal, s"$message")
   }
 
   override def error(message: String): Unit = {
-    bufferedLogs += JsLogEntry(JsLogEntryType.Error, s"$message")
+    log += JsLogEntry(JsLogEntryType.Error, s"$message")
   }
 
   override def warn(message: String): Unit = {
-    bufferedLogs += JsLogEntry(JsLogEntryType.Warn, s"$message")
+    log += JsLogEntry(JsLogEntryType.Warn, s"$message")
   }
 
   override def info(message: String): Unit = {
-    bufferedLogs += JsLogEntry(JsLogEntryType.Info, s"$message")
+    log += JsLogEntry(JsLogEntryType.Info, s"$message")
   }
 
   override def debug(message: String): Unit = {
-    bufferedLogs += JsLogEntry(JsLogEntryType.Debug, s"$message")
+    log += JsLogEntry(JsLogEntryType.Debug, s"$message")
   }
 }

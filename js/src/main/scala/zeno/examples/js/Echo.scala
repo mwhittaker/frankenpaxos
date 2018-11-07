@@ -16,21 +16,21 @@ class Echo {
   val transport = new JsTransport(logger);
 
   // Server.
-  val serverAddress = JsTransportAddress("server")
+  val serverAddress = JsTransportAddress("Server")
   val serverLogger = new JsLogger()
   val server =
     new EchoServerActor[JsTransport](serverAddress, transport, serverLogger);
 
   // Clients.
   val clientA = new EchoClientActor[JsTransport](
-    new JsTransportAddress("client a"),
+    new JsTransportAddress("Client A"),
     serverAddress,
     transport,
     new JsLogger()
   );
 
   val clientB = new EchoClientActor[JsTransport](
-    new JsTransportAddress("client b"),
+    new JsTransportAddress("Client B"),
     serverAddress,
     transport,
     new JsLogger()

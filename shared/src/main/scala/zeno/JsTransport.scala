@@ -1,11 +1,11 @@
 package zeno
 
-import scala.collection.mutable.Buffer;
-import scala.collection.mutable.HashMap;
-import scala.collection.mutable.Map;
+import scala.collection.mutable.Buffer
+import scala.collection.mutable.HashMap
+import scala.collection.mutable.Map
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters._
-import scala.scalajs.js.annotation._;
+import scala.scalajs.js.annotation._
 
 @JSExportAll
 case class JsTransportAddress(address: String) extends zeno.Address
@@ -13,57 +13,39 @@ case class JsTransportAddress(address: String) extends zeno.Address
 @JSExportAll
 class JsTransportTimer(
     val address: JsTransport#Address,
-    // We don't name this parameter name because we want to override the name
-    // method in zeno.Timer with the same name.
+    // We don't name this parameter `name` because we don't want to override
+    // the `name` method in zeno.Timer with the same name.
     val the_name: String,
     val delay: java.time.Duration,
     val f: () => Unit
 ) extends zeno.Timer {
-  var version: Int = 0
   var running: Boolean = false
-  var cached_version: Int = 0
-  var cached_running: Boolean = false
 
   override def name(): String = {
     the_name
   }
 
   override def start(): Unit = {
-    if (!running) {
-      version += 1
-      running = true
-    }
+    running = true
   }
 
   override def stop(): Unit = {
-    if (running) {
-      version += 1
-      running = false
-    }
+    running = false
   }
 
   def run(): Unit = {
+    running = false
     f()
   }
 
   def delayMilliseconds(): Long = {
     delay.toMillis()
   }
-
-  def updateCache(): Unit = {
-    cached_version = version
-    cached_running = running
-  }
 }
-
 @JSExportAll
 class JsTransport(logger: Logger) extends Transport[JsTransport] {
   type Address = JsTransportAddress
   type Timer = JsTransportTimer
-
-  val actors = new HashMap[JsTransport#Address, Actor[JsTransport]]()
-
-  val timers = Buffer[JsTransport#Timer]()
 
   @JSExportAll
   case class Message(
@@ -72,7 +54,14 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       bytes: Array[Byte]
   )
 
-  val bufferedMessages = Buffer[Message]()
+  val actors = new HashMap[JsTransport#Address, Actor[JsTransport]]()
+  val timers = Buffer[JsTransport#Timer]()
+  var bufferedMessages = Buffer[Message]()
+  var stagedMessages = Buffer[Message]()
+
+  def timersJs(): js.Array[JsTransport#Timer] = { timers.toJSArray }
+  def bufferedMessagesJs(): js.Array[Message] = { bufferedMessages.toJSArray }
+  def stagedMessagesJs(): js.Array[Message] = { stagedMessages.toJSArray }
 
   override def register(
       address: JsTransport#Address,
@@ -83,31 +72,9 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
         s"Attempting to register an actor with address $address, but this " +
           s"transport already has an actor bound to $address."
       )
+      return;
     }
     actors.put(address, actor);
-  }
-
-  def bufferedMessagesJs(): js.Array[Message] = {
-    bufferedMessages.toJSArray
-  }
-
-  def clearBufferedMessages(): Unit = {
-    bufferedMessages.clear()
-  }
-
-  def timersJs(): js.Array[JsTransport#Timer] = {
-    timers.toJSArray
-  }
-
-  def deliverMessage(msg: Message): Unit = {
-    actors.get(msg.dst) match {
-      case Some(actor) => actor.receiveImpl(msg.src, msg.bytes)
-      case None =>
-        logger.warn(
-          s"Attempting to deliver a message to an actor at address " +
-            s"${msg.dst}, but no actor is registered to this address."
-        )
-    }
   }
 
   override def send(
@@ -129,4 +96,37 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     timer
   }
 
+  def stageMessage(msg: Message, check_exists: Boolean = true): Unit = {
+    if (check_exists && !bufferedMessages.contains(msg)) {
+      logger.fatal(
+        s"Attempted to stage $msg, but that message was not buffered."
+      );
+      return;
+    }
+
+    stagedMessages += msg
+    bufferedMessages -= msg
+  }
+
+  def deliverMessage(msg: Message, check_exists: Boolean = true): Unit = {
+    if (check_exists && !stagedMessages.contains(msg)) {
+      logger.fatal(
+        s"Attempted to deliver $msg, but that message was not staged."
+      );
+      return;
+    }
+
+    actors.get(msg.dst) match {
+      case Some(actor) => {
+        actor.receiveImpl(msg.src, msg.bytes)
+      }
+      case None =>
+        logger.warn(
+          s"Attempting to deliver a message to an actor at address " +
+            s"${msg.dst}, but no actor is registered to this address."
+        )
+    }
+
+    stagedMessages -= msg
+  }
 }

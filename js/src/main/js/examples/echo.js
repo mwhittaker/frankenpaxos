@@ -2,34 +2,23 @@ function simulated_app() {
   let Echo = zeno.examples.js.SimulatedEcho.Echo;
   let snap = Snap('#simulated_animation');
 
-  let node = (info) => {
-    return {
-      actor: info.actor,
-      name: info.name,
-      svg: info.svg,
-      num_messages_received: 0,
-      log: [],
-    };
-  }
+  // Create nodes.
   let nodes = {};
-  nodes[Echo.server.address] = node({
+  nodes[Echo.server.address] = {
     actor: Echo.server,
-    name: 'Server',
     svg: snap.circle(150, 50, 20).attr(
         {fill: '#e74c3c', stroke: 'black', 'stroke-width': '3pt'}),
-  });
-  nodes[Echo.clientA.address] = node({
+  };
+  nodes[Echo.clientA.address] = {
     actor: Echo.clientA,
-    name: 'Client A',
     svg: snap.circle(75, 150, 20).attr(
         {fill: '#3498db', stroke: 'black', 'stroke-width': '3pt'}),
-  });
-  nodes[Echo.clientB.address] = node({
+  };
+  nodes[Echo.clientB.address] = {
     actor: Echo.clientB,
-    name: 'Client B',
     svg: snap.circle(225, 150, 20).attr(
         {fill: '#2ecc71', stroke: 'black', 'stroke-width': '3pt'}),
-  });
+  };
 
   // Add node titles.
   snap.text(150, 20, 'Server').attr({'text-anchor': 'middle'});
@@ -39,8 +28,24 @@ function simulated_app() {
   // Create the vue app.
   let vue_app = new Vue({
     el: '#simulated_app',
-    data: { node: nodes[Echo.server.address] },
+    data: {
+      node: nodes[Echo.server.address],
+      transport: Echo.transport,
+      send_message: (message, callback) => {
+        let src = nodes[message.src];
+        let dst = nodes[message.dst];
+        let svg_message =
+          snap.circle(src.svg.attr("cx"), src.svg.attr("cy"), 9)
+              .attr({fill: '#2c3e50'});
+        snap.prepend(svg_message);
+        svg_message.animate(
+          {cx: dst.svg.attr("cx"), cy: dst.svg.attr("cy")},
+          250 + Math.random() * 200,
+          callback);
+      }
+    },
   });
+
 
   // Select a node by clicking it.
   for (let node of Object.values(nodes)) {
@@ -48,37 +53,6 @@ function simulated_app() {
       vue_app.node = node;
     }
   }
-
-  let simulated_app = new zenojs.SimulatedApp(Echo.transport, {
-    config_message: (app, message) => {
-      let src = nodes[message.src];
-      let dst = nodes[message.dst];
-      let svg_message = snap.circle(src.svg.attr("cx"), src.svg.attr("cy"), 9)
-                            .attr({fill: '#2c3e50'});
-      snap.prepend(svg_message);
-      return {
-        svg_message: svg_message,
-        animate_args: {cx: dst.svg.attr("cx"), cy: dst.svg.attr("cy")},
-        timeout: 250 + Math.random() * 200,
-        drop: Math.random() <= 0.01,
-      };
-    },
-    on_send: (app, message) => {},
-    on_deliver: (app, message) => {
-      for (let node of Object.values(nodes)) {
-        // Update num_messages_received.
-        node.num_messages_received = node.actor.numMessagesReceived;
-
-        // Update log.
-        for (let log_entry of node.actor.logger.bufferedLogsJs()) {
-          node.log.push(log_entry);
-        }
-        node.actor.logger.clearBufferedLogs();
-      }
-    },
-    on_timer_stop: (app, timer) => {},
-    on_timer_start: (app, timer) => {},
-  });
 }
 
 class ClickthroughVueNode {
@@ -205,7 +179,21 @@ function clickthrough_app() {
 
 function main() {
   simulated_app();
-  clickthrough_app();
+  // clickthrough_app();
+
+  // let snap = Snap('#simulated_animation');
+  // let Echo = zeno.examples.js.SimulatedEcho.Echo;
+
+  // let vue_app = new Vue({
+  //   el: '#app',
+  //   data: {
+  //     Echo: Echo,
+  //     send_message: function(m, f) {
+  //       console.log('sending message real quick.');
+  //       f();
+  //     }
+  //   },
+  // });
 }
 
 window.onload = main

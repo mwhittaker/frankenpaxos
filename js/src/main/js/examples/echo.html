@@ -42,6 +42,13 @@
   <div id="container">
     <h1>Echo</h1>
 
+    <!-- <div id="app"> -->
+    <!--   <zeno-simulated-app -->
+    <!--     :transport="Echo.transport" -->
+    <!--     :send_message="send_message"> -->
+    <!--   </zeno-simulated-app> -->
+    <!-- </div> -->
+
     <!-- Simulated app. -->
     <div class="app" id="simulated">
       <h2>Simulated App</h2>
@@ -49,11 +56,20 @@
       <svg id="simulated_animation" class="animation"></svg>
 
       <div id="simulated_app">
-        <zeno-simulated-node v-bind:node="node">
+        <zeno-simulated-app
+          :transport="transport"
+          :send_message="send_message">
+        </zeno-simulated-app>
+
+        <zeno-simulated-node :node="node">
           <div class="zeno-box">
             <h3 class="zeno-box-title">Data</h3>
-            <div>name: {{node.name}}</div>
-            <div> num_messages_received: {{node.num_messages_received}}</div>
+            <div>
+              name: {{node.actor.address.address}}
+            </div>
+            <div>
+              num_messages_received: {{node.actor.numMessagesReceived}}
+            </div>
           </div>
           <hr class="zeno-hr"></hr>
         </zeno-simulated-node>
@@ -61,27 +77,27 @@
     </div>
 
     <!-- Clickthrough app. -->
-    <div class="app" id="clickthrough">
-      <h2>Clickthrough App</h2>
-
-      <svg id="clickthrough_animation" class="animation"></svg>
-
-      <div id="clickthrough_app">
-        <zeno-clickthrough-node
-            v-bind:node="node"
-            v-on:timer-trigger='trigger'
-            v-on:message-deliver='deliver'
-            v-on:message-drop='drop'
-            v-on:message-duplicate='duplicate'>
-          <div class="zeno-box">
-            <h3 class="zeno-box-title">Data</h3>
-            <div>name: {{node.name}}</div>
-            <div> num_messages_received: {{node.num_messages_received}}</div>
-          </div>
-          <hr class="zeno-hr"></hr>
-        </zeno-clickthrough-node>
-      </div>
-    </div>
+    <!-- <div class="app" id="clickthrough"> -->
+    <!--   <h2>Clickthrough App</h2> -->
+    <!--  -->
+    <!--   <svg id="clickthrough_animation" class="animation"></svg> -->
+    <!--  -->
+    <!--   <div id="clickthrough_app"> -->
+    <!--     <zeno-clickthrough-node -->
+    <!--         v-bind:node="node" -->
+    <!--         v-on:timer-trigger='trigger' -->
+    <!--         v-on:message-deliver='deliver' -->
+    <!--         v-on:message-drop='drop' -->
+    <!--         v-on:message-duplicate='duplicate'> -->
+    <!--       <div class="zeno-box"> -->
+    <!--         <h3 class="zeno-box-title">Data</h3> -->
+    <!--         <div>name: {{node.name}}</div> -->
+    <!--         <div> num_messages_received: {{node.num_messages_received}}</div> -->
+    <!--       </div> -->
+    <!--       <hr class="zeno-hr"></hr> -->
+    <!--     </zeno-clickthrough-node> -->
+    <!--   </div> -->
+    <!-- </div> -->
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
