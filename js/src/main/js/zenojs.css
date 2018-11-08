@@ -23,18 +23,7 @@
   width: 95%;
 }
 
-.zeno-button {
-  background-color: #3498db;
-  border-radius: 3pt;
-  color: white;
-  cursor: pointer;
-  margin-right: 3pt;
-  padding: 2pt;
-}
-
-.zeno-button:hover {
-  background-color: #2980b9;
-}
+.zeno-button {}
 
 /* Logs ***********************************************************************/
 .zeno-log {

@@ -10,10 +10,8 @@ abstract class Actor[Transport <: zeno.Transport[Transport]](
     val logger: Logger
 ) {
   type InboundMessage
-  type OutboundMessage
   def parseInboundMessage(bytes: Array[Byte]): InboundMessage
-  def parseInboundMessageToString(bytes: Array[Byte]): String = { "" }
-  def serializeOutboundMessage(message: OutboundMessage): Array[Byte]
+  def parseInboundMessageToString(bytes: Array[Byte]): String
   def receive(src: Transport#Address, message: InboundMessage): Unit
 
   transport.register(address, this);
@@ -22,8 +20,8 @@ abstract class Actor[Transport <: zeno.Transport[Transport]](
     receive(src, parseInboundMessage(bytes))
   }
 
-  def send(dst: Transport#Address, message: OutboundMessage): Unit = {
-    transport.send(address, dst, serializeOutboundMessage(message))
+  def send(dst: Transport#Address, bytes: Array[Byte]): Unit = {
+    transport.send(address, dst, bytes)
   }
 
   def timer(

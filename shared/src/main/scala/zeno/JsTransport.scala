@@ -63,6 +63,18 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   def bufferedMessagesJs(): js.Array[Message] = { bufferedMessages.toJSArray }
   def stagedMessagesJs(): js.Array[Message] = { stagedMessages.toJSArray }
 
+  def timersForAddressJs(
+      address: JsTransport#Address
+  ): js.Array[JsTransport#Timer] = {
+    timers.filter(_.address == address).toJSArray
+  }
+
+  def stagedMessagesForAddressJs(
+      address: JsTransport#Address
+  ): js.Array[Message] = {
+    stagedMessages.filter(_.dst == address).toJSArray
+  }
+
   override def register(
       address: JsTransport#Address,
       actor: Actor[JsTransport]
@@ -104,8 +116,10 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       return;
     }
 
+    if (check_exists) {
+      bufferedMessages -= msg
+    }
     stagedMessages += msg
-    bufferedMessages -= msg
   }
 
   def deliverMessage(msg: Message, check_exists: Boolean = true): Unit = {
@@ -125,6 +139,19 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
           s"Attempting to deliver a message to an actor at address " +
             s"${msg.dst}, but no actor is registered to this address."
         )
+    }
+
+    if (check_exists) {
+      stagedMessages -= msg
+    }
+  }
+
+  def dropMessage(msg: Message, check_exists: Boolean = true): Unit = {
+    if (check_exists && !stagedMessages.contains(msg)) {
+      logger.fatal(
+        s"Attempted to drop $msg, but that message was not staged."
+      );
+      return;
     }
 
     stagedMessages -= msg

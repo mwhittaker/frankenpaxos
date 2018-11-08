@@ -195,53 +195,34 @@ Vue.component('zeno-timers', {
   template: `
     <div class="zeno-timers">
       <div v-for="timer in timers">
-        <a class="zeno-button zeno-timers-trigger"
+        <button class="zeno-button zeno-timers-trigger"
            v-bind:disabled="!timer.running"
-           v-on:click="$emit('timer-trigger', timer)">Trigger</a>
+           v-on:click="timer.run()">Trigger</button>
         <span class="zeno-timers-name">{{timer.name()}}</span>
       </div>
     </div>
   `
 });
 
-Vue.component('zeno-simulated-node', {
-  // node is an object {log} with fields described in the components above.
-  props: ['node'],
 
-  template: `
-    <div class="zeno-node">
-      <slot></slot>
-
-      <div class="zeno-box">
-        <h3 class="zeno-box-title">Log</h3>
-        <zeno-log v-bind:log='node.actor.logger.logJs()'></zeno-log>
-      </div>
-    </div>
-  `
-});
-
-Vue.component('zeno-messages', {
-  props: [
-    // actor is an Actor.
-    'actor',
-
-    // messages is a list of JsTransport.Message. See JsTransport.scala for
-    // more information on JsTransport.Message.
-    'messages',
-  ],
+// TODO: Right now, clicking `drop` on a message drops the first instance of
+// the message instead of the instance of the message that was clicked. Fix
+// this.
+Vue.component("zeno-staged-messages", {
+  props: ["transport", "actor", "messages"],
   template: `
     <div class="zeno-messages">
-      <div v-for="(message, index) in messages">
+      <div v-for="message in messages">
         <div class="zeno-messages-message">
-          <a class="zeno-button zeno-messages-deliver"
-             v-on:click="$emit('message-deliver', {message:message, index:index})">
-            Deliver</a>
-          <a class="zeno-button zeno-messages-drop"
-             v-on:click="$emit('message-drop', {message:message, index:index})">
-            Drop</a>
-          <a class="zeno-button zeno-messages-duplicate"
-             v-on:click="$emit('message-duplicate', {message:message, index:index})">
-            Duplicate</a>
+          <button class="zeno-button zeno-messages-deliver"
+             v-on:click="transport.deliverMessage(message)">
+            Deliver</button>
+          <button class="zeno-button zeno-messages-drop"
+             v-on:click="transport.dropMessage(message)">
+            Drop</button>
+          <button class="zeno-button zeno-messages-duplicate"
+             v-on:click="transport.stageMessage(message, false)">
+            Duplicate</button>
           <span class="zeno-messages-src">from {{message.src.address}}</span>
           <div class="zeno-messages-text">
             {{actor.parseInboundMessageToString(message.bytes)}}
