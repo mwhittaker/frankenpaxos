@@ -1,3 +1,31 @@
+let client_echo_box = {
+  props: ['node'],
+
+  data: function() {
+    return {
+      message: "",
+    };
+  },
+
+  methods: {
+    echo: function() {
+      if (this.message === "") {
+        return;
+      }
+      this.node.actor.echo(this.message);
+      this.message = "";
+    }
+  },
+
+  template: `
+    <div>
+      <button v-on:click="echo">Echo</button>
+      <input v-model="message" v-on:keyup.enter="echo"></input>
+    </div>
+  `,
+};
+
+
 function simulated_app() {
   let Echo = zeno.examples.js.SimulatedEcho.Echo;
   let snap = Snap('#simulated_animation');
@@ -28,6 +56,7 @@ function simulated_app() {
   // Create the vue app.
   let vue_app = new Vue({
     el: '#simulated_app',
+
     data: {
       node: nodes[Echo.server.address],
       transport: Echo.transport,
@@ -43,6 +72,14 @@ function simulated_app() {
           250 + Math.random() * 200,
           callback);
       }
+    },
+
+    computed: {
+      current_component: function() {
+        if (this.node.actor != Echo.server) {
+          return client_echo_box;
+        }
+      },
     },
   });
 
@@ -100,6 +137,14 @@ function clickthrough_app() {
           200,
           callback);
       }
+    },
+
+    computed: {
+      current_component: function() {
+        if (this.node.actor != Echo.server) {
+          return client_echo_box;
+        }
+      },
     },
   });
 

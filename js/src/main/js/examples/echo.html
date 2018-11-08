@@ -60,6 +60,9 @@
             <h3 class="zeno-box-title">Data</h3>
             <div>name: {{node.actor.address.address}}</div>
             <div>num_messages_received: {{node.actor.numMessagesReceived}}</div>
+            <keep-alive>
+              <component :is="current_component" :node="node"></component>
+            </keep-alive>
           </div>
 
           <hr class="zeno-hr"></hr>
@@ -91,6 +94,9 @@
             <h3 class="zeno-box-title">Data</h3>
             <div>name: {{node.actor.address.address}}</div>
             <div>num_messages_received: {{node.actor.numMessagesReceived}}</div>
+            <keep-alive>
+              <component :is="current_component" :node="node"></component>
+            </keep-alive>
           </div>
 
           <hr class="zeno-hr"></hr>
