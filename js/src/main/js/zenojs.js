@@ -1,4 +1,7 @@
-Vue.component('zeno-transport-timer', {
+// The zenojs namespace.
+zenojs = {}
+
+zenojs.zeno_transport_timer = {
   props: ['timer'],
 
   template: "<div></div>",
@@ -21,27 +24,23 @@ Vue.component('zeno-transport-timer', {
       deep: true,
     }
   }
-});
+};
 
-Vue.component('zeno-transport-buffered-message', {
+zenojs.zeno_transport_buffered_message = {
   props: ['message'],
-
   template: "<div></div>",
-
   created: function() {
     this.$emit('message_buffered', this.message);
   },
-});
+};
 
-Vue.component('zeno-transport-staged-message', {
+zenojs.zeno_transport_staged_message = {
   props: ['message'],
-
   template: "<div></div>",
-
   created: function() {
     this.$emit('message_staged', this.message);
   },
-});
+};
 
 Vue.component('zeno-transport', {
   props: [
@@ -52,6 +51,12 @@ Vue.component('zeno-transport', {
     // 'message_buffered',
     // 'message_staged',
   ],
+
+  components: {
+    'zeno-transport-timer': zenojs.zeno_transport_timer,
+    'zeno-transport-buffered-message': zenojs.zeno_transport_buffered_message,
+    'zeno-transport-staged-message': zenojs.zeno_transport_staged_message,
+  },
 
   // TODO: Add keys.
   template: `
