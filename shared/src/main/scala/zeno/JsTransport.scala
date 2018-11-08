@@ -42,6 +42,7 @@ class JsTransportTimer(
     delay.toMillis()
   }
 }
+
 @JSExportAll
 class JsTransport(logger: Logger) extends Transport[JsTransport] {
   type Address = JsTransportAddress
