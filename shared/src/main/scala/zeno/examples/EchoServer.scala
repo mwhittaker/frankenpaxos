@@ -5,6 +5,19 @@ import java.net.InetSocketAddress
 import scala.scalajs.js.annotation._
 import zeno.Actor
 import zeno.Logger
+import zeno.ProtoSerializer
+
+@JSExportAll
+object EchoRequestSerializer extends ProtoSerializer[EchoRequest] {
+  type A = EchoRequest
+  override def toBytes(x: A): Array[Byte] = super.toBytes(x)
+  override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
+  override def toPrettyString(x: A): String = super.toPrettyString(x)
+}
+
+object EchoServerActor {
+  val serializer = EchoRequestSerializer
+}
 
 @JSExportAll
 class EchoServerActor[Transport <: zeno.Transport[Transport]](
@@ -12,23 +25,22 @@ class EchoServerActor[Transport <: zeno.Transport[Transport]](
     transport: Transport,
     logger: Logger
 ) extends Actor(address, transport, logger) {
-  type InboundMessage = EchoRequest;
+  override type InboundMessage = EchoRequest
+  override def serializer = EchoServerActor.serializer
 
   var numMessagesReceived: Int = 0
 
   println(s"Echo server listening on $address.")
 
-  override def parseInboundMessage(bytes: Array[Byte]): InboundMessage = {
-    EchoRequest.parseFrom(bytes)
-  }
-
-  override def parseInboundMessageToString(bytes: Array[Byte]): String = {
-    parseInboundMessage(bytes).toProtoString
-  }
-
   override def receive(src: Transport#Address, request: EchoRequest): Unit = {
-    numMessagesReceived += 1
     logger.info(s"Received ${request.msg} from $src.")
-    send(src, EchoReply(msg = request.msg).toByteArray)
+    numMessagesReceived += 1
+
+    val client =
+      typedActorClient[EchoClientActor[Transport]](
+        src,
+        EchoClientActor.serializer
+      );
+    client.send(EchoReply(msg = request.msg))
   }
 }

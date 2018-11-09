@@ -9,15 +9,23 @@ abstract class Actor[Transport <: zeno.Transport[Transport]](
     val transport: Transport,
     val logger: Logger
 ) {
+  // Interface.
   type InboundMessage
-  def parseInboundMessage(bytes: Array[Byte]): InboundMessage
-  def parseInboundMessageToString(bytes: Array[Byte]): String
+  def serializer: Serializer[InboundMessage]
   def receive(src: Transport#Address, message: InboundMessage): Unit
 
+  // Implementation.
   transport.register(address, this);
 
   def receiveImpl(src: Transport#Address, bytes: Array[Byte]): Unit = {
-    receive(src, parseInboundMessage(bytes))
+    receive(src, serializer.fromBytes(bytes))
+  }
+
+  def typedActorClient[A <: zeno.Actor[Transport]](
+      dst: Transport#Address,
+      serializer: Serializer[A#InboundMessage]
+  ): zeno.TypedActorClient[Transport, A] = {
+    new TypedActorClient[Transport, A](transport, address, dst, serializer)
   }
 
   def send(dst: Transport#Address, bytes: Array[Byte]): Unit = {

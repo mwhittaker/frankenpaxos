@@ -5,8 +5,21 @@ import java.net.InetSocketAddress
 import scala.scalajs.js.annotation._
 import zeno.Actor
 import zeno.Logger
-import zeno.NettyTcpAddress
-import zeno.NettyTcpTransport
+import zeno.ProtoSerializer
+import zeno.TypedActorClient
+
+@JSExportAll
+object EchoReplySerializer extends ProtoSerializer[EchoReply] {
+  type A = EchoReply
+  override def toBytes(x: A): Array[Byte] = super.toBytes(x)
+  override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
+  override def toPrettyString(x: A): String = super.toPrettyString(x)
+}
+
+@JSExportAll
+object EchoClientActor {
+  val serializer = EchoReplySerializer
+}
 
 @JSExportAll
 class EchoClientActor[Transport <: zeno.Transport[Transport]](
@@ -15,26 +28,24 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
     transport: Transport,
     logger: Logger
 ) extends Actor(srcAddress, transport, logger) {
-  type InboundMessage = EchoReply;
+  override type InboundMessage = EchoReply
+  override def serializer = EchoClientActor.serializer
 
-  var numMessagesReceived: Int = 0
+  private val server = typedActorClient[EchoServerActor[Transport]](
+    dstAddress,
+    EchoServerActor.serializer
+  )
 
   private val pingTimer: Transport#Timer =
     timer("pingTimer", java.time.Duration.ofSeconds(1), () => {
-      send(dstAddress, EchoRequest(msg = "ping").toByteArray);
+      server.send(EchoRequest(msg = "ping"));
       pingTimer.start()
     });
 
+  var numMessagesReceived: Int = 0
+
   println(s"Echo client listening on $srcAddress.")
   pingTimer.start();
-
-  override def parseInboundMessage(bytes: Array[Byte]): InboundMessage = {
-    EchoReply.parseFrom(bytes)
-  }
-
-  override def parseInboundMessageToString(bytes: Array[Byte]): String = {
-    parseInboundMessage(bytes).toProtoString
-  }
 
   override def receive(src: Transport#Address, reply: InboundMessage): Unit = {
     numMessagesReceived += 1
@@ -42,6 +53,6 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
   }
 
   def echo(msg: String): Unit = {
-    send(dstAddress, EchoRequest(msg = msg).toByteArray)
+    server.send(EchoRequest(msg = msg))
   }
 }

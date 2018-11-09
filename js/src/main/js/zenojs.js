@@ -226,7 +226,8 @@ Vue.component("zeno-staged-messages", {
             Duplicate</button>
           <span class="zeno-messages-src">from {{message.src.address}}</span>
           <div class="zeno-messages-text">
-            {{actor.parseInboundMessageToString(message.bytes)}}
+            {{actor.serializer.toPrettyString(
+                actor.serializer.fromBytes(message.bytes))}}
           </div>
         </div>
       </div>
