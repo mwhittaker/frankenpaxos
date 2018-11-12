@@ -1,9 +1,9 @@
 package zeno.examples
 
+import scala.collection.mutable.Buffer
 import scala.scalajs.js.annotation._
 import zeno.Actor
 import zeno.Logger
-import scala.collection.mutable.Buffer
 import zeno.ProtoSerializer
 import zeno.TypedActorClient
 
@@ -24,18 +24,17 @@ object PaxosClientActor {
 @JSExportAll
 class PaxosClientActor[Transport <: zeno.Transport[Transport]](
     address: Transport#Address,
-    proposerAddresses: Set[Transport#Address],
     transport: Transport,
-    logger: Logger
+    logger: Logger,
+    config: PaxosConfig[Transport]
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = PaxosClientInbound
   override def serializer = PaxosClientActor.serializer
 
   // The set of proposers.
-  logger.check_ne(proposerAddresses.size, 0)
   private val proposers
-    : Set[TypedActorClient[Transport, PaxosProposerActor[Transport]]] =
-    for (proposerAddress <- proposerAddresses)
+    : List[TypedActorClient[Transport, PaxosProposerActor[Transport]]] =
+    for (proposerAddress <- config.proposerAddresses)
       yield
         typedActorClient[PaxosProposerActor[Transport]](
           proposerAddress,

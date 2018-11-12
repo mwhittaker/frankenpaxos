@@ -22,9 +22,10 @@ message Phase1a {
 }
 
 message Phase1b {
-  required int32 acceptor_id = 1;
-  required int32 vote_round = 2;
-  optional string vote_value = 3;
+  required int32 round = 1;
+  required int32 acceptor_id = 2;
+  required int32 vote_round = 3;
+  optional string vote_value = 4;
 }
 
 message Phase2a {
