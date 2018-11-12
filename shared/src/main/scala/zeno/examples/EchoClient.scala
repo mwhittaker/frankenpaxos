@@ -1,7 +1,5 @@
 package zeno.examples
 
-import java.net.InetAddress
-import java.net.InetSocketAddress
 import scala.scalajs.js.annotation._
 import zeno.Actor
 import zeno.Logger
