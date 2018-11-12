@@ -32,9 +32,7 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
   override def serializer = PaxosClientActor.serializer
 
   // The set of proposers.
-  if (proposerAddresses.size == 0) {
-    logger.fatal(s"Attempted to create a PaxosClientActor with no proposers.")
-  }
+  logger.check_ne(proposerAddresses.size, 0)
   private val proposers
     : Set[TypedActorClient[Transport, PaxosProposerActor[Transport]]] =
     for (proposerAddress <- proposerAddresses)
