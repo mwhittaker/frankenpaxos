@@ -56,7 +56,7 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
   private val reproposeTimer: Transport#Timer =
     timer(
       "reproposeTimer",
-      java.time.Duration.ofSeconds(1),
+      java.time.Duration.ofSeconds(5),
       () => {
         proposedValue match {
           case Some(v) => {
@@ -110,7 +110,7 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
 
   def propose(
       v: String,
-      callback: String => Unit
+      callback: String => Unit = (_) => ()
   ): Unit = {
     // If a value has already been chosen, then there's no need to propose a
     // new value. We simply call the callback immediately.

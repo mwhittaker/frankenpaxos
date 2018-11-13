@@ -121,7 +121,8 @@ Vue.component('zeno-simulated-app', {
           }
         },
         timer_stopped: (timer) => {
-          if (timer in this.timers) {
+          console.log('Timer stopped!');
+          if ([timer.address, timer.name()] in this.timers) {
             clearTimeout(this.timers[[timer.address, timer.name()]]);
           }
         },
