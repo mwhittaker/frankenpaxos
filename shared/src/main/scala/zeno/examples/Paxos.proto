@@ -36,7 +36,6 @@ message Phase2a {
 message Phase2b {
   required int32 acceptor_id = 1;
   required int32 round = 2;
-  required string value = 3;
 }
 
 // Paxos client inbound message.

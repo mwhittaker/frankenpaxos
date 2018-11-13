@@ -1,5 +1,7 @@
 package zeno
 
+import Ordering.Implicits._
+
 trait Logger {
   // Logging.
   def fatal(message: String): Unit
@@ -24,6 +26,30 @@ trait Logger {
   def check_ne[A](lhs: A, rhs: A): Unit = {
     if (lhs == rhs) {
       fatal(s"Check failed: $lhs == $rhs.")
+    }
+  }
+
+  def check_lt[A: Ordering](lhs: A, rhs: A): Unit = {
+    if (lhs >= rhs) {
+      fatal(s"Check failed: $lhs >= $rhs.")
+    }
+  }
+
+  def check_le[A: Ordering](lhs: A, rhs: A): Unit = {
+    if (lhs > rhs) {
+      fatal(s"Check failed: $lhs > $rhs.")
+    }
+  }
+
+  def check_gt[A: Ordering](lhs: A, rhs: A): Unit = {
+    if (lhs <= rhs) {
+      fatal(s"Check failed: $lhs <= $rhs.")
+    }
+  }
+
+  def check_ge[A: Ordering](lhs: A, rhs: A): Unit = {
+    if (lhs < rhs) {
+      fatal(s"Check failed: $lhs < $rhs.")
     }
   }
 }
