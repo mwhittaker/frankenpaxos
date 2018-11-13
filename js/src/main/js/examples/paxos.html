@@ -75,59 +75,58 @@
     </div>
 
     <!-- Clickthrough app. -->
-    <!-- <div class="app" id="clickthrough"> -->
-    <!--   <h2>Clickthrough App</h2> -->
-    <!--  -->
-    <!--   <svg id="clickthrough_animation" class="animation"></svg> -->
-    <!--  -->
-    <!--   <div id="clickthrough_app"> -->
-    <!--     <zeno-clickthrough-app -->
-    <!--       :transport="transport" -->
-    <!--       :send_message="send_message"> -->
-    <!--     </zeno-clickthrough-app> -->
-    <!--  -->
-    <!--     <div class="zeno-node"> -->
-    <!--       [> Actor data. <] -->
-    <!--       <div class="zeno-box"> -->
-    <!--         <h3 class="zeno-box-title">Data</h3> -->
-    <!--         <div>name: {{node.actor.address.address}}</div> -->
-    <!--         <div>num_messages_received: {{node.actor.numMessagesReceived}}</div> -->
-    <!--         <keep-alive> -->
-    <!--           <component :is="current_component" :node="node"></component> -->
-    <!--         </keep-alive> -->
-    <!--       </div> -->
-    <!--  -->
-    <!--       <hr class="zeno-hr"></hr> -->
-    <!--  -->
-    <!--       [> Actor timers. <] -->
-    <!--       <div class="zeno-box"> -->
-    <!--         <h3 class="zeno-box-title">Timers</h3> -->
-    <!--         <zeno-timers -->
-    <!--           :timers="transport.timersForAddressJs(node.actor.address)"> -->
-    <!--         </zeno-timers> -->
-    <!--       </div> -->
-    <!--  -->
-    <!--       <hr class="zeno-hr"></hr> -->
-    <!--  -->
-    <!--       [> Actor messages. <] -->
-    <!--       <div class="zeno-box"> -->
-    <!--         <h3 class="zeno-box-title">Messages</h3> -->
-    <!--         <zeno-staged-messages -->
-    <!--           :transport="transport" -->
-    <!--           :actor="node.actor" -->
-    <!--           :messages="transport.stagedMessagesForAddressJs(node.actor.address)"> -->
-    <!--         </zeno-staged-messages> -->
-    <!--       </div> -->
-    <!--  -->
-    <!--       <hr class="zeno-hr"></hr> -->
-    <!--  -->
-    <!--       [> Actor log. <] -->
-    <!--       <div class="zeno-box"> -->
-    <!--         <h3 class="zeno-box-title">Log</h3> -->
-    <!--         <zeno-log :log='node.actor.logger.logJs()'></zeno-log> -->
-    <!--       </div> -->
-    <!--     </div> -->
-    <!--   </div> -->
+    <div class="app" id="clickthrough">
+      <h2>Clickthrough App</h2>
+
+      <svg id="clickthrough_animation" class="animation"></svg>
+
+      <div id="clickthrough_app">
+        <zeno-clickthrough-app
+          :transport="transport"
+          :send_message="send_message">
+        </zeno-clickthrough-app>
+
+        <div class="zeno-node">
+          <!-- Actor data. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Data</h3>
+            <div>name: {{node.actor.address.address}}</div>
+            <keep-alive>
+              <component :is="current_component" :node="node"></component>
+            </keep-alive>
+          </div>
+
+          <hr class="zeno-hr"></hr>
+
+          <!-- Actor timers. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Timers</h3>
+            <zeno-timers
+              :timers="transport.timersForAddressJs(node.actor.address)">
+            </zeno-timers>
+          </div>
+
+          <hr class="zeno-hr"></hr>
+
+          <!-- Actor messages. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Messages</h3>
+            <zeno-staged-messages
+              :transport="transport"
+              :actor="node.actor"
+              :messages="transport.stagedMessagesForAddressJs(node.actor.address)">
+            </zeno-staged-messages>
+          </div>
+
+          <hr class="zeno-hr"></hr>
+
+          <!-- Actor log. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Log</h3>
+            <zeno-log :log='node.actor.logger.logJs()'></zeno-log>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

@@ -121,14 +121,12 @@ function make_nodes(Paxos, snap) {
   return nodes
 }
 
-function simulated_app() {
-  let Paxos = zeno.examples.js.SimulatedPaxos.Paxos;
-  let snap = Snap('#simulated_animation');
+function make_app(Paxos, snap, app_id) {
   let nodes = make_nodes(Paxos, snap);
 
   // Create the vue app.
   let vue_app = new Vue({
-    el: '#simulated_app',
+    el: app_id,
 
     data: {
       node: nodes[Paxos.client1.address],
@@ -238,8 +236,13 @@ function clickthrough_app() {
 }
 
 function main() {
-  simulated_app();
-  // clickthrough_app();
+  make_app(zeno.examples.js.SimulatedPaxos.Paxos,
+           Snap('#simulated_animation'),
+           '#simulated_app');
+
+  make_app(zeno.examples.js.ClickthroughPaxos.Paxos,
+           Snap('#clickthrough_animation'),
+           '#clickthrough_app');
 }
 
 window.onload = main
