@@ -35,6 +35,16 @@
       height: 300px;
     }
 
+    .columns {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 12pt;
+    }
+
+    .column {
+      margin-left: 6pt;
+      margin-right: 6pt;
+    }
   </style>
 </head>
 <body>
@@ -52,6 +62,19 @@
           :transport="transport"
           :send_message="send_message">
         </zeno-simulated-app>
+
+        <!-- Acceptor state. -->
+        <div class="columns">
+          <div class="column">
+            <div><br/></div>
+            <div>round</div>
+            <div>vote round</div>
+            <div>vote value</div>
+          </div>
+          <abbreviated-acceptor-info :node=acceptor1></abbreviated-acceptor-info>
+          <abbreviated-acceptor-info :node=acceptor2></abbreviated-acceptor-info>
+          <abbreviated-acceptor-info :node=acceptor3></abbreviated-acceptor-info>
+        </div>
 
         <div class="zeno-node">
           <!-- Actor data. -->
@@ -85,6 +108,19 @@
           :transport="transport"
           :send_message="send_message">
         </zeno-clickthrough-app>
+
+        <!-- Acceptor state. -->
+        <div class="columns">
+          <div class="column">
+            <div><br/></div>
+            <div>round</div>
+            <div>vote round</div>
+            <div>vote value</div>
+          </div>
+          <abbreviated-acceptor-info :node=acceptor1></abbreviated-acceptor-info>
+          <abbreviated-acceptor-info :node=acceptor2></abbreviated-acceptor-info>
+          <abbreviated-acceptor-info :node=acceptor3></abbreviated-acceptor-info>
+        </div>
 
         <div class="zeno-node">
           <!-- Actor data. -->

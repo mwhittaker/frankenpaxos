@@ -35,14 +35,14 @@ class PaxosAcceptorActor[Transport <: zeno.Transport[Transport]](
   private val index = config.acceptorAddresses.indexOf(address)
 
   // The largest round in which this acceptor has received a message.
-  private var round: Int = -1;
+  var round: Int = -1;
 
   // The largest round in which this acceptor has voted.
-  private var voteRound: Int = -1;
+  var voteRound: Int = -1;
 
   // The value that this acceptor voted for in voteRound, or None if the
   // acceptor hasn't voted yet.
-  private var voteValue: Option[String] = None;
+  var voteValue: Option[String] = None;
 
   override def receive(
       src: Transport#Address,

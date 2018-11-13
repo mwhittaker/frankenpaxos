@@ -1,4 +1,4 @@
-let client_box = {
+let client_info = {
   props: ['node'],
 
   data: function() {
@@ -26,6 +26,32 @@ let client_box = {
     </div>
   `,
 };
+
+let acceptor_info = {
+  props: ['node'],
+
+  template: `
+    <div>
+      <div>round = {{node.actor.round}}</div>
+      <div>voteRound = {{node.actor.voteRound}}</div>
+      <div>voteValue = {{node.actor.voteValue}}</div>
+    </div>
+  `,
+};
+
+let abbreviated_acceptor_info = {
+  props: ['node'],
+
+  template: `
+    <div class="column">
+      <div>{{node.actor.address.address}}</div>
+      <div>{{node.actor.round}}</div>
+      <div>{{node.actor.voteRound}}</div>
+      <div>{{node.actor.voteValue}}</div>
+    </div>
+  `,
+};
+
 
 function make_nodes(Paxos, snap) {
   // https://flatuicolors.com/palette/defo
@@ -128,7 +154,14 @@ function make_app(Paxos, snap, app_id) {
   let vue_app = new Vue({
     el: app_id,
 
+    components: {
+      'abbreviated-acceptor-info': abbreviated_acceptor_info,
+    },
+
     data: {
+      acceptor1: nodes[Paxos.acceptor1.address],
+      acceptor2: nodes[Paxos.acceptor2.address],
+      acceptor3: nodes[Paxos.acceptor3.address],
       node: nodes[Paxos.client1.address],
       transport: Paxos.transport,
       send_message: (message, callback) => {
@@ -148,11 +181,11 @@ function make_app(Paxos, snap, app_id) {
     computed: {
       current_component: function() {
         if (this.node.actor.address.address.includes('Client')) {
-          return client_box;
+          return client_info;
         } else if (this.node.actor.address.address.includes('Proposer')) {
           // return proposer_box;
         } else if (this.node.actor.address.address.includes('Acceptor')) {
-          // return acceptor_box;
+          return acceptor_info;
         } else {
           // Impossible!
         }
