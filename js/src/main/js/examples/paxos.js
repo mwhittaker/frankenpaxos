@@ -34,7 +34,7 @@ let acceptor_info = {
     <div>
       <div>round = {{node.actor.round}}</div>
       <div>voteRound = {{node.actor.voteRound}}</div>
-      <div>voteValue = {{node.actor.voteValue}}</div>
+      <div>voteValue = {{JsUtils.optionToJs(node.actor.voteValue)}}</div>
     </div>
   `,
 };
