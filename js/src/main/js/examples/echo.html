@@ -58,7 +58,6 @@
           <div class="zeno-box">
             <h3 class="zeno-box-title">Data</h3>
             <div>name: {{node.actor.address.address}}</div>
-            <div>num_messages_received: {{node.actor.numMessagesReceived}}</div>
             <keep-alive>
               <component :is="current_component" :node="node"></component>
             </keep-alive>
@@ -69,7 +68,7 @@
           <!-- Actor log. -->
           <div class="zeno-box">
             <h3 class="zeno-box-title">Log</h3>
-            <zeno-log :log='JsUtils.seqToJs(node.actor.logger.log)'></zeno-log>
+            <zeno-log :log="JsUtils.seqToJs(node.actor.logger.log)"></zeno-log>
           </div>
         </div>
       </div>
@@ -92,7 +91,6 @@
           <div class="zeno-box">
             <h3 class="zeno-box-title">Data</h3>
             <div>name: {{node.actor.address.address}}</div>
-            <div>num_messages_received: {{node.actor.numMessagesReceived}}</div>
             <keep-alive>
               <component :is="current_component" :node="node"></component>
             </keep-alive>
@@ -127,7 +125,7 @@
           <!-- Actor log. -->
           <div class="zeno-box">
             <h3 class="zeno-box-title">Log</h3>
-            <zeno-log :log='JsUtils.seqToJs(node.actor.logger.log)'></zeno-log>
+            <zeno-log :log="JsUtils.seqToJs(node.actor.logger.log)"></zeno-log>
           </div>
         </div>
       </div>
