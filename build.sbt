@@ -14,6 +14,9 @@ lazy val zeno = crossProject(JSPlatform, JVMPlatform)
       "io.netty" % "netty-all" % "4.1.25.Final",
       "org.scala-js" %% "scalajs-library" % scalaJSVersion % "provided",
       "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",
+      "org.scalacheck" %% "scalacheck" % "1.14.0" % "test",
+      "org.scalactic" %% "scalactic" % "3.0.5",
+      "org.scalatest" %% "scalatest" % "3.0.5" % "test",
     ),
     PB.targets in Compile := Seq(
       scalapb.gen() -> (sourceManaged in Compile).value
