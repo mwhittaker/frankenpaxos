@@ -60,20 +60,16 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   var bufferedMessages = Buffer[Message]()
   var stagedMessages = Buffer[Message]()
 
-  def timersJs(): js.Array[JsTransport#Timer] = { timers.toJSArray }
-  def bufferedMessagesJs(): js.Array[Message] = { bufferedMessages.toJSArray }
-  def stagedMessagesJs(): js.Array[Message] = { stagedMessages.toJSArray }
-
-  def timersForAddressJs(
+  def timersForAddress(
       address: JsTransport#Address
-  ): js.Array[JsTransport#Timer] = {
-    timers.filter(_.address == address).toJSArray
+  ): Buffer[JsTransport#Timer] = {
+    timers.filter(_.address == address)
   }
 
-  def stagedMessagesForAddressJs(
+  def stagedMessagesForAddress(
       address: JsTransport#Address
-  ): js.Array[Message] = {
-    stagedMessages.filter(_.dst == address).toJSArray
+  ): Buffer[Message] = {
+    stagedMessages.filter(_.dst == address)
   }
 
   override def register(

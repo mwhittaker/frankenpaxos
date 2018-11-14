@@ -1,6 +1,14 @@
 // The zenojs namespace.
 zenojs = {}
 
+Vue.mixin({
+  data: function() {
+    return {
+      JsUtils: zeno.JsUtils,
+    }
+  }
+});
+
 zenojs.zeno_transport_timer = {
   props: ['timer'],
 
@@ -82,15 +90,15 @@ Vue.component('zeno-transport', {
 
   computed: {
     timers: function() {
-      return this.transport.timersJs();
+      return this.JsUtils.seqToJs(this.transport.timers);
     },
 
     buffered_messages: function() {
-      return this.transport.bufferedMessagesJs();
+      return this.JsUtils.seqToJs(this.transport.bufferedMessages);
     },
 
     staged_messages: function() {
-      return this.transport.stagedMessagesJs();
+      return this.JsUtils.seqToJs(this.transport.stagedMessages);
     },
   },
 });

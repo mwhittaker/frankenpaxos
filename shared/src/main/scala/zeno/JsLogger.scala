@@ -19,8 +19,7 @@ case class JsLogEntry(typ: JsLogEntryType.Value, text: String)
 
 @JSExportAll
 class JsLogger extends Logger {
-  private val log = Buffer[JsLogEntry]()
-  def logJs(): js.Array[JsLogEntry] = { log.toJSArray }
+  val log = Buffer[JsLogEntry]()
 
   override def fatal(message: String): Unit = {
     // TODO(mwhittaker): Crash program.
