@@ -4,7 +4,6 @@ import org.scalatest._
 import zeno.Simulator
 
 class PaxosSpec extends FlatSpec {
-
   "A Paxos instance" should "only ever choose a single value" in {
     for (f <- 1 to 3) {
       Simulator.simulate(

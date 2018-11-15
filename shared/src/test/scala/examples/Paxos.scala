@@ -4,13 +4,13 @@ import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
+import zeno.FakeLogger
 import zeno.FakeTransport
 import zeno.FakeTransportAddress
-import zeno.ScalaLoggingLogger
 import zeno.SimulatedSystem
 
 class Paxos(val f: Int) {
-  val logger = new ScalaLoggingLogger("Paxos")
+  val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = f + 1
   val numProposers = f + 1
