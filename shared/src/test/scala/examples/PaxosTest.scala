@@ -9,8 +9,8 @@ class PaxosSpec extends FlatSpec {
     for (f <- 1 to 3) {
       Simulator.simulate(
         new SimulatedPaxos(f),
-        runLength = 25,
-        numRuns = 5000
+        runLength = 50,
+        numRuns = 100
       ) match {
         case Some(history) => fail(history.map(_.toString).mkString("\n"))
         case None          => {}

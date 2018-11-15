@@ -39,7 +39,8 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
   case class Message(
       src: FakeTransport#Address,
       dst: FakeTransport#Address,
-      bytes: Array[Byte]
+      bytes: Array[Byte],
+      string: String
   )
 
   val actors = mutable.HashMap[FakeTransport#Address, Actor[FakeTransport]]()
@@ -65,7 +66,10 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
       dst: FakeTransport#Address,
       bytes: Array[Byte]
   ): Unit = {
-    messages += Message(src, dst, bytes)
+    val dstActor = actors(dst)
+    val serializer = dstActor.serializer
+    val string = serializer.toPrettyString(serializer.fromBytes(bytes))
+    messages += Message(src, dst, bytes, string)
   }
 
   override def timer(

@@ -158,7 +158,9 @@ class PaxosProposerActor[Transport <: zeno.Transport[Transport]](
       return
     }
 
-    // Select the largest vote round k, and the corresponding vote value v.
+    // Select the largest vote round k, and the corresponding vote value v. If
+    // we decide not to go with our initially proposed value, make sure not to
+    // forget to update the proposed value.
     val k = phase1bResponses.maxBy(_.voteRound).voteRound
     val v = {
       if (k == -1) {
@@ -171,6 +173,7 @@ class PaxosProposerActor[Transport <: zeno.Transport[Transport]](
         vs.iterator.next()
       }
     }
+    proposedValue = Some(v)
 
     // Start phase 2.
     for (acceptor <- acceptors) {
