@@ -57,8 +57,8 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
 
   val actors = new HashMap[JsTransport#Address, Actor[JsTransport]]()
   val timers = Buffer[JsTransport#Timer]()
-  var bufferedMessages = Buffer[Message]()
-  var stagedMessages = Buffer[Message]()
+  var bufferedMessages = Buffer[JsTransport#Message]()
+  var stagedMessages = Buffer[JsTransport#Message]()
 
   def timersForAddress(
       address: JsTransport#Address
@@ -68,7 +68,7 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
 
   def stagedMessagesForAddress(
       address: JsTransport#Address
-  ): Buffer[Message] = {
+  ): Buffer[JsTransport#Message] = {
     stagedMessages.filter(_.dst == address)
   }
 
@@ -105,7 +105,10 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     timer
   }
 
-  def stageMessage(msg: Message, check_exists: Boolean = true): Unit = {
+  def stageMessage(
+      msg: JsTransport#Message,
+      check_exists: Boolean = true
+  ): Unit = {
     if (check_exists && !bufferedMessages.contains(msg)) {
       logger.fatal(
         s"Attempted to stage $msg, but that message was not buffered."
@@ -119,7 +122,10 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     stagedMessages += msg
   }
 
-  def deliverMessage(msg: Message, check_exists: Boolean = true): Unit = {
+  def deliverMessage(
+      msg: JsTransport#Message,
+      check_exists: Boolean = true
+  ): Unit = {
     if (check_exists && !stagedMessages.contains(msg)) {
       logger.fatal(
         s"Attempted to deliver $msg, but that message was not staged."
@@ -143,7 +149,10 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     }
   }
 
-  def dropMessage(msg: Message, check_exists: Boolean = true): Unit = {
+  def dropMessage(
+      msg: JsTransport#Message,
+      check_exists: Boolean = true
+  ): Unit = {
     if (check_exists && !stagedMessages.contains(msg)) {
       logger.fatal(
         s"Attempted to drop $msg, but that message was not staged."

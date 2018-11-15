@@ -1,5 +1,8 @@
 package zeno
 
+import org.scalacheck
+import org.scalacheck.Gen
+import org.scalacheck.rng.Seed
 import scala.collection.mutable
 
 case class FakeTransportAddress(address: String) extends zeno.Address
@@ -41,7 +44,7 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
 
   val actors = mutable.HashMap[FakeTransport#Address, Actor[FakeTransport]]()
   val timers = mutable.HashMap[(FakeTransport#Address, String), Timer]()
-  var messages = mutable.Set[Message]()
+  var messages = mutable.Buffer[FakeTransport#Message]()
 
   override def register(
       address: FakeTransport#Address,
@@ -90,7 +93,7 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
     running.keySet.to[Set]
   }
 
-  def deliverMessage(msg: Message): Unit = {
+  def deliverMessage(msg: FakeTransport#Message): Unit = {
     if (!messages.contains(msg)) {
       logger.warn(s"Attempted to deliver unsent message $msg.")
       return
@@ -131,10 +134,45 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
   }
 }
 
-sealed trait FakeTransportCommand
+object FakeTransport {
+  sealed trait Command
 
-case class DeliverMessage(msg: FakeTransport#Message)
-    extends FakeTransportCommand
+  case class DeliverMessage(msg: FakeTransport#Message) extends Command
 
-case class TriggerTimer(address_and_name: (FakeTransport#Address, String))
-    extends FakeTransportCommand
+  case class TriggerTimer(address_and_name: (FakeTransport#Address, String))
+      extends Command
+
+  def generateCommand(fakeTransport: FakeTransport): Gen[Command] = {
+    var subgens = mutable.Buffer[(Int, Gen[Command])]()
+
+    if (fakeTransport.messages.size > 0) {
+      subgens += (
+        (
+          fakeTransport.messages.size,
+          Gen
+            .oneOf(fakeTransport.messages)
+            .map(DeliverMessage(_))
+        )
+      )
+    }
+
+    if (fakeTransport.runningTimers().size > 0) {
+      subgens += (
+        (
+          fakeTransport.runningTimers().size,
+          Gen.oneOf(fakeTransport.runningTimers().to[Seq]).map(TriggerTimer(_))
+        )
+      )
+    }
+
+    Gen.frequency(subgens: _*)
+  }
+
+  def runCommand(fakeTransport: FakeTransport, command: Command): Unit = {
+    command match {
+      case DeliverMessage(msg) => fakeTransport.deliverMessage(msg)
+      case TriggerTimer(address_and_name) =>
+        fakeTransport.triggerTimer(address_and_name)
+    }
+  }
+}

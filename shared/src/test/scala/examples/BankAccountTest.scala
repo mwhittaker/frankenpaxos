@@ -1,6 +1,7 @@
-package zeno
+package zeno.examples
 
 import org.scalatest._
+import zeno.Simulator
 
 class BankAccountSpec extends FlatSpec {
 

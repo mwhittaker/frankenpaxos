@@ -1,8 +1,9 @@
-package zeno
+package zeno.examples
 
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
+import zeno.SimulatedSystem
 
 class BankAccount {
   var balance: Int = 0

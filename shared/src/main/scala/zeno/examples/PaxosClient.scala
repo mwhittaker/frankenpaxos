@@ -33,7 +33,7 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
 
   // The set of proposers.
   private val proposers
-    : List[TypedActorClient[Transport, PaxosProposerActor[Transport]]] =
+    : Seq[TypedActorClient[Transport, PaxosProposerActor[Transport]]] =
     for (proposerAddress <- config.proposerAddresses)
       yield
         typedActorClient[PaxosProposerActor[Transport]](
@@ -46,7 +46,7 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
   private var proposedValue: Option[String] = None
 
   // The value chosen by Paxos.
-  private var chosenValue: Option[String] = None
+  var chosenValue: Option[String] = None
 
   // A list of callbacks to invoke once a value has been chosen.
   // TODO(mwhittaker): Replace with futures/promises.
@@ -87,7 +87,7 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
         logger.info(s"Value '$chosen' was chosen.")
         chosenValue match {
           case Some(oldChosen) if oldChosen != chosen => {
-            logger.fatal(
+            logger.warn(
               s"Two different values were chosen: '$oldChosen' and " +
                 s"then '$chosen'."
             )

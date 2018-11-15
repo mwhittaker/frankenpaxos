@@ -37,7 +37,7 @@ class PaxosProposerActor[Transport <: zeno.Transport[Transport]](
 
   // Connections to the acceptors.
   private val acceptors
-    : List[TypedActorClient[Transport, PaxosAcceptorActor[Transport]]] =
+    : Seq[TypedActorClient[Transport, PaxosAcceptorActor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield
         typedActorClient[PaxosAcceptorActor[Transport]](
@@ -71,7 +71,7 @@ class PaxosProposerActor[Transport <: zeno.Transport[Transport]](
   private var phase2bResponses: mutable.HashSet[Phase2b] = mutable.HashSet()
 
   // The chosen value.
-  private var chosenValue: Option[String] = None
+  var chosenValue: Option[String] = None
 
   override def receive(
       src: Transport#Address,
