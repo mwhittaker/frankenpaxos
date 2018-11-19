@@ -64,10 +64,11 @@ class SimulatedBankAccount extends SimulatedSystem[SimulatedBankAccount] {
   override def runCommand(
       system: SimulatedBankAccount#System,
       command: SimulatedBankAccount#Command
-  ): Unit = {
+  ): SimulatedBankAccount#System = {
     command match {
       case Deposit(amount)  => system.deposit(amount)
       case Withdraw(amount) => system.withdraw(amount)
     }
+    system
   }
 }
