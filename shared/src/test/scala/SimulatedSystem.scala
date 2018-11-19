@@ -12,7 +12,7 @@ trait SimulatedSystem[Self <: SimulatedSystem[Self]] {
   def invariantHolds(
       newState: Self#State,
       oldState: Option[Self#State]
-  ): Boolean
+  ): Option[String]
 
   def generateCommand(
       system: Self#System

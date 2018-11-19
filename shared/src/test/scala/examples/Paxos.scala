@@ -102,12 +102,21 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
   override def invariantHolds(
       newState: SimulatedPaxos#State,
       oldState: Option[SimulatedPaxos#State]
-  ): Boolean = {
-    oldState match {
-      case Some(oldState) =>
-        newState.size <= 1 && oldState.subsetOf(newState)
-      case None => newState.size <= 1
+  ): Option[String] = {
+    if (newState.size > 1) {
+      return Some(
+        s"Multiple values have been chosen: $newState (previously $oldState)."
+      )
     }
+
+    if (oldState.isDefined && !oldState.get.subsetOf(newState)) {
+      return Some(
+        s"Different values have been chosen: ${oldState.get} and " +
+          s"then $newState."
+      )
+    }
+
+    None
   }
 
   override def generateCommand(

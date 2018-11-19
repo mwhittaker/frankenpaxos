@@ -4,14 +4,15 @@ object Simulator {
   private def simulateOne[Sim <: SimulatedSystem[Sim]](
       sim: Sim,
       runLength: Int
-  ): Option[Seq[Sim#Command]] = {
+  ): Option[(String, Seq[Sim#Command])] = {
     var history = Seq[Sim#Command]()
     val system = sim.newSystem()
     var oldState: Option[Sim#State] = None
     var newState = sim.getState(system)
 
-    if (!sim.invariantHolds(newState, oldState)) {
-      return Some(history)
+    sim.invariantHolds(newState, oldState) match {
+      case Some(error) => return Some(error, history)
+      case None        => {}
     }
 
     for (_ <- 1 to runLength) {
@@ -23,8 +24,10 @@ object Simulator {
       sim.runCommand(system, command)
       oldState = Some(newState)
       newState = sim.getState(system)
-      if (!sim.invariantHolds(newState, oldState)) {
-        return Some(history)
+
+      sim.invariantHolds(newState, oldState) match {
+        case Some(error) => return Some(error, history)
+        case None        => {}
       }
     }
 
@@ -35,7 +38,7 @@ object Simulator {
       sim: Sim,
       runLength: Int,
       numRuns: Int = 100
-  ): Option[Seq[Sim#Command]] = {
+  ): Option[(String, Seq[Sim#Command])] = {
     for (_ <- 1 to numRuns) {
       val history = simulateOne(sim, runLength)
       if (history.isDefined) {

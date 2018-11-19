@@ -42,8 +42,12 @@ class SimulatedBankAccount extends SimulatedSystem[SimulatedBankAccount] {
   override def invariantHolds(
       newState: SimulatedBankAccount#State,
       oldState: Option[SimulatedBankAccount#State]
-  ): Boolean = {
-    newState >= 0
+  ): Option[String] = {
+    if (newState < 0) {
+      return Some(s"Bank account balance $newState is less than 0.")
+    }
+
+    None
   }
 
   override def generateCommand(
