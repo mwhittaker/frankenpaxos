@@ -1,6 +1,8 @@
 package zeno.examples
 
 import scala.collection.mutable.Buffer
+import scala.concurrent.Future
+import scala.concurrent.Promise
 import scala.scalajs.js.annotation._
 import zeno.Actor
 import zeno.Logger
@@ -48,9 +50,9 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
   // The value chosen by Paxos.
   var chosenValue: Option[String] = None
 
-  // A list of callbacks to invoke once a value has been chosen.
+  // A list of promises to fulfill once a value has been chosen.
   // TODO(mwhittaker): Replace with futures/promises.
-  private var callbacks: Buffer[String => Unit] = Buffer()
+  private var promises: Buffer[Promise[String]] = Buffer()
 
   // A timer to resend a value proposal.
   private val reproposeTimer: Transport#Timer =
@@ -95,11 +97,11 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
           case Some(_) | None => {}
         }
 
-        // Record the chosen value, invoke all the pending callbacks, and stop
+        // Record the chosen value, fulfill all the pending promises, and stop
         // the repropose timer.
         chosenValue = Some(chosen)
-        callbacks.foreach(_(chosen))
-        callbacks.clear()
+        promises.foreach(_.success(chosen))
+        promises.clear()
         reproposeTimer.stop()
       }
       case Request.Empty => {
@@ -109,15 +111,16 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
   }
 
   def propose(
-      v: String,
-      callback: String => Unit = (_) => ()
-  ): Unit = {
+      v: String
+  ): Future[String] = {
+    val promise = Promise[String]()
+
     // If a value has already been chosen, then there's no need to propose a
     // new value. We simply call the callback immediately.
     chosenValue match {
       case Some(chosen) => {
-        callback(chosen)
-        return
+        promise.success(chosen)
+        return promise.future
       }
       case None => {}
     }
@@ -127,8 +130,8 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
     // has been chosen.
     proposedValue match {
       case Some(_) => {
-        callbacks += callback
-        return
+        promises += promise
+        return promise.future
       }
       case None => {}
     }
@@ -143,5 +146,7 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
         PaxosProposerInbound().withProposeRequest(ProposeRequest(v = v))
       )
     reproposeTimer.start()
+
+    return promise.future
   }
 }

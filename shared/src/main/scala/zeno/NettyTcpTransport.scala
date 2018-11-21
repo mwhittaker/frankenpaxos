@@ -26,11 +26,12 @@ import io.netty.handler.codec.bytes.ByteArrayDecoder
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import io.netty.handler.logging.LoggingHandler
 import io.netty.util.concurrent.ScheduledFuture
-import java.net.SocketAddress;
+import java.net.SocketAddress
 import java.util.concurrent.Callable
 import java.util.concurrent.TimeUnit
-import scala.collection.mutable.HashMap;
-import scala.util.Try;
+import scala.collection.mutable.HashMap
+import scala.concurrent.ExecutionContext
+import scala.util.Try
 
 case class NettyTcpAddress(socketAddress: SocketAddress) extends zeno.Address
 
@@ -367,5 +368,9 @@ class NettyTcpTransport(private val logger: Logger)
       f: () => Unit
   ): NettyTcpTransport#Timer = {
     new NettyTcpTimer(workerEventLoop, logger, name, delay, f)
+  }
+
+  override def executionContext(): ExecutionContext = {
+    scala.concurrent.ExecutionContext.fromExecutorService(workerEventLoop)
   }
 }

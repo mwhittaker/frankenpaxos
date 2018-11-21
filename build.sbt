@@ -8,6 +8,7 @@ lazy val zeno = crossProject(JSPlatform, JVMPlatform)
     name := "zeno",
     libraryDependencies ++= Seq(
       "ch.qos.logback" % "logback-classic" % "1.2.3",
+      "com.github.scopt" %% "scopt" % "3.7.0",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion % "protobuf",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion,
       "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
@@ -21,7 +22,10 @@ lazy val zeno = crossProject(JSPlatform, JVMPlatform)
     PB.targets in Compile := Seq(
       scalapb.gen() -> (sourceManaged in Compile).value
     ),
-    PB.protoSources in Compile := Seq(file("shared/src/main"))
+    PB.protoSources in Compile := Seq(
+      file("shared/src/main"),
+      file("jvm/src/main"),
+    ),
   )
   .jvmSettings()
   .jsSettings(

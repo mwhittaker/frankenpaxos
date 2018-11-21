@@ -1,13 +1,13 @@
 package zeno.examples.jvm
 
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import zeno.Actor;
-import zeno.NettyTcpAddress;
-import zeno.NettyTcpTransport;
-import zeno.PrintLogger;
-import zeno.ScalaLoggingLogger;
-import zeno.examples.EchoClientActor;
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import zeno.Actor
+import zeno.NettyTcpAddress
+import zeno.NettyTcpTransport
+import zeno.PrintLogger
+import zeno.ScalaLoggingLogger
+import zeno.examples.EchoClientActor
 
 object EchoClientMain {
   def main(args: Array[String]): Unit = {
