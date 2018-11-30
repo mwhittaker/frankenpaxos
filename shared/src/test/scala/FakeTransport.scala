@@ -4,6 +4,7 @@ import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
+import scala.concurrent.ExecutionContext
 
 case class FakeTransportAddress(address: String) extends zeno.Address
 
@@ -88,6 +89,21 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
     val timer = new FakeTransportTimer(address, name, f)
     timers.put((address, name), timer)
     timer
+  }
+
+  override def executionContext(): ExecutionContext = {
+    // Yes, you shouldn't do this in general [1], but it's ok here.
+    //
+    // [1]: https://docs.scala-lang.org/overviews/core/futures.html
+    new ExecutionContext {
+      override def execute(runnable: Runnable): Unit = {
+        runnable.run()
+      }
+
+      override def reportFailure(cause: Throwable): Unit = {
+        cause.printStackTrace()
+      }
+    }
   }
 
   def runningTimers(): Set[(FakeTransport#Address, String)] = {

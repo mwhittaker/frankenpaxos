@@ -3,6 +3,7 @@ package zeno
 import scala.collection.mutable.Buffer
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.Map
+import scala.concurrent.ExecutionContext
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters._
 import scala.scalajs.js.annotation._
@@ -103,6 +104,21 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     val timer = new JsTransportTimer(address, name, delay, f)
     timers += timer
     timer
+  }
+
+  override def executionContext(): ExecutionContext = {
+    // Yes, you shouldn't do this in general [1], but it's ok here.
+    //
+    // [1]: https://docs.scala-lang.org/overviews/core/futures.html
+    new ExecutionContext {
+      override def execute(runnable: Runnable): Unit = {
+        runnable.run()
+      }
+
+      override def reportFailure(cause: Throwable): Unit = {
+        cause.printStackTrace()
+      }
+    }
   }
 
   def stageMessage(

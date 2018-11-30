@@ -30,7 +30,7 @@ class EchoServerActor[Transport <: zeno.Transport[Transport]](
 
   var numMessagesReceived: Int = 0
 
-  println(s"Echo server listening on $address.")
+  logger.info(s"Echo server listening on $address.")
 
   override def receive(src: Transport#Address, request: EchoRequest): Unit = {
     logger.info(s"Received ${request.msg} from $src.")

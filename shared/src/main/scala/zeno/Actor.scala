@@ -1,6 +1,5 @@
 package zeno
 
-import io.netty.buffer.ByteBuf
 import scala.scalajs.js.annotation._
 
 @JSExportAll

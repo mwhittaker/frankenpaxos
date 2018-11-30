@@ -36,21 +36,34 @@ class EchoClientActor[Transport <: zeno.Transport[Transport]](
 
   private val pingTimer: Transport#Timer =
     timer("pingTimer", java.time.Duration.ofSeconds(1), () => {
-      server.send(EchoRequest(msg = "ping"));
+      println("CURRENT THREAD PING")
+      println(Thread.currentThread().getId())
+
+      _echo("ping")
       pingTimer.start()
     });
+  pingTimer.start();
 
   var numMessagesReceived: Int = 0
 
-  println(s"Echo client listening on $srcAddress.")
-  pingTimer.start();
+  logger.info(s"Echo client listening on $srcAddress.")
 
   override def receive(src: Transport#Address, reply: InboundMessage): Unit = {
+    println("CURRENT THREAD RECEIVE")
+    println(Thread.currentThread().getId())
     numMessagesReceived += 1
     logger.info(s"Received ${reply.msg} from $src.")
   }
 
-  def echo(msg: String): Unit = {
+  private def _echo(msg: String): Unit = {
+    println("CURRENT THREAD _ECHO")
+    println(Thread.currentThread().getId())
     server.send(EchoRequest(msg = msg))
+  }
+
+  def echo(msg: String): Unit = {
+    println("CURRENT THREAD ECHO")
+    println(Thread.currentThread().getId())
+    transport.executionContext().execute(() => _echo(msg))
   }
 }

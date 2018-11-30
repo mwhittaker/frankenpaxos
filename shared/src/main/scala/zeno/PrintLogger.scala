@@ -1,9 +1,19 @@
 package zeno
 
 class PrintLogger extends Logger {
+  private def colored(color: String, s: String) = {
+    s"${color}${s}${Console.RESET}"
+  }
+
+  private def withThreadId(s: String): String = {
+    s"[Thread ${Thread.currentThread().getId()}] " + s
+  }
+
   override def fatal(message: String): Unit = {
     def show(s: String): Unit = {
-      println(s"${Console.WHITE}${Console.RED_B}[FATAL]${Console.RESET} $s");
+      println(
+        colored(Console.WHITE + Console.RED_B, withThreadId("[FATAL] ")) + s
+      )
     }
 
     show(message)
@@ -15,18 +25,18 @@ class PrintLogger extends Logger {
   }
 
   override def error(message: String): Unit = {
-    println(s"${Console.RED}[ERROR]${Console.RESET} $message");
+    println(colored(Console.RED, withThreadId("[ERROR] ")) + message)
   }
 
   override def warn(message: String): Unit = {
-    println(s"${Console.YELLOW}[WARN ]${Console.RESET} $message");
+    println(colored(Console.YELLOW, withThreadId("[WARN] ")) + message)
   }
 
   override def info(message: String): Unit = {
-    println(s"${Console.BLUE}[INFO ]${Console.RESET} $message");
+    println(colored(Console.BLUE, withThreadId("[INFO] ")) + message)
   }
 
   override def debug(message: String): Unit = {
-    println(s"${Console.CYAN}[DEBUG]${Console.RESET} $message");
+    println(colored(Console.CYAN, withThreadId("[DEBUG] ")) + message)
   }
 }

@@ -20,7 +20,5 @@ trait Transport[Self <: Transport[Self]] {
       f: () => Unit
   ): Self#Timer
 
-  def executionContext(): ExecutionContext = {
-    scala.concurrent.ExecutionContext.global
-  }
+  def executionContext(): ExecutionContext
 }

@@ -110,17 +110,13 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
     }
   }
 
-  def propose(
-      v: String
-  ): Future[String] = {
-    val promise = Promise[String]()
-
+  private def _propose(v: String, promise: Promise[String]): Unit = {
     // If a value has already been chosen, then there's no need to propose a
     // new value. We simply call the callback immediately.
     chosenValue match {
       case Some(chosen) => {
         promise.success(chosen)
-        return promise.future
+        return
       }
       case None => {}
     }
@@ -131,7 +127,7 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
     proposedValue match {
       case Some(_) => {
         promises += promise
-        return promise.future
+        return
       }
       case None => {}
     }
@@ -146,7 +142,11 @@ class PaxosClientActor[Transport <: zeno.Transport[Transport]](
         PaxosProposerInbound().withProposeRequest(ProposeRequest(v = v))
       )
     reproposeTimer.start()
+  }
 
-    return promise.future
+  def propose(v: String): Future[String] = {
+    val promise = Promise[String]()
+    transport.executionContext.execute(() => _propose(v, promise))
+    promise.future
   }
 }

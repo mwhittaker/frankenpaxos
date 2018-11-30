@@ -94,6 +94,8 @@ class NettyTcpTransport(private val logger: Logger)
       // TODO(mwhittaker): Think about automatically deserializing into a proto.
       msg match {
         case bytes: Array[Byte] => {
+          println("CURRENT THREAD NETTY RECEIVE")
+          println(Thread.currentThread().getId())
           actor.receiveImpl(remoteAddress, bytes);
         }
         case _ =>
@@ -169,8 +171,19 @@ class NettyTcpTransport(private val logger: Logger)
   type Address = NettyTcpAddress
   type Timer = NettyTcpTimer
 
-  private val bossEventLoop = new NioEventLoopGroup();
-  private val workerEventLoop = new NioEventLoopGroup(1);
+  // TODO(mwhittaker): The netty documentation [1] suggests using two event
+  // loop groups: a "boss" group and a "worker" group. According to the
+  // documentation, the boss group is responsible for establishing connections
+  // while the worker group does the actual message processing. However, when
+  // using two event loop groups and printing out thread ids, I found that
+  // multiple threads were being used. I'm not exactly why this is happening. I
+  // must be misunderstanding the netty API. Using a single event loop, though,
+  // seems to solve the problem. With only one event loop, only one thread is
+  // used.
+  //
+  // [1]: https://netty.io/wiki/user-guide-for-4.x.html
+  private val eventLoop = new NioEventLoopGroup(1);
+
   private val actors =
     new HashMap[NettyTcpTransport#Address, Actor[NettyTcpTransport]]();
   private val channels =
@@ -246,7 +259,7 @@ class NettyTcpTransport(private val logger: Logger)
     registerActor(address, actor);
 
     new ServerBootstrap()
-      .group(bossEventLoop, workerEventLoop)
+      .group(eventLoop)
       .channel(classOf[NioServerSocketChannel])
       .option[Integer](ChannelOption.SO_BACKLOG, 128)
       .childOption[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
@@ -305,7 +318,7 @@ class NettyTcpTransport(private val logger: Logger)
       }
       case None => {
         new Bootstrap()
-          .group(bossEventLoop)
+          .group(eventLoop)
           .channel(classOf[NioSocketChannel])
           .option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, true)
           .handler(new ChannelInitializer[SocketChannel]() {
@@ -367,10 +380,10 @@ class NettyTcpTransport(private val logger: Logger)
       delay: java.time.Duration,
       f: () => Unit
   ): NettyTcpTransport#Timer = {
-    new NettyTcpTimer(workerEventLoop, logger, name, delay, f)
+    new NettyTcpTimer(eventLoop, logger, name, delay, f)
   }
 
   override def executionContext(): ExecutionContext = {
-    scala.concurrent.ExecutionContext.fromExecutorService(workerEventLoop)
+    scala.concurrent.ExecutionContext.fromExecutorService(eventLoop)
   }
 }
