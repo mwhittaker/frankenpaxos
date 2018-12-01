@@ -9,7 +9,7 @@ class BankAccountSpec extends FlatSpec {
     val sim = new SimulatedBankAccount()
     Simulator
       .simulate(sim, runLength = 100, numRuns = 100)
-      .flatMap(b => Simulator.minimize(sim, b.history, 10 * 1000)) match {
+      .flatMap(b => Simulator.minimize(sim, b.history)) match {
       case Some(BadHistory(history, error)) =>
         fail(s"Error: $error\n$history")
       case None => {}
