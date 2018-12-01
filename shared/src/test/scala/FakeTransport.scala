@@ -33,16 +33,17 @@ class FakeTransportTimer(
   }
 }
 
+case class FakeTransportMessage(
+    src: FakeTransport#Address,
+    dst: FakeTransport#Address,
+    bytes: IndexedSeq[Byte],
+    string: String
+)
+
 class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
   type Address = FakeTransportAddress
   type Timer = FakeTransportTimer
-
-  case class Message(
-      src: FakeTransport#Address,
-      dst: FakeTransport#Address,
-      bytes: Array[Byte],
-      string: String
-  )
+  type Message = FakeTransportMessage
 
   val actors = mutable.HashMap[FakeTransport#Address, Actor[FakeTransport]]()
   val timers = mutable.HashMap[(FakeTransport#Address, String), Timer]()
@@ -70,7 +71,7 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
     val dstActor = actors(dst)
     val serializer = dstActor.serializer
     val string = serializer.toPrettyString(serializer.fromBytes(bytes))
-    messages += Message(src, dst, bytes, string)
+    messages += FakeTransportMessage(src, dst, bytes.to[IndexedSeq], string)
   }
 
   override def timer(
@@ -122,7 +123,7 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
 
     actors.get(msg.dst) match {
       case Some(actor) => {
-        actor.receiveImpl(msg.src, msg.bytes)
+        actor.receiveImpl(msg.src, msg.bytes.to[Array])
       }
       case None =>
         logger.warn(

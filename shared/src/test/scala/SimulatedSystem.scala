@@ -167,6 +167,8 @@ trait SimulatedSystem[Self <: SimulatedSystem[Self]] {
       system: Self#System
   ): Option[Self#Command]
 
+  // TODO(mwhittaker): Note that if the command is illegal, the state should be
+  // unchanged. This allows us to look at subsets of failing test cases.
   def runCommand(
       system: Self#System,
       command: Self#Command
