@@ -46,7 +46,7 @@ class LeaderElectionActor[Transport <: zeno.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    addresses: Seq[Transport#Address],
+    addresses: Set[Transport#Address],
     options: LeaderElectionOptions = LeaderElectionOptions(
       pingPeriod = java.time.Duration.ofSeconds(1),
       noPingTimeoutMin = java.time.Duration.ofSeconds(5),

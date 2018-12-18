@@ -1,0 +1,137 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Leader Election</title>
+  <meta name=viewport content="width=device-width, initial-scale=1">
+  <link href="../zenojs.css" rel="stylesheet">
+  <style type="text/css">
+    html {
+      font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
+    }
+
+    #container {
+      font-size: 18px;
+      background: #FEFEFE;
+      padding-left: 1em;
+      padding-right: 1em;
+      max-width: 44em;
+      line-height: 27px;
+      padding-top: 20px;
+      padding-bottom: 20px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .app {
+      margin-top: 16pt;
+      margin-bottom: 16pt;
+    }
+
+    .animation {
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+      width: 400px;
+      height: 300px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1>Leader Election</h1>
+
+    <!-- Simulated app. -->
+    <div class="app" id="simulated">
+      <h2>Simulated App</h2>
+
+      <svg id="simulated_animation" class="animation"></svg>
+
+      <div id="simulated_app">
+        <zeno-simulated-app
+          :transport="transport"
+          :send_message="send_message">
+        </zeno-simulated-app>
+
+        <div class="zeno-node">
+          <!-- Actor data. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Data</h3>
+            <div>name: {{node.actor.address.address}}</div>
+            <div>round: {{node.actor.round}}</div>
+          </div>
+
+          <hr class="zeno-hr"></hr>
+
+          <!-- Actor log. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Log</h3>
+            <zeno-log :log="JsUtils.seqToJs(node.actor.logger.log)"></zeno-log>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clickthrough app. -->
+    <div class="app" id="clickthrough">
+      <h2>Clickthrough App</h2>
+
+      <svg id="clickthrough_animation" class="animation"></svg>
+
+      <div id="clickthrough_app">
+        <zeno-clickthrough-app
+          :transport="transport"
+          :send_message="send_message">
+        </zeno-clickthrough-app>
+
+        <div class="zeno-node">
+          <!-- Actor data. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Data</h3>
+            <div>name: {{node.actor.address.address}}</div>
+            <div>round: {{node.actor.round}}</div>
+          </div>
+
+          <hr class="zeno-hr"></hr>
+
+          <!-- Actor timers. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Timers</h3>
+            <zeno-timers
+              :timers="JsUtils.seqToJs(
+                transport.timersForAddress(node.actor.address))">
+            </zeno-timers>
+          </div>
+
+          <hr class="zeno-hr"></hr>
+
+          <!-- Actor messages. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Messages</h3>
+            <zeno-staged-messages
+              :transport="transport"
+              :actor="node.actor"
+              :messages="JsUtils.seqToJs(
+                transport.stagedMessagesForAddress(node.actor.address))">
+            </zeno-staged-messages>
+          </div>
+
+          <hr class="zeno-hr"></hr>
+
+          <!-- Actor log. -->
+          <div class="zeno-box">
+            <h3 class="zeno-box-title">Log</h3>
+            <zeno-log :log="JsUtils.seqToJs(node.actor.logger.log)"></zeno-log>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.5.1/snap.svg.js"></script>
+  <script type="text/javascript" src="/js/target/scala-2.12/zeno-fastopt.js"></script>
+  <script type="text/javascript" src="/js/src/main/js/zenojs.js"></script>
+  <script type="text/javascript" src="/js/src/main/js/examples/leader_election.js"></script>
+</body>
+</html>
