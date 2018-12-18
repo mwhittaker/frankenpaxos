@@ -101,6 +101,8 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       delay: java.time.Duration,
       f: () => Unit
   ): JsTransport#Timer = {
+    // TODO(mwhittaker): If a timer already exists with the given name and it
+    // is stopped, delete it. We are replacing that timer with a new one.
     val timer = new JsTransportTimer(address, name, delay, f)
     timers += timer
     timer

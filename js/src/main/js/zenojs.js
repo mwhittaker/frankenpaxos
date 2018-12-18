@@ -122,15 +122,24 @@ Vue.component('zeno-simulated-app', {
       timers: {},
       callbacks: {
         timer_started: (timer) => {
-          if (!(timer in this.timers)) {
-            this.timers[[timer.address, timer.name()]] = setTimeout(() => {
-              timer.run();
-            }, timer.delayMilliseconds());
+          // If we reset a timer, it toggles from not running to running very
+          // quickly. When this happens, Vue does not always trigger an event
+          // for the stopping and starting of the timer. It usually just
+          // triggers an event for the starting. Thus, if we start a timer that
+          // is already started, we should cancel it first.
+          if ([timer.address, timer.name()] in this.timers) {
+            clearTimeout(this.timers[[timer.address, timer.name()]]);
+            delete this.timers[[timer.address, timer.name()]];
           }
+
+          this.timers[[timer.address, timer.name()]] = setTimeout(() => {
+            timer.run();
+          }, timer.delayMilliseconds());
         },
         timer_stopped: (timer) => {
           if ([timer.address, timer.name()] in this.timers) {
             clearTimeout(this.timers[[timer.address, timer.name()]]);
+            delete this.timers[[timer.address, timer.name()]];
           }
         },
         message_buffered: (message) => {

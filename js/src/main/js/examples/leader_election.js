@@ -1,3 +1,8 @@
+// Returns numbers drawn from an exponential distribution with mean `mean`.
+let exponential = function(mean) {
+  return -Math.log(Math.random() + Number.EPSILON) * mean
+}
+
 let leader_election_colors = {
   leaderless_follower: '#f1c40f',
   follower: '#27ae60',
@@ -134,7 +139,7 @@ function make_app(LeaderElection, snap, app_id) {
         snap.prepend(svg_message);
         svg_message.animate(
           {cx: dst.svgs[0].attr("cx"), cy: dst.svgs[0].attr("cy")},
-          1000 + Math.random() * 0,
+          500 + exponential(500),
           callback);
       }
     },

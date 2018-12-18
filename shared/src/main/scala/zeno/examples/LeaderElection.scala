@@ -49,10 +49,10 @@ class LeaderElectionActor[Transport <: zeno.Transport[Transport]](
     addresses: Set[Transport#Address],
     options: LeaderElectionOptions = LeaderElectionOptions(
       pingPeriod = java.time.Duration.ofSeconds(1),
-      noPingTimeoutMin = java.time.Duration.ofSeconds(5),
-      noPingTimeoutMax = java.time.Duration.ofSeconds(10),
-      notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(5),
-      notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(10)
+      noPingTimeoutMin = java.time.Duration.ofSeconds(10),
+      noPingTimeoutMax = java.time.Duration.ofSeconds(11),
+      notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(10),
+      notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(11)
     )
 ) extends Actor(address, transport, logger) {
   // Possible states ///////////////////////////////////////////////////////////
@@ -183,9 +183,27 @@ class LeaderElectionActor[Transport <: zeno.Transport[Transport]](
       return
     }
 
-    // Otherwise, the vote request is for our current round. In all cases, we
-    // ignore the request.
-    // vote for self
+    // Otherwise, the vote request is for our current round.
+    state match {
+      case LeaderlessFollower(noPingTimer) => {
+        // We've already voted for a candidate, so we ignore this vote request.
+      }
+      case Follower(noPingTimer, leader) => {
+        // We already have a leader in this round, so there's no need to vote
+        // for a leader.
+      }
+      case Candidate(notEnoughVotesTimer, votes) => {
+        // If the vote request is from myself, then I'll vote for myself.
+        // Otherwise, I won't vote for another candidate.
+        if (src == address) {
+          nodes(src).send(LeaderElectionInbound().withVote(Vote(round = round)))
+        }
+      }
+      case Leader(pingTimer) => {
+        // We already have a leader in this round, so there's no need to vote
+        // for a leader.
+      }
+    }
   }
 
   private def handleVote(src: Transport#Address, vote: Vote): Unit = {
@@ -224,7 +242,6 @@ class LeaderElectionActor[Transport <: zeno.Transport[Transport]](
         // case, we simply ignore the vote.
       }
       case Candidate(notEnoughVotesTimer, votes) => {
-        logger.info(s"Received vote from $src")
         val newState = Candidate(notEnoughVotesTimer, votes + src)
         state = newState
 
@@ -376,13 +393,8 @@ class LeaderElectionActor[Transport <: zeno.Transport[Transport]](
       max: java.time.Duration
   ): java.time.Duration = {
     logger.check_le(min, max)
-    val random = java.util.concurrent.ThreadLocalRandom.current()
+    val rand = java.util.concurrent.ThreadLocalRandom.current()
     val delta = max.minus(min)
-    min.plus(
-      java.time.Duration.ofSeconds(
-        random.nextLong(0, delta.getSeconds() + 1),
-        random.nextInt(0, delta.getNano() + 1)
-      )
-    )
+    min.plus(java.time.Duration.ofNanos(rand.nextLong(0, delta.toNanos() + 1)))
   }
 }
