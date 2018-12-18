@@ -58,20 +58,24 @@ class LeaderElectionActor[Transport <: zeno.Transport[Transport]](
   // Possible states ///////////////////////////////////////////////////////////
   sealed trait LeaderElectionState
 
+  @JSExportAll
   case class LeaderlessFollower(
       noPingTimer: Transport#Timer
   ) extends LeaderElectionState
 
+  @JSExportAll
   case class Follower(
       noPingTimer: Transport#Timer,
       leader: Transport#Address
   ) extends LeaderElectionState
 
+  @JSExportAll
   case class Candidate(
       notEnoughVotesTimer: Transport#Timer,
       votes: Set[Transport#Address]
   ) extends LeaderElectionState
 
+  @JSExportAll
   case class Leader(pingTimer: Transport#Timer) extends LeaderElectionState
 
   // Members ///////////////////////////////////////////////////////////////////
@@ -181,6 +185,7 @@ class LeaderElectionActor[Transport <: zeno.Transport[Transport]](
 
     // Otherwise, the vote request is for our current round. In all cases, we
     // ignore the request.
+    // vote for self
   }
 
   private def handleVote(src: Transport#Address, vote: Vote): Unit = {
@@ -219,12 +224,14 @@ class LeaderElectionActor[Transport <: zeno.Transport[Transport]](
         // case, we simply ignore the vote.
       }
       case Candidate(notEnoughVotesTimer, votes) => {
-        val newVotes = votes + src
+        logger.info(s"Received vote from $src")
+        val newState = Candidate(notEnoughVotesTimer, votes + src)
+        state = newState
 
         // If we've received votes from a majority of the nodes, then we are
         // the leader for this round. `addresses.size / 2 + 1` is just a
         // formula for a majority.
-        if (newVotes.size >= (addresses.size / 2 + 1)) {
+        if (newState.votes.size >= (addresses.size / 2 + 1)) {
           stopTimer(state)
           val t = pingTimer()
           t.start()

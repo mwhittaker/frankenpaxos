@@ -33,11 +33,11 @@ class LeaderElection {
 
   // Nodes.
   val options = LeaderElectionOptions(
-    pingPeriod = java.time.Duration.ofSeconds(1),
-    noPingTimeoutMin = java.time.Duration.ofSeconds(2),
-    noPingTimeoutMax = java.time.Duration.ofSeconds(3),
-    notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(2),
-    notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(3)
+    pingPeriod = java.time.Duration.ofSeconds(5),
+    noPingTimeoutMin = java.time.Duration.ofSeconds(10),
+    noPingTimeoutMax = java.time.Duration.ofSeconds(20),
+    notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(10),
+    notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(20)
   )
 
   val a = new LeaderElectionActor[JsTransport](

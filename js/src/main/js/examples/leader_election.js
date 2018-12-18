@@ -1,9 +1,12 @@
+let leader_election_colors = {
+  leaderless_follower: '#f1c40f',
+  follower: '#27ae60',
+  candidate: '#3498db',
+  leader: '#e74c3c',
+}
+
 function make_nodes(LeaderElection, snap) {
   // https://flatuicolors.com/palette/defo
-  let flat_light_green = '#2ecc71';
-  let flat_green = '#27ae60';
-  let flat_blue = '#3498db';
-  let flat_red = '#e74c3c';
   let colored = (color) => {
     return {
       'fill': color,
@@ -21,6 +24,7 @@ function make_nodes(LeaderElection, snap) {
   //
   // center 200, 150
   let nodes = {};
+  let title_attr = {'text-anchor': 'middle', 'alignment-baseline': 'middle'};
   let x_origin = 200;
   let y_origin = 150;
   let theta = 2 * Math.PI / 5;
@@ -34,23 +38,38 @@ function make_nodes(LeaderElection, snap) {
 
   nodes[LeaderElection.a.address] = {
     actor: LeaderElection.a,
-    svgs: [snap.circle(ax, ay, 20).attr(colored(flat_light_green))],
+    svgs: [
+      snap.circle(ax, ay, 20).attr(colored(leader_election_colors.leaderless_follower)),
+      snap.text(ax, ay, '0').attr(title_attr),
+    ],
   };
   nodes[LeaderElection.b.address] = {
     actor: LeaderElection.b,
-    svgs: [snap.circle(bx, by, 20).attr(colored(flat_light_green))],
+    svgs: [
+      snap.circle(bx, by, 20).attr(colored(leader_election_colors.leaderless_follower)),
+      snap.text(bx, by, '0').attr(title_attr),
+    ],
   };
   nodes[LeaderElection.c.address] = {
     actor: LeaderElection.c,
-    svgs: [snap.circle(cx, cy, 20).attr(colored(flat_light_green))],
+    svgs: [
+      snap.circle(cx, cy, 20).attr(colored(leader_election_colors.leaderless_follower)),
+      snap.text(cx, cy, '0').attr(title_attr),
+    ],
   };
   nodes[LeaderElection.d.address] = {
     actor: LeaderElection.d,
-    svgs: [snap.circle(dx, dy, 20).attr(colored(flat_light_green))],
+    svgs: [
+      snap.circle(dx, dy, 20).attr(colored(leader_election_colors.leaderless_follower)),
+      snap.text(dx, dy, '0').attr(title_attr),
+    ],
   };
   nodes[LeaderElection.e.address] = {
     actor: LeaderElection.e,
-    svgs: [snap.circle(ex, ey, 20).attr(colored(flat_light_green))],
+    svgs: [
+      snap.circle(ex, ey, 20).attr(colored(leader_election_colors.leaderless_follower)),
+      snap.text(ex, ey, '0').attr(title_attr),
+    ],
   };
 
   // Node titles.
@@ -59,7 +78,6 @@ function make_nodes(LeaderElection, snap) {
   [cx, cy] = polar_to_cartesian(x_origin, y_origin, 3 * theta, r + 40);
   [dx, dy] = polar_to_cartesian(x_origin, y_origin, 4 * theta, r + 40);
   [ex, ey] = polar_to_cartesian(x_origin, y_origin, 5 * theta, r + 40);
-  let title_attr = {'text-anchor': 'middle', 'alignment-baseline': 'middle'}
   snap.text(ax, ay, 'a').attr(title_attr);
   snap.text(bx, by, 'b').attr(title_attr);
   snap.text(cx, cy, 'c').attr(title_attr);
@@ -72,14 +90,41 @@ function make_nodes(LeaderElection, snap) {
 function make_app(LeaderElection, snap, app_id) {
   let nodes = make_nodes(LeaderElection, snap);
 
+  let state_to_color = function(state) {
+    // scala.js does not let you nicely pattern match on an ADT. Thus, we do
+    // something hacky and inspect the name of the constructor.
+    let name = state.constructor.name;
+    if (name.includes('LeaderElectionActor$LeaderlessFollower')) {
+      return leader_election_colors.leaderless_follower;
+    } else if (name.includes('LeaderElectionActor$Follower')) {
+      return leader_election_colors.follower;
+    } else if (name.includes('LeaderElectionActor$Candidate')) {
+      return leader_election_colors.candidate;
+    } else if (name.includes('LeaderElectionActor$Leader')) {
+      return leader_election_colors.leader;
+    }
+  };
+
+  let node_watch = {
+    deep: true,
+    handler: function(node) {
+      node.svgs[0].attr({fill: state_to_color(node.actor.state)});
+      node.svgs[1].attr({text: node.actor.round});
+    },
+  }
+
   // Create the vue app.
   let vue_app = new Vue({
     el: app_id,
 
     data: {
-      JsUtils: zeno.JsUtils,
-      node: nodes[LeaderElection.a.address],
       transport: LeaderElection.transport,
+      node: nodes[LeaderElection.a.address],
+      a: nodes[LeaderElection.a.address],
+      b: nodes[LeaderElection.b.address],
+      c: nodes[LeaderElection.c.address],
+      d: nodes[LeaderElection.d.address],
+      e: nodes[LeaderElection.e.address],
       send_message: (message, callback) => {
         let src = nodes[message.src];
         let dst = nodes[message.dst];
@@ -89,9 +134,17 @@ function make_app(LeaderElection, snap, app_id) {
         snap.prepend(svg_message);
         svg_message.animate(
           {cx: dst.svgs[0].attr("cx"), cy: dst.svgs[0].attr("cy")},
-          250 + Math.random() * 200,
+          1000 + Math.random() * 0,
           callback);
       }
+    },
+
+    watch: {
+      a: node_watch,
+      b: node_watch,
+      c: node_watch,
+      d: node_watch,
+      e: node_watch,
     },
   });
 
