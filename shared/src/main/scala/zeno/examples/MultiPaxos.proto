@@ -1,0 +1,108 @@
+syntax = "proto2";
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "zeno.examples"
+  flat_package: true
+};
+
+// Incoming client requests containing command they want to get chosen
+message ClientRequest {
+  required string command = 1;
+}
+
+// Messages sent between replicas and leaders.
+message ProposeToLeader {
+  required int32 slot = 1;
+  required string command = 2;
+}
+
+// Messages sent to decide command for a slot
+message Decision {
+  required int32 slot = 1;
+  required string command = 2;
+}
+
+// Struct holding the ballot, slot, and command for a given proposal
+message ProposedValue {
+  required double ballot = 1;
+  required int32 slot = 2;
+  required string command = 3;
+}
+
+// Indicates that majority of acceptors accept ballot, also contains what acceptors accepted before
+message Adopted {
+  required double ballot = 1;
+  repeated ProposedValue proposals = 2;
+}
+
+// Indicates acceptor has accepted higher ballot, need to abandon this ballot
+message Preempted {
+  required double ballot = 1;
+  required int32 leader_id = 2;
+}
+
+// Messages sent between leaders and acceptors.
+message MultiPaxosPhase1a {
+  required int32 leader_id = 1;
+  required double ballot = 2;
+}
+
+// Messages sent back to leader from acceptors
+message MultiPaxosPhase1b {
+  required double ballot = 1;
+  repeated ProposedValue proposals = 2;
+}
+
+// Acceptors indicate they accept the ballot
+message MultiPaxosPhase2b {
+  required int32 acceptor_id = 1;
+  required double ballot = 2;
+}
+
+// Leader tries to get proposal accepted
+message MultiPaxosPhase2a {
+  required int32 leader_id = 1;
+  required ProposedValue proposal = 2;
+}
+
+// Response to client
+message ProposeResponse {
+  required string response = 1;
+}
+
+// MultiPaxos client inbound message.
+message MultiPaxosClientInbound {
+  oneof request {
+    ProposeResponse propose_response = 1;
+  }
+}
+
+
+// MultiPaxos leader inbound message.
+message MultiPaxosLeaderInbound {
+  oneof request {
+    ProposeToLeader propose_request = 1;
+    Adopted adopted = 2;
+    Preempted preempted = 3;
+    MultiPaxosPhase1b phase1b = 4;
+    MultiPaxosPhase2b phase2b = 5;
+  }
+}
+
+// MultiPaxos Replica inbound message.
+message MultiPaxosReplicaInbound {
+  oneof request {
+    ClientRequest client_request = 1;
+    Decision decision = 2;
+  }
+}
+
+// MultiPaxos acceptor inbound message.
+message MultiPaxosAcceptorInbound {
+  oneof request {
+    MultiPaxosPhase1a phase1a = 1;
+    MultiPaxosPhase2a phase2a = 2;
+  }
+}
