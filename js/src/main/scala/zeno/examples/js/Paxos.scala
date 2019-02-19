@@ -6,10 +6,7 @@ import zeno.Actor
 import zeno.JsLogger
 import zeno.JsTransport
 import zeno.JsTransportAddress
-import zeno.examples.PaxosAcceptorActor
-import zeno.examples.PaxosClientActor
-import zeno.examples.PaxosProposerActor
-import zeno.examples.PaxosConfig
+import zeno.examples._
 
 @JSExportAll
 class Paxos {
