@@ -59,6 +59,7 @@ message MultiPaxosPhase1b {
 message MultiPaxosPhase2b {
   required int32 acceptor_id = 1;
   required double ballot = 2;
+  required ProposedValue phase2a_proposal = 3;
 }
 
 // Leader tries to get proposal accepted
