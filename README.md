@@ -35,6 +35,13 @@ the root `zeno` directory (e.g., `python -m SimpleHTTPServer`). Open
 clients communicate with an echo server. The source code for this example can
 be found in the following files:
 
+- [`Echo.proto`](shared/src/main/scala/zeno/examples/Echo.proto)
+- [`EchoClient.scala`](shared/src/main/scala/zeno/examples/EchoClient.scala)
+- [`EchoServer.scala`](shared/src/main/scala/zeno/examples/EchoServer.scala)
+- [`Echo.scala`](js/src/main/scala/zeno/examples/js/Echo.scala)
+- [`echo.html`](js/src/main/js/examples/echo.html)
+- [`echo.js`](js/src/main/js/examples/echo.js)
+
 ## Using Eclim
 [Eclim](http://eclim.org/eclimd.html) is a vim plugin that lets you use all the
 features and functionality of Eclipse from within vim. To use eclim with this
@@ -57,10 +64,3 @@ following:
    ```
 5. Open up vim and run `:ProjectCreate . -n scala` or `:ProjectRefresh` if the
    project already exists.
-
-- [`Echo.proto`](shared/src/main/scala/zeno/examples/Echo.proto)
-- [`EchoClient.scala`](shared/src/main/scala/zeno/examples/EchoClient.scala)
-- [`EchoServer.scala`](shared/src/main/scala/zeno/examples/EchoServer.scala)
-- [`Echo.scala`](js/src/main/scala/zeno/examples/js/Echo.scala)
-- [`echo.html`](js/src/main/js/examples/echo.html)
-- [`echo.js`](js/src/main/js/examples/echo.js)
