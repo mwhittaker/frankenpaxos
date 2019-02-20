@@ -35,6 +35,29 @@ the root `zeno` directory (e.g., `python -m SimpleHTTPServer`). Open
 clients communicate with an echo server. The source code for this example can
 be found in the following files:
 
+## Using Eclim
+[Eclim](http://eclim.org/eclimd.html) is a vim plugin that lets you use all the
+features and functionality of Eclipse from within vim. To use eclim with this
+project, first install eclim and all necessary dependencies. Then, do the
+following:
+
+1. Run `eclipse` from within `sbt`. This will create a `.project` file and a
+   `.classpath` file in the `jvm/` directory.
+2. Copy `jvm/.project` and `jvm/.classpath` into the root directory.
+3. Remove the `linkedResources` section in `.project`. It is not needed.
+4. Remove the `kind="src"` class path entries from the top of `.classpath`.
+   Replace them with the following:
+
+   ```
+   <classpathentry kind="src" path="shared/src/main/scala"/>
+   <classpathentry kind="src" path="shared/src/test/scala"/>
+   <classpathentry kind="src" path="js/src/main/scala"/>
+   <classpathentry kind="src" path="jvm/src/main/scala"/>
+   <classpathentry kind="src" path="jvm/target/scala-2.12/src_managed/main"/>
+   ```
+5. Open up vim and run `:ProjectCreate . -n scala` or `:ProjectRefresh` if the
+   project already exists.
+
 - [`Echo.proto`](shared/src/main/scala/zeno/examples/Echo.proto)
 - [`EchoClient.scala`](shared/src/main/scala/zeno/examples/EchoClient.scala)
 - [`EchoServer.scala`](shared/src/main/scala/zeno/examples/EchoServer.scala)
