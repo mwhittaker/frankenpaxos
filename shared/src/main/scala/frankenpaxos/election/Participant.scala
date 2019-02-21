@@ -8,17 +8,17 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.TypedActorClient
 
 @JSExportAll
-object LeaderElectionInboundSerializer
-    extends ProtoSerializer[LeaderElectionInbound] {
-  type A = LeaderElectionInbound
+object ParticipantInboundSerializer
+    extends ProtoSerializer[ParticipantInbound] {
+  type A = ParticipantInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
 @JSExportAll
-object LeaderElectionActor {
-  val serializer = LeaderElectionInboundSerializer
+object Participant {
+  val serializer = ParticipantInboundSerializer
 }
 
 // When a node is voted the leader for a particular round, it begins sending
@@ -42,7 +42,7 @@ case class LeaderElectionOptions(
 )
 
 @JSExportAll
-class LeaderElectionActor[Transport <: frankenpaxos.Transport[Transport]](
+class Participant[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
@@ -79,8 +79,8 @@ class LeaderElectionActor[Transport <: frankenpaxos.Transport[Transport]](
   case class Leader(pingTimer: Transport#Timer) extends LeaderElectionState
 
   // Members ///////////////////////////////////////////////////////////////////
-  override type InboundMessage = LeaderElectionInbound
-  override def serializer = LeaderElectionActor.serializer
+  override type InboundMessage = ParticipantInbound
+  override def serializer = Participant.serializer
 
   // Sanity check arguments.
   logger.check(addresses.contains(address))
@@ -92,13 +92,13 @@ class LeaderElectionActor[Transport <: frankenpaxos.Transport[Transport]](
 
   val nodes: Map[
     Transport#Address,
-    TypedActorClient[Transport, LeaderElectionActor[Transport]]
+    TypedActorClient[Transport, Participant[Transport]]
   ] = {
     for (address <- addresses)
       yield
-        (address -> typedActorClient[LeaderElectionActor[Transport]](
+        (address -> typedActorClient[Participant[Transport]](
           address,
-          LeaderElectionActor.serializer
+          Participant.serializer
         ))
   }.toMap
 
@@ -120,7 +120,7 @@ class LeaderElectionActor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       inbound: InboundMessage
   ): Unit = {
-    import LeaderElectionInbound.Request
+    import ParticipantInbound.Request
     inbound.request match {
       case Request.Ping(r)        => handlePing(src, r)
       case Request.VoteRequest(r) => handleVoteRequest(src, r)
@@ -179,7 +179,7 @@ class LeaderElectionActor[Transport <: frankenpaxos.Transport[Transport]](
       val t = noPingTimer()
       t.start()
       state = LeaderlessFollower(t)
-      nodes(src).send(LeaderElectionInbound().withVote(Vote(round = round)))
+      nodes(src).send(ParticipantInbound().withVote(Vote(round = round)))
       return
     }
 
@@ -196,7 +196,7 @@ class LeaderElectionActor[Transport <: frankenpaxos.Transport[Transport]](
         // If the vote request is from myself, then I'll vote for myself.
         // Otherwise, I won't vote for another candidate.
         if (src == address) {
-          nodes(src).send(LeaderElectionInbound().withVote(Vote(round = round)))
+          nodes(src).send(ParticipantInbound().withVote(Vote(round = round)))
         }
       }
       case Leader(pingTimer) => {
@@ -256,7 +256,7 @@ class LeaderElectionActor[Transport <: frankenpaxos.Transport[Transport]](
 
           for (address <- addresses) {
             nodes(address).send(
-              LeaderElectionInbound().withPing(Ping(round = round))
+              ParticipantInbound().withPing(Ping(round = round))
             )
           }
         }
@@ -301,7 +301,7 @@ class LeaderElectionActor[Transport <: frankenpaxos.Transport[Transport]](
       () => {
         for (address <- addresses) {
           nodes(address).send(
-            LeaderElectionInbound().withPing(Ping(round = round))
+            ParticipantInbound().withPing(Ping(round = round))
           )
         }
         t.start()
@@ -373,7 +373,7 @@ class LeaderElectionActor[Transport <: frankenpaxos.Transport[Transport]](
 
     for (address <- addresses) {
       nodes(address).send(
-        LeaderElectionInbound().withVoteRequest(VoteRequest(round = round))
+        ParticipantInbound().withVoteRequest(VoteRequest(round = round))
       )
     }
   }

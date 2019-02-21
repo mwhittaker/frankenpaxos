@@ -99,13 +99,13 @@ function make_app(LeaderElection, snap, app_id) {
     // scala.js does not let you nicely pattern match on an ADT. Thus, we do
     // something hacky and inspect the name of the constructor.
     let name = state.constructor.name;
-    if (name.includes('LeaderElectionActor$LeaderlessFollower')) {
+    if (name.includes('Participant$LeaderlessFollower')) {
       return leader_election_colors.leaderless_follower;
-    } else if (name.includes('LeaderElectionActor$Follower')) {
+    } else if (name.includes('Participant$Follower')) {
       return leader_election_colors.follower;
-    } else if (name.includes('LeaderElectionActor$Candidate')) {
+    } else if (name.includes('Participant$Candidate')) {
       return leader_election_colors.candidate;
-    } else if (name.includes('LeaderElectionActor$Leader')) {
+    } else if (name.includes('Participant$Leader')) {
       return leader_election_colors.leader;
     }
   };
@@ -164,11 +164,11 @@ function make_app(LeaderElection, snap, app_id) {
 }
 
 function main() {
-  make_app(frankenpaxos.election.js.SimulatedLeaderElection.LeaderElection,
+  make_app(frankenpaxos.election.SimulatedLeaderElection.LeaderElection,
            Snap('#simulated_animation'),
            '#simulated_app');
 
-  make_app(frankenpaxos.election.js.ClickthroughLeaderElection.LeaderElection,
+  make_app(frankenpaxos.election.ClickthroughLeaderElection.LeaderElection,
            Snap('#clickthrough_animation'),
            '#clickthrough_app');
 }

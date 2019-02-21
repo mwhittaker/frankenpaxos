@@ -19,7 +19,7 @@ message Vote  {
   required int32 round = 1;
 }
 
-message LeaderElectionInbound {
+message ParticipantInbound {
   oneof request {
     Ping ping = 1;
     VoteRequest vote_request = 2;

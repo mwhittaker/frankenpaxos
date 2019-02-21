@@ -35,35 +35,35 @@ class LeaderElection {
     notEnoughVotesTimeoutMax = java.time.Duration.ofMillis(3500)
   )
 
-  val a = new LeaderElectionActor[JsTransport](
+  val a = new Participant[JsTransport](
     aAddress,
     transport,
     aLogger,
     addresses,
     options
   )
-  val b = new LeaderElectionActor[JsTransport](
+  val b = new Participant[JsTransport](
     bAddress,
     transport,
     bLogger,
     addresses,
     options
   )
-  val c = new LeaderElectionActor[JsTransport](
+  val c = new Participant[JsTransport](
     cAddress,
     transport,
     cLogger,
     addresses,
     options
   )
-  val d = new LeaderElectionActor[JsTransport](
+  val d = new Participant[JsTransport](
     dAddress,
     transport,
     dLogger,
     addresses,
     options
   )
-  val e = new LeaderElectionActor[JsTransport](
+  val e = new Participant[JsTransport](
     eAddress,
     transport,
     eLogger,
@@ -73,13 +73,13 @@ class LeaderElection {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.election.js.SimulatedLeaderElection")
+@JSExportTopLevel("frankenpaxos.election.SimulatedLeaderElection")
 object SimulatedLeaderElection {
   val LeaderElection = new LeaderElection();
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.election.js.ClickthroughLeaderElection")
+@JSExportTopLevel("frankenpaxos.election.ClickthroughLeaderElection")
 object ClickthroughLeaderElection {
   val LeaderElection = new LeaderElection();
 }
