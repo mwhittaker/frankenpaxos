@@ -10,14 +10,14 @@ class Paxos(val f: Int) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = f + 1
-  val numProposers = f + 1
+  val numLeaders = f + 1
   val numAcceptors = 2 * f + 1
 
   // Configuration.
-  val config = PaxosConfig[FakeTransport](
+  val config = Config[FakeTransport](
     f = f,
-    proposerAddresses = for (i <- 1 to numProposers)
-      yield FakeTransportAddress(s"Proposer $i"),
+    leaderAddresses = for (i <- 1 to numLeaders)
+      yield FakeTransportAddress(s"Leader $i"),
     acceptorAddresses = for (i <- 1 to numAcceptors)
       yield FakeTransportAddress(s"Acceptor $i")
   )
@@ -25,18 +25,18 @@ class Paxos(val f: Int) {
   // Clients.
   val clients = for (i <- 1 to numClients)
     yield
-      new PaxosClientActor[FakeTransport](
+      new Client[FakeTransport](
         FakeTransportAddress(s"Client $i"),
         transport,
         logger,
         config
       )
 
-  // Proposers.
-  val proposers = for (i <- 1 to numProposers)
+  // Leaders.
+  val leaders = for (i <- 1 to numLeaders)
     yield
-      new PaxosProposerActor[FakeTransport](
-        FakeTransportAddress(s"Proposer $i"),
+      new Leader[FakeTransport](
+        FakeTransportAddress(s"Leader $i"),
         transport,
         logger,
         config
@@ -45,7 +45,7 @@ class Paxos(val f: Int) {
   // Acceptors.
   val acceptors = for (i <- 1 to numAcceptors)
     yield
-      new PaxosAcceptorActor[FakeTransport](
+      new Acceptor[FakeTransport](
         FakeTransportAddress(s"Acceptor $i"),
         transport,
         logger,
@@ -63,10 +63,10 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
   override type Command = PaxosCommand
 
   def chosenValues(paxos: Paxos): Set[String] = {
-    // First, we look at any chosen values that the clients and proposers have
+    // First, we look at any chosen values that the clients and leaders have
     // learned.
     val clientChosen = paxos.clients.flatMap(_.chosenValue).to[Set]
-    val proposerChosen = paxos.proposers.flatMap(_.chosenValue).to[Set]
+    val leaderChosen = paxos.leaders.flatMap(_.chosenValue).to[Set]
 
     // Next, we compute any value chosen by the acceptors. A value is
     // considered chosen if it has a majority of votes in the same round.
@@ -81,7 +81,7 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
         .map(_._2)
         .to[Set]
 
-    clientChosen ++ proposerChosen ++ acceptorChosen
+    clientChosen ++ leaderChosen ++ acceptorChosen
   }
 
   override def newSystem(): SimulatedPaxos#System = {
