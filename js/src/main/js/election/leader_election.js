@@ -164,11 +164,11 @@ function make_app(LeaderElection, snap, app_id) {
 }
 
 function main() {
-  make_app(zeno.examples.js.SimulatedLeaderElection.LeaderElection,
+  make_app(frankenpaxos.election.js.SimulatedLeaderElection.LeaderElection,
            Snap('#simulated_animation'),
            '#simulated_app');
 
-  make_app(zeno.examples.js.ClickthroughLeaderElection.LeaderElection,
+  make_app(frankenpaxos.election.js.ClickthroughLeaderElection.LeaderElection,
            Snap('#clickthrough_animation'),
            '#clickthrough_app');
 }

@@ -1,20 +1,20 @@
 /* Generic ********************************************************************/
-.zeno-node {
+.frankenpaxos-node {
   border: 1pt solid black;
 }
 
-.zeno-box {
+.frankenpaxos-box {
   padding: 12pt;
 }
 
-.zeno-box-title {
+.frankenpaxos-box-title {
   margin-bottom: 6pt;
   margin-left: 0pt;
   margin-right: 0pt;
   margin-top: 0pt;
 }
 
-.zeno-hr {
+.frankenpaxos-hr {
   background: #bdc3c7;
   border: 0pt;
   height: 1px;
@@ -23,10 +23,10 @@
   width: 95%;
 }
 
-.zeno-button {}
+.frankenpaxos-button {}
 
 /* Logs ***********************************************************************/
-.zeno-log {
+.frankenpaxos-log {
   border: 1pt solid black;
   font-family: monospace;
   font-size: smaller;
@@ -35,28 +35,28 @@
   padding: 2pt;
   white-space: nowrap; /* Enable horizontal scrolling. */
 }
-.zeno-log-entry {}
-.zeno-log-FATAL { background: black; color: white; }
-.zeno-log-ERROR { color: #c0392b; }
-.zeno-log-WARN { color: #e67e22; }
-.zeno-log-INFO { color: #27ae60; }
-.zeno-log-DEBUG { color: #2c3e50; }
+.frankenpaxos-log-entry {}
+.frankenpaxos-log-FATAL { background: black; color: white; }
+.frankenpaxos-log-ERROR { color: #c0392b; }
+.frankenpaxos-log-WARN { color: #e67e22; }
+.frankenpaxos-log-INFO { color: #27ae60; }
+.frankenpaxos-log-DEBUG { color: #2c3e50; }
 
 /* Timers *********************************************************************/
-.zeno-timers {}
-.zeno-timers-trigger {}
-.zeno-timers-name {}
+.frankenpaxos-timers {}
+.frankenpaxos-timers-trigger {}
+.frankenpaxos-timers-name {}
 
 /* Messages *******************************************************************/
-.zeno-messages {}
-.zeno-messages-message {
+.frankenpaxos-messages {}
+.frankenpaxos-messages-message {
   border: 1pt solid black;
   margin-bottom: 4pt;
   padding: 4pt;
 }
-.zeno-messages-deliver {}
-.zeno-messages-drop {}
-.zeno-messages-duplicate {}
-.zeno-messages-src {}
-.zeno-messages-dst {}
-.zeno-messages-text {}
+.frankenpaxos-messages-deliver {}
+.frankenpaxos-messages-drop {}
+.frankenpaxos-messages-duplicate {}
+.frankenpaxos-messages-src {}
+.frankenpaxos-messages-dst {}
+.frankenpaxos-messages-text {}

@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html>
 <head>
   <title>Leader Election</title>
   <meta name=viewport content="width=device-width, initial-scale=1">
-  <link href="../zenojs.css" rel="stylesheet">
+  <link href="../frankenpaxos.css" rel="stylesheet">
   <style type="text/css">
     html {
       font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
@@ -48,26 +47,26 @@
       <svg id="simulated_animation" class="animation"></svg>
 
       <div id="simulated_app">
-        <zeno-simulated-app
+        <frankenpaxos-simulated-app
           :transport="transport"
           :send_message="send_message">
-        </zeno-simulated-app>
+        </frankenpaxos-simulated-app>
 
-        <div class="zeno-node">
+        <div class="frankenpaxos-node">
           <!-- Actor data. -->
-          <div class="zeno-box">
-            <h3 class="zeno-box-title">Data</h3>
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Data</h3>
             <div>name: {{node.actor.address.address}}</div>
             <div>round: {{node.actor.round}}</div>
             <div>state: {{node.actor.state.toString()}}</div>
           </div>
 
-          <hr class="zeno-hr"></hr>
+          <hr class="frankenpaxos-hr"></hr>
 
           <!-- Actor log. -->
-          <div class="zeno-box">
-            <h3 class="zeno-box-title">Log</h3>
-            <zeno-log :log="JsUtils.seqToJs(node.actor.logger.log)"></zeno-log>
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Log</h3>
+            <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)"></frankenpaxos-log>
           </div>
         </div>
       </div>
@@ -80,50 +79,50 @@
       <svg id="clickthrough_animation" class="animation"></svg>
 
       <div id="clickthrough_app">
-        <zeno-clickthrough-app
+        <frankenpaxos-clickthrough-app
           :transport="transport"
           :send_message="send_message">
-        </zeno-clickthrough-app>
+        </frankenpaxos-clickthrough-app>
 
-        <div class="zeno-node">
+        <div class="frankenpaxos-node">
           <!-- Actor data. -->
-          <div class="zeno-box">
-            <h3 class="zeno-box-title">Data</h3>
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Data</h3>
             <div>name: {{node.actor.address.address}}</div>
             <div>round: {{node.actor.round}}</div>
             <div>state: {{node.actor.state.toString()}}</div>
           </div>
 
-          <hr class="zeno-hr"></hr>
+          <hr class="frankenpaxos-hr"></hr>
 
           <!-- Actor timers. -->
-          <div class="zeno-box">
-            <h3 class="zeno-box-title">Timers</h3>
-            <zeno-timers
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Timers</h3>
+            <frankenpaxos-timers
               :timers="JsUtils.seqToJs(
                 transport.timersForAddress(node.actor.address))">
-            </zeno-timers>
+            </frankenpaxos-timers>
           </div>
 
-          <hr class="zeno-hr"></hr>
+          <hr class="frankenpaxos-hr"></hr>
 
           <!-- Actor messages. -->
-          <div class="zeno-box">
-            <h3 class="zeno-box-title">Messages</h3>
-            <zeno-staged-messages
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Messages</h3>
+            <frankenpaxos-staged-messages
               :transport="transport"
               :actor="node.actor"
               :messages="JsUtils.seqToJs(
                 transport.stagedMessagesForAddress(node.actor.address))">
-            </zeno-staged-messages>
+            </frankenpaxos-staged-messages>
           </div>
 
-          <hr class="zeno-hr"></hr>
+          <hr class="frankenpaxos-hr"></hr>
 
           <!-- Actor log. -->
-          <div class="zeno-box">
-            <h3 class="zeno-box-title">Log</h3>
-            <zeno-log :log="JsUtils.seqToJs(node.actor.logger.log)"></zeno-log>
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Log</h3>
+            <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)"></frankenpaxos-log>
           </div>
         </div>
       </div>
@@ -132,8 +131,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.5.1/snap.svg.js"></script>
-  <script type="text/javascript" src="/js/target/scala-2.12/zeno-fastopt.js"></script>
-  <script type="text/javascript" src="/js/src/main/js/zenojs.js"></script>
-  <script type="text/javascript" src="/js/src/main/js/examples/leader_election.js"></script>
+  <script type="text/javascript" src="/js/target/scala-2.12/frankenpaxos-fastopt.js"></script>
+  <script type="text/javascript" src="/js/src/main/js/frankenpaxos.js"></script>
+  <script type="text/javascript" src="/js/src/main/js/election/leader_election.js"></script>
 </body>
 </html>

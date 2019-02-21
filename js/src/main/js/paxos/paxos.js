@@ -159,7 +159,7 @@ function make_app(Paxos, snap, app_id) {
     },
 
     data: {
-      JsUtils: zeno.JsUtils,
+      JsUtils: frankenpaxos.JsUtils,
       acceptor1: nodes[Paxos.acceptor1.address],
       acceptor2: nodes[Paxos.acceptor2.address],
       acceptor3: nodes[Paxos.acceptor3.address],
@@ -205,11 +205,11 @@ function make_app(Paxos, snap, app_id) {
 }
 
 function main() {
-  make_app(zeno.examples.js.SimulatedPaxos.Paxos,
+  make_app(frankenpaxos.paxos.js.SimulatedPaxos.Paxos,
            Snap('#simulated_animation'),
            '#simulated_app');
 
-  make_app(zeno.examples.js.ClickthroughPaxos.Paxos,
+  make_app(frankenpaxos.paxos.js.ClickthroughPaxos.Paxos,
            Snap('#clickthrough_animation'),
            '#clickthrough_app');
 }

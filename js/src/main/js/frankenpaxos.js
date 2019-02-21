@@ -1,15 +1,15 @@
-// The zenojs namespace.
-zenojs = {}
+// The frankenpaxosjs namespace.
+frankenpaxosjs = {}
 
 Vue.mixin({
   data: function() {
     return {
-      JsUtils: zeno.JsUtils,
+      JsUtils: frankenpaxos.JsUtils,
     }
   }
 });
 
-zenojs.zeno_transport_timer = {
+frankenpaxosjs.frankenpaxos_transport_timer = {
   props: ['timer'],
 
   template: "<div></div>",
@@ -34,7 +34,7 @@ zenojs.zeno_transport_timer = {
   }
 };
 
-zenojs.zeno_transport_buffered_message = {
+frankenpaxosjs.frankenpaxos_transport_buffered_message = {
   props: ['message'],
   template: "<div></div>",
   created: function() {
@@ -42,7 +42,7 @@ zenojs.zeno_transport_buffered_message = {
   },
 };
 
-zenojs.zeno_transport_staged_message = {
+frankenpaxosjs.frankenpaxos_transport_staged_message = {
   props: ['message'],
   template: "<div></div>",
   created: function() {
@@ -50,7 +50,7 @@ zenojs.zeno_transport_staged_message = {
   },
 };
 
-Vue.component('zeno-transport', {
+Vue.component('frankenpaxos-transport', {
   props: [
     'transport',
     'callbacks',
@@ -61,30 +61,30 @@ Vue.component('zeno-transport', {
   ],
 
   components: {
-    'zeno-transport-timer': zenojs.zeno_transport_timer,
-    'zeno-transport-buffered-message': zenojs.zeno_transport_buffered_message,
-    'zeno-transport-staged-message': zenojs.zeno_transport_staged_message,
+    'frankenpaxos-transport-timer': frankenpaxosjs.frankenpaxos_transport_timer,
+    'frankenpaxos-transport-buffered-message': frankenpaxosjs.frankenpaxos_transport_buffered_message,
+    'frankenpaxos-transport-staged-message': frankenpaxosjs.frankenpaxos_transport_staged_message,
   },
 
   // TODO: Add keys.
   template: `
     <div hidden=true>
-      <zeno-transport-timer
+      <frankenpaxos-transport-timer
         v-for="timer in timers"
         :timer="timer"
         v-on:timer_started="callbacks.timer_started"
         v-on:timer_stopped="callbacks.timer_stopped">
-      </zeno-transport-timer>
-      <zeno-transport-buffered-message
+      </frankenpaxos-transport-timer>
+      <frankenpaxos-transport-buffered-message
         v-for="message in buffered_messages"
         :message="message"
         v-on:message_buffered="callbacks.message_buffered">
-      </zeno-transport-buffered-message>
-      <zeno-transport-staged-message
+      </frankenpaxos-transport-buffered-message>
+      <frankenpaxos-transport-staged-message
         v-for="message in staged_messages"
         :message="message"
         v-on:message_staged="callbacks.message_staged">
-      </zeno-transport-staged-message>
+      </frankenpaxos-transport-staged-message>
     </div>
   `,
 
@@ -103,7 +103,7 @@ Vue.component('zeno-transport', {
   },
 });
 
-Vue.component('zeno-simulated-app', {
+Vue.component('frankenpaxos-simulated-app', {
   props: [
     'transport',
     // (message, callback) -> ().
@@ -111,10 +111,10 @@ Vue.component('zeno-simulated-app', {
   ],
 
   template: `
-    <zeno-transport
+    <frankenpaxos-transport
       :transport="transport"
       :callbacks="callbacks">
-    </zeno-transport>
+    </frankenpaxos-transport>
   `,
 
   data: function() {
@@ -155,7 +155,7 @@ Vue.component('zeno-simulated-app', {
   }
 });
 
-Vue.component('zeno-clickthrough-app', {
+Vue.component('frankenpaxos-clickthrough-app', {
   props: [
     'transport',
     // (message, callback) -> ().
@@ -163,10 +163,10 @@ Vue.component('zeno-clickthrough-app', {
   ],
 
   template: `
-    <zeno-transport
+    <frankenpaxos-transport
       :transport="transport"
       :callbacks="callbacks">
-    </zeno-transport>
+    </frankenpaxos-transport>
   `,
 
   data: function() {
@@ -186,7 +186,7 @@ Vue.component('zeno-clickthrough-app', {
   }
 });
 
-Vue.component('zeno-log', {
+Vue.component('frankenpaxos-log', {
   // log is a list of JsLogEntry. See JsLogger.scala for more information on
   // JsLogEntry.
   props: ['log'],
@@ -194,9 +194,9 @@ Vue.component('zeno-log', {
     this.$el.scrollTop = this.$el.scrollHeight;
   },
   template: `
-    <div class="zeno-log">
-      <div v-for="log_entry in log" class="zeno-log-entry">
-        <span v-bind:class="'zeno-log-' + log_entry.typ.toString()">
+    <div class="frankenpaxos-log">
+      <div v-for="log_entry in log" class="frankenpaxos-log-entry">
+        <span v-bind:class="'frankenpaxos-log-' + log_entry.typ.toString()">
           [{{log_entry.typ.toString()}}]
         </span>
         {{log_entry.text}}
@@ -206,17 +206,17 @@ Vue.component('zeno-log', {
 });
 
 
-Vue.component('zeno-timers', {
+Vue.component('frankenpaxos-timers', {
   // timers is a list of JsTransportTimer. See JsTransport.scala for more
   // information on JsTransportTimer.
   props: ['timers'],
   template: `
-    <div class="zeno-timers">
+    <div class="frankenpaxos-timers">
       <div v-for="timer in timers">
-        <button class="zeno-button zeno-timers-trigger"
+        <button class="frankenpaxos-button frankenpaxos-timers-trigger"
            v-bind:disabled="!timer.running"
            v-on:click="timer.run()">Trigger</button>
-        <span class="zeno-timers-name">{{timer.name()}}</span>
+        <span class="frankenpaxos-timers-name">{{timer.name()}}</span>
       </div>
     </div>
   `
@@ -226,23 +226,23 @@ Vue.component('zeno-timers', {
 // TODO: Right now, clicking `drop` on a message drops the first instance of
 // the message instead of the instance of the message that was clicked. Fix
 // this.
-Vue.component("zeno-staged-messages", {
+Vue.component("frankenpaxos-staged-messages", {
   props: ["transport", "actor", "messages"],
   template: `
-    <div class="zeno-messages">
+    <div class="frankenpaxos-messages">
       <div v-for="message in messages">
-        <div class="zeno-messages-message">
-          <button class="zeno-button zeno-messages-deliver"
+        <div class="frankenpaxos-messages-message">
+          <button class="frankenpaxos-button frankenpaxos-messages-deliver"
              v-on:click="transport.deliverMessage(message)">
             Deliver</button>
-          <button class="zeno-button zeno-messages-drop"
+          <button class="frankenpaxos-button frankenpaxos-messages-drop"
              v-on:click="transport.dropMessage(message)">
             Drop</button>
-          <button class="zeno-button zeno-messages-duplicate"
+          <button class="frankenpaxos-button frankenpaxos-messages-duplicate"
              v-on:click="transport.stageMessage(message, false)">
             Duplicate</button>
-          <span class="zeno-messages-src">from {{message.src.address}}</span>
-          <div class="zeno-messages-text">
+          <span class="frankenpaxos-messages-src">from {{message.src.address}}</span>
+          <div class="frankenpaxos-messages-text">
             {{actor.serializer.toPrettyString(
                 actor.serializer.fromBytes(message.bytes))}}
           </div>
