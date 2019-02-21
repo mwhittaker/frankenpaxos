@@ -1,8 +1,7 @@
-package zeno.examples
+package frankenpaxos.paxos
 
+import frankenpaxos.simulator._
 import org.scalatest._
-import zeno.BadHistory
-import zeno.Simulator
 
 class PaxosSpec extends FlatSpec {
   "A Paxos instance" should "only ever choose a single value" in {

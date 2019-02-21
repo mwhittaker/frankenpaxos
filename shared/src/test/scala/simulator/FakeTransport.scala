@@ -1,18 +1,19 @@
-package zeno
+package frankenpaxos.simulator
 
+import frankenpaxos._
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 
-case class FakeTransportAddress(address: String) extends zeno.Address
+case class FakeTransportAddress(address: String) extends frankenpaxos.Address
 
 class FakeTransportTimer(
     val address: FakeTransport#Address,
     val the_name: String,
     val f: () => Unit
-) extends zeno.Timer {
+) extends frankenpaxos.Timer {
   var running: Boolean = false
 
   override def name(): String = {

@@ -1,8 +1,6 @@
-package zeno.examples
+package frankenpaxos.simulator
 
 import org.scalatest._
-import zeno.BadHistory
-import zeno.Simulator
 
 class DieHardSpec extends FlatSpec {
   "Die Hard jugs" should "always satisfy their type invariants" in {

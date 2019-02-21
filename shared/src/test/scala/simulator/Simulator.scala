@@ -1,4 +1,4 @@
-package zeno
+package frankenpaxos.simulator
 
 import org.scalacheck.Gen
 import org.scalacheck.Prop

@@ -1,8 +1,6 @@
-package zeno.examples
+package frankenpaxos.simulator
 
 import org.scalatest._
-import zeno.BadHistory
-import zeno.Simulator
 
 class BankAccountSpec extends FlatSpec {
   "A bank account" should "always be positive" in {

@@ -1,9 +1,8 @@
-package zeno.examples
+package frankenpaxos.simulator
 
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
-import zeno.SimulatedSystem
 
 class BankAccount {
   var balance: Int = 0

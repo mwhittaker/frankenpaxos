@@ -1,4 +1,4 @@
-package zeno
+package frankenpaxos.simulator
 
 // A SimulatedSystem is a stateful system that can be property tested, kinda
 // like QuickCheck for stateful systems. The design of SimulatedSystem was

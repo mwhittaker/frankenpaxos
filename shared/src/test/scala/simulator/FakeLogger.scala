@@ -1,5 +1,6 @@
-package zeno
+package frankenpaxos.simulator
 
+import frankenpaxos.Logger
 import scala.collection.mutable
 
 class FakeLogger extends Logger {

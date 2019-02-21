@@ -1,13 +1,10 @@
-package zeno.examples
+package frankenpaxos.paxos
 
+import frankenpaxos.simulator._
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
-import zeno.FakeLogger
-import zeno.FakeTransport
-import zeno.FakeTransportAddress
-import zeno.SimulatedSystem
 
 class Paxos(val f: Int) {
   val logger = new FakeLogger()

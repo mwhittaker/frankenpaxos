@@ -1,9 +1,8 @@
-package zeno.examples
+package frankenpaxos.simulator
 
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
-import zeno.SimulatedSystem
 
 // DieHard models the scene from "Die Hard With a Vengeance" in which the two
 // main protagonists are given a 3 gallon and 5 gallon jug and need to fill a
