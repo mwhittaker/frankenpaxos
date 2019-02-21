@@ -17,15 +17,15 @@ lazy val zeno = crossProject(JSPlatform, JVMPlatform)
       "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",
       "org.scalacheck" %% "scalacheck" % "1.14.0" % "test",
       "org.scalactic" %% "scalactic" % "3.0.5",
-      "org.scalatest" %% "scalatest" % "3.0.5" % "test",
+      "org.scalatest" %% "scalatest" % "3.0.5" % "test"
     ),
     PB.targets in Compile := Seq(
       scalapb.gen() -> (sourceManaged in Compile).value
     ),
     PB.protoSources in Compile := Seq(
       file("shared/src/main"),
-      file("jvm/src/main"),
-    ),
+      file("jvm/src/main")
+    )
   )
   .jvmSettings()
   .jsSettings(

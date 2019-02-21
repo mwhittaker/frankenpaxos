@@ -70,10 +70,13 @@ class MultiPaxos(val f: Int) {
 }
 
 sealed trait MultiPaxosCommand
-case class ProposeCommand(clientIndex: Int, value: String) extends MultiPaxosCommand
-case class TransportCommandMultiPaxos(command: FakeTransport.Command) extends MultiPaxosCommand
+case class ProposeCommand(clientIndex: Int, value: String)
+    extends MultiPaxosCommand
+case class TransportCommandMultiPaxos(command: FakeTransport.Command)
+    extends MultiPaxosCommand
 
-class SimulatedMultiPaxos(val f: Int) extends SimulatedSystem[SimulatedMultiPaxos] {
+class SimulatedMultiPaxos(val f: Int)
+    extends SimulatedSystem[SimulatedMultiPaxos] {
   override type System = (MultiPaxos, Set[String])
   override type State = Set[String]
   override type Command = MultiPaxosCommand
@@ -119,7 +122,9 @@ class SimulatedMultiPaxos(val f: Int) extends SimulatedSystem[SimulatedMultiPaxo
     (new MultiPaxos(f), Set())
   }
 
-  override def getState(system: SimulatedMultiPaxos#System): SimulatedMultiPaxos#State = {
+  override def getState(
+      system: SimulatedMultiPaxos#System
+  ): SimulatedMultiPaxos#State = {
     system._2
   }
 
