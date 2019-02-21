@@ -6,7 +6,6 @@ import frankenpaxos.Actor
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
-import frankenpaxos.paxos._
 
 @JSExportAll
 class Paxos {

@@ -19,6 +19,7 @@ object Replica {
 
 case class ClientProposal(slot: Integer, command: String)
 
+@JSExportAll
 class Replica[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
@@ -35,28 +36,34 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // The current state of the replica's state machine
   // TODO(michael): Introduce a state machine abstraction.
-  private var state: String = ""
+  @JSExport
+  protected var state: String = ""
 
   // The index of the first slot that has no proposal for it
-  private var slotIn: Int = 0
+  @JSExport
+  protected var slotIn: Int = 0
 
   // The index of the next slot that needs to be decided before the state machine can be updated
-  private var slotOut: Int = 0
+  @JSExport
+  protected var slotOut: Int = 0
 
   // Requests received from clients that have not been proposed yet (initially empty)
   // TODO(neil): In the long term, I think clients should annotate commands
   // with a unique client id. Implement this later, though. -Michael.
-  private var requests: Set[String] = Set()
+  @JSExport
+  protected var requests: Set[String] = Set()
 
   // A set of outstanding proposals (initially empty)
   // TODO(neil): Would it make more sense to have a Map from slot to command
   // instead of a set of tuples? -Michael.
-  private var proposals: Set[ClientProposal] = Set()
+  @JSExport
+  protected var proposals: Set[ClientProposal] = Set()
 
   // A set of decided proposals (initially empty)
   // TODO(neil): Would it make more sense to have a Map from slot to command
   // instead of a set of tuples? -Michael.
-  var decisions: Set[ClientProposal] = Set()
+  @JSExport
+  protected var decisions: Set[ClientProposal] = Set()
 
   // Delay constant to keep processing commands
   private val WINDOW: Int = 3

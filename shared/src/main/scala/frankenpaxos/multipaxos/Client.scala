@@ -44,7 +44,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // valueProposed holds a proposed value, if one has been proposed. Once a
   // Paxos client has proposed a value, it will not propose any other value.
   // TODO(neil): This comment is out of date. -Michael.
-  private var proposedValue: Option[String] = None
+  var proposedValue: Option[String] = None
 
   // The state returned to client after command was proposed
   // TODO(michael): Introduce a state machine abstraction.

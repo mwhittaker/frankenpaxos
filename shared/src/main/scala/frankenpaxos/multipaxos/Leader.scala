@@ -22,6 +22,7 @@ object Leader {
 
 case class CommanderId(slot: Integer, command: String)
 
+@JSExportAll
 class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
@@ -37,30 +38,37 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   //private val index: Int = config.proposerAddresses.indexOf(address)
 
   // Monotonically increasing (equivalent to round)
-  private var ballotNumber: Double = 0
+  @JSExport
+  protected var ballotNumber: Double = 0
 
   // Whether the leader is active
-  private var active: Boolean = true
+  @JSExport
+  protected var active: Boolean = true
 
   // A mapping between slot number to proposed command for that slot
-  private var proposals: scala.collection.mutable.Map[Int, String] =
+  @JSExport
+  protected var proposals: scala.collection.mutable.Map[Int, String] =
     scala.collection.mutable.Map()
 
   // For each commander spawned keep track of the acceptors who have not responded
-  private var waitForCommander
+  @JSExport
+  protected var waitForCommander
     : scala.collection.mutable.Map[CommanderId, Set[Transport#Address]] =
     scala.collection.mutable.Map()
 
   // Keep track of acceptors who have not responded to Phase 1a requests
   // TODO(neil): Is this set ever cleared when the round is increased?
-  private var waitForScout: Set[Transport#Address] =
+  @JSExport
+  protected var waitForScout: Set[Transport#Address] =
     config.acceptorAddresses.toSet
 
   // Keep track of acceptor proposals gathered by scout
-  private var scoutProposalValues: Set[ProposedValue] = Set()
+  @JSExport
+  protected var scoutProposalValues: Set[ProposedValue] = Set()
 
   // Whether to start up the scout first
-  private var activateScout: Boolean = true
+  @JSExport
+  protected var activateScout: Boolean = true
 
   // Connections to the acceptors.
   private val acceptors: Seq[TypedActorClient[Transport, Acceptor[Transport]]] =

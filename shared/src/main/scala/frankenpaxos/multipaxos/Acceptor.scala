@@ -34,12 +34,14 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   private val index = config.acceptorAddresses.indexOf(address)
 
   // The largest ballot the acceptor has adopted
-  var ballotNumber: Double = -1
+  @JSExport
+  protected var ballotNumber: Double = -1
 
   // The set of proposals the acceptor accepted
   // TODO(neil): Would it make sense to have this be a map from ballot to (vote
   // round, vote value)? -Michael.
-  var accepted: Set[ProposedValue] = Set()
+  @JSExport
+  protected var accepted: Set[ProposedValue] = Set()
 
   override def receive(
       src: Transport#Address,
