@@ -33,7 +33,8 @@ import scala.collection.mutable.HashMap
 import scala.concurrent.ExecutionContext
 import scala.util.Try
 
-case class NettyTcpAddress(socketAddress: SocketAddress) extends frankenpaxos.Address
+case class NettyTcpAddress(socketAddress: SocketAddress)
+    extends frankenpaxos.Address
 
 // TODO(mwhittaker): Make constructor private.
 class NettyTcpTimer(
