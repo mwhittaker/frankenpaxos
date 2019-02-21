@@ -1,11 +1,11 @@
 import sbtcrossproject.CrossPlugin.autoImport.{crossProject, CrossType}
 
-name := "zeno"
+name := "frankenpaxos"
 
-lazy val zeno = crossProject(JSPlatform, JVMPlatform)
+lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
   .in(file("."))
   .settings(
-    name := "zeno",
+    name := "frankenpaxos",
     libraryDependencies ++= Seq(
       "ch.qos.logback" % "logback-classic" % "1.2.3",
       "com.github.scopt" %% "scopt" % "3.7.0",
@@ -32,5 +32,5 @@ lazy val zeno = crossProject(JSPlatform, JVMPlatform)
     libraryDependencies += "org.scala-js" %%% "scalajs-java-time" % "0.2.5"
   )
 
-lazy val zenoJVM = zeno.jvm
-lazy val zenoJS = zeno.js
+lazy val frankenpaxosJVM = frankenpaxos.jvm
+lazy val frankenpaxosJS = frankenpaxos.js

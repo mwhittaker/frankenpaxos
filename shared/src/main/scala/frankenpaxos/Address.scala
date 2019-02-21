@@ -1,0 +1,3 @@
+package frankenpaxos
+
+trait Address {}

@@ -1,3 +1,0 @@
-package zeno
-
-trait Address {}

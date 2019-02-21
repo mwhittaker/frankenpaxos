@@ -1,0 +1,16 @@
+syntax = "proto2";
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.echo"
+  flat_package: true
+};
+
+message ServerInbound {
+  required string msg = 1;
+}
+
+message ClientInbound {
+  required string msg = 1;
+}
