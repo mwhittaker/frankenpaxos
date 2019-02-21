@@ -8,7 +8,7 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 
-object PaxosAcceptorMain extends App {
+object AcceptorMain extends App {
   case class Flags(
       index: Int = -1,
       paxosConfigFile: File = new File(".")
@@ -38,8 +38,7 @@ object PaxosAcceptorMain extends App {
 
   val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger);
-  val config =
-    NettyPaxosConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
+  val config = NettyConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
   val address = config.acceptorAddresses(flags.index)
-  new PaxosAcceptorActor[NettyTcpTransport](address, transport, logger, config);
+  new Acceptor[NettyTcpTransport](address, transport, logger, config);
 }

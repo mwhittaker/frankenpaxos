@@ -205,11 +205,11 @@ function make_app(Paxos, snap, app_id) {
 }
 
 function main() {
-  make_app(frankenpaxos.paxos.js.SimulatedPaxos.Paxos,
+  make_app(frankenpaxos.paxos.SimulatedPaxos.Paxos,
            Snap('#simulated_animation'),
            '#simulated_app');
 
-  make_app(frankenpaxos.paxos.js.ClickthroughPaxos.Paxos,
+  make_app(frankenpaxos.paxos.ClickthroughPaxos.Paxos,
            Snap('#clickthrough_animation'),
            '#clickthrough_app');
 }

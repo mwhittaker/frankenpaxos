@@ -1,4 +1,4 @@
-package frankenpaxos.paxos.js
+package frankenpaxos.paxos
 
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
@@ -15,11 +15,11 @@ class Paxos {
   val transport = new JsTransport(logger);
 
   // Configuration.
-  val config = PaxosConfig[JsTransport](
+  val config = Config[JsTransport](
     f = 1,
-    proposerAddresses = List(
-      JsTransportAddress("Proposer 1"),
-      JsTransportAddress("Proposer 2")
+    leaderAddresses = List(
+      JsTransportAddress("Leader 1"),
+      JsTransportAddress("Leader 2")
     ),
     acceptorAddresses = List(
       JsTransportAddress("Acceptor 1"),
@@ -30,7 +30,7 @@ class Paxos {
 
   // Clients.
   val client1Logger = new JsLogger()
-  val client1 = new PaxosClientActor[JsTransport](
+  val client1 = new Client[JsTransport](
     JsTransportAddress("Client 1"),
     transport,
     client1Logger,
@@ -38,7 +38,7 @@ class Paxos {
   )
 
   val client2Logger = new JsLogger()
-  val client2 = new PaxosClientActor[JsTransport](
+  val client2 = new Client[JsTransport](
     JsTransportAddress("Client 2"),
     transport,
     client2Logger,
@@ -46,25 +46,25 @@ class Paxos {
   )
 
   val client3Logger = new JsLogger()
-  val client3 = new PaxosClientActor[JsTransport](
+  val client3 = new Client[JsTransport](
     JsTransportAddress("Client 3"),
     transport,
     client3Logger,
     config
   )
 
-  // Proposers.
+  // Leaders.
   val proposer1Logger = new JsLogger()
-  val proposer1 = new PaxosProposerActor[JsTransport](
-    JsTransportAddress("Proposer 1"),
+  val proposer1 = new Leader[JsTransport](
+    JsTransportAddress("Leader 1"),
     transport,
     proposer1Logger,
     config
   )
 
   val proposer2Logger = new JsLogger()
-  val proposer2 = new PaxosProposerActor[JsTransport](
-    JsTransportAddress("Proposer 2"),
+  val proposer2 = new Leader[JsTransport](
+    JsTransportAddress("Leader 2"),
     transport,
     proposer2Logger,
     config
@@ -72,7 +72,7 @@ class Paxos {
 
   // Acceptors.
   val acceptor1Logger = new JsLogger()
-  val acceptor1 = new PaxosAcceptorActor[JsTransport](
+  val acceptor1 = new Acceptor[JsTransport](
     JsTransportAddress("Acceptor 1"),
     transport,
     acceptor1Logger,
@@ -80,7 +80,7 @@ class Paxos {
   )
 
   val acceptor2Logger = new JsLogger()
-  val acceptor2 = new PaxosAcceptorActor[JsTransport](
+  val acceptor2 = new Acceptor[JsTransport](
     JsTransportAddress("Acceptor 2"),
     transport,
     acceptor2Logger,
@@ -88,7 +88,7 @@ class Paxos {
   )
 
   val acceptor3Logger = new JsLogger()
-  val acceptor3 = new PaxosAcceptorActor[JsTransport](
+  val acceptor3 = new Acceptor[JsTransport](
     JsTransportAddress("Acceptor 3"),
     transport,
     acceptor3Logger,
@@ -97,13 +97,13 @@ class Paxos {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.paxos.js.SimulatedPaxos")
+@JSExportTopLevel("frankenpaxos.paxos.SimulatedPaxos")
 object SimulatedPaxos {
   val Paxos = new Paxos();
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.paxos.js.ClickthroughPaxos")
+@JSExportTopLevel("frankenpaxos.paxos.ClickthroughPaxos")
 object ClickthroughPaxos {
   val Paxos = new Paxos();
 }

@@ -1,14 +1,9 @@
-package frankenpaxos.election.js
+package frankenpaxos.election
 
-// import scala.collection.mutable
 import scala.scalajs.js.annotation._
-// import frankenpaxos.Actor
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
-// import frankenpaxos.election.LeaderElectionClientActor
-import frankenpaxos.election.LeaderElectionActor
-import frankenpaxos.election.LeaderElectionOptions
 
 @JSExportAll
 class LeaderElection {

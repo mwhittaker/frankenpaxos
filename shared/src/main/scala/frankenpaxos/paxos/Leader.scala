@@ -8,53 +8,50 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.TypedActorClient
 
 @JSExportAll
-object PaxosProposerInboundSerializer
-    extends ProtoSerializer[PaxosProposerInbound] {
-  type A = PaxosProposerInbound
+object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
+  type A = LeaderInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
 @JSExportAll
-object PaxosProposerActor {
-  val serializer = PaxosProposerInboundSerializer
+object Leader {
+  val serializer = LeaderInboundSerializer
 }
 
-class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
+class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: PaxosConfig[Transport]
+    config: Config[Transport]
 ) extends Actor(address, transport, logger) {
-  override type InboundMessage = PaxosProposerInbound
-  override def serializer = PaxosProposerActor.serializer
+  override type InboundMessage = LeaderInbound
+  override def serializer = Leader.serializer
 
-  // Verify the Paxos config and get our proposer index.
+  // Verify the Paxos config and get our leader index.
   logger.check(config.valid())
-  logger.check(config.proposerAddresses.contains(address))
-  private val index: Int = config.proposerAddresses.indexOf(address)
+  logger.check(config.leaderAddresses.contains(address))
+  private val index: Int = config.leaderAddresses.indexOf(address)
 
   // Connections to the acceptors.
-  private val acceptors
-    : Seq[TypedActorClient[Transport, PaxosAcceptorActor[Transport]]] =
+  private val acceptors: Seq[TypedActorClient[Transport, Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield
-        typedActorClient[PaxosAcceptorActor[Transport]](
+        typedActorClient[Acceptor[Transport]](
           acceptorAddress,
-          PaxosAcceptorActor.serializer
+          Acceptor.serializer
         )
-
-  // A list of the clients awaiting a response.
+// A list of the clients awaiting a response.
   private val clients: mutable.Buffer[
-    TypedActorClient[Transport, PaxosClientActor[Transport]]
+    TypedActorClient[Transport, Client[Transport]]
   ] = mutable.Buffer()
 
-  // The proposer's round number. With n proposers, proposer i uses round
+  // The leader's round number. With n leaders, leader i uses round
   // numbers i, i + n, i + 2n, i + 3n, etc.
   private var round: Int = index
 
-  // The current status of the proposer. A proposer is either idle, running
+  // The current status of the leader. A leader is either idle, running
   // phase 1, running phase 2, or has learned that a value is chosen.
   object Status extends Enumeration {
     type Status = Value
@@ -75,15 +72,15 @@ class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
 
   override def receive(
       src: Transport#Address,
-      inbound: PaxosProposerInbound
+      inbound: LeaderInbound
   ): Unit = {
-    import PaxosProposerInbound.Request
+    import LeaderInbound.Request
     inbound.request match {
       case Request.ProposeRequest(r) => handleProposeRequest(src, r)
       case Request.Phase1B(r)        => handlePhase1b(src, r)
       case Request.Phase2B(r)        => handlePhase2b(src, r)
       case Request.Empty => {
-        logger.fatal("Empty PaxosProposerInbound encountered.")
+        logger.fatal("Empty LeaderInbound encountered.")
       }
     }
   }
@@ -97,12 +94,12 @@ class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
     chosenValue match {
       case Some(chosen) => {
         logger.check_eq(status, Chosen)
-        val client = typedActorClient[PaxosClientActor[Transport]](
+        val client = typedActorClient[Client[Transport]](
           src,
-          PaxosClientActor.serializer
+          Client.serializer
         )
         client.send(
-          PaxosClientInbound().withProposeReply(ProposeReply(chosen))
+          ClientInbound().withProposeReply(ProposeReply(chosen))
         )
         return
       }
@@ -119,14 +116,14 @@ class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
     // Send phase 1a messages to all of the acceptors.
     for (acceptor <- acceptors) {
       acceptor.send(
-        PaxosAcceptorInbound().withPhase1A(Phase1a(round = round))
+        AcceptorInbound().withPhase1A(Phase1a(round = round))
       )
     }
 
     // Remember the client. We'll respond back to the client later.
-    clients += typedActorClient[PaxosClientActor[Transport]](
+    clients += typedActorClient[Client[Transport]](
       src,
-      PaxosClientActor.serializer
+      Client.serializer
     )
   }
 
@@ -134,7 +131,7 @@ class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
     // If we're not in phase 1, don't respond to phase 1b responses.
     if (status != Phase1) {
       logger.info(
-        s"A proposer received a phase 1b response but is not in " +
+        s"A leader received a phase 1b response but is not in " +
           s"phase 1: ${request}."
       )
       return
@@ -143,7 +140,7 @@ class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
     // Ignore responses that are not in our current round.
     if (request.round != round) {
       logger.info(
-        s"A proposer received a phase 1b response for round " +
+        s"A leader received a phase 1b response for round " +
           s"${request.round} but is in round ${round}: ${request}."
       )
       return
@@ -178,9 +175,7 @@ class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
     // Start phase 2.
     for (acceptor <- acceptors) {
       acceptor.send(
-        PaxosAcceptorInbound().withPhase2A(
-          Phase2a(round = round, value = v)
-        )
+        AcceptorInbound().withPhase2A(Phase2a(round = round, value = v))
       )
     }
     status = Phase2
@@ -190,7 +185,7 @@ class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
     // If we're not in phase 2, don't respond to phase 2b responses.
     if (status != Phase2) {
       logger.info(
-        s"A proposer received a phase 2b response but is not in " +
+        s"A leader received a phase 2b response but is not in " +
           s"phase 2: ${request}."
       )
       return
@@ -199,7 +194,7 @@ class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
     // Ignore responses that are not in our current round.
     if (request.round != round) {
       logger.info(
-        s"A proposer received a phase 2b response for round " +
+        s"A leader received a phase 2b response for round " +
           s"${request.round} but is in round ${round}: ${request}."
       )
       return
@@ -232,7 +227,7 @@ class PaxosProposerActor[Transport <: frankenpaxos.Transport[Transport]](
     // Reply to the clients.
     for (client <- clients) {
       client.send(
-        PaxosClientInbound().withProposeReply(ProposeReply(chosen = chosen))
+        ClientInbound().withProposeReply(ProposeReply(chosen = chosen))
       )
     }
     clients.clear()

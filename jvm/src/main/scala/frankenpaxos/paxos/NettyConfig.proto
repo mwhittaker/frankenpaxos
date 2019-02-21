@@ -12,8 +12,8 @@ message HostPortProto {
   required int32 port = 2;
 }
 
-message NettyPaxosConfigProto {
+message NettyConfigProto {
   required int32 f = 1;
   repeated HostPortProto acceptorAddress = 2;
-  repeated HostPortProto proposerAddress = 3;
+  repeated HostPortProto leaderAddress = 3;
 }

@@ -7,28 +7,27 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.TypedActorClient
 
 @JSExportAll
-object PaxosAcceptorInboundSerializer
-    extends ProtoSerializer[PaxosAcceptorInbound] {
-  type A = PaxosAcceptorInbound
+object AcceptorInboundSerializer extends ProtoSerializer[AcceptorInbound] {
+  type A = AcceptorInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
 @JSExportAll
-object PaxosAcceptorActor {
-  val serializer = PaxosAcceptorInboundSerializer
+object Acceptor {
+  val serializer = AcceptorInboundSerializer
 }
 
 @JSExportAll
-class PaxosAcceptorActor[Transport <: frankenpaxos.Transport[Transport]](
+class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: PaxosConfig[Transport]
+    config: Config[Transport]
 ) extends Actor(address, transport, logger) {
-  override type InboundMessage = PaxosAcceptorInbound
-  override def serializer = PaxosAcceptorActor.serializer
+  override type InboundMessage = AcceptorInbound
+  override def serializer = Acceptor.serializer
 
   // Sanity check the Paxos configuration and retrieve acceptor index.
   logger.check(config.acceptorAddresses.contains(address))
@@ -46,14 +45,14 @@ class PaxosAcceptorActor[Transport <: frankenpaxos.Transport[Transport]](
 
   override def receive(
       src: Transport#Address,
-      inbound: PaxosAcceptorInbound
+      inbound: AcceptorInbound
   ): Unit = {
-    import PaxosAcceptorInbound.Request
+    import AcceptorInbound.Request
     inbound.request match {
       case Request.Phase1A(r) => handlePhase1a(src, r)
       case Request.Phase2A(r) => handlePhase2a(src, r)
       case Request.Empty => {
-        logger.fatal("Empty PaxosAcceptorInbound encountered.")
+        logger.fatal("Empty AcceptorInbound encountered.")
       }
     }
   }
@@ -68,14 +67,12 @@ class PaxosAcceptorActor[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    // Bump our round and send the proposer our vote round and vote value.
+    // Bump our round and send the leader our vote round and vote value.
     round = phase1a.round
-    val proposer = typedActorClient[PaxosProposerActor[Transport]](
-      src,
-      PaxosProposerActor.serializer
-    )
-    proposer.send(
-      PaxosProposerInbound().withPhase1B(
+    val leader =
+      typedActorClient[Leader[Transport]](src, Leader.serializer)
+    leader.send(
+      LeaderInbound().withPhase1B(
         Phase1b(
           round = round,
           acceptorId = index,
@@ -104,23 +101,15 @@ class PaxosAcceptorActor[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    // Update our state and send back an ack to the proposer.
+    // Update our state and send back an ack to the leader.
     logger.check_ge(phase2a.round, round)
     round = phase2a.round
     voteRound = phase2a.round
     voteValue = Some(phase2a.value)
 
-    val proposer = typedActorClient[PaxosProposerActor[Transport]](
-      src,
-      PaxosProposerActor.serializer
-    )
-    proposer.send(
-      PaxosProposerInbound().withPhase2B(
-        Phase2b(
-          acceptorId = index,
-          round = round
-        )
-      )
+    val leader = typedActorClient[Leader[Transport]](src, Leader.serializer)
+    leader.send(
+      LeaderInbound().withPhase2B(Phase2b(acceptorId = index, round = round))
     )
   }
 }

@@ -10,37 +10,35 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.TypedActorClient
 
 @JSExportAll
-object PaxosClientInboundSerializer
-    extends ProtoSerializer[PaxosClientInbound] {
-  type A = PaxosClientInbound
+object ClientInboundSerializer extends ProtoSerializer[ClientInbound] {
+  type A = ClientInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
 @JSExportAll
-object PaxosClientActor {
-  val serializer = PaxosClientInboundSerializer
+object Client {
+  val serializer = ClientInboundSerializer
 }
 
 @JSExportAll
-class PaxosClientActor[Transport <: frankenpaxos.Transport[Transport]](
+class Client[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: PaxosConfig[Transport]
+    config: Config[Transport]
 ) extends Actor(address, transport, logger) {
-  override type InboundMessage = PaxosClientInbound
-  override def serializer = PaxosClientActor.serializer
+  override type InboundMessage = ClientInbound
+  override def serializer = Client.serializer
 
-  // The set of proposers.
-  private val proposers
-    : Seq[TypedActorClient[Transport, PaxosProposerActor[Transport]]] =
-    for (proposerAddress <- config.proposerAddresses)
+  // The set of leaders.
+  private val leaders: Seq[TypedActorClient[Transport, Leader[Transport]]] =
+    for (leaderAddress <- config.leaderAddresses)
       yield
-        typedActorClient[PaxosProposerActor[Transport]](
-          proposerAddress,
-          PaxosProposerActor.serializer
+        typedActorClient[Leader[Transport]](
+          leaderAddress,
+          Leader.serializer
         )
 
   // valueProposed holds a proposed value, if one has been proposed. Once a
@@ -62,9 +60,9 @@ class PaxosClientActor[Transport <: frankenpaxos.Transport[Transport]](
       () => {
         proposedValue match {
           case Some(v) => {
-            for (proposer <- proposers) {
-              proposer.send(
-                PaxosProposerInbound().withProposeRequest(ProposeRequest(v = v))
+            for (leader <- leaders) {
+              leader.send(
+                LeaderInbound().withProposeRequest(ProposeRequest(v = v))
               )
             }
           }
@@ -80,9 +78,9 @@ class PaxosClientActor[Transport <: frankenpaxos.Transport[Transport]](
 
   override def receive(
       src: Transport#Address,
-      inbound: PaxosClientInbound
+      inbound: ClientInbound
   ): Unit = {
-    import PaxosClientInbound.Request
+    import ClientInbound.Request
     inbound.request match {
       case Request.ProposeReply(ProposeReply(chosen)) => {
         // Validate that only one value can ever be chosen.
@@ -132,15 +130,13 @@ class PaxosClientActor[Transport <: frankenpaxos.Transport[Transport]](
       case None => {}
     }
 
-    // Send the value to one arbitrarily chosen proposer. If this proposer
-    // happens to be dead, we'll resend the proposal to all the proposers on
+    // Send the value to one arbitrarily chosen leader. If this leader
+    // happens to be dead, we'll resend the proposal to all the leaders on
     // timeout.
     proposedValue = Some(v)
-    proposers.iterator
+    leaders.iterator
       .next()
-      .send(
-        PaxosProposerInbound().withProposeRequest(ProposeRequest(v = v))
-      )
+      .send(LeaderInbound().withProposeRequest(ProposeRequest(v = v)))
     reproposeTimer.start()
   }
 

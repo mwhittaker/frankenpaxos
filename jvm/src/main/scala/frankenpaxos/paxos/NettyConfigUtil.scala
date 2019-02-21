@@ -4,13 +4,11 @@ import java.net.InetSocketAddress
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 
-object NettyPaxosConfigUtil {
-  def fromProto(
-      proto: NettyPaxosConfigProto
-  ): PaxosConfig[NettyTcpTransport] = {
-    PaxosConfig(
+object NettyConfigUtil {
+  def fromProto(proto: NettyConfigProto): Config[NettyTcpTransport] = {
+    Config(
       f = proto.f,
-      proposerAddresses = proto.proposerAddress.map(
+      leaderAddresses = proto.leaderAddress.map(
         hp => NettyTcpAddress(new InetSocketAddress(hp.host, hp.port))
       ),
       acceptorAddresses = proto.acceptorAddress.map(
@@ -21,10 +19,10 @@ object NettyPaxosConfigUtil {
 
   def fromFile(
       filename: String
-  ): PaxosConfig[NettyTcpTransport] = {
+  ): Config[NettyTcpTransport] = {
     val source = scala.io.Source.fromFile(filename)
     try {
-      fromProto(NettyPaxosConfigProto.fromAscii(source.mkString))
+      fromProto(NettyConfigProto.fromAscii(source.mkString))
     } finally {
       source.close()
     }

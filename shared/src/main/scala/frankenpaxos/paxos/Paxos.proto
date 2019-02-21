@@ -1,5 +1,7 @@
 syntax = "proto2";
 
+package frankenpaxos.paxos;
+
 import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
@@ -7,7 +9,7 @@ option (scalapb.options) = {
   flat_package: true
 };
 
-// Messages sent between clients and proposers.
+// Messages sent between clients and leaders.
 message ProposeRequest {
   required string v = 1;
 }
@@ -39,14 +41,14 @@ message Phase2b {
 }
 
 // Paxos client inbound message.
-message PaxosClientInbound {
+message ClientInbound {
   oneof request {
     ProposeReply propose_reply = 1;
   }
 }
 
-// Paxos proposer inbound message.
-message PaxosProposerInbound {
+// Paxos leader inbound message.
+message LeaderInbound {
   oneof request {
     ProposeRequest propose_request = 1;
     Phase1b phase1b = 2;
@@ -55,7 +57,7 @@ message PaxosProposerInbound {
 }
 
 // Paxos acceptor inbound message.
-message PaxosAcceptorInbound {
+message AcceptorInbound {
   oneof request {
     Phase1a phase1a = 1;
     Phase2a phase2a = 2;
