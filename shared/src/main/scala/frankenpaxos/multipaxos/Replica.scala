@@ -5,37 +5,36 @@ import scala.scalajs.js.annotation._
 import frankenpaxos._
 
 @JSExportAll
-object MultiPaxosReplicaInboundSerializer
-    extends ProtoSerializer[MultiPaxosReplicaInbound] {
-  type A = MultiPaxosReplicaInbound
+object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
+  type A = ReplicaInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
 @JSExportAll
-object MultiPaxosReplicaActor {
-  val serializer = MultiPaxosReplicaInboundSerializer
+object Replica {
+  val serializer = ReplicaInboundSerializer
 }
 
 case class ClientProposal(slot: Integer, command: String)
-class MultiPaxosReplicaActor[Transport <: frankenpaxos.Transport[Transport]](
+
+class Replica[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: MultiPaxosConfig[Transport]
+    config: Config[Transport]
 ) extends Actor(address, transport, logger) {
-  override type InboundMessage = MultiPaxosReplicaInbound
-  override def serializer = MultiPaxosReplicaActor.serializer
+  override type InboundMessage = ReplicaInbound
+  override def serializer = Replica.serializer
 
   // Verify the Paxos config and get our proposer index.
   logger.check(config.valid())
   //logger.check(config.proposerAddresses.contains(address))
   //private val index: Int = config.proposerAddresses.indexOf(address)
 
-  case class RequestClient(command: String, clientAddress: Transport#Address)
-
   // The current state of the replica's state machine
+  // TODO(michael): Introduce a state machine abstraction.
   private var state: String = ""
 
   // The index of the first slot that has no proposal for it
@@ -45,12 +44,18 @@ class MultiPaxosReplicaActor[Transport <: frankenpaxos.Transport[Transport]](
   private var slotOut: Int = 0
 
   // Requests received from clients that have not been proposed yet (initially empty)
+  // TODO(neil): In the long term, I think clients should annotate commands
+  // with a unique client id. Implement this later, though. -Michael.
   private var requests: Set[String] = Set()
 
   // A set of outstanding proposals (initially empty)
+  // TODO(neil): Would it make more sense to have a Map from slot to command
+  // instead of a set of tuples? -Michael.
   private var proposals: Set[ClientProposal] = Set()
 
   // A set of decided proposals (initially empty)
+  // TODO(neil): Would it make more sense to have a Map from slot to command
+  // instead of a set of tuples? -Michael.
   var decisions: Set[ClientProposal] = Set()
 
   // Delay constant to keep processing commands
@@ -58,35 +63,33 @@ class MultiPaxosReplicaActor[Transport <: frankenpaxos.Transport[Transport]](
 
   // The Multi-Paxos leader(s) to forward proposals to
   //private var leaders: Set[Int] = Set()
-  private var leaders
-    : Seq[TypedActorClient[Transport, MultiPaxosLeaderActor[Transport]]] =
+  private var leaders: Seq[TypedActorClient[Transport, Leader[Transport]]] =
     for (leaderAddress <- config.leaderAddresses)
       yield
-        typedActorClient[MultiPaxosLeaderActor[Transport]](
+        typedActorClient[Leader[Transport]](
           leaderAddress,
-          MultiPaxosLeaderActor.serializer
+          Leader.serializer
         )
 
   // Connections to the acceptors.
-  private val acceptors
-    : Seq[TypedActorClient[Transport, MultiPaxosAcceptorActor[Transport]]] =
+  private val acceptors: Seq[TypedActorClient[Transport, Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield
-        typedActorClient[MultiPaxosAcceptorActor[Transport]](
+        typedActorClient[Acceptor[Transport]](
           acceptorAddress,
-          MultiPaxosAcceptorActor.serializer
+          Acceptor.serializer
         )
 
   // A list of the clients awaiting a response.
   private val clients: mutable.Buffer[
-    TypedActorClient[Transport, MultiPaxosClientActor[Transport]]
+    TypedActorClient[Transport, Client[Transport]]
   ] = mutable.Buffer()
 
   override def receive(
       src: Transport#Address,
-      inbound: MultiPaxosReplicaInbound
+      inbound: ReplicaInbound
   ): Unit = {
-    import MultiPaxosReplicaInbound.Request
+    import ReplicaInbound.Request
     inbound.request match {
       case Request.ClientRequest(r) => handleClientRequest(src, r)
       case Request.Decision(r)      => handleDecision(src, r)
@@ -96,8 +99,9 @@ class MultiPaxosReplicaActor[Transport <: frankenpaxos.Transport[Transport]](
     }
     propose()
   }
+
   private def isCommandDecided(command: String): Boolean = {
-    for (decision <- decisions.toIterator) {
+    for (decision <- decisions) {
       if (decision.slot == slotIn)
         return true
     }
@@ -105,7 +109,7 @@ class MultiPaxosReplicaActor[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def existsSlotOutCommandDecision(): Option[String] = {
-    for (decision <- decisions.toIterator) {
+    for (decision <- decisions) {
       if (decision.slot == slotOut)
         return Some(decision.command)
     }
@@ -129,7 +133,7 @@ class MultiPaxosReplicaActor[Transport <: frankenpaxos.Transport[Transport]](
         for (leader <- leaders) {
           //println("Command being sent to leader")
           leader.send(
-            MultiPaxosLeaderInbound().withProposeRequest(
+            LeaderInbound().withProposeRequest(
               ProposeToLeader(slot = slotIn, command = command)
             )
           )
@@ -154,7 +158,7 @@ class MultiPaxosReplicaActor[Transport <: frankenpaxos.Transport[Transport]](
     } else {
       state = state + ", " + command
       slotOut += 1
-      /*clients.head.send(MultiPaxosClientInbound().withProposeResponse(
+      /*clients.head.send(ClientInbound().withProposeResponse(
               ProposeResponse(response = state)
             ))*/
     }

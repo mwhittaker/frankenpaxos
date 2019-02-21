@@ -1,6 +1,6 @@
 package frankenpaxos.multipaxos
 
-case class MultiPaxosConfig[Transport <: frankenpaxos.Transport[Transport]](
+case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     replicaAddresses: Seq[Transport#Address],
     acceptorAddresses: Seq[Transport#Address],

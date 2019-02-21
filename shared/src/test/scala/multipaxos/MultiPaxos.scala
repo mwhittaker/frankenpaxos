@@ -15,7 +15,7 @@ class MultiPaxos(val f: Int) {
   val numAcceptors = 2 * f + 1
 
   // Configuration.
-  val config = MultiPaxosConfig[FakeTransport](
+  val config = Config[FakeTransport](
     f = f,
     replicaAddresses = for (i <- 1 to numReplicas)
       yield FakeTransportAddress(s"Replica $i"),
@@ -28,7 +28,7 @@ class MultiPaxos(val f: Int) {
   // Clients.
   val clients = for (i <- 1 to numClients)
     yield
-      new MultiPaxosClientActor[FakeTransport](
+      new Client[FakeTransport](
         FakeTransportAddress(s"Client $i"),
         transport,
         logger,
@@ -38,7 +38,7 @@ class MultiPaxos(val f: Int) {
   // Replicas
   val replicas = for (i <- 1 to numReplicas)
     yield
-      new MultiPaxosReplicaActor[FakeTransport](
+      new Replica[FakeTransport](
         FakeTransportAddress(s"Replica $i"),
         transport,
         logger,
@@ -48,7 +48,7 @@ class MultiPaxos(val f: Int) {
   // Acceptors.
   val acceptors = for (i <- 1 to numAcceptors)
     yield
-      new MultiPaxosAcceptorActor[FakeTransport](
+      new Acceptor[FakeTransport](
         FakeTransportAddress(s"Acceptor $i"),
         transport,
         logger,
@@ -58,7 +58,7 @@ class MultiPaxos(val f: Int) {
   // Leaders
   val leaders = for (i <- 1 to numLeaders)
     yield
-      new MultiPaxosLeaderActor[FakeTransport](
+      new Leader[FakeTransport](
         FakeTransportAddress(s"Leader $i"),
         transport,
         logger,
@@ -67,9 +67,8 @@ class MultiPaxos(val f: Int) {
 }
 
 sealed trait MultiPaxosCommand
-case class ProposeCommand(clientIndex: Int, value: String)
-    extends MultiPaxosCommand
-case class TransportCommandMultiPaxos(command: FakeTransport.Command)
+case class Propose(clientIndex: Int, value: String) extends MultiPaxosCommand
+case class TransportCommand(command: FakeTransport.Command)
     extends MultiPaxosCommand
 
 class SimulatedMultiPaxos(val f: Int)
@@ -156,7 +155,7 @@ class SimulatedMultiPaxos(val f: Int)
         multiPaxos.numClients,
         for (clientId <- Gen.choose(0, multiPaxos.numClients - 1);
              value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString("")))
-          yield ProposeCommand(clientId, value)
+          yield Propose(clientId, value)
       )
     )
 
@@ -168,7 +167,7 @@ class SimulatedMultiPaxos(val f: Int)
             multiPaxos.transport.runningTimers().size,
           FakeTransport
             .generateCommand(multiPaxos.transport)
-            .map(TransportCommandMultiPaxos(_))
+            .map(TransportCommand(_))
         )
       )
     }
@@ -183,10 +182,10 @@ class SimulatedMultiPaxos(val f: Int)
   ): SimulatedMultiPaxos#System = {
     val (multiPaxos, allChosenValues) = system
     command match {
-      case ProposeCommand(clientId, value) =>
+      case Propose(clientId, value) =>
         //println("Propose to client: " + clientId + " with value " + value)
         multiPaxos.clients(clientId).propose(value)
-      case TransportCommandMultiPaxos(command) =>
+      case TransportCommand(command) =>
         FakeTransport.runCommand(multiPaxos.transport, command)
     }
     (multiPaxos, allChosenValues ++ chosenValues(multiPaxos))

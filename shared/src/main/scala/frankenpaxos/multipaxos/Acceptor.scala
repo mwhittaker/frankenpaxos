@@ -7,28 +7,27 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.TypedActorClient
 
 @JSExportAll
-object MultiPaxosAcceptorInboundSerializer
-    extends ProtoSerializer[MultiPaxosAcceptorInbound] {
-  type A = MultiPaxosAcceptorInbound
+object AcceptorInboundSerializer extends ProtoSerializer[AcceptorInbound] {
+  type A = AcceptorInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
 @JSExportAll
-object MultiPaxosAcceptorActor {
-  val serializer = MultiPaxosAcceptorInboundSerializer
+object Acceptor {
+  val serializer = AcceptorInboundSerializer
 }
 
 @JSExportAll
-class MultiPaxosAcceptorActor[Transport <: frankenpaxos.Transport[Transport]](
+class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: MultiPaxosConfig[Transport]
+    config: Config[Transport]
 ) extends Actor(address, transport, logger) {
-  override type InboundMessage = MultiPaxosAcceptorInbound
-  override def serializer = MultiPaxosAcceptorActor.serializer
+  override type InboundMessage = AcceptorInbound
+  override def serializer = Acceptor.serializer
 
   // Sanity check the Paxos configuration and retrieve acceptor index.
   logger.check(config.acceptorAddresses.contains(address))
@@ -38,45 +37,51 @@ class MultiPaxosAcceptorActor[Transport <: frankenpaxos.Transport[Transport]](
   var ballotNumber: Double = -1
 
   // The set of proposals the acceptor accepted
+  // TODO(neil): Would it make sense to have this be a map from ballot to (vote
+  // round, vote value)? -Michael.
   var accepted: Set[ProposedValue] = Set()
 
   override def receive(
       src: Transport#Address,
-      inbound: MultiPaxosAcceptorInbound
+      inbound: AcceptorInbound
   ): Unit = {
-    import MultiPaxosAcceptorInbound.Request
+    import AcceptorInbound.Request
     inbound.request match {
       case Request.Phase1A(r) => handlePhase1a(src, r)
       case Request.Phase2A(r) => handlePhase2a(src, r)
       case Request.Empty => {
-        logger.fatal("Empty MultiPaxosAcceptorInbound encountered.")
+        logger.fatal("Empty AcceptorInbound encountered.")
       }
     }
   }
 
   private def handlePhase1a(
       src: Transport#Address,
-      phase1a: MultiPaxosPhase1a
+      phase1a: Phase1a
   ): Unit = {
+    // TODO(neil): Shouldn't an acceptor ignore a phase1a if the ballot number
+    // is less than or equal to the current ballot number? -Michael.
     if (phase1a.ballot > ballotNumber) {
       ballotNumber = phase1a.ballot
     }
     // send phase 1b message
-    val leader = typedActorClient[MultiPaxosLeaderActor[Transport]](
-      src,
-      MultiPaxosLeaderActor.serializer
-    )
+    val leader = typedActorClient[Leader[Transport]](src, Leader.serializer)
+    // TODO(michael): Eventually, have a leader tell the acceptor which
+    // entries it doesn't know about. This is a perf optimization and can be
+    // left for later.
     leader.send(
-      MultiPaxosLeaderInbound().withPhase1B(
-        MultiPaxosPhase1b(ballot = ballotNumber, proposals = accepted.toSeq)
+      LeaderInbound().withPhase1B(
+        Phase1b(ballot = ballotNumber, proposals = accepted.toSeq)
       )
     )
   }
 
   private def handlePhase2a(
       src: Transport#Address,
-      phase2a: MultiPaxosPhase2a
+      phase2a: Phase2a
   ): Unit = {
+    // TODO(neil): I think an acceptor can accept even if the proposed ballot
+    // is larger than the acceptor's ballot.
     if (phase2a.proposal.ballot == ballotNumber) {
       accepted += ProposedValue(
         ballotNumber,
@@ -85,10 +90,7 @@ class MultiPaxosAcceptorActor[Transport <: frankenpaxos.Transport[Transport]](
       )
     }
 
-    val leader = typedActorClient[MultiPaxosLeaderActor[Transport]](
-      src,
-      MultiPaxosLeaderActor.serializer
-    )
+    val leader = typedActorClient[Leader[Transport]](src, Leader.serializer)
 
     //println("Phase 2a proposal: " + phase2a.proposal.command + ", " + phase2a.proposal.slot)
     var temp: ProposedValue = ProposedValue(
@@ -96,9 +98,10 @@ class MultiPaxosAcceptorActor[Transport <: frankenpaxos.Transport[Transport]](
       phase2a.proposal.slot,
       phase2a.proposal.command
     )
+    // TODO(neil): What's the phase2AProposal for? -Michael.
     leader.send(
-      MultiPaxosLeaderInbound().withPhase2B(
-        MultiPaxosPhase2b(
+      LeaderInbound().withPhase2B(
+        Phase2b(
           acceptorId = index,
           ballot = ballotNumber,
           phase2AProposal = temp

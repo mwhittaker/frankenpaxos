@@ -10,48 +10,47 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.TypedActorClient
 
 @JSExportAll
-object MultiPaxosClientInboundSerializer
-    extends ProtoSerializer[MultiPaxosClientInbound] {
-  type A = MultiPaxosClientInbound
+object ClientInboundSerializer extends ProtoSerializer[ClientInbound] {
+  type A = ClientInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
 @JSExportAll
-object MultiPaxosClientActor {
-  val serializer = MultiPaxosClientInboundSerializer
+object Client {
+  val serializer = ClientInboundSerializer
 }
 
 @JSExportAll
-class MultiPaxosClientActor[Transport <: frankenpaxos.Transport[Transport]](
+class Client[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: MultiPaxosConfig[Transport]
+    config: Config[Transport]
 ) extends Actor(address, transport, logger) {
-  override type InboundMessage = MultiPaxosClientInbound
-  override def serializer = MultiPaxosClientActor.serializer
+  override type InboundMessage = ClientInbound
+  override def serializer = Client.serializer
 
   // The set of replicas.
-  private val replicas
-    : Seq[TypedActorClient[Transport, MultiPaxosReplicaActor[Transport]]] =
+  private val replicas: Seq[TypedActorClient[Transport, Replica[Transport]]] =
     for (replicaAddress <- config.replicaAddresses)
       yield
-        typedActorClient[MultiPaxosReplicaActor[Transport]](
+        typedActorClient[Replica[Transport]](
           replicaAddress,
-          MultiPaxosReplicaActor.serializer
+          Replica.serializer
         )
 
   // valueProposed holds a proposed value, if one has been proposed. Once a
   // Paxos client has proposed a value, it will not propose any other value.
+  // TODO(neil): This comment is out of date. -Michael.
   private var proposedValue: Option[String] = None
 
   // The state returned to client after command was proposed
+  // TODO(michael): Introduce a state machine abstraction.
   var state: String = ""
 
   // A list of promises to fulfill once a value has been chosen.
-  // TODO(mwhittaker): Replace with futures/promises.
   private var promises: Buffer[Promise[String]] = Buffer()
 
   private val reproposeTimer: Transport#Timer = timer(
@@ -62,7 +61,7 @@ class MultiPaxosClientActor[Transport <: frankenpaxos.Transport[Transport]](
         case Some(v) => {
           for (replica <- replicas) {
             replica.send(
-              MultiPaxosReplicaInbound().withClientRequest(
+              ReplicaInbound().withClientRequest(
                 ClientRequest(command = proposedValue.get)
               )
             )
@@ -78,11 +77,8 @@ class MultiPaxosClientActor[Transport <: frankenpaxos.Transport[Transport]](
     }
   );
 
-  override def receive(
-      src: Transport#Address,
-      inbound: MultiPaxosClientInbound
-  ): Unit = {
-    import MultiPaxosClientInbound.Request
+  override def receive(src: Transport#Address, inbound: ClientInbound): Unit = {
+    import ClientInbound.Request
     inbound.request match {
       case Request.ProposeResponse(r) => handleProposeResponse(src, r)
       case Request.Empty => {
@@ -105,7 +101,7 @@ class MultiPaxosClientActor[Transport <: frankenpaxos.Transport[Transport]](
     replicas.iterator
       .next()
       .send(
-        MultiPaxosReplicaInbound().withClientRequest(
+        ReplicaInbound().withClientRequest(
           ClientRequest(command = proposedValue.get)
         )
       )

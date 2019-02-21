@@ -8,28 +8,28 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.TypedActorClient
 
 @JSExportAll
-object MultiPaxosLeaderInboundSerializer
-    extends ProtoSerializer[MultiPaxosLeaderInbound] {
-  type A = MultiPaxosLeaderInbound
+object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
+  type A = LeaderInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
 @JSExportAll
-object MultiPaxosLeaderActor {
-  val serializer = MultiPaxosLeaderInboundSerializer
+object Leader {
+  val serializer = LeaderInboundSerializer
 }
 
 case class CommanderId(slot: Integer, command: String)
-class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
+
+class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: MultiPaxosConfig[Transport]
+    config: Config[Transport]
 ) extends Actor(address, transport, logger) {
-  override type InboundMessage = MultiPaxosLeaderInbound
-  override def serializer = MultiPaxosLeaderActor.serializer
+  override type InboundMessage = LeaderInbound
+  override def serializer = Leader.serializer
 
   // Verify the Paxos config and get our proposer index.
   logger.check(config.valid())
@@ -52,6 +52,7 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
     scala.collection.mutable.Map()
 
   // Keep track of acceptors who have not responded to Phase 1a requests
+  // TODO(neil): Is this set ever cleared when the round is increased?
   private var waitForScout: Set[Transport#Address] =
     config.acceptorAddresses.toSet
 
@@ -62,34 +63,32 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
   private var activateScout: Boolean = true
 
   // Connections to the acceptors.
-  private val acceptors
-    : Seq[TypedActorClient[Transport, MultiPaxosAcceptorActor[Transport]]] =
+  private val acceptors: Seq[TypedActorClient[Transport, Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield
-        typedActorClient[MultiPaxosAcceptorActor[Transport]](
+        typedActorClient[Acceptor[Transport]](
           acceptorAddress,
-          MultiPaxosAcceptorActor.serializer
+          Acceptor.serializer
         )
 
-  private val replicas
-    : Seq[TypedActorClient[Transport, MultiPaxosReplicaActor[Transport]]] =
+  private val replicas: Seq[TypedActorClient[Transport, Replica[Transport]]] =
     for (replicaAddress <- config.replicaAddresses)
       yield
-        typedActorClient[MultiPaxosReplicaActor[Transport]](
+        typedActorClient[Replica[Transport]](
           replicaAddress,
-          MultiPaxosReplicaActor.serializer
+          Replica.serializer
         )
 
   // A list of the clients awaiting a response.
   private val clients: mutable.Buffer[
-    TypedActorClient[Transport, MultiPaxosClientActor[Transport]]
+    TypedActorClient[Transport, Client[Transport]]
   ] = mutable.Buffer()
 
   override def receive(
       src: Transport#Address,
-      inbound: MultiPaxosLeaderInbound
+      inbound: LeaderInbound
   ): Unit = {
-    import MultiPaxosLeaderInbound.Request
+    import LeaderInbound.Request
     if (activateScout) {
       scoutProcess()
       activateScout = false
@@ -101,7 +100,7 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Phase1B(r)        => handlePhase1b(src, r)
       case Request.Phase2B(r)        => handlePhase2b(src, r)
       case Request.Empty => {
-        logger.fatal("Empty MultiPaxosLeaderInbound encountered.")
+        logger.fatal("Empty LeaderInbound encountered.")
       }
     }
   }
@@ -134,6 +133,7 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
     maxProposal
   }
 
+  // TODO(mwhittaker): Do all the proposals in request have the same slot?
   private def handleAdopted(src: Transport#Address, request: Adopted): Unit = {
     val proposal: ProposedValue = maxProposal(request.proposals)
     if (proposal == null) {
@@ -162,8 +162,8 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
   private def scoutProcess(): Unit = {
     for (acceptor <- acceptors.toIterator) {
       acceptor.send(
-        MultiPaxosAcceptorInbound().withPhase1A(
-          MultiPaxosPhase1a(leaderId = 0, ballot = ballotNumber)
+        AcceptorInbound().withPhase1A(
+          Phase1a(leaderId = 0, ballot = ballotNumber)
         )
       )
     }
@@ -173,8 +173,8 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
     for (acceptor <- acceptors.toIterator) {
       //println("Corrupt wire")
       acceptor.send(
-        MultiPaxosAcceptorInbound().withPhase2A(
-          MultiPaxosPhase2a(
+        AcceptorInbound().withPhase2A(
+          Phase2a(
             leaderId = 0,
             proposal = ProposedValue(
               ballot = ballotNumber,
@@ -189,19 +189,21 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handlePhase1b(
       src: Transport#Address,
-      request: MultiPaxosPhase1b
+      request: Phase1b
   ): Unit = {
     //println("An acceptor responded to the leader in phase 1b")
-    val leader = typedActorClient[MultiPaxosLeaderActor[Transport]](
+    val leader = typedActorClient[Leader[Transport]](
       address,
-      MultiPaxosLeaderActor.serializer
+      Leader.serializer
     )
     if (request.ballot == ballotNumber) {
       scoutProposalValues = scoutProposalValues.union(request.proposals.toSet)
       waitForScout -= src
       if (waitForScout.size < (acceptors.size / 2)) {
+        // TODO(neil): Can we call the handleAdopted method directly here? Why
+        // do we need to send it? -Michael.
         leader.send(
-          MultiPaxosLeaderInbound().withAdopted(
+          LeaderInbound().withAdopted(
             Adopted(
               ballot = ballotNumber,
               proposals = scoutProposalValues.toSeq
@@ -210,8 +212,10 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
         )
       }
     } else {
+      // TODO(neil): Can we call the handlePrempted method directly here? Why
+      // do we need to send it? -Michael.
       leader.send(
-        MultiPaxosLeaderInbound().withPreempted(
+        LeaderInbound().withPreempted(
           Preempted(ballot = request.ballot, leaderId = 0)
         )
       )
@@ -220,7 +224,7 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handlePhase2b(
       src: Transport#Address,
-      request: MultiPaxosPhase2b
+      request: Phase2b
   ): Unit = {
     if (request.ballot == ballotNumber) {
       val commanderId: CommanderId = CommanderId(
@@ -240,7 +244,7 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
         for (replica <- replicas) {
           //println("Command decided at the leader level")
           replica.send(
-            MultiPaxosReplicaInbound().withDecision(
+            ReplicaInbound().withDecision(
               Decision(
                 slot = request.phase2AProposal.slot,
                 command = request.phase2AProposal.command
@@ -250,12 +254,12 @@ class MultiPaxosLeaderActor[Transport <: frankenpaxos.Transport[Transport]](
         }
       }
     } else {
-      val leader = typedActorClient[MultiPaxosLeaderActor[Transport]](
+      val leader = typedActorClient[Leader[Transport]](
         address,
-        MultiPaxosLeaderActor.serializer
+        Leader.serializer
       )
       leader.send(
-        MultiPaxosLeaderInbound().withPreempted(
+        LeaderInbound().withPreempted(
           Preempted(ballot = request.ballot, leaderId = 0)
         )
       )

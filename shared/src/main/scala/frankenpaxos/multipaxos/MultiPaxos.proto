@@ -1,5 +1,7 @@
 syntax = "proto2";
 
+package frankenpaxos.multipaxos;
+
 import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
@@ -25,13 +27,15 @@ message Decision {
 }
 
 // Struct holding the ballot, slot, and command for a given proposal
+// TODO(neil): Why are ballots doubles instead of ints? -Michael.
 message ProposedValue {
   required double ballot = 1;
   required int32 slot = 2;
   required string command = 3;
 }
 
-// Indicates that majority of acceptors accept ballot, also contains what acceptors accepted before
+// Indicates that majority of acceptors accept ballot, also contains what
+// acceptors accepted before
 message Adopted {
   required double ballot = 1;
   repeated ProposedValue proposals = 2;
@@ -44,26 +48,26 @@ message Preempted {
 }
 
 // Messages sent between leaders and acceptors.
-message MultiPaxosPhase1a {
+message Phase1a {
   required int32 leader_id = 1;
   required double ballot = 2;
 }
 
 // Messages sent back to leader from acceptors
-message MultiPaxosPhase1b {
+message Phase1b {
   required double ballot = 1;
   repeated ProposedValue proposals = 2;
 }
 
 // Acceptors indicate they accept the ballot
-message MultiPaxosPhase2b {
+message Phase2b {
   required int32 acceptor_id = 1;
   required double ballot = 2;
   required ProposedValue phase2a_proposal = 3;
 }
 
 // Leader tries to get proposal accepted
-message MultiPaxosPhase2a {
+message Phase2a {
   required int32 leader_id = 1;
   required ProposedValue proposal = 2;
 }
@@ -74,26 +78,25 @@ message ProposeResponse {
 }
 
 // MultiPaxos client inbound message.
-message MultiPaxosClientInbound {
+message ClientInbound {
   oneof request {
     ProposeResponse propose_response = 1;
   }
 }
 
-
 // MultiPaxos leader inbound message.
-message MultiPaxosLeaderInbound {
+message LeaderInbound {
   oneof request {
     ProposeToLeader propose_request = 1;
     Adopted adopted = 2;
     Preempted preempted = 3;
-    MultiPaxosPhase1b phase1b = 4;
-    MultiPaxosPhase2b phase2b = 5;
+    Phase1b phase1b = 4;
+    Phase2b phase2b = 5;
   }
 }
 
 // MultiPaxos Replica inbound message.
-message MultiPaxosReplicaInbound {
+message ReplicaInbound {
   oneof request {
     ClientRequest client_request = 1;
     Decision decision = 2;
@@ -101,9 +104,9 @@ message MultiPaxosReplicaInbound {
 }
 
 // MultiPaxos acceptor inbound message.
-message MultiPaxosAcceptorInbound {
+message AcceptorInbound {
   oneof request {
-    MultiPaxosPhase1a phase1a = 1;
-    MultiPaxosPhase2a phase2a = 2;
+    Phase1a phase1a = 1;
+    Phase2a phase2a = 2;
   }
 }
