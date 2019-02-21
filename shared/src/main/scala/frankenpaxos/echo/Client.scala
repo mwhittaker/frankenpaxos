@@ -7,7 +7,7 @@ import frankenpaxos.TypedActorClient
 import scala.scalajs.js.annotation._
 
 @JSExportAll
-object EchoReplySerializer extends ProtoSerializer[ClientInbound] {
+object ClientInboundSerializer extends ProtoSerializer[ClientInbound] {
   type A = ClientInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
@@ -15,24 +15,22 @@ object EchoReplySerializer extends ProtoSerializer[ClientInbound] {
 }
 
 @JSExportAll
-object EchoClientActor {
-  val serializer = EchoReplySerializer
+object Client {
+  val serializer = ClientInboundSerializer
 }
 
 @JSExportAll
-class EchoClientActor[Transport <: frankenpaxos.Transport[Transport]](
+class Client[Transport <: frankenpaxos.Transport[Transport]](
     srcAddress: Transport#Address,
     dstAddress: Transport#Address,
     transport: Transport,
     logger: Logger
 ) extends Actor(srcAddress, transport, logger) {
   override type InboundMessage = ClientInbound
-  override def serializer = EchoClientActor.serializer
+  override def serializer = Client.serializer
 
-  private val server = typedActorClient[EchoServerActor[Transport]](
-    dstAddress,
-    EchoServerActor.serializer
-  )
+  private val server =
+    typedActorClient[Server[Transport]](dstAddress, Server.serializer)
 
   private val pingTimer: Transport#Timer =
     timer("pingTimer", java.time.Duration.ofSeconds(1), () => {

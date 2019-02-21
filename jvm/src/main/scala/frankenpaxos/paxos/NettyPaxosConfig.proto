@@ -3,7 +3,7 @@ syntax = "proto2";
 import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
-  package_name: "frankenpaxos.paxos.jvm"
+  package_name: "frankenpaxos.paxos"
   flat_package: true
 };
 

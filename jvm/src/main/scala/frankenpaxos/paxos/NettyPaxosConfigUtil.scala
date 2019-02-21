@@ -1,9 +1,8 @@
-package frankenpaxos.paxos.jvm
+package frankenpaxos.paxos
 
 import java.net.InetSocketAddress
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
-import frankenpaxos.paxos.PaxosConfig
 
 object NettyPaxosConfigUtil {
   def fromProto(

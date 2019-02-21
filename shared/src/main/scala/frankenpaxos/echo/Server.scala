@@ -8,25 +8,25 @@ import java.net.InetSocketAddress
 import scala.scalajs.js.annotation._
 
 @JSExportAll
-object EchoRequestSerializer extends ProtoSerializer[ServerInbound] {
+object ServerInboundSerializer extends ProtoSerializer[ServerInbound] {
   type A = ServerInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
-object EchoServerActor {
-  val serializer = EchoRequestSerializer
+object Server {
+  val serializer = ServerInboundSerializer
 }
 
 @JSExportAll
-class EchoServerActor[Transport <: frankenpaxos.Transport[Transport]](
+class Server[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = ServerInbound
-  override def serializer = EchoServerActor.serializer
+  override def serializer = Server.serializer
 
   var numMessagesReceived: Int = 0
 
@@ -36,11 +36,7 @@ class EchoServerActor[Transport <: frankenpaxos.Transport[Transport]](
     logger.info(s"Received ${request.msg} from $src.")
     numMessagesReceived += 1
 
-    val client =
-      typedActorClient[EchoClientActor[Transport]](
-        src,
-        EchoClientActor.serializer
-      );
+    val client = typedActorClient[Client[Transport]](src, Client.serializer)
     client.send(ClientInbound(msg = request.msg))
   }
 }

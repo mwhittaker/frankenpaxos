@@ -109,11 +109,11 @@ function make_app(Echo, snap, app_id) {
 }
 
 function main() {
-  make_app(frankenpaxos.echo.js.SimulatedEcho.Echo,
+  make_app(frankenpaxos.echo.SimulatedEcho.Echo,
            Snap('#simulated_animation'),
            '#simulated_app');
 
-  make_app(frankenpaxos.echo.js.ClickthroughEcho.Echo,
+  make_app(frankenpaxos.echo.ClickthroughEcho.Echo,
            Snap('#clickthrough_animation'),
            '#clickthrough_app');
 }
