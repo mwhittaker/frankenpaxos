@@ -1,0 +1,62 @@
+syntax = "proto2";
+
+package frankenpaxos.fastpaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.fastpaxos"
+  flat_package: true
+};
+
+message ProposeRequest {
+  required string v = 1;
+}
+
+message ProposeReply {
+  required string chosen = 1;
+}
+
+message Phase1a {
+  required int32 round = 1;
+}
+
+message Phase1b {
+  required int32 acceptor_id = 1;
+  required int32 round = 2;
+  required int32 vote_round = 3;
+  optional string vote_value = 4;
+}
+
+message Phase2a {
+  required int32 round = 1;
+  optional string value = 2;
+}
+
+message Phase2b {
+  required int32 acceptor_id = 1;
+  required int32 round = 2;
+}
+
+message ClientInbound {
+  oneof request {
+    ProposeReply propose_reply = 1;
+    Phase2b phase2b = 2;
+  }
+}
+
+message LeaderInbound {
+  oneof request {
+    ProposeRequest propose_request = 1;
+    Phase1b phase1b = 2;
+    Phase2b phase2b = 3;
+  }
+}
+
+message AcceptorInbound {
+  oneof request {
+    ProposeRequest propose_request = 1;
+    Phase1a phase1a = 2;
+    Phase2a phase2a = 3;
+  }
+}

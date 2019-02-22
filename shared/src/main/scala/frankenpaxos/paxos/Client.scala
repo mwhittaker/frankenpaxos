@@ -41,7 +41,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           Leader.serializer
         )
 
-  // valueProposed holds a proposed value, if one has been proposed. Once a
+  // proposedValue holds a proposed value, if one has been proposed. Once a
   // Paxos client has proposed a value, it will not propose any other value.
   private var proposedValue: Option[String] = None
 
@@ -49,7 +49,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   var chosenValue: Option[String] = None
 
   // A list of promises to fulfill once a value has been chosen.
-  // TODO(mwhittaker): Replace with futures/promises.
   private var promises: Buffer[Promise[String]] = Buffer()
 
   // A timer to resend a value proposal.

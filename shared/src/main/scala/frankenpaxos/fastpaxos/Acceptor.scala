@@ -1,10 +1,10 @@
-package frankenpaxos.paxos
+package frankenpaxos.fastpaxos
 
-import scala.scalajs.js.annotation._
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Chan
+import scala.scalajs.js.annotation._
 
 @JSExportAll
 object AcceptorInboundSerializer extends ProtoSerializer[AcceptorInbound] {
@@ -27,7 +27,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     config: Config[Transport]
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = AcceptorInbound
-  override def serializer = Acceptor.serializer
+  override val serializer = AcceptorInboundSerializer
 
   // Sanity check the Paxos configuration and retrieve acceptor index.
   logger.check(config.acceptorAddresses.contains(address))
@@ -39,21 +39,47 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   // The largest round in which this acceptor has voted.
   var voteRound: Int = -1;
 
-  // The value that this acceptor voted for in voteRound, or None if the
-  // acceptor hasn't voted yet.
-  var voteValue: Option[String] = None;
+  // A Fast Paxos acceptor can receive values from clients and leaders. A Fast
+  // Paxos acceptor can also receive a designated `any` value from a leader. In
+  // this case, a Fast Paxos acceptor votes for the next value that it receives.
+  // And, initially, a Fast Paxos acceptor hasn't voted for anything. These
+  // values are represented by VoteValue.
+  sealed trait VoteValue
+  case class Value(v: String) extends VoteValue
+  case object Nothing extends VoteValue
+  case object Any extends VoteValue
+  var voteValue: VoteValue = Nothing
 
-  override def receive(
-      src: Transport#Address,
-      inbound: AcceptorInbound
-  ): Unit = {
+  override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import AcceptorInbound.Request
     inbound.request match {
-      case Request.Phase1A(r) => handlePhase1a(src, r)
-      case Request.Phase2A(r) => handlePhase2a(src, r)
+      case Request.ProposeRequest(r) => handleProposeRequest(src, r)
+      case Request.Phase1A(r)        => handlePhase1a(src, r)
+      case Request.Phase2A(r)        => handlePhase2a(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
+    }
+  }
+
+  private def handleProposeRequest(
+      src: Transport#Address,
+      proposeRequest: ProposeRequest
+  ): Unit = {
+    // If we receive a value from a client, we ignore it unless we have
+    // received the distinguished any value from the leader. In that case, we
+    // vote for it.
+    voteValue match {
+      case Any =>
+        voteRound = round
+        voteValue = Value(proposeRequest.v)
+        val client = chan[Client[Transport]](src, Client.serializer)
+        client.send(
+          ClientInbound().withPhase2B(
+            Phase2b(acceptorId = index, round = round)
+          )
+        )
+      case Value(_) | Nothing =>
     }
   }
 
@@ -69,14 +95,15 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     // Bump our round and send the leader our vote round and vote value.
     round = phase1a.round
+    val optionalVoteValue = voteValue match {
+      case Value(v)      => Some(v)
+      case Nothing | Any => None
+    }
     val leader = chan[Leader[Transport]](src, Leader.serializer)
     leader.send(
       LeaderInbound().withPhase1B(
-        Phase1b(
-          round = round,
-          acceptorId = index,
-          voteRound = voteRound
-        ).update(_.optionalVoteValue := voteValue)
+        Phase1b(round = round, acceptorId = index, voteRound = voteRound)
+          .update(_.optionalVoteValue := optionalVoteValue)
       )
     )
   }
@@ -100,15 +127,23 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    // Update our state and send back an ack to the leader.
-    logger.check_ge(phase2a.round, round)
-    round = phase2a.round
-    voteRound = phase2a.round
-    voteValue = Some(phase2a.value)
+    // If the leader sends us the designated `any` value, then we vote for the
+    // next thing that we receive. Otherwise, we vote now.
+    phase2a.value match {
+      case Some(v) =>
+        round = phase2a.round
+        voteRound = phase2a.round
+        voteValue = Value(v)
 
-    val leader = chan[Leader[Transport]](src, Leader.serializer)
-    leader.send(
-      LeaderInbound().withPhase2B(Phase2b(acceptorId = index, round = round))
-    )
+        val leader = chan[Leader[Transport]](src, Leader.serializer)
+        leader.send(
+          LeaderInbound().withPhase2B(
+            Phase2b(acceptorId = index, round = round)
+          )
+        )
+      case None =>
+        round = phase2a.round
+        voteValue = Any
+    }
   }
 }
