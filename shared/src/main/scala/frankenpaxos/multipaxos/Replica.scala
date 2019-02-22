@@ -62,8 +62,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // A set of decided proposals (initially empty)
   // TODO(neil): Would it make more sense to have a Map from slot to command
   // instead of a set of tuples? -Michael.
-  @JSExport
-  protected var decisions: Set[ClientProposal] = Set()
+  var decisions: Set[ClientProposal] = Set()
 
   // Delay constant to keep processing commands
   private val WINDOW: Int = 3
