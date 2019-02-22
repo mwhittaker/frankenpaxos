@@ -35,41 +35,31 @@ class LeaderElection {
     notEnoughVotesTimeoutMax = java.time.Duration.ofMillis(3500)
   )
 
-  val a = new Participant[JsTransport](
-    aAddress,
-    transport,
-    aLogger,
-    addresses,
-    options
-  )
-  val b = new Participant[JsTransport](
-    bAddress,
-    transport,
-    bLogger,
-    addresses,
-    options
-  )
-  val c = new Participant[JsTransport](
-    cAddress,
-    transport,
-    cLogger,
-    addresses,
-    options
-  )
-  val d = new Participant[JsTransport](
-    dAddress,
-    transport,
-    dLogger,
-    addresses,
-    options
-  )
-  val e = new Participant[JsTransport](
-    eAddress,
-    transport,
-    eLogger,
-    addresses,
-    options
-  )
+  val a = new Participant[JsTransport](aAddress,
+                                       transport,
+                                       aLogger,
+                                       addresses,
+                                       options = options)
+  val b = new Participant[JsTransport](bAddress,
+                                       transport,
+                                       bLogger,
+                                       addresses,
+                                       options = options)
+  val c = new Participant[JsTransport](cAddress,
+                                       transport,
+                                       cLogger,
+                                       addresses,
+                                       options = options)
+  val d = new Participant[JsTransport](dAddress,
+                                       transport,
+                                       dLogger,
+                                       addresses,
+                                       options = options)
+  val e = new Participant[JsTransport](eAddress,
+                                       transport,
+                                       eLogger,
+                                       addresses,
+                                       options = options)
 }
 
 @JSExportAll

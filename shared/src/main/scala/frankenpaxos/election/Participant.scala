@@ -41,19 +41,26 @@ case class LeaderElectionOptions(
     notEnoughVotesTimeoutMax: java.time.Duration
 )
 
+object LeaderElectionOptions {
+  val default = LeaderElectionOptions(
+    pingPeriod = java.time.Duration.ofSeconds(1),
+    noPingTimeoutMin = java.time.Duration.ofSeconds(10),
+    noPingTimeoutMax = java.time.Duration.ofSeconds(11),
+    notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(10),
+    notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(11)
+  )
+}
+
 @JSExportAll
 class Participant[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
     addresses: Set[Transport#Address],
-    options: LeaderElectionOptions = LeaderElectionOptions(
-      pingPeriod = java.time.Duration.ofSeconds(1),
-      noPingTimeoutMin = java.time.Duration.ofSeconds(10),
-      noPingTimeoutMax = java.time.Duration.ofSeconds(11),
-      notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(10),
-      notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(11)
-    )
+    // A potential initial leader. If participants are initialized with a
+    // leader, at most one leader should be set.
+    leader: Option[Transport#Address] = None,
+    options: LeaderElectionOptions = LeaderElectionOptions.default
 ) extends Actor(address, transport, logger) {
   // Possible states ///////////////////////////////////////////////////////////
   sealed trait LeaderElectionState
@@ -85,34 +92,52 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   // Sanity check arguments.
   logger.check(addresses.contains(address))
   logger.check_le(options.noPingTimeoutMin, options.noPingTimeoutMax)
-  logger.check_le(
-    options.notEnoughVotesTimeoutMin,
-    options.notEnoughVotesTimeoutMax
-  )
+  logger.check_le(options.notEnoughVotesTimeoutMin,
+                  options.notEnoughVotesTimeoutMax)
+  leader match {
+    case Some(address) => logger.check(addresses.contains(address))
+    case None          =>
+  }
 
-  val nodes: Map[
-    Transport#Address,
-    Chan[Transport, Participant[Transport]]
-  ] = {
-    for (address <- addresses)
-      yield
-        (address -> chan[Participant[Transport]](
-          address,
-          Participant.serializer
-        ))
+  // The addresses of the other participants.
+  val nodes: Map[Transport#Address, Chan[Transport, Participant[Transport]]] = {
+    for (a <- addresses)
+      yield (a -> chan[Participant[Transport]](a, Participant.serializer))
   }.toMap
 
+  // The callbacks to inform when a new leader is elected.
   var callbacks: mutable.Buffer[(Transport#Address) => Unit] = mutable.Buffer()
+
+  // The current round.
   var round: Int = 0
+
+  // The current state.
   var state: LeaderElectionState = {
-    val t = noPingTimer()
-    t.start()
-    LeaderlessFollower(t)
+    leader match {
+      case Some(leaderAddress) =>
+        if (address == leaderAddress) {
+          val t = pingTimer()
+          t.start()
+          Leader(t)
+        } else {
+          val t = noPingTimer()
+          t.start()
+          Follower(t, leaderAddress)
+        }
+      case None =>
+        val t = noPingTimer()
+        t.start()
+        LeaderlessFollower(t)
+    }
   }
 
   // Callback registration /////////////////////////////////////////////////////
-  def register(callback: (Transport#Address) => Unit) = {
+  def _register(callback: (Transport#Address) => Unit) = {
     callbacks += callback
+  }
+
+  def register(callback: (Transport#Address) => Unit) = {
+    transport.executionContext.execute(() => _register(callback))
   }
 
   // Receive ///////////////////////////////////////////////////////////////////
