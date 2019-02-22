@@ -34,10 +34,12 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   private val index = config.acceptorAddresses.indexOf(address)
 
   // The largest round in which this acceptor has received a message.
-  var round: Int = -1;
+  @JSExport
+  protected var round: Int = -1;
 
   // The largest round in which this acceptor has voted.
-  var voteRound: Int = -1;
+  @JSExport
+  protected var voteRound: Int = -1;
 
   // A Fast Paxos acceptor can receive values from clients and leaders. A Fast
   // Paxos acceptor can also receive a designated `any` value from a leader. In
@@ -48,7 +50,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   case class Value(v: String) extends VoteValue
   case object Nothing extends VoteValue
   case object Any extends VoteValue
-  var voteValue: VoteValue = Nothing
+  @JSExport
+  protected var voteValue: VoteValue = Nothing
 
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import AcceptorInbound.Request

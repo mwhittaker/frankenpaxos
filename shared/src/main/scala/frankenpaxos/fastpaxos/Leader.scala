@@ -41,10 +41,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var round: Int = index
 
-  // Initially, the first leader is the active leader.
-  @JSExport
-  protected var active: Boolean = (index == 0)
-
   // The current status of the leader. A leader is either idle, running
   // phase 1, running phase 2, or has learned that a value is chosen.
   sealed trait Status
@@ -67,7 +63,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   protected var phase2bResponses: mutable.HashSet[Phase2b] = mutable.HashSet()
 
   // The chosen value.
-  var chosenValue: Option[String] = None
+  @JSExport
+  protected var chosenValue: Option[String] = None
 
   // A list of the clients awaiting a response.
   private val clients: mutable.Buffer[Chan[Transport, Client[Transport]]] =
@@ -84,6 +81,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     for (acceptor <- acceptors) {
       acceptor.send(AcceptorInbound().withPhase1A(Phase1a(round = round)))
     }
+    status = Phase1
   }
 
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
