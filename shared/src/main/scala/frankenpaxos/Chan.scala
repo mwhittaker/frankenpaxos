@@ -1,6 +1,6 @@
 package frankenpaxos
 
-class TypedActorClient[
+class Chan[
     Transport <: frankenpaxos.Transport[Transport],
     Actor <: frankenpaxos.Actor[Transport]
 ](

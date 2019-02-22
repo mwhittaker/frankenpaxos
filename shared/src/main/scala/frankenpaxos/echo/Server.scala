@@ -36,7 +36,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     logger.info(s"Received ${request.msg} from $src.")
     numMessagesReceived += 1
 
-    val client = typedActorClient[Client[Transport]](src, Client.serializer)
+    val client = chan[Client[Transport]](src, Client.serializer)
     client.send(ClientInbound(msg = request.msg))
   }
 }

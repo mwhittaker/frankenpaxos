@@ -4,7 +4,7 @@ import scala.scalajs.js.annotation._
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.TypedActorClient
+import frankenpaxos.Chan
 
 @JSExportAll
 object AcceptorInboundSerializer extends ProtoSerializer[AcceptorInbound] {
@@ -67,7 +67,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       ballotNumber = phase1a.ballot
     }
     // send phase 1b message
-    val leader = typedActorClient[Leader[Transport]](src, Leader.serializer)
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
     // TODO(michael): Eventually, have a leader tell the acceptor which
     // entries it doesn't know about. This is a perf optimization and can be
     // left for later.
@@ -92,7 +92,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       )
     }
 
-    val leader = typedActorClient[Leader[Transport]](src, Leader.serializer)
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
 
     //println("Phase 2a proposal: " + phase2a.proposal.command + ", " + phase2a.proposal.slot)
     var temp: ProposedValue = ProposedValue(

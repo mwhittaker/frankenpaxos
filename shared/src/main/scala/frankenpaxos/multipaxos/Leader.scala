@@ -5,7 +5,7 @@ import scala.scalajs.js.annotation._
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.TypedActorClient
+import frankenpaxos.Chan
 
 @JSExportAll
 object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
@@ -71,25 +71,25 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   protected var activateScout: Boolean = true
 
   // Connections to the acceptors.
-  private val acceptors: Seq[TypedActorClient[Transport, Acceptor[Transport]]] =
+  private val acceptors: Seq[Chan[Transport, Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield
-        typedActorClient[Acceptor[Transport]](
+        chan[Acceptor[Transport]](
           acceptorAddress,
           Acceptor.serializer
         )
 
-  private val replicas: Seq[TypedActorClient[Transport, Replica[Transport]]] =
+  private val replicas: Seq[Chan[Transport, Replica[Transport]]] =
     for (replicaAddress <- config.replicaAddresses)
       yield
-        typedActorClient[Replica[Transport]](
+        chan[Replica[Transport]](
           replicaAddress,
           Replica.serializer
         )
 
   // A list of the clients awaiting a response.
   private val clients: mutable.Buffer[
-    TypedActorClient[Transport, Client[Transport]]
+    Chan[Transport, Client[Transport]]
   ] = mutable.Buffer()
 
   override def receive(
@@ -200,7 +200,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       request: Phase1b
   ): Unit = {
     //println("An acceptor responded to the leader in phase 1b")
-    val leader = typedActorClient[Leader[Transport]](
+    val leader = chan[Leader[Transport]](
       address,
       Leader.serializer
     )
@@ -262,7 +262,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
       }
     } else {
-      val leader = typedActorClient[Leader[Transport]](
+      val leader = chan[Leader[Transport]](
         address,
         Leader.serializer
       )

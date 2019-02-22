@@ -7,7 +7,7 @@ import scala.scalajs.js.annotation._
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.TypedActorClient
+import frankenpaxos.Chan
 
 @JSExportAll
 object ClientInboundSerializer extends ProtoSerializer[ClientInbound] {
@@ -33,10 +33,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override def serializer = Client.serializer
 
   // The set of leaders.
-  private val leaders: Seq[TypedActorClient[Transport, Leader[Transport]]] =
+  private val leaders: Seq[Chan[Transport, Leader[Transport]]] =
     for (leaderAddress <- config.leaderAddresses)
       yield
-        typedActorClient[Leader[Transport]](
+        chan[Leader[Transport]](
           leaderAddress,
           Leader.serializer
         )

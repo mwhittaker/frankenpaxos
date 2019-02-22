@@ -20,11 +20,11 @@ abstract class Actor[Transport <: frankenpaxos.Transport[Transport]](
     receive(src, serializer.fromBytes(bytes))
   }
 
-  def typedActorClient[A <: frankenpaxos.Actor[Transport]](
+  def chan[A <: frankenpaxos.Actor[Transport]](
       dst: Transport#Address,
       serializer: Serializer[A#InboundMessage]
-  ): frankenpaxos.TypedActorClient[Transport, A] = {
-    new TypedActorClient[Transport, A](transport, address, dst, serializer)
+  ): frankenpaxos.Chan[Transport, A] = {
+    new Chan[Transport, A](transport, address, dst, serializer)
   }
 
   def send(dst: Transport#Address, bytes: Array[Byte]): Unit = {

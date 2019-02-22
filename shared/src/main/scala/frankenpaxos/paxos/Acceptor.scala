@@ -4,7 +4,7 @@ import scala.scalajs.js.annotation._
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.TypedActorClient
+import frankenpaxos.Chan
 
 @JSExportAll
 object AcceptorInboundSerializer extends ProtoSerializer[AcceptorInbound] {
@@ -70,7 +70,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // Bump our round and send the leader our vote round and vote value.
     round = phase1a.round
     val leader =
-      typedActorClient[Leader[Transport]](src, Leader.serializer)
+      chan[Leader[Transport]](src, Leader.serializer)
     leader.send(
       LeaderInbound().withPhase1B(
         Phase1b(
@@ -107,7 +107,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     voteRound = phase2a.round
     voteValue = Some(phase2a.value)
 
-    val leader = typedActorClient[Leader[Transport]](src, Leader.serializer)
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
     leader.send(
       LeaderInbound().withPhase2B(Phase2b(acceptorId = index, round = round))
     )

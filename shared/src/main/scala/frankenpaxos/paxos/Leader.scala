@@ -5,7 +5,7 @@ import scala.scalajs.js.annotation._
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.TypedActorClient
+import frankenpaxos.Chan
 
 @JSExportAll
 object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
@@ -35,16 +35,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private val index: Int = config.leaderAddresses.indexOf(address)
 
   // Connections to the acceptors.
-  private val acceptors: Seq[TypedActorClient[Transport, Acceptor[Transport]]] =
+  private val acceptors: Seq[Chan[Transport, Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield
-        typedActorClient[Acceptor[Transport]](
+        chan[Acceptor[Transport]](
           acceptorAddress,
           Acceptor.serializer
         )
 // A list of the clients awaiting a response.
   private val clients: mutable.Buffer[
-    TypedActorClient[Transport, Client[Transport]]
+    Chan[Transport, Client[Transport]]
   ] = mutable.Buffer()
 
   // The leader's round number. With n leaders, leader i uses round
@@ -94,7 +94,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     chosenValue match {
       case Some(chosen) => {
         logger.check_eq(status, Chosen)
-        val client = typedActorClient[Client[Transport]](
+        val client = chan[Client[Transport]](
           src,
           Client.serializer
         )
@@ -121,7 +121,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Remember the client. We'll respond back to the client later.
-    clients += typedActorClient[Client[Transport]](
+    clients += chan[Client[Transport]](
       src,
       Client.serializer
     )

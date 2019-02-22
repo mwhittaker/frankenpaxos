@@ -5,7 +5,7 @@ import scala.scalajs.js.annotation._
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.TypedActorClient
+import frankenpaxos.Chan
 
 @JSExportAll
 object ParticipantInboundSerializer
@@ -92,11 +92,11 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
   val nodes: Map[
     Transport#Address,
-    TypedActorClient[Transport, Participant[Transport]]
+    Chan[Transport, Participant[Transport]]
   ] = {
     for (address <- addresses)
       yield
-        (address -> typedActorClient[Participant[Transport]](
+        (address -> chan[Participant[Transport]](
           address,
           Participant.serializer
         ))

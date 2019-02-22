@@ -3,7 +3,7 @@ package frankenpaxos.echo
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.TypedActorClient
+import frankenpaxos.Chan
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -30,7 +30,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override def serializer = Client.serializer
 
   private val server =
-    typedActorClient[Server[Transport]](dstAddress, Server.serializer)
+    chan[Server[Transport]](dstAddress, Server.serializer)
 
   private val pingTimer: Transport#Timer =
     timer("pingTimer", java.time.Duration.ofSeconds(1), () => {
