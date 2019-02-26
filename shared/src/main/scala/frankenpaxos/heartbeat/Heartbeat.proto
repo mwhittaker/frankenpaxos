@@ -1,0 +1,20 @@
+syntax = "proto2";
+
+package frankenpaxos.heartbeat;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.heartbeat"
+  flat_package: true
+};
+
+message Ping {}
+message Pong {}
+
+message ParticipantInbound {
+  oneof request {
+    Ping ping = 1;
+    Pong pong = 2;
+  }
+}
