@@ -85,15 +85,13 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   // When a participant sents a heartbeat ping, it sets a fail timer. If it
   // doesn't hear back before the timer expires, it sends another. If it does,
   // it sets a success timer to send another ping.
-  @JSExport
-  protected val failTimers: Map[Transport#Address, Transport#Timer] = {
+  private val failTimers: Map[Transport#Address, Transport#Timer] = {
     for (a <- otherAddresses)
       yield a -> timer(s"failTimer$a", options.failPeriod, () => fail(a))
   }.toMap
 
   // Timers that are set after a participant receives a pong.
-  @JSExport
-  protected val successTimers: Map[Transport#Address, Transport#Timer] = {
+  private val successTimers: Map[Transport#Address, Transport#Timer] = {
     for (a <- otherAddresses)
       yield
         a -> timer(s"successTimer$a", options.successPeriod, () => succeed(a))
@@ -136,6 +134,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePong(src: Transport#Address, ping: Pong): Unit = {
+    alive += src
     numRetries(src) = 0
     failTimers(src).stop()
     successTimers(src).start()
@@ -143,6 +142,9 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
   private def fail(a: Transport#Address): Unit = {
     numRetries(a) += 1
+    if (numRetries(a) >= options.numRetries) {
+      alive -= a
+    }
     chans(a).send(ParticipantInbound().withPing(Ping()))
     failTimers(a).start()
   }
