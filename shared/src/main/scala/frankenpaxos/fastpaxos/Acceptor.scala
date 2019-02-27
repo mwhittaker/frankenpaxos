@@ -49,7 +49,10 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   sealed trait VoteValue
   case class Value(v: String) extends VoteValue
   case object Nothing extends VoteValue
-  case object Any extends VoteValue
+  // TODO(mwhittaker): I think AnyVal has to be annotated with the round in
+  // which the any was received. An acceptor can only vote for a value if the
+  // round is equal to the round stored in AnyVal.
+  case object AnyVal extends VoteValue
   @JSExport
   protected var voteValue: VoteValue = Nothing
 
@@ -73,7 +76,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // received the distinguished any value from the leader. In that case, we
     // vote for it.
     voteValue match {
-      case Any =>
+      case AnyVal =>
         voteRound = round
         voteValue = Value(proposeRequest.v)
         val client = chan[Client[Transport]](src, Client.serializer)
@@ -99,8 +102,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // Bump our round and send the leader our vote round and vote value.
     round = phase1a.round
     val optionalVoteValue = voteValue match {
-      case Value(v)      => Some(v)
-      case Nothing | Any => None
+      case Value(v)         => Some(v)
+      case Nothing | AnyVal => None
     }
     val leader = chan[Leader[Transport]](src, Leader.serializer)
     leader.send(
@@ -146,7 +149,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         )
       case None =>
         round = phase2a.round
-        voteValue = Any
+        voteValue = AnyVal
     }
   }
 }
