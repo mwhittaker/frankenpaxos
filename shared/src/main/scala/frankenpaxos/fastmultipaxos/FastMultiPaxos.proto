@@ -17,19 +17,6 @@
 // for every index:
 //
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 syntax = "proto2";
 
 package frankenpaxos.fastmultipaxos;
@@ -55,7 +42,7 @@ message Phase1a {
   required int32 chosenWatermark = 3;
 }
 
-message Vote {
+message AcceptorVote {
   required int32 slot = 1;
   required int32 voteRound = 2;
   required string voteValue = 3;
@@ -64,14 +51,15 @@ message Vote {
 message Phase1b {
   required int32 acceptor_id = 1;
   required int32 round = 2;
-  repeated Vote vote = 3;
+  repeated AcceptorVote vote = 3;
 }
 
 
 message Phase2a {
-  required int32 slot = 1;
-  required int32 round = 2;
-  optional string value = 3;
+  required int32 leader_id = 1;
+  required int32 slot = 2;
+  required int32 round = 3;
+  optional string value = 4;
 }
 
 message Phase2b {
@@ -79,6 +67,7 @@ message Phase2b {
   required int32 slot = 2;
   required int32 round = 3;
   required string command = 4;
+  optional bytes client_address = 5;
 }
 
 message ClientInbound {
@@ -89,11 +78,11 @@ message ClientInbound {
 }
 
 message LeaderInbound {
-  /* oneof request { */
-  /*   ProposeRequest propose_request = 1; */
-  /*   Phase1b phase1b = 2; */
-  /*   Phase2b phase2b = 3; */
-  /* } */
+  oneof request {
+    ProposeRequest propose_request = 1;
+    Phase1b phase1b = 2;
+    Phase2b phase2b = 3;
+  }
 }
 
 message AcceptorInbound {

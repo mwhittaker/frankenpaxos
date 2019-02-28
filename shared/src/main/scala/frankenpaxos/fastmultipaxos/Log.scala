@@ -56,6 +56,9 @@ class Log[A] {
     map.toString() + " with tail " + tail.toString()
   }
 
+  // Returns the finite prefix of the log.
+  def prefix(): mutable.SortedMap[Int, A] = map
+
   def get(slot: Int): Option[A] = {
     tail match {
       case Some((tailSlot, tailValue)) =>
