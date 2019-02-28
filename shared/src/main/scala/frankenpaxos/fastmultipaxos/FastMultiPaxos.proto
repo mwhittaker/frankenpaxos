@@ -50,8 +50,9 @@ message ProposeRequest {
 /* } */
 
 message Phase1a {
-  required int32 round = 1;
-  required int32 chosenWatermark = 2;
+  required int32 leader_id = 1;
+  required int32 round = 2;
+  required int32 chosenWatermark = 3;
 }
 
 message Vote {

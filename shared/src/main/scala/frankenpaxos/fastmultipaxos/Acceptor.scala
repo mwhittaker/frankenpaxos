@@ -56,20 +56,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Vote(voteRound: Int, voteValue: VoteValue)
 
-  // Slots in the replicated log are indexed by integers.
+  // The log of votes.
   @JSExport
-  type Slot = Int
-
-  // `votes` holds the vote for every slot. If the acceptor has not voted in a
-  // particular slot, then the slot does not have an entry in `votes`. You can
-  // also think of `votes` as the replicated log, though we represent the log
-  // with a map instead of something like an array.
-  @JSExport
-  protected val votes: mutable.SortedMap[Slot, Vote] = mutable.SortedMap()
-
-  // TODO(mwhittaker): Document.
-  @JSExport
-  protected val tail: Option[(Int, AnyVal)] = None
+  protected val log: Log[Vote] = new Log()
 
   // If this acceptor receives a propose request from a client, and
   @JSExport
@@ -91,7 +80,16 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       proposeRequest: ProposeRequest
   ): Unit = {
-    ???
+    log.get(nextSlot) match {
+      case Some(Vote(_, AnyVal(r))) if r == round =>
+        // If we previously received the distinguished "any" value in this
+        // round, then we're free to vote for the client's proposal.
+        val client = chan[Client[Transport]](src, Client.serializer)
+      // TODO(mwhittaker): Send back a reply to the client.
+      case Some(_) | None =>
+      // If we have not received the distinguished "any" value, then we
+      // simply ignore the client's request.
+    }
   }
   //    // If we receive a value from a client, we ignore it unless we have
   //    // received the distinguished any value from the leader. In that case, we
