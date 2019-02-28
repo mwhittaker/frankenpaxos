@@ -1,0 +1,15 @@
+syntax = "proto2";
+
+package frankenpaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos"
+  flat_package: true
+};
+
+message HostPort {
+  required string host = 1;
+  required int32 port = 2;
+}

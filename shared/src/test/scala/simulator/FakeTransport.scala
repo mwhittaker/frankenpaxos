@@ -9,6 +9,16 @@ import scala.concurrent.ExecutionContext
 
 case class FakeTransportAddress(address: String) extends frankenpaxos.Address
 
+object FakeTransportAddressSerializer
+    extends frankenpaxos.Serializer[FakeTransportAddress] {
+  override def toBytes(x: FakeTransportAddress): Array[Byte] =
+    x.address.getBytes()
+  override def fromBytes(bytes: Array[Byte]): FakeTransportAddress =
+    FakeTransportAddress(new String(bytes))
+  override def toPrettyString(x: FakeTransportAddress): String =
+    x.address
+}
+
 class FakeTransportTimer(
     val address: FakeTransport#Address,
     val the_name: String,
@@ -42,8 +52,9 @@ case class FakeTransportMessage(
 )
 
 class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
-  type Address = FakeTransportAddress
-  type Timer = FakeTransportTimer
+  override type Address = FakeTransportAddress
+  override val addressSerializer = FakeTransportAddressSerializer
+  override type Timer = FakeTransportTimer
   type Message = FakeTransportMessage
 
   val actors = mutable.HashMap[FakeTransport#Address, Actor[FakeTransport]]()

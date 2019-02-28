@@ -27,6 +27,7 @@ import io.netty.handler.codec.bytes.ByteArrayEncoder
 import io.netty.handler.logging.LoggingHandler
 import io.netty.util.concurrent.ScheduledFuture
 import java.net.SocketAddress
+import java.net.InetSocketAddress
 import java.util.concurrent.Callable
 import java.util.concurrent.TimeUnit
 import scala.collection.mutable.HashMap
@@ -35,6 +36,28 @@ import scala.util.Try
 
 case class NettyTcpAddress(socketAddress: SocketAddress)
     extends frankenpaxos.Address
+
+object HostPortSerializer extends ProtoSerializer[HostPort]
+
+object NettyTcpAddressSerializer
+    extends frankenpaxos.Serializer[NettyTcpAddress] {
+  override def toBytes(x: NettyTcpAddress): Array[Byte] = {
+    // We get SocketAddresses from Netty. The Netty documentation informs you
+    // to downcast the SocketAddress to the appropriate concrete type (e.g.,
+    // InetSocketAddress). That's what we do here.
+    val address = x.socketAddress.asInstanceOf[InetSocketAddress]
+    val hostport = new HostPort(address.getHostString(), address.getPort())
+    HostPortSerializer.toBytes(hostport)
+  }
+
+  override def fromBytes(bytes: Array[Byte]): NettyTcpAddress = {
+    val hostport = HostPortSerializer.fromBytes(bytes)
+    NettyTcpAddress(new InetSocketAddress(hostport.host, hostport.port))
+  }
+
+  override def toPrettyString(x: NettyTcpAddress): String =
+    x.socketAddress.toString()
+}
 
 // TODO(mwhittaker): Make constructor private.
 class NettyTcpTimer(
@@ -92,11 +115,8 @@ class NettyTcpTransport(private val logger: Logger)
     override def channelRead(ctx: ChannelHandlerContext, msg: Object): Unit = {
       val localAddress = NettyTcpAddress(ctx.channel.localAddress)
       val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress)
-      // TODO(mwhittaker): Think about automatically deserializing into a proto.
       msg match {
         case bytes: Array[Byte] => {
-          println("CURRENT THREAD NETTY RECEIVE")
-          println(Thread.currentThread().getId())
           actor.receiveImpl(remoteAddress, bytes);
         }
         case _ =>
@@ -169,8 +189,9 @@ class NettyTcpTransport(private val logger: Logger)
     }
   }
 
-  type Address = NettyTcpAddress
-  type Timer = NettyTcpTimer
+  override type Address = NettyTcpAddress
+  override def addressSerializer = NettyTcpAddressSerializer
+  override type Timer = NettyTcpTimer
 
   // TODO(mwhittaker): The netty documentation [1] suggests using two event
   // loop groups: a "boss" group and a "worker" group. According to the

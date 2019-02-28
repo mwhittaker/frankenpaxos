@@ -12,6 +12,16 @@ import scala.scalajs.js.annotation._
 case class JsTransportAddress(address: String) extends frankenpaxos.Address
 
 @JSExportAll
+object JsTransportAddressSerializer extends Serializer[JsTransportAddress] {
+  override def toBytes(x: JsTransportAddress): Array[Byte] =
+    x.address.getBytes()
+  override def fromBytes(bytes: Array[Byte]): JsTransportAddress =
+    JsTransportAddress(new String(bytes))
+  override def toPrettyString(x: JsTransportAddress): String =
+    x.address
+}
+
+@JSExportAll
 class JsTransportTimer(
     val address: JsTransport#Address,
     // We don't name this parameter `name` because we don't want to override
@@ -46,8 +56,9 @@ class JsTransportTimer(
 
 @JSExportAll
 class JsTransport(logger: Logger) extends Transport[JsTransport] {
-  type Address = JsTransportAddress
-  type Timer = JsTransportTimer
+  override type Address = JsTransportAddress
+  override val addressSerializer = JsTransportAddressSerializer
+  override type Timer = JsTransportTimer
 
   @JSExportAll
   case class Message(
