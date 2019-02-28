@@ -94,7 +94,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         // If we previously received the distinguished "any" value in this
         // round and we have not already voted in this round, then we are free
         // to vote for the client's request.
-        log.put(nextSlot, Vote(r, Some(proposeRequest.v), None))
+        log.put(nextSlot, Vote(r, Some(proposeRequest.command), None))
         nextSlot += 1
         leaders(leaderId).send(
           LeaderInbound().withPhase2B(
@@ -102,7 +102,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
               acceptorId = acceptorId,
               slot = nextSlot,
               round = round,
-              command = proposeRequest.v,
+              command = proposeRequest.command,
               clientAddress = Some(
                 ByteString.copyFrom(transport.addressSerializer.toBytes(src))
               )
@@ -112,6 +112,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       case Some(_) | None =>
       // If we have not received the distinguished "any" value, then we
       // simply ignore the client's request.
+      //
+      // TODO(mwhittaker): Inform the client of the failure, so that they can
+      // send it to the leader.
     }
   }
 

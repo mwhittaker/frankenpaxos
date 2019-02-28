@@ -29,12 +29,16 @@ option (scalapb.options) = {
 };
 
 message ProposeRequest {
-  required string v = 1;
+  required int32 client_id = 1;
+  required string command = 2;
 }
-/*  */
-/* message ProposeReply { */
-/*   required string chosen = 1; */
-/* } */
+
+
+message ProposeReply {
+  required int32 round = 1;
+  required int32 client_id = 2;
+  required string result = 3;
+}
 
 message Phase1a {
   required int32 leader_id = 1;
@@ -71,10 +75,9 @@ message Phase2b {
 }
 
 message ClientInbound {
-  /* oneof request { */
-  /*   ProposeReply propose_reply = 1; */
-  /*   Phase2b phase2b = 2; */
-  /* } */
+  oneof request {
+    ProposeReply propose_reply = 2;
+  }
 }
 
 message LeaderInbound {
