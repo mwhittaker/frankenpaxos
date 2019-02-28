@@ -35,7 +35,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private val index: Int = config.leaderAddresses.indexOf(address)
 
   // Connections to the acceptors.
-  private val acceptors: Seq[Chan[Transport, Acceptor[Transport]]] =
+  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield
         chan[Acceptor[Transport]](
@@ -44,9 +44,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
   // A list of the clients awaiting a response.
-  private val clients: mutable.Buffer[
-    Chan[Transport, Client[Transport]]
-  ] = mutable.Buffer()
+  private val clients: mutable.Buffer[Chan[Client[Transport]]] =
+    mutable.Buffer()
 
   // The leader's round number. With n leaders, leader i uses round
   // numbers i, i + n, i + 2n, i + 3n, etc.

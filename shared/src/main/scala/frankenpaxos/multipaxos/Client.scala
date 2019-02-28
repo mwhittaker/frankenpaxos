@@ -33,7 +33,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override def serializer = Client.serializer
 
   // The set of replicas.
-  private val replicas: Seq[Chan[Transport, Replica[Transport]]] =
+  private val replicas: Seq[Chan[Replica[Transport]]] =
     for (replicaAddress <- config.replicaAddresses)
       yield
         chan[Replica[Transport]](

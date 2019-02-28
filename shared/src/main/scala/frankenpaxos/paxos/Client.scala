@@ -33,7 +33,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override def serializer = Client.serializer
 
   // The set of leaders.
-  private val leaders: Seq[Chan[Transport, Leader[Transport]]] =
+  private val leaders: Seq[Chan[Leader[Transport]]] =
     for (leaderAddress <- config.leaderAddresses)
       yield
         chan[Leader[Transport]](

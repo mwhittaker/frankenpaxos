@@ -33,12 +33,12 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override val serializer = ClientInboundSerializer
 
   // Leader channels.
-  private val leaders: Seq[Chan[Transport, Leader[Transport]]] =
+  private val leaders: Seq[Chan[Leader[Transport]]] =
     for (leaderAddress <- config.leaderAddresses)
       yield chan[Leader[Transport]](leaderAddress, Leader.serializer)
 
   // Acceptor channels.
-  private val acceptors: Seq[Chan[Transport, Acceptor[Transport]]] =
+  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield chan[Acceptor[Transport]](acceptorAddress, Acceptor.serializer)
 

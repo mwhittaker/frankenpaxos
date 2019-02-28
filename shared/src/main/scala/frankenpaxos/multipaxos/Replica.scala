@@ -69,7 +69,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // The Multi-Paxos leader(s) to forward proposals to
   //private var leaders: Set[Int] = Set()
-  private var leaders: Seq[Chan[Transport, Leader[Transport]]] =
+  private var leaders: Seq[Chan[Leader[Transport]]] =
     for (leaderAddress <- config.leaderAddresses)
       yield
         chan[Leader[Transport]](
@@ -78,7 +78,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         )
 
   // Connections to the acceptors.
-  private val acceptors: Seq[Chan[Transport, Acceptor[Transport]]] =
+  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield
         chan[Acceptor[Transport]](
@@ -88,7 +88,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // A list of the clients awaiting a response.
   private val clients: mutable.Buffer[
-    Chan[Transport, Client[Transport]]
+    Chan[Client[Transport]]
   ] = mutable.Buffer()
 
   override def receive(

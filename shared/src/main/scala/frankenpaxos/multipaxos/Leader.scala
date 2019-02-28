@@ -71,7 +71,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   protected var activateScout: Boolean = true
 
   // Connections to the acceptors.
-  private val acceptors: Seq[Chan[Transport, Acceptor[Transport]]] =
+  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield
         chan[Acceptor[Transport]](
@@ -79,7 +79,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           Acceptor.serializer
         )
 
-  private val replicas: Seq[Chan[Transport, Replica[Transport]]] =
+  private val replicas: Seq[Chan[Replica[Transport]]] =
     for (replicaAddress <- config.replicaAddresses)
       yield
         chan[Replica[Transport]](
@@ -89,7 +89,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // A list of the clients awaiting a response.
   private val clients: mutable.Buffer[
-    Chan[Transport, Client[Transport]]
+    Chan[Client[Transport]]
   ] = mutable.Buffer()
 
   override def receive(

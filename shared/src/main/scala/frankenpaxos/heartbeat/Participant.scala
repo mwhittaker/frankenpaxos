@@ -76,7 +76,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val otherAddresses: Set[Transport#Address] = addresses - address
 
-  type ParticipantChan = Chan[Transport, Participant[Transport]]
+  type ParticipantChan = Chan[Participant[Transport]]
   private val chans: Map[Transport#Address, ParticipantChan] = {
     for (a <- otherAddresses)
       yield a -> chan[Participant[Transport]](a, Participant.serializer)

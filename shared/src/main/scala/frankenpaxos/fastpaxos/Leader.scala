@@ -67,11 +67,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   protected var chosenValue: Option[String] = None
 
   // A list of the clients awaiting a response.
-  private val clients: mutable.Buffer[Chan[Transport, Client[Transport]]] =
+  private val clients: mutable.Buffer[Chan[Client[Transport]]] =
     mutable.Buffer()
 
   // The acceptors.
-  private val acceptors: Seq[Chan[Transport, Acceptor[Transport]]] =
+  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
     for (acceptorAddress <- config.acceptorAddresses)
       yield chan[Acceptor[Transport]](acceptorAddress, Acceptor.serializer)
 

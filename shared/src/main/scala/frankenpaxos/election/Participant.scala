@@ -100,7 +100,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // The addresses of the other participants.
-  val nodes: Map[Transport#Address, Chan[Transport, Participant[Transport]]] = {
+  val nodes: Map[Transport#Address, Chan[Participant[Transport]]] = {
     for (a <- addresses)
       yield (a -> chan[Participant[Transport]](a, Participant.serializer))
   }.toMap
