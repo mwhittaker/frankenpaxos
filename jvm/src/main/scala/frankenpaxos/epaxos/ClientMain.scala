@@ -1,4 +1,4 @@
-package frankenpaxos.paxos
+package frankenpaxos.epaxos
 
 import frankenpaxos.Actor
 import frankenpaxos.NettyTcpAddress
@@ -7,6 +7,7 @@ import frankenpaxos.PrintLogger
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
+
 
 object ClientMain extends App {
   case class Flags(

@@ -6,7 +6,7 @@ import scala.collection.mutable.ListBuffer
 
 class DependencyGraphTest extends FlatSpec {
 
-  "Tarjan's algorithm" should "work correctly for a simple 6 node example" in {
+  "Dependency Graph execution" should "work correctly for a simple 6 node example" in {
     val commandOne: (String, Int) = ("0", 1)
     val commandTwo: (String, Int) = ("1", 2)
     val commandThree: (String, Int) = ("2", 3)
@@ -30,8 +30,7 @@ class DependencyGraphTest extends FlatSpec {
     graph.addNeighbors(commandSix, listBufferSix)
 
     val stateMachine: StateMachine = new StateMachine()
-    graph.executeCommands(stateMachine)
-    //println(stateMachine)
+    graph.executeGraph(stateMachine)
+    assert(ListBuffer(4, 5, 3, 0, 1, 2).toString().equals(stateMachine.getCurrentState()))
   }
-
 }

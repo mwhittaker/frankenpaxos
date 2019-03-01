@@ -12,6 +12,8 @@ import frankenpaxos.Chan
 import scala.collection.mutable
 import java.util.Random
 
+import com.google.protobuf.ByteString
+
 @JSExportAll
 object ClientInboundSerializer extends ProtoSerializer[ClientInbound] {
   type A = ClientInbound
@@ -33,93 +35,159 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     config: Config[Transport]
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = ClientInbound
-  override def serializer = Client.serializer
+  override val serializer = ClientInboundSerializer
 
-  // The set of replicas.
-  private val replicas: Seq[Chan[Replica[Transport]]] =
-    for (replicaAddress <- config.replicaAddresses)
-      yield
-        chan[Replica[Transport]](
-          replicaAddress,
-          Replica.serializer
-        )
+  val addressAsBytes: ByteString =
+    ByteString.copyFrom(transport.addressSerializer.toBytes(address))
 
-  // valueProposed holds a proposed value, if one has been proposed. Once a
-  // Paxos client has proposed a value, it will not propose any other value.
-  // TODO(neil): This comment is out of date. -Michael.
-  var proposedValue: Option[String] = None
+  // Every request that a client sends is annotated with a monotonically
+  // increasing client id. Here, we assume that if a client fails, it does not
+  // recover, so we are safe to intialize the id to 0. If clients can recover
+  // from failure, we would have to implement some mechanism to ensure that
+  // client ids increase over time, even after crashes and restarts.
+  @JSExport
+  protected var id: Int = 0
 
-  // The state returned to client after command was proposed
-  // TODO(michael): Introduce a state machine abstraction.
-  var state: String = ""
+  // A pending command. Clients can only propose one request at a time, so if
+  // there is a pending command, no other command can be proposed. This
+  // restriction hurts performance a bit---a single client cannot pipeline
+  // requests---but it simplifies the design of the protocol.
+  @JSExportAll
+  case class PendingCommand(
+      id: Int,
+      command: Array[Byte],
+      result: Promise[Instance]
+  )
 
-  // A list of promises to fulfill once a value has been chosen.
-  private var promises: Buffer[Promise[String]] = Buffer()
+  @JSExport
+  var pendingCommand: Option[PendingCommand] = None
 
-  var replies: mutable.Set[String] = mutable.Set()
+  // Leader and acceptor channels.
+  private val replicas: Map[Int, Chan[Replica[Transport]]] = {
+    for ((address, i) <- config.replicaAddresses.zipWithIndex)
+      yield i -> chan[Replica[Transport]](address, Replica.serializer)
+  }.toMap
 
+  val executionMap: mutable.Map[Command, String] = mutable.Map()
+
+  // Timers ////////////////////////////////////////////////////////////////////
+  // A timer to resend a proposed value. If a client doesn't hear back from
+  // quickly enough, it resends its proposal to all of the leaders.
   private val reproposeTimer: Transport#Timer = timer(
     "reproposeTimer",
-    java.time.Duration.ofSeconds(5),
+    // TODO(mwhittaker): Make this a parameter.
+    java.time.Duration.ofSeconds(10),
     () => {
-      proposedValue match {
-        case Some(v) => {
-          for (replica <- replicas) {
-            replica.send(
-              ReplicaInbound().withClientRequest(
-                Request(proposedValue.get)
-              )
-            )
+      pendingCommand match {
+        case None =>
+          logger.fatal("Attempting to repropose, but no value was proposed.")
+
+        case Some(pendingCommand) =>
+          val request = toProposeRequest(pendingCommand)
+          for ((_, replica) <- replicas) {
+            replica.send(ReplicaInbound().withClientRequest(request))
           }
-        }
-        case None => {
-          logger.fatal(
-            "Attempting to repropose value, but no value was ever proposed."
-          )
-        }
       }
       reproposeTimer.start()
     }
-  );
+  )
 
-  override def receive(src: Transport#Address, inbound: ClientInbound): Unit = {
+// Methods ///////////////////////////////////////////////////////////////////
+  override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
     inbound.request match {
-      case Request.RequestReply(r) => handleRequestReply(src, r)
-      case Request.Empty => {
-        logger.fatal("Empty PaxosProposerInbound encountered.")
-      }
+      case Request.RequestReply(r) => handleProposeReply(src, r)
+      case Request.ReadReply(r) => handleReadReply(src, r)
+      case Request.Empty =>
+        logger.fatal("Empty ClientInbound encountered.")
     }
   }
 
-  private def handleRequestReply(
-      address: Transport#Address,
-      response: RequestReply
-  ): Unit = {
-    //state = response.response
-    replies.add(response.commandInstance + ": " + response.command)
-    reproposeTimer.stop()
+  private def toProposeRequest(
+      pendingCommand: PendingCommand
+  ): Request = {
+    val PendingCommand(id, command, _) = pendingCommand
+    Request(
+      Command(clientAddress = addressAsBytes,
+              clientId = id,
+              command = ByteString.copyFrom(command))
+    )
   }
 
-  private def _propose(v: String, promise: Promise[String]): Unit = {
-    //println("Value is being proposed: " + v)
-    proposedValue = Some(v)
+  private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
+    val request = toProposeRequest(pendingCommand)
     val rand = new Random(System.currentTimeMillis())
-    val random_index = rand.nextInt(replicas.length)
+    val random_index = rand.nextInt(replicas.size)
 
-    replicas(random_index)
-      .send(
-        ReplicaInbound().withClientRequest(
-          Request(proposedValue.get)
-        )
-      )
-    reproposeTimer.start()
+    val replica = replicas(random_index)
+    replica.send(ReplicaInbound().withClientRequest(request))
   }
 
-  def propose(v: String): Future[String] = {
-    val promise = Promise[String]()
-    transport.executionContext.execute(() => _propose(v, promise))
+  private def sendReadRequest(command: Command, instance: Instance): Unit = {
+    val replica = replicas(instance.leaderIndex)
+    logger.info("Sending replica message: " + instance.leaderIndex)
+    replica.send(ReplicaInbound().withRead(Read(
+      instance,
+      command
+    )))
+  }
+
+  private def handleProposeReply(
+      src: Transport#Address,
+      proposeReply: RequestReply
+  ): Unit = {
+    pendingCommand match {
+      case Some(PendingCommand(id, command, promise)) =>
+        if (proposeReply.command.clientId == id) {
+          pendingCommand = None
+          reproposeTimer.stop()
+          promise.success(proposeReply.commandInstance)
+          sendReadRequest(proposeReply.command, proposeReply.commandInstance)
+        } else {
+          logger.warn(s"""Received a reply for unpending command with id
+            |'${proposeReply.command.clientId}'.""".stripMargin)
+        }
+      case None =>
+        logger.warn(s"""Received a reply for unpending command with id
+          |'${proposeReply.command.clientId}'.""".stripMargin)
+    }
+  }
+
+  private def handleReadReply(address: Transport#Address, readReply: ReadReply): Unit = {
+    executionMap.put(readReply.command, readReply.state)
+    //println(readReply.state)
+    logger.info("State is " + readReply.state)
+  }
+
+  private def _propose(
+      command: Array[Byte],
+      promise: Promise[Instance]
+  ): Unit = {
+    pendingCommand match {
+      case Some(_) =>
+        val err = "You cannot propose a command while one is pending."
+        promise.failure(new IllegalStateException(err))
+
+      case None =>
+        pendingCommand = Some(PendingCommand(id, command, promise))
+        sendProposeRequest(pendingCommand.get)
+        reproposeTimer.start()
+        id += 1
+    }
+  }
+
+  // Interface /////////////////////////////////////////////////////////////////
+  def propose(command: Array[Byte]): Future[Instance] = {
+    val promise = Promise[Instance]()
+    transport.executionContext.execute(() => _propose(command, promise))
     promise.future
   }
 
+  def propose(command: String): Future[Instance] = {
+    val promise = Promise[Instance]()
+    transport.executionContext.execute(
+      () => _propose(command.getBytes(), promise)
+    )
+    promise.future
+  }
 }

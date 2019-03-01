@@ -1,4 +1,4 @@
-package frankenpaxos.paxos
+package frankenpaxos.epaxos
 
 import java.io.File
 import java.net.InetAddress
@@ -8,7 +8,7 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 
-object LeaderMain extends App {
+object ReplicaMain extends App {
   case class Flags(
       index: Int = -1,
       paxosConfigFile: File = new File(".")
@@ -19,7 +19,7 @@ object LeaderMain extends App {
       .required()
       .valueName("<index>")
       .action((x, f) => f.copy(index = x))
-      .text("Leader index.")
+      .text("Replica index.")
 
     opt[File]('c', "config")
       .required()
@@ -39,6 +39,6 @@ object LeaderMain extends App {
   val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger);
   val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
-  val address = config.leaderAddresses(flags.index)
-  new Leader[NettyTcpTransport](address, transport, logger, config)
+  val address = config.replicaAddresses(flags.index)
+  new Replica[NettyTcpTransport](address, transport, logger, config)
 }

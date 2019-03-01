@@ -1,93 +1,87 @@
 package frankenpaxos.epaxos
 
+import scalax.collection.GraphEdge._
+import scalax.collection.GraphPredef._
+import scalax.collection.mutable.Graph
+
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
+import scala.scalajs.js.annotation.JSExportAll
 
+@JSExportAll
 class DependencyGraph {
-  class Vertex(_contents: String, _sequenceNum: Int, _index: Int, _lowLink: Int, _onStack: Boolean) {
-    var contents: String = _contents
-    var sequenceNum: Int = _sequenceNum
-    var index: Int = _index
-    var lowLink: Int = _lowLink
-    var onStack: Boolean = _onStack
 
-    override def toString: String = contents
-  }
-
-  val adjacencyList: mutable.Map[Vertex, ListBuffer[Vertex]] = mutable.Map()
+  val graph: scalax.collection.mutable.Graph[(String, Int), DiEdge] = scalax.collection.mutable.Graph()
+  var debug: String = ""
 
   def addNeighbors(command: (String, Int), edges: ListBuffer[(String, Int)]): Unit = {
-    val commandVertex: Vertex = new Vertex(command._1, command._2, -1, -1, false)
-    val edgeList: ListBuffer[Vertex] = ListBuffer()
+    graph.add(command)
     for (edge <- edges) {
-      val vertex: Vertex = new Vertex(edge._1, edge._2, -1, -1, false)
-      edgeList.append(vertex)
+      graph += (command ~> edge)
     }
-    adjacencyList.put(commandVertex, edgeList)
   }
+  def executeGraph(stateMachine: StateMachine): Unit = {
+    val components = graph.strongComponentTraverser().map(_.toGraph)
+    val g: Graph[Int, DiEdge] = Graph()
+    val prunedGraph: Graph[(String, Int), DiEdge] = graph.clone()
 
-  def findStronglyConnectedComponents(): ListBuffer[ListBuffer[Vertex]] = {
-    var index: Int = 0
-    var stack: ListBuffer[Vertex] = ListBuffer()
-    var stronglyConnectedComponents: ListBuffer[ListBuffer[Vertex]] = ListBuffer()
+    // Map from Node to Component number
+    val componentNodeSet: mutable.Map[(String, Int), Int] = mutable.Map()
 
-    def isUndefined(vertex: Vertex): Boolean = {
-      vertex.index == -1
-    }
-
-    def stronglyConnect(vertex: Vertex): Unit = {
-      vertex.index = index
-      vertex.lowLink = index
-      index += 1
-      stack.append(vertex)
-      //println(stack)
-      vertex.onStack = true
-
-      println("contents: " + vertex.contents)
-      println("First: " + vertex.index)
-      println("lowlink: " + vertex.lowLink)
-
-      if (adjacencyList.get(vertex).nonEmpty) {
-        for (secondVertex <- adjacencyList.getOrElse(vertex, null)) {
-          if (isUndefined(secondVertex)) {
-            println(secondVertex)
-            stronglyConnect(secondVertex)
-            vertex.lowLink = Math.min(vertex.lowLink, secondVertex.lowLink)
-          } else if (secondVertex.onStack) {
-            vertex.lowLink = Math.min(vertex.lowLink, secondVertex.index)
-          }
+    var componentNum: Int = 0
+    for (component <- components) {
+      for (edge <- component.edges) {
+        prunedGraph -= edge
+        for (node <- edge.nodes) {
+          componentNodeSet.put(node.value, componentNum)
         }
       }
+      componentNum += 1
+    }
 
-      if (vertex.lowLink == vertex.index) {
-        val newComponent: ListBuffer[Vertex] = ListBuffer()
-        var w: Vertex = null
-        do {
-          w = stack.last
-          println(w)
-          stack -= stack.last
-          w.onStack = false
-          newComponent.append(w)
-        } while (!w.contents.equals(vertex.contents))
-        stronglyConnectedComponents.append(newComponent)
+    val seenSet = graph.nodes.map(_.value).toSet.diff(componentNodeSet.keys.toSet)
+    val nodeIterator: Iterator[(String, Int)] = seenSet.toIterator
+    debug = seenSet.toString()
+    // Map from component number to SCC graph component
+    val newComponents: mutable.Map[Int, scalax.collection.Graph[(String, Int), DiEdge]] = mutable.Map()
+
+    for (component <- components) {
+      if (component.nodes.isEmpty) {
+        val node = nodeIterator.next()
+        componentNodeSet.put((node._1, node._2), componentNum)
+        newComponents.put(componentNum, component + node)
+        componentNum += 1
+      } else {
+        newComponents.put(componentNodeSet.getOrElse((component.nodes.head._1, component.nodes.head._2), 0), component)
       }
     }
 
-    for (vertex <- adjacencyList.keys) {
-      if (isUndefined(vertex)) {
-        stronglyConnect(vertex)
+    for (edge <- prunedGraph.edges) {
+      val nodeIterator = edge.nodes.toIterator
+      val one = nodeIterator.next()
+      val two = nodeIterator.next()
+
+      val vertexOne: Option[Int] = componentNodeSet.get((one._1, one._2))
+      val vertexTwo: Option[Int] = componentNodeSet.get((two._1, two._2))
+
+      if (vertexOne.nonEmpty && vertexTwo.nonEmpty) {
+        g += (vertexOne.get ~> vertexTwo.get)
       }
     }
-    //println(stronglyConnectedComponents)
-    stronglyConnectedComponents
-  }
 
-  def executeCommands(stateMachine: StateMachine): Unit = {
-    val components: ListBuffer[ListBuffer[Vertex]] = findStronglyConnectedComponents()
-    for (component <- components.reverse) {
-      val sortedComponent: ListBuffer[Vertex] = component.sortBy(vertex => vertex.sequenceNum)
-      for (vertex <- sortedComponent) {
-        stateMachine.executeCommand(vertex.contents)
+    // Topologically sort the SCC graph
+    val topSort = g.topologicalSort
+    if (topSort.isRight) {
+      // For each strongly connected component in reverse top order
+      for (node <- topSort.right.get.toSeq.reverseIterator) {
+        val nodeList: Option[scalax.collection.Graph[(String, Int), DiEdge]] = newComponents.get(node.value)
+        if (nodeList.nonEmpty) {
+          val ordering = nodeList.get.nodes.toList.sortBy(_.value._2)
+          for (value <- ordering) {
+            // Execute commaand
+            stateMachine.executeCommand(value.value._1)
+          }
+        }
       }
     }
   }

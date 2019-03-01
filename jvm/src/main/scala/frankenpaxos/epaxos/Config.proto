@@ -5,7 +5,7 @@ package frankenpaxos.paxos;
 import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
-  package_name: "frankenpaxos.paxos"
+  package_name: "frankenpaxos.epaxos"
   flat_package: true
 };
 
@@ -16,6 +16,5 @@ message HostPortProto {
 
 message NettyConfigProto {
   required int32 f = 1;
-  repeated HostPortProto acceptorAddress = 2;
-  repeated HostPortProto leaderAddress = 3;
+  repeated HostPortProto replicaAddress = 2;
 }
