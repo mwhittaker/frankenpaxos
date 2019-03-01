@@ -1,6 +1,7 @@
 package frankenpaxos.fastmultipaxos
 
 import collection.mutable
+import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
@@ -31,6 +32,9 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // Fields ////////////////////////////////////////////////////////////////////
   override type InboundMessage = ClientInbound
   override val serializer = ClientInboundSerializer
+
+  val addressAsBytes: ByteString =
+    ByteString.copyFrom(transport.addressSerializer.toBytes(address))
 
   // Every request that a client sends is annotated with a monotonically
   // increasing client id. Here, we assume that if a client fails, it does not
@@ -76,7 +80,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     () => {
       pendingCommand match {
         case Some(PendingCommand(id, command, _)) =>
-          val request = ProposeRequest(clientId = id, command = command)
+          val request = ProposeRequest(
+            Command(clientAddress = addressAsBytes,
+                    clientId = id,
+                    command = command)
+          )
           for ((_, leader) <- leaders) {
             leader.send(LeaderInbound().withProposeRequest(request))
           }
@@ -110,11 +118,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           promise.success(proposeReply.result)
         } else {
           logger.warn(s"""Received a reply for unpending command with id
-                         |'${proposeReply.clientId}'.""".stripMargin)
+                  |'${proposeReply.clientId}'.""".stripMargin)
         }
       case None =>
         logger.warn(s"""Received a reply for unpending command with id
-                       |'${proposeReply.clientId}'.""".stripMargin)
+                |'${proposeReply.clientId}'.""".stripMargin)
     }
   }
 
@@ -126,7 +134,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
       case None =>
         pendingCommand = Some(PendingCommand(id, command, promise))
-        val request = ProposeRequest(id, command)
+        val request = ProposeRequest(
+          Command(clientAddress = addressAsBytes,
+                  clientId = id,
+                  command = command)
+        )
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
             val leader = leaders(config.roundSystem.leader(round))

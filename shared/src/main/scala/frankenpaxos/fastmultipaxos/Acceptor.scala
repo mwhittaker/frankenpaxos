@@ -6,7 +6,6 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.fastpaxos.Config
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -38,7 +37,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
   // The largest round in which this acceptor has received a message. Note that
   // we perform the common MultiPaxos optimization in which every acceptor has
-  // a single round for every slot.
+  // a single round for every slot. Also note that `config.roundSystem` can be
+  // used to convert the round into a leader.
   @JSExport
   protected var round: Int = -1
 
@@ -48,26 +48,26 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       yield i -> chan[Leader[Transport]](leaderAddress, Leader.serializer)
   }.toMap
 
-  // The id of the actor that this acceptor believes is the leader. When a
-  // leader initiates phase 1 of the protocol, it includes its id so that
-  // acceptors know the current leader.
-  @JSExport
-  protected var leaderId: Int = 0
-
   // In Fast Paxos, every acceptor has a single vote round and vote value. With
   // Fast MultiPaxos, we have one pair of vote round and vote value per slot.
   // We call such a pair a vote. The vote also includes the highest round in
   // which an acceptor has received a distinguished "any" value.
   @JSExportAll
-  case class Vote(
+  sealed trait VoteValue
+  case class VVCommand(command: Command) extends VoteValue
+  case object VVNoop extends VoteValue
+  case object VVNothing extends VoteValue
+
+  @JSExportAll
+  case class Entry(
       voteRound: Int,
-      voteValue: Option[String],
+      voteValue: VoteValue,
       anyRound: Option[Int]
   )
 
   // The log of votes.
   @JSExport
-  protected val log: Log[Vote] = new Log()
+  protected val log: Log[Entry] = new Log()
 
   // If this acceptor receives a propose request from a client, and
   @JSExport
@@ -90,30 +90,24 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       proposeRequest: ProposeRequest
   ): Unit = {
     log.get(nextSlot) match {
-      case Some(Vote(voteRound, _, Some(r))) if r == round && voteRound < r =>
+      case Some(Entry(voteRound, _, Some(r))) if r == round && voteRound < r =>
         // If we previously received the distinguished "any" value in this
         // round and we have not already voted in this round, then we are free
         // to vote for the client's request.
-        log.put(nextSlot, Vote(r, Some(proposeRequest.command), None))
-        nextSlot += 1
-        leaders(leaderId).send(
+        log.put(nextSlot, Entry(r, VVCommand(proposeRequest.command), None))
+        val leader = leaders(config.roundSystem.leader(round))
+        leader.send(
           LeaderInbound().withPhase2B(
-            Phase2b(
-              acceptorId = acceptorId,
-              slot = nextSlot,
-              round = round,
-              command = proposeRequest.command,
-              clientAddress = Some(
-                ByteString.copyFrom(transport.addressSerializer.toBytes(src))
-              )
-            )
+            Phase2b(acceptorId = acceptorId, slot = nextSlot, round = round)
+              .withCommand(proposeRequest.command)
           )
         )
+        nextSlot += 1
       case Some(_) | None =>
       // If we have not received the distinguished "any" value, then we
       // simply ignore the client's request.
       //
-      // TODO(mwhittaker): Inform the client of the failure, so that they can
+      // TODO(mwhittaker): Inform the client of the round, so that they can
       // send it to the leader.
     }
   }
@@ -132,16 +126,19 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // exclude votes below the chosen watermark. We also make sure not to
     // return votes for slots that we haven't actually voted in.
     round = phase1a.round
-    leaderId = phase1a.leaderId
     val votes = log
       .prefix()
-      .iteratorFrom(phase1a.chosenWatermark + 1)
+      .iteratorFrom(phase1a.chosenWatermark)
       .flatMap({
-        case (slot, Vote(voteRound, Some(v), _)) =>
-          Some(AcceptorVote(slot = slot, voteRound = voteRound, voteValue = v))
-        case _ => None
+        case (s, Entry(vr, VVCommand(command), _)) =>
+          Some(Phase1bVote(slot = s, voteRound = vr).withCommand(command))
+        case (s, Entry(vr, VVNoop, _)) =>
+          Some(Phase1bVote(slot = s, voteRound = vr).withNoop(Noop()))
+        case (_, Entry(_, VVNothing, _)) =>
+          None
       })
-    leaders(leaderId).send(
+    val leader = leaders(config.roundSystem.leader(round))
+    leader.send(
       LeaderInbound().withPhase1B(
         Phase1b(acceptorId = acceptorId, round = round, vote = votes.to[Seq])
       )
@@ -149,9 +146,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase2a(src: Transport#Address, phase2a: Phase2a): Unit = {
-    val Vote(voteRound, voteValue, anyRound) = log.get(phase2a.slot) match {
+    val Entry(voteRound, voteValue, anyRound) = log.get(phase2a.slot) match {
       case Some(vote) => vote
-      case None       => Vote(-1, None, None)
+      case None       => Entry(-1, VVNothing, None)
     }
 
     // Ignore messages from smaller rounds.
@@ -172,22 +169,52 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    // Update our round, vote round, vote value, and respond to the leader.
+    // Update our round, vote round, vote value, next slot, and respond to the
+    // leader.
     round = phase2a.round
-    leaderId = phase2a.leaderId
+    val leader = leaders(config.roundSystem.leader(round))
     phase2a.value match {
-      case Some(v) =>
-        log.put(phase2a.slot, Vote(round, Some(v), None))
-        leaders(leaderId).send(
+      case Phase2a.Value.Command(command) =>
+        log.put(phase2a.slot, Entry(round, VVCommand(command), None))
+        leader.send(
           LeaderInbound().withPhase2B(
-            Phase2b(acceptorId = acceptorId,
-                    slot = phase2a.slot,
-                    round = round,
-                    command = v)
+            Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = round)
+              .withCommand(command)
           )
         )
-      case None =>
-        log.put(phase2a.slot, Vote(voteRound, voteValue, Some(round)))
+        if (phase2a.slot >= nextSlot) {
+          nextSlot = phase2a.slot + 1
+        }
+
+      case Phase2a.Value.Noop(_) =>
+        log.put(phase2a.slot, Entry(round, VVNoop, None))
+        leader.send(
+          LeaderInbound().withPhase2B(
+            Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = round)
+              .withNoop(Noop())
+          )
+        )
+        if (phase2a.slot >= nextSlot) {
+          nextSlot = phase2a.slot + 1
+        }
+
+      case Phase2a.Value.Any(_) =>
+        log.put(phase2a.slot, Entry(voteRound, voteValue, Some(round)))
+
+      case Phase2a.Value.AnySuffix(_) =>
+        val updatedVotes =
+          log
+            .prefix()
+            .iteratorFrom(phase2a.slot)
+            .map({
+              case (s, Entry(vr, vv, _)) => (s, Entry(vr, vv, Some(round)))
+            })
+        for ((slot, entry) <- updatedVotes) {
+          log.put(slot, entry)
+        }
+        log.putTail(log.prefix.lastKey + 1, Entry(-1, VVNothing, Some(round)))
+
+      case Phase2a.Value.Empty => logger.fatal("Empty Phase2a value.")
     }
   }
 }

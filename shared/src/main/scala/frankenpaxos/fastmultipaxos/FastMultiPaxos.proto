@@ -1,21 +1,18 @@
-// Proposer:
-// round
-// index -> (vote value, vote round)
-// next unovted index
-
-
-// leader
-// active leader
-// round number
-//   - is fast
-//   - is slow
-// client id table?
+// A protocol cheatsheet, similar to [1].
 //
-// stuff known to be committed
-// phase 1b responses
+//   Client              Leader              Acceptor
+//      | ---------------> |                     |     ProposeRequest
+//      | -----------------^-------------------> |     ProposeRequest
+//      | <--------------- |                     |     ProposeReply
+//      |                  | ------------------> |     Phase1a
+//      |                  | <------------------ |     Phase1b
+//      |                  | ------------------> |     Phase2a
+//      |                  | <------------------ |     Phase2b
+//      |                  |                     |
+//      |                  |                     |
+//      |                  |                     |
 //
-// for every index:
-//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
 
 syntax = "proto2";
 
@@ -28,50 +25,90 @@ option (scalapb.options) = {
   flat_package: true
 };
 
-message ProposeRequest {
-  required int32 client_id = 1;
-  required string command = 2;
+// A special noop command that does not affect the state machine.
+message Noop {}
+
+// The designated "any" value.
+message AnyVal {}
+
+// An infinite suffix of any's. See Phase2a.
+message AnyValSuffix {}
+
+message Command {
+  // The client's address.
+  required bytes client_address = 1;
+
+  // Clients annotate every command with a unique and monotonically increasing
+  // id. The pair of (client address, client id) uniquely identify a command.
+  required int32 client_id = 2;
+
+  // TODO(mwhittaker): Add state machine abstraction.
+  required string command = 3;
 }
 
+message ProposeRequest {
+  required Command command = 1;
+}
 
 message ProposeReply {
+  // The round in which this command was chosen and executed. Leaders inform
+  // clients of the current round so that they know whether to send future
+  // requests directly to acceptors (if it's a fast round) or to send future
+  // requests to the leader (if it's a classic round).
   required int32 round = 1;
+
+  // The client id of the command.
   required int32 client_id = 2;
+
+  // The result of executing the command.
+  // TODO(mwhittaker): Add state machine abstraction.
   required string result = 3;
 }
 
 message Phase1a {
-  required int32 leader_id = 1;
-  required int32 round = 2;
-  required int32 chosenWatermark = 3;
+  required int32 round = 1;
+
+  // The leader knows that all entries in slots less than chosenWatermark have
+  // been chosen. Acceptors do not have to include slots below chosenWatermark
+  // in their phase1b response.
+  required int32 chosenWatermark = 2;
 }
 
-message AcceptorVote {
+message Phase1bVote {
   required int32 slot = 1;
   required int32 voteRound = 2;
-  required string voteValue = 3;
+  oneof value {
+     Command command = 3;
+     Noop noop = 4;
+  }
 }
 
 message Phase1b {
   required int32 acceptor_id = 1;
   required int32 round = 2;
-  repeated AcceptorVote vote = 3;
+  repeated Phase1bVote vote = 3;
 }
 
-
 message Phase2a {
-  required int32 leader_id = 1;
-  required int32 slot = 2;
-  required int32 round = 3;
-  optional string value = 4;
+  required int32 slot = 1;
+  required int32 round = 2;
+  oneof value {
+     Command command = 3;
+     Noop noop = 4;
+     AnyVal any = 5;
+     // In this case, slot above is the start of the suffix.
+     AnyValSuffix any_suffix = 6;
+  }
 }
 
 message Phase2b {
   required int32 acceptor_id = 1;
   required int32 slot = 2;
   required int32 round = 3;
-  required string command = 4;
-  optional bytes client_address = 5;
+  oneof vote {
+    Command command = 4;
+    Noop noop = 5;
+  }
 }
 
 message ClientInbound {
