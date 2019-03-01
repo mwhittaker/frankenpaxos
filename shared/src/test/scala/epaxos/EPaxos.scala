@@ -17,7 +17,7 @@ class EPaxos(val f: Int) {
   val config = Config[FakeTransport](
     f = f,
     replicaAddresses = for (i <- 1 to numReplicas)
-      yield FakeTransportAddress(s"Replica $i")
+      yield FakeTransportAddress(s"Replica $i"),
   )
 
   // Clients.
@@ -43,11 +43,13 @@ class EPaxos(val f: Int) {
 
 sealed trait EPaxosCommand
 case class Propose(clientIndex: Int, value: String) extends EPaxosCommand
-case class TransportCommand(command: FakeTransportCommand) extends EPaxosCommand
+case class TransportCommand(command: FakeTransportCommand)
+    extends EPaxosCommand
 
-class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
-  override type System = (EPaxos, Set[String])
-  override type State = Set[String]
+class SimulatedEPaxos(val f: Int)
+    extends SimulatedSystem[SimulatedEPaxos] {
+  override type System = (EPaxos, Set[Unit])
+  override type State = Set[Unit]
   override type Command = EPaxosCommand
 
   val commands: mutable.ListBuffer[String] = mutable.ListBuffer()
@@ -72,11 +74,12 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
     //    .to[Set]
 
     //clientChosen ++ proposerChosen ++ acceptorChosen
-    var commands: mutable.Set[String] = mutable.Set()
+    /*var commands: mutable.Set[Array[Byte]] = mutable.Set()
     for (client <- ePaxos.clients) {
-      commands = commands.union(client.replies)
+      commands.add(client.pendingCommand.get.command)
     }
-    commands.toSet
+    commands.toSet*/
+    Set.empty
   }
 
   override def newSystem(): SimulatedEPaxos#System = {
@@ -93,34 +96,6 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
       newState: SimulatedEPaxos#State,
       oldState: Option[SimulatedEPaxos#State]
   ): Option[String] = {
-    /*if (newState.size > 1) {
-      return Some(
-        s"Multiple values have been chosen: $newState (previously $oldState)."
-      )
-    }*/
-
-    if (oldState.isDefined && !oldState.get.subsetOf(newState)) {
-      return Some(
-        s"Different values have been chosen: ${oldState.get} and " +
-          s"then $newState."
-      )
-    }
-
-    val instanceCommandMapping: mutable.Map[String, Int] = mutable.Map()
-    for (state <- newState) {
-      val tokens: Array[String] = state.split(": ")
-      instanceCommandMapping.put(
-        tokens(0),
-        instanceCommandMapping.getOrElse(tokens(0), 0) + 1
-      )
-    }
-
-    for (key <- instanceCommandMapping.keys) {
-      if (instanceCommandMapping.getOrElse(key, 0) > 1) {
-        return Some("More than one value has been chosen for a single instance")
-      }
-    }
-
     None
   }
 
@@ -168,18 +143,14 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
         val r = scala.util.Random
         val index: Int = r.nextInt(commands.size)
 
-        val one: CommandPair = CommandPair(commands(index), value)
-        val two: CommandPair = CommandPair(value, commands(index))
-
         for (rep <- ePaxos.replicas) {
-          rep.interferenceData.put(one, true)
-          rep.interferenceData.put(two, true)
+          rep.stateMachine.addConflict(commands(index).getBytes(), value.getBytes())
         }
 
         ePaxos.clients(clientId).propose(value)
       case TransportCommand(command) =>
         FakeTransport.runCommand(ePaxos.transport, command)
     }
-    (ePaxos, allChosenValues ++ chosenValues(ePaxos))
+    (ePaxos, Set.empty)
   }
 }

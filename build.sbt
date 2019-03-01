@@ -18,6 +18,8 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
       "org.scalactic" %% "scalactic" % "3.0.5",
       "org.scalatest" %% "scalatest" % "3.0.5" % "test",
       "com.github.tototoshi" %% "scala-csv" % "1.3.5"
+      "org.scala-graph" %% "graph-core" % "1.12.5",
+      "org.scala-graph" %%% "graph-core" % "1.12.5"
     ),
     PB.targets in Compile := Seq(
       scalapb.gen() -> (sourceManaged in Compile).value

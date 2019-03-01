@@ -9,8 +9,19 @@ option (scalapb.options) = {
   flat_package: true
 };
 
+message Command {
+  // The client's address.
+  required bytes client_address = 1;
+
+  // Clients annotate every command with a unique and monotonically increasing
+  // id. The pair of (client address, client id) uniquely identify a command.
+  required int32 client_id = 2;
+
+  required bytes command = 3;
+}
+
 message Request {
-  required string command = 1;
+  required Command command = 1;
 }
 
 message Ballot {
@@ -28,6 +39,16 @@ message Prepare {
   required Instance instance = 2;
 }
 
+message Read {
+  required Instance instance = 1;
+  required Command command = 2;
+}
+
+message ReadReply {
+  required string state = 1;
+  required Command command = 2;
+}
+
 message NACK {
   required Ballot old_ballot = 1;
   required Instance instance = 2;
@@ -36,7 +57,7 @@ message NACK {
 message PrepareOk {
   required Ballot ballot = 1;
   required Instance instance = 2;
-  required string command = 3;
+  required Command command = 3;
   required int32 sequence_number = 4;
   repeated Instance dependencies = 5;
   required string status = 6;
@@ -44,43 +65,48 @@ message PrepareOk {
 }
 
 message PreAccept {
-  required string command = 1;
+  required Command command = 1;
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
   required Instance command_instance = 4;
   required bool avoid = 5;
+  required Ballot ballot = 6;
 }
 
 message PreAcceptOk {
-  required string command = 1;
+  required Command command = 1;
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
   required Instance command_instance = 4;
   required bool avoid = 5;
+  required Ballot ballot = 6;
 }
 
 message RequestReply {
-  required string command = 1;
+  required Command command = 1;
   required Instance command_instance = 2;
 }
 
 message Accept {
-  required string command = 1;
+  required Command command = 1;
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
   required Instance command_instance = 4;
+  required Ballot ballot = 6;
 }
 
 message AcceptOk {
-  required string command = 1;
+  required Command command = 1;
   required Instance command_instance = 2;
+  required Ballot ballot = 3;
 }
 
 message Commit {
-  required string command = 1;
+  required Command command = 1;
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
   required Instance command_instance = 4;
+  required Ballot ballot = 5;
 }
 
 message ReplicaInbound {
@@ -94,22 +120,13 @@ message ReplicaInbound {
     Prepare prepare_request = 7;
     PrepareOk prepare_ok = 8;
     NACK nack = 9;
+    Read read = 10;
   }
 }
 
 message ClientInbound {
   oneof request {
     RequestReply requestReply = 1;
+    ReadReply readReply = 2;
   }
 }
-
-
-
-
-
-
-
-
-
-
-
