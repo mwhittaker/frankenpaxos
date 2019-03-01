@@ -1,23 +1,15 @@
 package frankenpaxos.fastmultipaxos
 
 import collection.mutable
+import collection.mutable
 import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.fastpaxos.Config
 import scala.scalajs.js.annotation._
 
-// SortedMap[Slot, Entry]
-//
-// smallest unchosen
-// next out
-//
-// Entry ==
-//  Phase2(pending phase 2 votes)
-//  Chosen(value)
-//
-// pending phase 1s
+// TODO(mwhittaker): Add client map, and also avoid re-executing the same
+// command multiple times.
 
 @JSExportAll
 object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
@@ -35,148 +27,157 @@ object Leader {
 @JSExportAll
 class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
+    electionAddress: Transport#Address,
+    heartbeatAddress: Transport#Address,
     transport: Transport,
     logger: Logger,
     config: Config[Transport]
 ) extends Actor(address, transport, logger) {
+  // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = LeaderInbound
   override val serializer = LeaderInboundSerializer
 
-  // Sanity check the Paxos configuration and compute the acceptor's id.
-  logger.check(config.acceptorAddresses.contains(address))
-  private val acceptor_id = config.acceptorAddresses.indexOf(address)
-
-  // The largest round in which this acceptor has received a message. Note that
-  // we perform the common MultiPaxos optimization in which every acceptor has
-  // a single round for every slot.
-  @JSExport
-  protected var round: Int = -1
-
-  // A value, or the special designated "any" value. We avoid calling the "any"
-  // value Any to class with the type Any.
-  @JSExportAll
-  sealed trait VoteValue
-  @JSExportAll
-  case class Value(v: String) extends VoteValue
-  @JSExportAll
-  case object AnyVal extends VoteValue
-
-  // In Fast Paxos, every acceptor has a single vote round and vote value. With
-  // Fast MultiPaxos, we have one pair of vote round and vote value per slot.
-  // We call such a pair a vote.
-  @JSExportAll
-  case class Vote(voteRound: Int, voteValue: VoteValue)
-
-  // Slots in the replicated log are indexed by integers.
-  @JSExport
+  type AcceptorId = Int
+  type Round = Int
   type Slot = Int
 
-  // `votes` holds the vote for every slot. If the acceptor has not voted in a
-  // particular slot, then the slot does not have an entry in `votes`. You can
-  // also think of `votes` as the replicated log, though we represent the log
-  // with a map instead of something like an array.
-  @JSExport
-  protected val votes: mutable.Map[Slot, Vote] = mutable.Map()
+  // Fields ////////////////////////////////////////////////////////////////////
+  // Sanity check the Paxos configuration and compute the leader's id.
+  logger.check(config.leaderAddresses.contains(address))
+  private val leaderId = config.leaderAddresses.indexOf(address)
 
-  // If this acceptor receives a propose request from a client, and
+  // Channels to all other leaders.
+  private val otherLeaders: Seq[Chan[Leader[Transport]]] =
+    for (a <- config.leaderAddresses if a != address)
+      yield chan[Leader[Transport]](a, Leader.serializer)
+
+  // Channels to all the acceptors.
+  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
+    for (address <- config.acceptorAddresses)
+      yield chan[Acceptor[Transport]](address, Acceptor.serializer)
+
+  // The current round. Initially, the leader that owns round 0 is the active
+  // leader, and all other leaders are inactive.
   @JSExport
-  protected val nextSlot = 0;
+  protected var round: Round =
+    if (config.roundSystem.leader(0) == leaderId) 0 else -1
+
+  // The log of chosen commands.
+  sealed trait Entry
+  case class ECommand(command: Command) extends Entry
+  case object ENoop extends Entry
+
+  @JSExport
+  protected val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
+
+  // At any point in time, the leader knows that all slots less than
+  // chosenWatermark have been chosen. That is, for every `slot` <
+  // chosenWatermark, there is an Entry for `slot` in `log`.
+  @JSExport
+  protected var chosenWatermark: Slot = 0
+
+  // The next slot in which to propose a command.
+  //
+  // TODO(mwhittaker): Add a buffer to prevent the leader from running too far
+  // ahead.
+  @JSExport
+  protected var nextSlot: Slot = 0
+
+  // The state of the leader.
+  sealed trait State
+
+  // This leader is not the active leader.
+  //
+  // TODO(mwhittaker): Keep track of who the active leader is.
+  case object Inactive extends State
+
+  // This leader is executing phase 1.
+  case class Phase1(
+      // Phase 1b responses, indexed by acceptor id.
+      phase1bs: mutable.Map[AcceptorId, Phase1b]
+  ) extends State
+
+  // This leader has finished executing phase 1 and is now executing phase 2.
+  case class Phase2(
+      phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]]
+      // TODO(mwhittaker): Add timer to resend phase 2a's.
+  ) extends State
+
+  @JSExport
+  protected var state: State =
+    if (round == 0) {
+      for (acceptor <- acceptors) {
+        acceptor.send(
+          AcceptorInbound().withPhase1A(
+            Phase1a(round = round, chosenWatermark = chosenWatermark)
+          )
+        )
+      }
+      Phase1(mutable.Map())
+    } else {
+      Inactive
+    }
+
+  // Leaders participate in a leader election protocol to maintain a
+  // (hopefully) stable leader.
+  //
+  // TODO(mwhittaker): Pass in leader election options.
+  private val election: frankenpaxos.election.Participant[Transport] =
+    new frankenpaxos.election.Participant[Transport](
+      electionAddress,
+      transport,
+      logger,
+      config.leaderAddresses.to[Set],
+      leader = Some(config.leaderAddresses(config.roundSystem.leader(0)))
+    )
+  // TODO(mwhittaker): Is this thread safe? It's possible that the election
+  // participant invokes the callback before this leader has finished
+  // initializing?
+  election.register(leaderChange)
+
+  // Leaders monitor acceptors to make sure they are still alive.
+  //
+  // TODO(mwhittaker): Pass in hearbeat options.
+  private val heartbeat: frankenpaxos.heartbeat.Participant[Transport] =
+    new frankenpaxos.heartbeat.Participant[Transport](
+      heartbeatAddress,
+      transport,
+      logger,
+      config.acceptorAddresses.to[Set]
+    )
+
+  // Methods ///////////////////////////////////////////////////////////////////
+  def leaderChange(leader: Transport#Address): Unit = ???
 
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
-    ???
-    // import LeaderInbound.Request
-    // inbound.request match {
-    //   case Request.ProposeRequest(r) => handleProposeRequest(src, r)
-    //   case Request.Phase1A(r)        => handlePhase1a(src, r)
-    //   case Request.Phase2A(r)        => handlePhase2a(src, r)
-    //   case Request.Empty => {
-    //     logger.fatal("Empty LeaderInbound encountered.")
-    //   }
-    // }
+    import LeaderInbound.Request
+    inbound.request match {
+      case Request.ProposeRequest(r) => handleProposeRequest(src, r)
+      case Request.Phase1B(r)        => handlePhase1b(src, r)
+      case Request.Phase2B(r)        => handlePhase2b(src, r)
+      case Request.Empty =>
+        logger.fatal("Empty LeaderInbound encountered.")
+    }
   }
 
-//  private def handleProposeRequest(
-//      src: Transport#Address,
-//      proposeRequest: ProposeRequest
-//  ): Unit = {
-//    // If we receive a value from a client, we ignore it unless we have
-//    // received the distinguished any value from the leader. In that case, we
-//    // vote for it.
-//    voteValue match {
-//      case AnyVal =>
-//        voteRound = round
-//        voteValue = Value(proposeRequest.v)
-//        val client = chan[Client[Transport]](src, Client.serializer)
-//        client.send(
-//          ClientInbound().withPhase2B(
-//            Phase2b(acceptorId = index, round = round)
-//          )
-//        )
-//      case Value(_) | Nothing =>
-//    }
-//  }
-//
-//  private def handlePhase1a(src: Transport#Address, phase1a: Phase1a): Unit = {
-//    // Ignore messages from previous rounds.
-//    if (phase1a.round <= round) {
-//      logger.info(
-//        s"An acceptor received a phase 1a message for round " +
-//          s"${phase1a.round} but is in round $round."
-//      )
-//      return
-//    }
-//
-//    // Bump our round and send the leader our vote round and vote value.
-//    round = phase1a.round
-//    val optionalVoteValue = voteValue match {
-//      case Value(v)         => Some(v)
-//      case Nothing | AnyVal => None
-//    }
-//    val leader = chan[Leader[Transport]](src, Leader.serializer)
-//    leader.send(
-//      LeaderInbound().withPhase1B(
-//        Phase1b(round = round, acceptorId = index, voteRound = voteRound)
-//          .update(_.optionalVoteValue := optionalVoteValue)
-//      )
-//    )
-//  }
-//
-//  private def handlePhase2a(src: Transport#Address, phase2a: Phase2a): Unit = {
-//    // Ignore messages from smaller rounds.
-//    if (phase2a.round < round) {
-//      logger.info(
-//        s"An acceptor received a phase 2a message for round " +
-//          s"${phase2a.round} but is in round $round."
-//      )
-//      return
-//    }
-//
-//    // Ignore messages from our current round if we've already voted.
-//    if (phase2a.round == round && phase2a.round == voteRound) {
-//      logger.info(
-//        s"An acceptor received a phase 2a message for round " +
-//          s"${phase2a.round} but has already voted in round $round."
-//      )
-//      return
-//    }
-//
-//    // If the leader sends us the designated `any` value, then we vote for the
-//    // next thing that we receive. Otherwise, we vote now.
-//    phase2a.value match {
-//      case Some(v) =>
-//        round = phase2a.round
-//        voteRound = phase2a.round
-//        voteValue = Value(v)
-//
-//        val leader = chan[Leader[Transport]](src, Leader.serializer)
-//        leader.send(
-//          LeaderInbound().withPhase2B(
-//            Phase2b(acceptorId = index, round = round)
-//          )
-//        )
-//      case None =>
-//        round = phase2a.round
-//        voteValue = AnyVal
-//    }
-//  }
+  private def handleProposeRequest(
+      src: Transport#Address,
+      request: ProposeRequest
+  ): Unit = {
+    ???
+  }
+
+  private def handlePhase1b(
+      src: Transport#Address,
+      request: Phase1b
+  ): Unit = {
+    ???
+  }
+
+  private def handlePhase2b(
+      src: Transport#Address,
+      request: Phase2b
+  ): Unit = {
+    ???
+  }
 }

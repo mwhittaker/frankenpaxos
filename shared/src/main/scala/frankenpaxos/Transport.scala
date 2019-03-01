@@ -37,6 +37,10 @@ import scala.concurrent.ExecutionContext
 // # Threading
 // All Transport implementations MUST be single-threaded. Actor `receive`
 // methods and timer callbacks must be called serially on a single thread.
+//
+// TODO(mwhittaker): Transports should have a `start` method so that actors can
+// finish construction before the transport starts up. They should probably
+// also have a `waitForTermination` function or something similar.
 trait Transport[Self <: Transport[Self]] {
   // The type of address used to identify actors. Every Transport
   // implementation is free to use its own type of address.

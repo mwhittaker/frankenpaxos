@@ -70,15 +70,9 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = ParticipantInbound
   override val serializer = ParticipantInboundSerializer
 
-  // Verify that this participant's address is in the set of addresses.
-  logger.check(addresses.contains(address))
-
-  @JSExport
-  protected val otherAddresses: Set[Transport#Address] = addresses - address
-
   type ParticipantChan = Chan[Participant[Transport]]
   private val chans: Map[Transport#Address, ParticipantChan] = {
-    for (a <- otherAddresses)
+    for (a <- addresses)
       yield a -> chan[Participant[Transport]](a, Participant.serializer)
   }.toMap
 
@@ -86,13 +80,13 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   // doesn't hear back before the timer expires, it sends another. If it does,
   // it sets a success timer to send another ping.
   private val failTimers: Map[Transport#Address, Transport#Timer] = {
-    for (a <- otherAddresses)
+    for (a <- addresses)
       yield a -> timer(s"failTimer$a", options.failPeriod, () => fail(a))
   }.toMap
 
   // Timers that are set after a participant receives a pong.
   private val successTimers: Map[Transport#Address, Transport#Timer] = {
-    for (a <- otherAddresses)
+    for (a <- addresses)
       yield
         a -> timer(s"successTimer$a", options.successPeriod, () => succeed(a))
   }.toMap
@@ -100,14 +94,14 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   // The number of unacknowledged retries sent to every participant.
   @JSExport
   protected val numRetries: mutable.Map[Transport#Address, Int] = mutable.Map()
-  for (a <- otherAddresses) {
+  for (a <- addresses) {
     numRetries(a) = 0
   }
 
   // The addresses of participants that are alive.
   @JSExport
   protected val alive: mutable.Set[Transport#Address] =
-    mutable.Set() ++ otherAddresses
+    mutable.Set() ++ addresses
 
   // Send a ping to every participant and start the timers.
   for ((a, chan) <- chans) {
