@@ -72,6 +72,11 @@ message Phase1a {
   // been chosen. Acceptors do not have to include slots below chosenWatermark
   // in their phase1b response.
   required int32 chosenWatermark = 2;
+
+  // The leader also knows that every slot in chosenSlot has been chosen. As
+  // with chosenWatermark, an acceptor does not have to include a slot in a
+  // phase1b response if the leader already knows its chosen.
+  repeated int32 chosenSlot = 3;
 }
 
 message Phase1bVote {
