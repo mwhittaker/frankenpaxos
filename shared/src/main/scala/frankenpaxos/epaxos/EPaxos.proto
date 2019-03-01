@@ -1,0 +1,115 @@
+syntax = "proto2";
+
+package frankenpaxos.epaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.epaxos"
+  flat_package: true
+};
+
+message Request {
+  required string command = 1;
+}
+
+message Ballot {
+  required int32 ordering = 1;
+  required int32 replica_index = 2;
+}
+
+message Instance {
+  required int32 leader_index = 1;
+  required int32 instance_number = 2;
+}
+
+message Prepare {
+  required Ballot ballot = 1;
+  required Instance instance = 2;
+}
+
+message NACK {
+  required Ballot old_ballot = 1;
+  required Instance instance = 2;
+}
+
+message PrepareOk {
+  required Ballot ballot = 1;
+  required Instance instance = 2;
+  required string command = 3;
+  required int32 sequence_number = 4;
+  repeated Instance dependencies = 5;
+  required string status = 6;
+  required int32 replica_index = 7;
+}
+
+message PreAccept {
+  required string command = 1;
+  required int32 sequence_number = 2;
+  repeated Instance dependencies = 3;
+  required Instance command_instance = 4;
+  required bool avoid = 5;
+}
+
+message PreAcceptOk {
+  required string command = 1;
+  required int32 sequence_number = 2;
+  repeated Instance dependencies = 3;
+  required Instance command_instance = 4;
+  required bool avoid = 5;
+}
+
+message RequestReply {
+  required string command = 1;
+  required Instance command_instance = 2;
+}
+
+message Accept {
+  required string command = 1;
+  required int32 sequence_number = 2;
+  repeated Instance dependencies = 3;
+  required Instance command_instance = 4;
+}
+
+message AcceptOk {
+  required string command = 1;
+  required Instance command_instance = 2;
+}
+
+message Commit {
+  required string command = 1;
+  required int32 sequence_number = 2;
+  repeated Instance dependencies = 3;
+  required Instance command_instance = 4;
+}
+
+message ReplicaInbound {
+  oneof request {
+    PreAccept preAccept = 1;
+    PreAcceptOk preAcceptOk = 2;
+    Accept accept = 3;
+    AcceptOk acceptOk = 4;
+    Commit commit = 5;
+    Request client_request = 6;
+    Prepare prepare_request = 7;
+    PrepareOk prepare_ok = 8;
+    NACK nack = 9;
+  }
+}
+
+message ClientInbound {
+  oneof request {
+    RequestReply requestReply = 1;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
