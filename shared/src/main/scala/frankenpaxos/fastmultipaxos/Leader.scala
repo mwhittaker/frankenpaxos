@@ -449,6 +449,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Inactive | Phase1(_, _, _) =>
         logger.fatal("Executing resendPhase2as not in phase 2.")
       case Phase2(pendingEntries, _, _) =>
+        // TODO(mwhittaker): Don't iterate over pendingEntries. Instead,
+        // iterate over non-chosen instances from chosenWatermark to the
+        // largest value in log.
         for ((slot, entry) <- pendingEntries) {
           val phase2a = Phase2a(slot = slot, round = round)
           val msg = entry match {

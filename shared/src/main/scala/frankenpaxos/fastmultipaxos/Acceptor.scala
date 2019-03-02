@@ -163,6 +163,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Ignore messages from our current round if we've already voted.
+    // TODO(mwhittaker): For liveness, I think we want to re-send our votes.
+    // Otherwise, the leader could be unaware a value is chosen and re-send a
+    // phase 2a that is ignored by all the acceptors.
     if (phase2a.round == voteRound) {
       logger.info(
         s"An acceptor received a phase 2a message for round " +
