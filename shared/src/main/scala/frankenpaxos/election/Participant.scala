@@ -45,9 +45,9 @@ object LeaderElectionOptions {
   val default = LeaderElectionOptions(
     pingPeriod = java.time.Duration.ofSeconds(1),
     noPingTimeoutMin = java.time.Duration.ofSeconds(10),
-    noPingTimeoutMax = java.time.Duration.ofSeconds(11),
+    noPingTimeoutMax = java.time.Duration.ofSeconds(12),
     notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(10),
-    notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(11)
+    notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(12)
   )
 }
 

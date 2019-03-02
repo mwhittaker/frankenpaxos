@@ -48,6 +48,18 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       yield i -> chan[Leader[Transport]](leaderAddress, Leader.serializer)
   }.toMap
 
+  // Every acceptor runs a heartbeat participant to inform the leaders that it
+  // is still alive.
+  @JSExport
+  protected val heartbeatAddress: Transport#Address =
+    config.acceptorHeartbeatAddresses(acceptorId)
+  @JSExport
+  protected val heartbeat: frankenpaxos.heartbeat.Participant[Transport] =
+    new frankenpaxos.heartbeat.Participant[Transport](heartbeatAddress,
+                                                      transport,
+                                                      logger,
+                                                      Set())
+
   // In Fast Paxos, every acceptor has a single vote round and vote value. With
   // Fast MultiPaxos, we have one pair of vote round and vote value per slot.
   // We call such a pair a vote. The vote also includes the highest round in

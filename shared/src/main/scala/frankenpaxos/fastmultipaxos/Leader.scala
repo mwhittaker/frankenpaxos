@@ -25,8 +25,6 @@ object Leader {
 @JSExportAll
 class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
-    electionAddress: Transport#Address,
-    heartbeatAddress: Transport#Address,
     transport: Transport,
     logger: Logger,
     config: Config[Transport]
@@ -149,13 +147,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // (hopefully) stable leader.
   //
   // TODO(mwhittaker): Pass in leader election options.
-  private val election: frankenpaxos.election.Participant[Transport] =
+  @JSExport
+  protected val electionAddress: Transport#Address =
+    config.leaderElectionAddresses(leaderId)
+  @JSExport
+  protected val election: frankenpaxos.election.Participant[Transport] =
     new frankenpaxos.election.Participant[Transport](
       electionAddress,
       transport,
       logger,
-      config.leaderAddresses.to[Set],
-      leader = Some(config.leaderAddresses(config.roundSystem.leader(0)))
+      config.leaderElectionAddresses.to[Set],
+      leader = Some(
+        config.leaderElectionAddresses(config.roundSystem.leader(0))
+      )
     )
   // TODO(mwhittaker): Is this thread safe? It's possible that the election
   // participant invokes the callback before this leader has finished
@@ -165,12 +169,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // Leaders monitor acceptors to make sure they are still alive.
   //
   // TODO(mwhittaker): Pass in hearbeat options.
-  private val heartbeat: frankenpaxos.heartbeat.Participant[Transport] =
+  @JSExport
+  protected val heartbeatAddress: Transport#Address =
+    config.leaderHeartbeatAddresses(leaderId)
+  @JSExport
+  protected val heartbeat: frankenpaxos.heartbeat.Participant[Transport] =
     new frankenpaxos.heartbeat.Participant[Transport](
       heartbeatAddress,
       transport,
       logger,
-      config.acceptorAddresses.to[Set]
+      config.acceptorHeartbeatAddresses.to[Set]
     )
 
   // Methods ///////////////////////////////////////////////////////////////////
@@ -304,7 +312,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Phase1(phase1bs, pendingProposals, resendPhase1as) =>
         if (request.round != round) {
           logger.debug(s"""Leader received phase 1b in round ${request.round},
-            |but is in round $round.""".stripMargin)
+                          |but is in round $round.""".stripMargin)
           return
         }
 
@@ -361,8 +369,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         //   acceptor 1 vote:                   x       x   x
         //   acceptor 2 vote:               x       x   x           x
         val endSlot: Int = math.max(
-          votes.map({ case (a, vs) => vs.firstKey }).max,
-          log.lastKey
+          votes
+            .map({ case (a, vs) => if (vs.size == 0) -1 else vs.lastKey })
+            .max,
+          if (log.size == 0) -1 else log.lastKey
         )
 
         // For every unchosen slot between the chosenWatermark and endSlot,
@@ -466,11 +476,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   def leaderChange(leader: Transport#Address): Unit = {
-    // TODO(mwhittaker): Implement.
+    val leaderAddress =
+      config.leaderAddresses(config.leaderElectionAddresses.indexOf(leader))
+
     state match {
       case Inactive =>
         // We are the new leader!
-        if (leader == address) {
+        if (leaderAddress == address) {
+          // TODO(mwhittaker): Only go to fast round if a superquorum of nodes
+          // are alive.
           round = config.roundSystem
             .nextFastRound(leaderId, round)
             .getOrElse(config.roundSystem.nextClassicRound(leaderId, round))
@@ -481,14 +495,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case Phase1(_, _, resendPhase1asTimer) =>
         // We are no longer the leader!
-        if (leader != address) {
+        if (leaderAddress != address) {
           resendPhase1asTimer.stop()
           state = Inactive
         }
 
       case Phase2(_, _, resendPhase2asTimer) =>
         // We are no longer the leader!
-        if (leader != address) {
+        if (leaderAddress != address) {
           resendPhase2asTimer.stop()
           state = Inactive
         }
@@ -496,6 +510,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   def executeLog(): Unit = {
+    // TODO(mwhittaker): Update client table.
     while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
         case ECommand(Command(clientAddress, clientId, command)) =>

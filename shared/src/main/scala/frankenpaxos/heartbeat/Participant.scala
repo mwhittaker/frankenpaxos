@@ -53,8 +53,8 @@ object Participant {
 
 object HeartbeatOptions {
   val default = HeartbeatOptions(
-    failPeriod = java.time.Duration.ofSeconds(1),
-    successPeriod = java.time.Duration.ofSeconds(10),
+    failPeriod = java.time.Duration.ofSeconds(5),
+    successPeriod = java.time.Duration.ofSeconds(30),
     numRetries = 5
   )
 }
@@ -124,7 +124,8 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePing(src: Transport#Address, ping: Ping): Unit = {
-    chans(src).send(ParticipantInbound().withPong(Pong()))
+    val participant = chan[Participant[Transport]](src, Participant.serializer)
+    participant.send(ParticipantInbound().withPong(Pong()))
   }
 
   private def handlePong(src: Transport#Address, ping: Pong): Unit = {

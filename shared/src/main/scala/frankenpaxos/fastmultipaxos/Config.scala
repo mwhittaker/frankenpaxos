@@ -3,7 +3,10 @@ package frankenpaxos.fastmultipaxos
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     leaderAddresses: Seq[Transport#Address],
+    leaderElectionAddresses: Seq[Transport#Address],
+    leaderHeartbeatAddresses: Seq[Transport#Address],
     acceptorAddresses: Seq[Transport#Address],
+    acceptorHeartbeatAddresses: Seq[Transport#Address],
     roundSystem: RoundSystem
 ) {
   def n: Int = (2 * f) + 1
