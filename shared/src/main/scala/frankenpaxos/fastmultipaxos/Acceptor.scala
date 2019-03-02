@@ -123,12 +123,14 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Bump our round and send the leader all of our votes. Note that we
-    // exclude votes below the chosen watermark. We also make sure not to
-    // return votes for slots that we haven't actually voted in.
+    // exclude votes below the chosen watermark and votes for slots that the
+    // leader knows are chosen. We also make sure not to return votes for slots
+    // that we haven't actually voted in.
     round = phase1a.round
     val votes = log
       .prefix()
       .iteratorFrom(phase1a.chosenWatermark)
+      .filter({ case (slot, _) => !phase1a.chosenSlot.contains(slot) })
       .flatMap({
         case (s, Entry(vr, VVCommand(command), _)) =>
           Some(Phase1bVote(slot = s, voteRound = vr).withCommand(command))

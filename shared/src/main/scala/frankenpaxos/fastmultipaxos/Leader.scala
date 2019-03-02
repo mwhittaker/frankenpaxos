@@ -93,8 +93,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   sealed trait State
 
   // This leader is not the active leader.
-  //
-  // TODO(mwhittaker): Keep track of who the active leader is.
   case object Inactive extends State
 
   // This leader is executing phase 1.
@@ -111,7 +109,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     "resendPhase1as",
     // TODO(mwhittaker): Pass in as parameter.
     java.time.Duration.ofSeconds(3),
-    sendPhase1as
+    () => {
+      sendPhase1as()
+      resendPhase1asTimer.start()
+    }
   )
 
   // This leader has finished executing phase 1 and is now executing phase 2.
@@ -128,14 +129,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     "resendPhase2as",
     // TODO(mwhittaker): Pass in as parameter.
     java.time.Duration.ofSeconds(3),
-    // TODO(mwhittaker): Implement.
-    ???
+    () => {
+      resendPhase2as()
+      resendPhase2asTimer.start()
+    }
   )
 
   @JSExport
   protected var state: State =
     if (round == 0) {
       sendPhase1as()
+      resendPhase1asTimer.start()
       Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
     } else {
       Inactive
@@ -171,17 +175,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // Methods ///////////////////////////////////////////////////////////////////
   private def sendPhase1as(): Unit = {
-    // TODO(mwhittaker): Include chosen slots above chosenWatermark.
     for (acceptor <- acceptors) {
       acceptor.send(
         AcceptorInbound().withPhase1A(
-          Phase1a(round = round, chosenWatermark = chosenWatermark)
+          Phase1a(round = round,
+                  chosenWatermark = chosenWatermark,
+                  chosenSlot = log.keysIteratorFrom(chosenWatermark).to[Seq])
         )
       )
     }
   }
-
-  def leaderChange(leader: Transport#Address): Unit = ???
 
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import LeaderInbound.Request
@@ -404,8 +407,109 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handlePhase2b(
       src: Transport#Address,
-      request: Phase2b
+      phase2b: Phase2b
   ): Unit = {
-    ???
+    state match {
+      case Inactive | Phase1(_, _, _) =>
+        logger.debug("""A leader received a phase 2b response but is not in
+                       |phase 2""".stripMargin)
+
+      case Phase2(pendingEntries, phase2bs, _) =>
+        // Ignore responses that are not in our current round.
+        if (phase2b.round != round) {
+          logger.debug(s"""A leader received a phase 2b response for round
+                          |${phase2b.round} but is in round ${round}.""")
+          return
+        }
+
+        // Wait for sufficiently many phase2b replies.
+        phase2bs(phase2b.slot)(phase2b.acceptorId) = phase2b
+        val enough_phase2bs = config.roundSystem.roundType(round) match {
+          case ClassicRound =>
+            phase2bs(phase2b.slot).size >= config.classicQuorumSize
+          case FastRound =>
+            phase2bs(phase2b.slot).size >= config.fastQuorumSize
+        }
+        if (!enough_phase2bs) {
+          return
+        }
+
+        logger.check(!log.contains(phase2b.slot))
+        log(phase2b.slot) = pendingEntries(phase2b.slot)
+        pendingEntries -= phase2b.slot
+        phase2bs -= phase2b.slot
+        // TODO(mwhittaker): Inform other leaders that this value has been
+        // chosen.
+        executeLog()
+    }
+  }
+
+  def resendPhase2as(): Unit = {
+    state match {
+      case Inactive | Phase1(_, _, _) =>
+        logger.fatal("Executing resendPhase2as not in phase 2.")
+      case Phase2(pendingEntries, _, _) =>
+        for ((slot, entry) <- pendingEntries) {
+          val phase2a = Phase2a(slot = slot, round = round)
+          val msg = entry match {
+            case ECommand(command) =>
+              AcceptorInbound().withPhase2A(phase2a.withCommand(command))
+            case ENoop =>
+              AcceptorInbound().withPhase2A(phase2a.withNoop(Noop()))
+          }
+          acceptors.foreach(_.send(msg))
+        }
+    }
+  }
+
+  def leaderChange(leader: Transport#Address): Unit = {
+    // TODO(mwhittaker): Implement.
+    state match {
+      case Inactive =>
+        // We are the new leader!
+        if (leader == address) {
+          round = config.roundSystem
+            .nextFastRound(leaderId, round)
+            .getOrElse(config.roundSystem.nextClassicRound(leaderId, round))
+          sendPhase1as()
+          resendPhase1asTimer.start()
+          Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+        }
+
+      case Phase1(_, _, resendPhase1asTimer) =>
+        // We are no longer the leader!
+        if (leader != address) {
+          resendPhase1asTimer.stop()
+          state = Inactive
+        }
+
+      case Phase2(_, _, resendPhase2asTimer) =>
+        // We are no longer the leader!
+        if (leader != address) {
+          resendPhase2asTimer.stop()
+          state = Inactive
+        }
+    }
+  }
+
+  def executeLog(): Unit = {
+    while (log.contains(chosenWatermark)) {
+      log(chosenWatermark) match {
+        case ECommand(Command(clientAddress, clientId, command)) =>
+          // TODO(mwhittaker): Introduce a state machine replication
+          // abstraction. For now, we just echo back the command.
+          val client = chan[Client[Transport]](
+            transport.addressSerializer.fromBytes(clientAddress.toByteArray()),
+            Client.serializer
+          )
+          client.send(
+            ClientInbound().withProposeReply(
+              ProposeReply(round = round, clientId = clientId, result = command)
+            )
+          )
+        case ENoop => // Do nothing.
+      }
+      chosenWatermark += 1
+    }
   }
 }
