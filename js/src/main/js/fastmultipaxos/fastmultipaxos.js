@@ -56,11 +56,19 @@ let leader_info = {
   template: `
     <div>
       <div>round = {{node.actor.round}}</div>
-      <div>log = {{node.actor.log}}</div>
       <div>clientTable = {{node.actor.clientTable}}</div>
       <div>chosenWatermark = {{node.actor.chosenWatermark}}</div>
       <div>nextSlot = {{node.actor.nextSlot}}</div>
       <div>state = {{node.actor.state}}</div>
+      <div>
+        <table class="leaderLog">
+          <tr>
+            <td v-for="ss in JsUtils.seqToJs(node.actor.logJs())">
+              <div v-for="s in JsUtils.seqToJs(ss)" class="command">{{s}}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
     </div>
   `,
 };

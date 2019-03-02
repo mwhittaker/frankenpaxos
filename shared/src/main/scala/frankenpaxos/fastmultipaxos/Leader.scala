@@ -312,7 +312,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Phase1(phase1bs, pendingProposals, resendPhase1as) =>
         if (request.round != round) {
           logger.debug(s"""Leader received phase 1b in round ${request.round},
-                          |but is in round $round.""".stripMargin)
+                            |but is in round $round.""".stripMargin)
           return
         }
 
@@ -422,13 +422,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     state match {
       case Inactive | Phase1(_, _, _) =>
         logger.debug("""A leader received a phase 2b response but is not in
-                       |phase 2""".stripMargin)
+                          |phase 2""".stripMargin)
 
       case Phase2(pendingEntries, phase2bs, _) =>
         // Ignore responses that are not in our current round.
         if (phase2b.round != round) {
           logger.debug(s"""A leader received a phase 2b response for round
-                          |${phase2b.round} but is in round ${round}.""")
+                              |${phase2b.round} but is in round ${round}.""")
           return
         }
 
@@ -528,6 +528,33 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case ENoop => // Do nothing.
       }
       chosenWatermark += 1
+    }
+  }
+
+  // JS Helpers ////////////////////////////////////////////////////////////////
+  def logJs(): Seq[Seq[String]] = {
+    log(0) = ENoop
+    log(1) = ECommand(
+      Command(com.google.protobuf.ByteString.copyFrom("a".getBytes), 1, "x")
+    )
+    log(3) = ECommand(
+      Command(com.google.protobuf.ByteString.copyFrom("a".getBytes), 1, "x")
+    )
+
+    if (log.size == 0) {
+      Seq()
+    } else {
+      (0 to log.lastKey).map(
+        (slot) => {
+          log.get(slot) match {
+            case Some(ECommand(command)) =>
+              val address = new String(command.clientAddress.toByteArray)
+              Seq(s"$address.${command.clientId}", command.command)
+            case Some(ENoop) => Seq("noop")
+            case None        => Seq("")
+          }
+        }
+      )
     }
   }
 }
