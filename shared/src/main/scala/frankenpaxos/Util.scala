@@ -3,6 +3,10 @@ package frankenpaxos
 import collection.mutable
 
 object Util {
+  // `popularItems(xs, n)` returns the elements in `xs` that appear `n` or more
+  // times. For example,
+  //
+  //   popularItems(Seq('a', 'a', 'a', 'b', 'b', 'c'), 2) == Seq('a', 'b')
   def popularItems[T](xs: Iterable[T], n: Int): Set[T] = {
     val counts = mutable.Map[T, Int]()
     for (x <- xs) {

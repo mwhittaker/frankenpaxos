@@ -10,7 +10,9 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
 
   def classicQuorumSize = f + 1
 
-  def fastQuorumSize = f + ((f + 1).toDouble / 2).floor.toInt + 1
+  def quorumMajoritySize = ((f + 1).toDouble / 2).floor.toInt + 1
+
+  def fastQuorumSize = f + quorumMajoritySize
 
   def valid(): Boolean = {
     return (leaderAddresses.size >= f + 1) && (acceptorAddresses.size == n)

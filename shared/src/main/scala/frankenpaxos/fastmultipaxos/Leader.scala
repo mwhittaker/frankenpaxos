@@ -102,7 +102,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // Phase 1b responses, indexed by acceptor id.
       phase1bs: mutable.Map[AcceptorId, Phase1b],
       // Pending proposals.
-      pendingProposals: mutable.Buffer[ProposeRequest],
+      pendingProposals: mutable.Buffer[(Transport#Address, ProposeRequest)],
       // A timer to resend phase1bs.
       resendPhase1as: Transport#Timer
   ) extends State
@@ -171,6 +171,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // Methods ///////////////////////////////////////////////////////////////////
   private def sendPhase1as(): Unit = {
+    // TODO(mwhittaker): Include chosen slots above chosenWatermark.
     for (acceptor <- acceptors) {
       acceptor.send(
         AcceptorInbound().withPhase1A(
@@ -222,7 +223,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Phase1(_, pendingProposals, _) =>
         // We buffer all pending proposals in phase 1 and process them later
         // when we enter phase 2.
-        pendingProposals += request
+        pendingProposals += ((src, request))
 
       case Phase2(pendingEntries, phase2bs, _) =>
         for (acceptor <- acceptors) {
@@ -245,7 +246,48 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       votes: collection.Map[AcceptorId, SortedMap[Slot, Phase1bVote]],
       slot: Slot
   ): Entry = {
-    ???
+    def phase1bVoteValueToEntry(voteValue: Phase1bVote.Value): Entry = {
+      import Phase1bVote.Value
+      voteValue match {
+        case Value.Command(command) => ECommand(command)
+        case Value.Noop(_)          => ENoop
+        case Value.Empty =>
+          logger.fatal("Empty Phase1bVote.Value.")
+          ???
+      }
+    }
+
+    val votesInSlot = votes.keys.map(
+      (a) =>
+        votes(a).get(slot) match {
+          case Some(vote) => (vote.voteRound, Some(vote.value))
+          case None       => (-1, None)
+        }
+    )
+    val k = votesInSlot.map({ case (voteRound, _) => voteRound }).max
+    val V = votesInSlot
+      .filter({ case (voteRound, _) => voteRound == k })
+      .map({ case (_, voteValue) => voteValue })
+
+    // If no acceptor has voted yet, we're free to propose anything. Here, we
+    // propose noop.
+    if (k == -1) {
+      return ENoop
+    }
+
+    // If V = {v} is a singleton set, then we must propose v.
+    if (V.to[Set].size == 1) {
+      return phase1bVoteValueToEntry(V.head.get)
+    }
+
+    // If there exists a v in V such that O4(v), then we must propose it.
+    val o4vs = frankenpaxos.Util.popularItems(V, config.quorumMajoritySize)
+    if (o4vs.size > 0) {
+      logger.check_eq(o4vs.size, 1)
+      return phase1bVoteValueToEntry(o4vs.head.get)
+    }
+
+    ENoop
   }
 
   private def handlePhase1b(
@@ -340,32 +382,22 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           acceptors.foreach(_.send(msg))
         }
 
-        state = Phase2(pendingEntries, phase2bs, ???)
-        // {
-        //   for ((acceptorId, phase1b) <- phase1bs) yield {
-        //   }
-        // }.toMap
+        state = Phase2(pendingEntries, phase2bs, resendPhase2asTimer)
+        resendPhase2asTimer.start()
 
-        // Convert every phase1b vote into a sorted map.
-        // figure out the highest and lowest slots
-        // iterate over every slot, running phase 2
-        //   get highest round
-        //   get values in that round
-        //   if -1: noop
-        //   if single value: propose
-        //   if majority of majority: propose
-        //   else noop
-        // if fast round, update any any suffix
-        //
-        // start resendPhase2as
-        //
-        // implement resendPhase2as
-        //   - will need to cache requests
-        //   - for every pending guy, resend phase2a
+        // Replay the pending proposals.
+        nextSlot = endSlot + 1
+        for ((src, proposal) <- pendingProposals) {
+          handleProposeRequest(src, proposal)
+        }
 
-        for (proposal <- pendingProposals) {
-          // TODO(mwhittaker): Call handleProposeRequest.
-          ???
+        // If this is a fast round, send a suffix of anys.
+        if (config.roundSystem.roundType(round) == FastRound) {
+          val msg = AcceptorInbound().withPhase2A(
+            Phase2a(slot = nextSlot, round = round)
+              .withAnySuffix(AnyValSuffix())
+          )
+          acceptors.foreach(_.send(msg))
         }
     }
   }
