@@ -219,6 +219,11 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         log.put(phase2a.slot, Entry(voteRound, voteValue, Some(round)))
 
       case Phase2a.Value.AnySuffix(_) =>
+        if (log.prefix.size == 0) {
+          log.putTail(phase2a.slot, Entry(-1, VVNothing, Some(round)))
+          return
+        }
+
         val updatedVotes =
           log
             .prefix()

@@ -6,6 +6,7 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import frankenpaxos.Util
 import scala.collection.breakOut
 import scala.scalajs.js.annotation._
 
@@ -115,9 +116,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // This leader has finished executing phase 1 and is now executing phase 2.
   case class Phase2(
-      // For each slot, the entry that is waiting to get chosen in that slot.
+      // In a classic round, leaders receive commands from clients and relay
+      // them on to acceptors. pendingEntries stores these commands that are
+      // pending votes. Note that during a fast round, a leader may not have a
+      // pending command for a slot, even though it does have phase 2bs for it.
       pendingEntries: mutable.SortedMap[Slot, Entry],
-      // For each slot, the set of phase 2b messages for that slot.
+      // For each slot, the set of phase 2b messages for that slot. In a
+      // classic round, all the phase 2b messages will be for the same command.
+      // In a fast round, they do not necessarily have to be.
       phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]],
       // A timer to resend all pending phase 2a messages.
       resendPhase2as: Transport#Timer
@@ -216,6 +222,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     clientTable.get(src) match {
       case Some((clientId, result)) =>
         if (request.command.clientId == clientId && state != Inactive) {
+          logger.debug(
+            s"""The latest command for client $src (i.e., command $clientId)
+               |was found in the client table.""".stripMargin
+              .replaceAll("\n", " ")
+          )
           val client = chan[Client[Transport]](src, Client.serializer)
           client.send(
             ClientInbound().withProposeReply(
@@ -311,14 +322,20 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case Phase1(phase1bs, pendingProposals, resendPhase1as) =>
         if (request.round != round) {
-          logger.debug(s"""Leader received phase 1b in round ${request.round},
-                            |but is in round $round.""".stripMargin)
+          logger.debug(
+            s"""Leader received phase 1b in round ${request.round}, but is in
+               |round $round.""".stripMargin.replaceAll("\n", " ")
+          )
           return
         }
 
         // Wait until we receive a quorum of phase 1bs.
         phase1bs(request.acceptorId) = request
         if (phase1bs.size < config.classicQuorumSize) {
+          logger.debug(
+            s"Leader does not have enough phase 1b votes yet. It has " +
+              s"${phase1bs.size} but needs ${config.classicQuorumSize}."
+          )
           return
         }
 
@@ -374,6 +391,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             .max,
           if (log.size == 0) -1 else log.lastKey
         )
+        logger.debug(s"Leader chosenWatermark = $chosenWatermark.")
+        logger.debug(s"Leader endSlot = $endSlot.")
 
         // For every unchosen slot between the chosenWatermark and endSlot,
         // choose a value to propose and propose it.
@@ -415,42 +434,110 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  sealed trait Phase2bVoteResult
+  case object NothingReadyYet extends Phase2bVoteResult
+  case class ClassicReady(entry: Entry) extends Phase2bVoteResult
+  case class FastReady(entry: Entry) extends Phase2bVoteResult
+  case object FastStuck extends Phase2bVoteResult
+
+  // TODO(mwhittaker): Document.
+  private def phase2bChosenInSlot(
+      phase2: Phase2,
+      slot: Slot
+  ): Phase2bVoteResult = {
+    val Phase2(pendingEntries, phase2bs, _) = phase2
+
+    config.roundSystem.roundType(round) match {
+      case ClassicRound =>
+        if (phase2bs
+              .getOrElse(slot, mutable.Map())
+              .size >= config.classicQuorumSize) {
+          ClassicReady(pendingEntries(slot))
+        } else {
+          NothingReadyYet
+        }
+
+      case FastRound =>
+        phase2bs.getOrElseUpdate(slot, mutable.Map())
+        if (phase2bs(slot).size < config.classicQuorumSize) {
+          return NothingReadyYet
+        }
+
+        val voteValueCounts = Util.histogram(phase2bs(slot).values.map(_.vote))
+
+        // We've heard from `phase2bs(slot).size` acceptors. This means there
+        // are `votesLeft = config.n - phase2bs(slot).size` acceptors left. In
+        // order for a value to be choosable, it must be able to reach a fast
+        // quorum of votes if all the `votesLeft` acceptors vote for it. If no
+        // such value exists, no value can be chosen.
+        val votesLeft = config.n - phase2bs(slot).size
+        if (!voteValueCounts.exists({
+              case (_, count) => count + votesLeft >= config.fastQuorumSize
+            })) {
+          return FastStuck
+        }
+
+        for ((voteValue, count) <- voteValueCounts) {
+          if (count >= config.fastQuorumSize) {
+            return voteValue match {
+              case Phase2b.Vote.Command(command) => FastReady(ECommand(command))
+              case Phase2b.Vote.Noop(_)          => FastReady(ENoop)
+              case Phase2b.Vote.Empty            => ???
+            }
+          }
+        }
+
+        NothingReadyYet
+    }
+  }
+
   private def handlePhase2b(
       src: Transport#Address,
       phase2b: Phase2b
   ): Unit = {
     state match {
       case Inactive | Phase1(_, _, _) =>
-        logger.debug("""A leader received a phase 2b response but is not in
-                          |phase 2""".stripMargin)
+        logger.debug(
+          "A leader received a phase 2b response but is not in phase 2"
+        )
 
-      case Phase2(pendingEntries, phase2bs, _) =>
+      case phase2 @ Phase2(pendingEntries, phase2bs, _) =>
         // Ignore responses that are not in our current round.
         if (phase2b.round != round) {
-          logger.debug(s"""A leader received a phase 2b response for round
-                              |${phase2b.round} but is in round ${round}.""")
+          logger.debug(
+            s"A leader received a phase 2b response for round " +
+              s"${phase2b.round} but is in round ${round}."
+          )
           return
         }
 
         // Wait for sufficiently many phase2b replies.
+        phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
         phase2bs(phase2b.slot)(phase2b.acceptorId) = phase2b
-        val enough_phase2bs = config.roundSystem.roundType(round) match {
-          case ClassicRound =>
-            phase2bs(phase2b.slot).size >= config.classicQuorumSize
-          case FastRound =>
-            phase2bs(phase2b.slot).size >= config.fastQuorumSize
-        }
-        if (!enough_phase2bs) {
-          return
-        }
+        phase2bChosenInSlot(phase2, phase2b.slot) match {
+          case NothingReadyYet =>
+          // Don't do anything.
 
-        logger.check(!log.contains(phase2b.slot))
-        log(phase2b.slot) = pendingEntries(phase2b.slot)
-        pendingEntries -= phase2b.slot
-        phase2bs -= phase2b.slot
-        // TODO(mwhittaker): Inform other leaders that this value has been
-        // chosen.
-        executeLog()
+          case ClassicReady(entry) =>
+            log(phase2b.slot) = entry
+            pendingEntries -= phase2b.slot
+            phase2bs -= phase2b.slot
+            // TODO(mwhittaker): Inform other leaders that this value has been
+            // chosen.
+            executeLog()
+
+          case FastReady(entry) =>
+            log(phase2b.slot) = entry
+            pendingEntries -= phase2b.slot
+            phase2bs -= phase2b.slot
+            // TODO(mwhittaker): Inform other leaders that this value has been
+            // chosen.
+            executeLog()
+
+          case FastStuck =>
+            // TODO(mwhittaker): Restart leadership in a higher round.
+            ???
+        }
     }
   }
 
@@ -533,14 +620,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // JS Helpers ////////////////////////////////////////////////////////////////
   def logJs(): Seq[Seq[String]] = {
-    log(0) = ENoop
-    log(1) = ECommand(
-      Command(com.google.protobuf.ByteString.copyFrom("a".getBytes), 1, "x")
-    )
-    log(3) = ECommand(
-      Command(com.google.protobuf.ByteString.copyFrom("a".getBytes), 1, "x")
-    )
-
     if (log.size == 0) {
       Seq()
     } else {
