@@ -188,7 +188,18 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
 }
 
 object FakeTransport {
-  sealed trait Command
+  sealed trait Command {
+    override def toString(): String = {
+      this match {
+        case DeliverMessage(FakeTransportMessage(src, dst, _, Some(string))) =>
+          s"DeliverMessage(src=${src.address}, dst=${dst.address}, $string)"
+        case DeliverMessage(FakeTransportMessage(src, dst, _, None)) =>
+          s"DeliverMessage(src=${src.address}, dst=${dst.address}, ???)"
+        case TriggerTimer((address, name)) =>
+          s"TriggerTimer(${address.address}, $name)"
+      }
+    }
+  }
 
   case class DeliverMessage(msg: FakeTransport#Message) extends Command
 
