@@ -47,9 +47,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // value.
   private var proposedValue: Option[String] = None
 
-  // The value chosen by Fast Paxos.
-  @JSExport
-  protected var chosenValue: Option[String] = None
+  // The value chosen by Fast Paxos. Public for testing.
+  var chosenValue: Option[String] = None
 
   // Phase 2b responses from the acceptors.
   @JSExport

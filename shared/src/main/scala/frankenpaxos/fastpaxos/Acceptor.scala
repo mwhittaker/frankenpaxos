@@ -27,7 +27,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     config: Config[Transport]
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = AcceptorInbound
-  override val serializer = AcceptorInboundSerializer
+  override val serializer = Acceptor.serializer
 
   // Sanity check the Paxos configuration and retrieve acceptor index.
   logger.check(config.acceptorAddresses.contains(address))
@@ -42,19 +42,10 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   protected var voteRound: Int = -1;
 
   // A Fast Paxos acceptor can receive values from clients and leaders. A Fast
-  // Paxos acceptor can also receive a designated `any` value from a leader. In
-  // this case, a Fast Paxos acceptor votes for the next value that it receives.
-  // And, initially, a Fast Paxos acceptor hasn't voted for anything. These
-  // values are represented by VoteValue.
-  sealed trait VoteValue
-  case class Value(v: String) extends VoteValue
-  case object Nothing extends VoteValue
-  // TODO(mwhittaker): I think AnyVal has to be annotated with the round in
-  // which the any was received. An acceptor can only vote for a value if the
-  // round is equal to the round stored in AnyVal.
-  case object AnyVal extends VoteValue
-  @JSExport
-  protected var voteValue: VoteValue = Nothing
+  // Paxos acceptor can also receive a designated `any` value from a leader. We
+  // represent a vote value as a pair (v, a) where v is the vote value and a =
+  // Any(r) if the acceptor has received `any` in round `r`.
+  var voteValue: (Option[String], Option[Int]) = (None, None)
 
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import AcceptorInbound.Request
@@ -73,19 +64,20 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       proposeRequest: ProposeRequest
   ): Unit = {
     // If we receive a value from a client, we ignore it unless we have
-    // received the distinguished any value from the leader. In that case, we
-    // vote for it.
+    // received the distinguished any value from the leader and have not voted
+    // in this round. In that case, we vote for it.
     voteValue match {
-      case AnyVal =>
-        voteRound = round
-        voteValue = Value(proposeRequest.v)
-        val client = chan[Client[Transport]](src, Client.serializer)
-        client.send(
-          ClientInbound().withPhase2B(
-            Phase2b(acceptorId = index, round = round)
+      case (_, Some(r)) =>
+        if (round <= r && voteRound < r) {
+          voteRound = round
+          voteValue = (Some(proposeRequest.v), None)
+          val client = chan[Client[Transport]](src, Client.serializer)
+          client.send(
+            ClientInbound()
+              .withPhase2B(Phase2b(acceptorId = index, round = round))
           )
-        )
-      case Value(_) | Nothing =>
+        }
+      case (_, None) =>
     }
   }
 
@@ -101,15 +93,13 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     // Bump our round and send the leader our vote round and vote value.
     round = phase1a.round
-    val optionalVoteValue = voteValue match {
-      case Value(v)         => Some(v)
-      case Nothing | AnyVal => None
-    }
     val leader = chan[Leader[Transport]](src, Leader.serializer)
     leader.send(
       LeaderInbound().withPhase1B(
-        Phase1b(round = round, acceptorId = index, voteRound = voteRound)
-          .update(_.optionalVoteValue := optionalVoteValue)
+        Phase1b(round = round,
+                acceptorId = index,
+                voteRound = voteRound,
+                voteValue = voteValue._1)
       )
     )
   }
@@ -139,7 +129,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       case Some(v) =>
         round = phase2a.round
         voteRound = phase2a.round
-        voteValue = Value(v)
+        voteValue = (Some(v), None)
 
         val leader = chan[Leader[Transport]](src, Leader.serializer)
         leader.send(
@@ -148,8 +138,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
       case None =>
-        round = phase2a.round
-        voteValue = AnyVal
+        voteValue = (voteValue._1, Some(phase2a.round))
     }
   }
 }

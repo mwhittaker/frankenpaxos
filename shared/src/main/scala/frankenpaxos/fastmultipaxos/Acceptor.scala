@@ -29,7 +29,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     config: Config[Transport]
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = AcceptorInbound
-  override val serializer = AcceptorInboundSerializer
+  override val serializer = Acceptor.serializer
 
   // Sanity check the Paxos configuration and compute the acceptor's id.
   logger.check(config.acceptorAddresses.contains(address))

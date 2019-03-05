@@ -44,11 +44,25 @@ class FakeTransportTimer(
   }
 }
 
+// A FakeTransportMessage represents a message sent from `src` to `dst`. The
+// message itself is stored in `bytes`. The pretty printed version of the bytes
+// are stored in `string`. Ideally, we would have a pretty printed version of
+// every message. However, sometimes this is tricky. For example, if an actor
+// sends a message to another actor that has not yet been registered, it's not
+// clear what serializer to use to pretty print the string. Thus, we sometimes
+// do not have a pretty printed version of a message.
+//
+// Note that bytes is an IndexedSeq instead of an array so that equality is
+// checked structurally (i.e., two bytes are the same if they have the same
+// contents, not if they are the exact same object).
+//
+// TODO(mwhittaker): Think about how to get the pretty printed version of every
+// message.
 case class FakeTransportMessage(
     src: FakeTransport#Address,
     dst: FakeTransport#Address,
     bytes: IndexedSeq[Byte],
-    string: String
+    string: Option[String]
 )
 
 class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
@@ -66,13 +80,12 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
       actor: Actor[FakeTransport]
   ): Unit = {
     if (actors.contains(address)) {
-      logger.fatal(
-        s"Attempting to register an actor with address $address, but this " +
-          s"transport already has an actor bound to $address."
-      )
-      return;
+      logger.fatal(s"""Attempting to register an actor with address $address,
+                      |but this transport already has an actor bound to
+                      |$address.""".stripMargin.replaceAll("\n", " "))
     }
-    actors.put(address, actor);
+
+    actors.put(address, actor)
   }
 
   override def send(
@@ -80,10 +93,17 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
       dst: FakeTransport#Address,
       bytes: Array[Byte]
   ): Unit = {
-    val dstActor = actors(dst)
-    val serializer = dstActor.serializer
-    val string = serializer.toPrettyString(serializer.fromBytes(bytes))
-    messages += FakeTransportMessage(src, dst, bytes.to[IndexedSeq], string)
+    if (actors.contains(dst)) {
+      val dstActor = actors(dst)
+      val serializer = dstActor.serializer
+      val string = serializer.toPrettyString(serializer.fromBytes(bytes))
+      messages += FakeTransportMessage(src,
+                                       dst,
+                                       bytes.to[IndexedSeq],
+                                       Some(string))
+    } else {
+      messages += FakeTransportMessage(src, dst, bytes.to[IndexedSeq], None)
+    }
   }
 
   override def timer(

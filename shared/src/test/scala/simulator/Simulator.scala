@@ -11,7 +11,7 @@ import util.control.Breaks._
 // message that results from the invariant violation.
 case class BadHistory[Sim <: SimulatedSystem[Sim]](
     history: Seq[Sim#Command],
-    error: String
+    throwable: Throwable
 )
 
 // Simulator can be used to property test a SimulatedSystem using the
@@ -48,13 +48,13 @@ object Simulator {
     // will find a minimal subsequence of `run` that also violates the
     // invariant.
     val prop = Prop.forAll(Gen.someOf(run)) { subrun =>
-      runOne(sim, subrun).isEmpty
+      runOne(sim, subrun).isSuccess
     }
 
     Test.check(Test.Parameters.default, prop) match {
       case Test.Result(Test.Failed(arg :: _, _), _, _, _, _) => {
         val subrun = arg.arg.asInstanceOf[Seq[Sim#Command]]
-        Some(BadHistory(subrun, runOne(sim, subrun).get))
+        Some(BadHistory(subrun, runOne(sim, subrun).failed.get))
       }
       case _ => None
     }
@@ -70,8 +70,9 @@ object Simulator {
     var newState = sim.getState(system)
 
     sim.invariantHolds(newState, oldState) match {
-      case Some(error) => return Some(BadHistory(history, error))
-      case None        => {}
+      case Some(error) =>
+        return Some(BadHistory(history, new IllegalStateException(error)))
+      case None =>
     }
 
     for (_ <- 1 to runLength) {
@@ -80,30 +81,47 @@ object Simulator {
         case None    => return None
       }
       history = history :+ command
-      system = sim.runCommand(system, command)
+      system = util.Try(sim.runCommand(system, command)) match {
+        case util.Success(system) => system
+        case util.Failure(throwable) =>
+          return Some(BadHistory(history, throwable))
+      }
       oldState = Some(newState)
       newState = sim.getState(system)
 
       sim.invariantHolds(newState, oldState) match {
-        case Some(error) => return Some(BadHistory(history, error))
-        case None        => {}
+        case Some(error) =>
+          return Some(BadHistory(history, new IllegalStateException(error)))
+        case None =>
       }
     }
 
     None
   }
 
+  // Run a simulated system `sim` on a particular run `run`. If the run is
+  // successful---i.e., no invariants are violated and no exceptions are
+  // thrown---then util.Success(()) is returned. Otherwise, util.Failure is
+  // returned.
   private def runOne[Sim <: SimulatedSystem[Sim]](
       sim: Sim,
       run: Seq[Sim#Command]
-  ): Option[String] = {
+  ): util.Try[Unit] = {
+    util.Try(runOneImpl(sim, run))
+  }
+
+  // Same as runOne, but throws an exception if an invariant is violated.
+  private def runOneImpl[Sim <: SimulatedSystem[Sim]](
+      sim: Sim,
+      run: Seq[Sim#Command]
+  ): Unit = {
     var system = sim.newSystem()
     var oldState: Option[Sim#State] = None
     var newState = sim.getState(system)
 
-    var error = sim.invariantHolds(newState, oldState)
-    if (error.isDefined) {
-      return error
+    sim.invariantHolds(newState, oldState) match {
+      case Some(error) => throw new IllegalStateException(error)
+      case None        =>
     }
 
     for (command <- run) {
@@ -111,12 +129,12 @@ object Simulator {
       oldState = Some(newState)
       newState = sim.getState(system)
 
-      error = sim.invariantHolds(newState, oldState)
-      if (error.isDefined) {
-        return error
+      sim.invariantHolds(newState, oldState) match {
+        case Some(error) => throw new IllegalStateException(error)
+        case None        =>
       }
     }
 
-    return None
+    util.Success(())
   }
 }

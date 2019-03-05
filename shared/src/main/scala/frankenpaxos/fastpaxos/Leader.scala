@@ -62,9 +62,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var phase2bResponses: mutable.HashSet[Phase2b] = mutable.HashSet()
 
-  // The chosen value.
-  @JSExport
-  protected var chosenValue: Option[String] = None
+  // The chosen value. Public for testing.
+  var chosenValue: Option[String] = None
 
   // A list of the clients awaiting a response.
   private val clients: mutable.Buffer[Chan[Client[Transport]]] =
@@ -162,12 +161,27 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     val v = {
       if (k == -1) {
         None
-      } else {
+      } else if (k > 0) {
+        // Classic round.
         val vs = phase1bResponses.filter(_.voteRound == k).map(_.voteValue.get)
         logger.check_eq(vs.size, 1)
         val v = vs.iterator.next()
         proposedValue = Some(v)
         proposedValue
+      } else {
+        // Fast round.
+        val vs = frankenpaxos.Util.popularItems(
+          phase1bResponses.filter(_.voteRound == k).map(_.voteValue.get),
+          config.quorumMajoritySize
+        )
+        if (vs.size == 0) {
+          None
+        } else {
+          logger.check_eq(vs.size, 1)
+          val v = vs.iterator.next()
+          proposedValue = Some(v)
+          proposedValue
+        }
       }
     }
 
