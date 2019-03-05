@@ -300,9 +300,9 @@ function make_app(FastMultiPaxos, snap, app_id) {
 }
 
 function main() {
-  // make_app(frankenpaxos.fastpaxos.SimulatedFastMultiPaxos.FastMultiPaxos,
-  //          Snap('#simulated_animation'),
-  //          '#simulated_app');
+  make_app(frankenpaxos.fastpaxos.SimulatedFastMultiPaxos.FastMultiPaxos,
+           Snap('#simulated_animation'),
+           '#simulated_app');
 
   make_app(frankenpaxos.fastpaxos.ClickthroughFastMultiPaxos.FastMultiPaxos,
            Snap('#clickthrough_animation'),

@@ -89,18 +89,22 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   protected var nextSlot: Slot = 0
 
   // The state of the leader.
+  @JSExportAll
   sealed trait State
 
   // This leader is not the active leader.
+  @JSExportAll
   case object Inactive extends State
 
   // This leader is executing phase 1.
+  @JSExportAll
   case class Phase1(
-      // Phase 1b responses, indexed by acceptor id.
+      // Phase 1b responses.
       phase1bs: mutable.Map[AcceptorId, Phase1b],
-      // Pending proposals.
+      // Pending proposals. When a leader receives a proposal during phase 1,
+      // it buffers the proposal and replays it once it enters phase 2.
       pendingProposals: mutable.Buffer[(Transport#Address, ProposeRequest)],
-      // A timer to resend phase1bs.
+      // A timer to resend phase 1as.
       resendPhase1as: Transport#Timer
   ) extends State
 
@@ -115,6 +119,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   )
 
   // This leader has finished executing phase 1 and is now executing phase 2.
+  @JSExportAll
   case class Phase2(
       // In a classic round, leaders receive commands from clients and relay
       // them on to acceptors. pendingEntries stores these commands that are
@@ -170,7 +175,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // TODO(mwhittaker): Is this thread safe? It's possible that the election
   // participant invokes the callback before this leader has finished
   // initializing?
-  election.register(leaderChange)
+  election.register((address) => {
+    // The address returned by the election participant is the address of the
+    // election participant, not of the leader.
+    val leaderAddress =
+      config.leaderAddresses(config.leaderElectionAddresses.indexOf(address))
+    leaderChange(leaderAddress)
+  })
 
   // Leaders monitor acceptors to make sure they are still alive.
   //
@@ -434,6 +445,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {
+    phase2bVote match {
+      case Phase2b.Vote.Command(command) => ECommand(command)
+      case Phase2b.Vote.Noop(_)          => ENoop
+      case Phase2b.Vote.Empty =>
+        logger.fatal("Empty Phase2b.Vote")
+        ???
+    }
+  }
+
   sealed trait Phase2bVoteResult
   case object NothingReadyYet extends Phase2bVoteResult
   case class ClassicReady(entry: Entry) extends Phase2bVoteResult
@@ -460,6 +481,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case FastRound =>
         phase2bs.getOrElseUpdate(slot, mutable.Map())
         if (phase2bs(slot).size < config.classicQuorumSize) {
+          logger.debug(s"${phase2bs(slot).size}")
           return NothingReadyYet
         }
 
@@ -479,14 +501,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         for ((voteValue, count) <- voteValueCounts) {
           if (count >= config.fastQuorumSize) {
-            return voteValue match {
-              case Phase2b.Vote.Command(command) => FastReady(ECommand(command))
-              case Phase2b.Vote.Noop(_)          => FastReady(ENoop)
-              case Phase2b.Vote.Empty            => ???
-            }
+            return FastReady(phase2bVoteToEntry(voteValue))
           }
         }
 
+        logger.debug("down here")
         NothingReadyYet
     }
   }
@@ -535,8 +554,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             executeLog()
 
           case FastStuck =>
-            // TODO(mwhittaker): Restart leadership in a higher round.
-            ???
+            // The fast round is stuck, so we start again in a higher round.
+            // TODO(mwhittaker): We should add pending requests to resolve the
+            // stuck entries.
+            leaderChange(address)
         }
     }
   }
@@ -545,54 +566,95 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     state match {
       case Inactive | Phase1(_, _, _) =>
         logger.fatal("Executing resendPhase2as not in phase 2.")
-      case Phase2(pendingEntries, _, _) =>
-        // TODO(mwhittaker): Don't iterate over pendingEntries. Instead,
-        // iterate over non-chosen instances from chosenWatermark to the
-        // largest value in log.
-        for ((slot, entry) <- pendingEntries) {
-          val phase2a = Phase2a(slot = slot, round = round)
-          val msg = entry match {
+
+      case Phase2(pendingEntries, phase2bs, _) =>
+        val endSlot: Int = math.max(
+          phase2bs.keys.lastOption.getOrElse(-1),
+          log.keys.lastOption.getOrElse(-1)
+        )
+
+        for (slot <- chosenWatermark to endSlot) {
+          val entryToPhase2a: Entry => AcceptorInbound = {
             case ECommand(command) =>
-              AcceptorInbound().withPhase2A(phase2a.withCommand(command))
+              AcceptorInbound().withPhase2A(
+                Phase2a(slot = slot, round = round).withCommand(command)
+              )
             case ENoop =>
-              AcceptorInbound().withPhase2A(phase2a.withNoop(Noop()))
+              AcceptorInbound().withPhase2A(
+                Phase2a(slot = slot, round = round).withNoop(Noop())
+              )
           }
-          acceptors.foreach(_.send(msg))
+
+          (pendingEntries.get(slot), phase2bs.get(slot)) match {
+            case (Some(entry), _) =>
+              // If we have some pending entry, then we propose that.
+              acceptors.foreach(_.send(entryToPhase2a(entry)))
+
+            case (None, Some(phase2bsInSlot)) =>
+              // If there is no pending entry, then we propose the value with
+              // the most votes so far. If no value has been voted, then we
+              // just propose Noop.
+              val voteValues = phase2bsInSlot.values.map(_.vote)
+              val histogram = Util.histogram(voteValues)
+              if (voteValues.size == 0) {
+                acceptors.foreach(_.send(entryToPhase2a(ENoop)))
+              } else {
+                val mostVoted = histogram.maxBy(_._2)._1
+                val msg = entryToPhase2a(phase2bVoteToEntry(mostVoted))
+                acceptors.foreach(_.send(msg))
+              }
+
+            case (None, None) =>
+              acceptors.foreach(_.send(entryToPhase2a(ENoop)))
+          }
         }
     }
   }
 
+  // Switch over to a new leader. If the new leader is ourselves, then we
+  // increase our round and enter a new round.
   def leaderChange(leader: Transport#Address): Unit = {
-    val leaderAddress =
-      config.leaderAddresses(config.leaderElectionAddresses.indexOf(leader))
+    // TODO(mwhittaker): Only go to fast round if a superquorum of nodes are
+    // alive.
+    val nextRound = config.roundSystem
+      .nextFastRound(leaderId, round)
+      .getOrElse(config.roundSystem.nextClassicRound(leaderId, round))
 
-    state match {
-      case Inactive =>
+    (state, leader == address) match {
+      case (Inactive, true) =>
         // We are the new leader!
-        if (leaderAddress == address) {
-          // TODO(mwhittaker): Only go to fast round if a superquorum of nodes
-          // are alive.
-          round = config.roundSystem
-            .nextFastRound(leaderId, round)
-            .getOrElse(config.roundSystem.nextClassicRound(leaderId, round))
-          sendPhase1as()
-          resendPhase1asTimer.start()
-          Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
-        }
+        round = nextRound
+        sendPhase1as()
+        resendPhase1asTimer.start()
+        state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
 
-      case Phase1(_, _, resendPhase1asTimer) =>
-        // We are no longer the leader!
-        if (leaderAddress != address) {
-          resendPhase1asTimer.stop()
-          state = Inactive
-        }
+      case (Inactive, false) =>
+      // Don't do anything. We're still not the leader.
 
-      case Phase2(_, _, resendPhase2asTimer) =>
+      case (Phase1(_, _, resendPhase1asTimer), true) =>
+        // We were and still are the leader, but in a higher round.
+        round = nextRound
+        sendPhase1as()
+        resendPhase1asTimer.reset()
+        state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+
+      case (Phase1(_, _, resendPhase1asTimer), false) =>
         // We are no longer the leader!
-        if (leaderAddress != address) {
-          resendPhase2asTimer.stop()
-          state = Inactive
-        }
+        resendPhase1asTimer.stop()
+        state = Inactive
+
+      case (Phase2(_, _, resendPhase2asTimer), true) =>
+        // We were and still are the leader, but in a higher round.
+        resendPhase2asTimer.stop()
+        round = nextRound
+        sendPhase1as()
+        resendPhase1asTimer.start()
+        state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+
+      case (Phase2(_, _, resendPhase2asTimer), false) =>
+        // We are no longer the leader!
+        resendPhase2asTimer.stop()
+        state = Inactive
     }
   }
 
