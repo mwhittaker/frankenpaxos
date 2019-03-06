@@ -55,7 +55,7 @@ class Paxos(val f: Int) {
 
 sealed trait PaxosCommand
 case class Propose(clientIndex: Int, value: String) extends PaxosCommand
-case class TransportCommand(command: FakeTransport.Command) extends PaxosCommand
+case class TransportCommand(command: FakeTransportCommand) extends PaxosCommand
 
 class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
   override type System = (Paxos, Set[String])
@@ -156,5 +156,37 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
         FakeTransport.runCommand(paxos.transport, command)
     }
     (paxos, allChosenValues ++ chosenValues(paxos))
+  }
+
+  def commandToString(command: SimulatedPaxos#Command): String = {
+    val paxos = new Paxos(f)
+    command match {
+      case Propose(clientIndex, value) =>
+        val clientAddress = paxos.clients(clientIndex).address.address
+        s"Propose($clientAddress, $value)"
+
+      case TransportCommand(DeliverMessage(msg)) =>
+        val dstActor = paxos.transport.actors(msg.dst)
+        val s = dstActor.serializer.toPrettyString(
+          dstActor.serializer.fromBytes(msg.bytes.to[Array])
+        )
+        s"DeliverMessage(src=${msg.src.address}, dst=${msg.dst.address})\n$s"
+
+      case TransportCommand(TriggerTimer((address, name))) =>
+        s"TriggerTimer(${address.address}:$name)"
+    }
+  }
+
+  def historyToString(history: Seq[SimulatedPaxos#Command]): String = {
+    def indent(s: String, n: Int): String = {
+      s.replaceAll("\n", "\n" + " " * n)
+    }
+    history.zipWithIndex
+      .map({
+        case (command, i) =>
+          val num = "%3d".format(i)
+          s"$num. ${indent(commandToString(command), 5)}"
+      })
+      .mkString("\n")
   }
 }

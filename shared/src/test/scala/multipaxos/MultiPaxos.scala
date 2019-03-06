@@ -68,7 +68,7 @@ class MultiPaxos(val f: Int) {
 
 sealed trait MultiPaxosCommand
 case class Propose(clientIndex: Int, value: String) extends MultiPaxosCommand
-case class TransportCommand(command: FakeTransport.Command)
+case class TransportCommand(command: FakeTransportCommand)
     extends MultiPaxosCommand
 
 class SimulatedMultiPaxos(val f: Int)

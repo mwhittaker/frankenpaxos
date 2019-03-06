@@ -254,12 +254,27 @@ Vue.component("frankenpaxos-staged-messages", {
 
 Vue.component('frankenpaxos-unittest', {
   props: ['transport'],
+  methods: {
+    copy: function() {
+      // https://hackernoon.com/copying-text-to-clipboard-with-javascript-df4d4988697f
+      let content = this.JsUtils.seqToJs(this.transport.unitTest()).join('\n');
+      let el = document.createElement('textarea');
+      el.value = content;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+  },
   template: `
-    <div class="frankenpaxos-unittest">
-      <div v-for="line in JsUtils.seqToJs(transport.unitTest())">
-        <span class="frankenpaxos-unittest-line">
-          {{line}}
-        </span>
+    <div>
+      <button v-on:click="copy">Copy to clipboard</button>
+      <div class="frankenpaxos-unittest">
+        <div v-for="line in JsUtils.seqToJs(transport.unitTest())">
+          <span class="frankenpaxos-unittest-line">
+            {{line}}
+          </span>
+        </div>
       </div>
     </div>
   `

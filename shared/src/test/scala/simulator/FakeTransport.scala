@@ -45,24 +45,13 @@ class FakeTransportTimer(
 }
 
 // A FakeTransportMessage represents a message sent from `src` to `dst`. The
-// message itself is stored in `bytes`. The pretty printed version of the bytes
-// are stored in `string`. Ideally, we would have a pretty printed version of
-// every message. However, sometimes this is tricky. For example, if an actor
-// sends a message to another actor that has not yet been registered, it's not
-// clear what serializer to use to pretty print the string. Thus, we sometimes
-// do not have a pretty printed version of a message.
-//
-// Note that bytes is an IndexedSeq instead of an array so that equality is
-// checked structurally (i.e., two bytes are the same if they have the same
-// contents, not if they are the exact same object).
-//
-// TODO(mwhittaker): Think about how to get the pretty printed version of every
-// message.
+// message itself is stored in `bytes`. Note that bytes is a Vector instead of
+// an array so that equality is checked structurally (i.e., two bytes are the
+// same if they have the same contents, not if they are the exact same object).
 case class FakeTransportMessage(
     src: FakeTransport#Address,
     dst: FakeTransport#Address,
-    bytes: IndexedSeq[Byte],
-    string: Option[String]
+    bytes: Vector[Byte]
 )
 
 class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
@@ -91,18 +80,7 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
       dst: FakeTransport#Address,
       bytes: Array[Byte]
   ): Unit = {
-    actors.get(dst) match {
-      case Some(dstActor) =>
-        val serializer = dstActor.serializer
-        val string = serializer.toPrettyString(serializer.fromBytes(bytes))
-        messages += FakeTransportMessage(src,
-                                         dst,
-                                         bytes.to[IndexedSeq],
-                                         Some(string))
-
-      case None =>
-        messages += FakeTransportMessage(src, dst, bytes.to[IndexedSeq], None)
-    }
+    messages += FakeTransportMessage(src, dst, bytes.to[Vector])
   }
 
   override def timer(
@@ -185,27 +163,17 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
   }
 }
 
+sealed trait FakeTransportCommand
+case class DeliverMessage(msg: FakeTransportMessage)
+    extends FakeTransportCommand
+case class TriggerTimer(address_and_name: (FakeTransportAddress, String))
+    extends FakeTransportCommand
+
 object FakeTransport {
-  sealed trait Command {
-    override def toString(): String = {
-      this match {
-        case DeliverMessage(FakeTransportMessage(src, dst, _, Some(string))) =>
-          s"DeliverMessage(src=${src.address}, dst=${dst.address}, $string)"
-        case DeliverMessage(FakeTransportMessage(src, dst, _, None)) =>
-          s"DeliverMessage(src=${src.address}, dst=${dst.address}, ???)"
-        case TriggerTimer((address, name)) =>
-          s"TriggerTimer(${address.address}, $name)"
-      }
-    }
-  }
-
-  case class DeliverMessage(msg: FakeTransportMessage) extends Command
-
-  case class TriggerTimer(address_and_name: (FakeTransport#Address, String))
-      extends Command
-
-  def generateCommand(fakeTransport: FakeTransport): Gen[Command] = {
-    var subgens = mutable.Buffer[(Int, Gen[Command])]()
+  def generateCommand(
+      fakeTransport: FakeTransport
+  ): Gen[FakeTransportCommand] = {
+    var subgens = mutable.Buffer[(Int, Gen[FakeTransportCommand])]()
 
     if (fakeTransport.messages.size > 0) {
       subgens += (
@@ -230,7 +198,10 @@ object FakeTransport {
     Gen.frequency(subgens: _*)
   }
 
-  def runCommand(fakeTransport: FakeTransport, command: Command): Unit = {
+  def runCommand(
+      fakeTransport: FakeTransport,
+      command: FakeTransportCommand
+  ): Unit = {
     command match {
       case DeliverMessage(msg) => fakeTransport.deliverMessage(msg)
       case TriggerTimer(address_and_name) =>

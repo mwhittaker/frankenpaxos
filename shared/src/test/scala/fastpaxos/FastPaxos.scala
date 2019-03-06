@@ -49,7 +49,7 @@ class FastPaxos(val f: Int) {
 
 sealed trait FastPaxosCommand
 case class Propose(clientIndex: Int, value: String) extends FastPaxosCommand
-case class TransportCommand(command: FakeTransport.Command)
+case class TransportCommand(command: FakeTransportCommand)
     extends FastPaxosCommand
 
 class SimulatedFastPaxos(val f: Int)
