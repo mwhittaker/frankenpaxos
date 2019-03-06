@@ -1,5 +1,6 @@
-package frankenpaxos.simulator
+package frankenpaxos.diehard
 
+import frankenpaxos.simulator._
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed

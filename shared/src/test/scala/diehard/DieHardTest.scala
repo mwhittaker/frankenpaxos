@@ -1,5 +1,6 @@
-package frankenpaxos.simulator
+package frankenpaxos.diehard
 
+import frankenpaxos.simulator._
 import org.scalatest._
 
 class DieHardSpec extends FlatSpec {

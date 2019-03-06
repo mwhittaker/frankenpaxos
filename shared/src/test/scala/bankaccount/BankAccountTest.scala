@@ -1,5 +1,6 @@
-package frankenpaxos.simulator
+package frankenpaxos.bankaccount
 
+import frankenpaxos.simulator._
 import org.scalatest._
 
 class BankAccountSpec extends FlatSpec {
