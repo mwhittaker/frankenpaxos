@@ -60,3 +60,14 @@
 .frankenpaxos-messages-src {}
 .frankenpaxos-messages-dst {}
 .frankenpaxos-messages-text {}
+
+/* Unit test ******************************************************************/
+.frankenpaxos-unittest {
+  border: 1pt solid black;
+  font-family: monospace;
+  font-size: smaller;
+  height: 150px;
+  overflow: scroll; /* Enable vertical scrolling. */
+  padding: 2pt;
+  white-space: nowrap; /* Enable horizontal scrolling. */
+}

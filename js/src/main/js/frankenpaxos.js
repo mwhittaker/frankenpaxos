@@ -251,3 +251,16 @@ Vue.component("frankenpaxos-staged-messages", {
     </div>
   `
 });
+
+Vue.component('frankenpaxos-unittest', {
+  props: ['transport'],
+  template: `
+    <div class="frankenpaxos-unittest">
+      <div v-for="line in JsUtils.seqToJs(transport.unitTest())">
+        <span class="frankenpaxos-unittest-line">
+          {{line}}
+        </span>
+      </div>
+    </div>
+  `
+});

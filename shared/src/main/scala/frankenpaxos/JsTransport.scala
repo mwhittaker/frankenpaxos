@@ -1,8 +1,6 @@
 package frankenpaxos
 
-import scala.collection.mutable.Buffer
-import scala.collection.mutable.HashMap
-import scala.collection.mutable.Map
+import collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters._
@@ -23,6 +21,7 @@ object JsTransportAddressSerializer extends Serializer[JsTransportAddress] {
 
 @JSExportAll
 class JsTransportTimer(
+    val owner: JsTransport,
     val address: JsTransport#Address,
     // We don't name this parameter `name` because we don't want to override
     // the `name` method in frankenpaxos.Timer with the same name.
@@ -45,8 +44,11 @@ class JsTransportTimer(
   }
 
   def run(): Unit = {
-    running = false
-    f()
+    if (running) {
+      running = false
+      f()
+      owner.history += owner.TriggerTimer((address, name()))
+    }
   }
 
   def delayMilliseconds(): Long = {
@@ -55,32 +57,38 @@ class JsTransportTimer(
 }
 
 @JSExportAll
+case class JsTransportMessage(
+    src: JsTransport#Address,
+    dst: JsTransport#Address,
+    bytes: Array[Byte]
+)
+
+@JSExportAll
 class JsTransport(logger: Logger) extends Transport[JsTransport] {
   override type Address = JsTransportAddress
   override val addressSerializer = JsTransportAddressSerializer
   override type Timer = JsTransportTimer
 
-  @JSExportAll
-  case class Message(
-      src: JsTransport#Address,
-      dst: JsTransport#Address,
-      bytes: Array[Byte]
-  )
+  sealed trait Command
+  case class DeliverMessage(msg: JsTransportMessage) extends Command
+  case class TriggerTimer(address_and_name: (JsTransportAddress, String))
+      extends Command
 
-  val actors = new HashMap[JsTransport#Address, Actor[JsTransport]]()
-  val timers = Buffer[JsTransport#Timer]()
-  var bufferedMessages = Buffer[JsTransport#Message]()
-  var stagedMessages = Buffer[JsTransport#Message]()
+  val actors = mutable.Map[JsTransport#Address, Actor[JsTransport]]()
+  val timers = mutable.Buffer[JsTransport#Timer]()
+  var bufferedMessages = mutable.Buffer[JsTransportMessage]()
+  var stagedMessages = mutable.Buffer[JsTransportMessage]()
+  val history = mutable.Buffer[Command]()
 
   def timersForAddress(
       address: JsTransport#Address
-  ): Buffer[JsTransport#Timer] = {
+  ): mutable.Buffer[JsTransport#Timer] = {
     timers.filter(_.address == address)
   }
 
   def stagedMessagesForAddress(
       address: JsTransport#Address
-  ): Buffer[JsTransport#Message] = {
+  ): mutable.Buffer[JsTransportMessage] = {
     stagedMessages.filter(_.dst == address)
   }
 
@@ -93,9 +101,9 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
         s"Attempting to register an actor with address $address, but this " +
           s"transport already has an actor bound to $address."
       )
-      return;
+      return
     }
-    actors.put(address, actor);
+    actors(address) = actor
   }
 
   override def send(
@@ -103,7 +111,7 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       dst: JsTransport#Address,
       bytes: Array[Byte]
   ): Unit = {
-    bufferedMessages += Message(src, dst, bytes)
+    bufferedMessages += JsTransportMessage(src, dst, bytes)
   }
 
   override def timer(
@@ -114,7 +122,7 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   ): JsTransport#Timer = {
     // TODO(mwhittaker): If a timer already exists with the given name and it
     // is stopped, delete it. We are replacing that timer with a new one.
-    val timer = new JsTransportTimer(address, name, delay, f)
+    val timer = new JsTransportTimer(this, address, name, delay, f)
     timers += timer
     timer
   }
@@ -135,14 +143,14 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   }
 
   def stageMessage(
-      msg: JsTransport#Message,
+      msg: JsTransportMessage,
       check_exists: Boolean = true
   ): Unit = {
     if (check_exists && !bufferedMessages.contains(msg)) {
       logger.fatal(
         s"Attempted to stage $msg, but that message was not buffered."
-      );
-      return;
+      )
+      return
     }
 
     if (check_exists) {
@@ -152,19 +160,20 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   }
 
   def deliverMessage(
-      msg: JsTransport#Message,
+      msg: JsTransportMessage,
       check_exists: Boolean = true
   ): Unit = {
     if (check_exists && !stagedMessages.contains(msg)) {
       logger.fatal(
         s"Attempted to deliver $msg, but that message was not staged."
       );
-      return;
+      return
     }
 
     actors.get(msg.dst) match {
       case Some(actor) => {
         actor.receiveImpl(msg.src, msg.bytes)
+        history += DeliverMessage(msg)
       }
       case None =>
         logger.warn(
@@ -179,7 +188,7 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   }
 
   def dropMessage(
-      msg: JsTransport#Message,
+      msg: JsTransportMessage,
       check_exists: Boolean = true
   ): Unit = {
     if (check_exists && !stagedMessages.contains(msg)) {
@@ -190,5 +199,33 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     }
 
     stagedMessages -= msg
+  }
+
+  def commandToUnitTest(command: Command): String = {
+    command match {
+      case DeliverMessage(JsTransportMessage(src, dst, bytes)) =>
+        // TODO(mwhittaker): Convert src and dst.
+        // TODO(mwhittaker): Check that proto conversion is correct.
+        // TODO(mwhittaker): Output comment that notes that this unit test is
+        // autogenerated.
+        // TODO(mwhittaker): Output comments to disable autoformatting.
+        // TODO(mwhittaker): Add ability for JS sim to add custom strings to
+        // history (e.g., client.propose).
+        val proto = actors(dst).serializer
+          .fromBytes(bytes)
+          .asInstanceOf[scalapb.GeneratedMessage]
+        val protoName = proto.companion.scalaDescriptor.name
+        val protoString =
+          scalapb.TextFormat.printToSingleLineUnicodeString(proto)
+        val tripleQuote = "\"\"\""
+        val parsedProtoString =
+          s"$protoName.fromAscii($tripleQuote$protoString$tripleQuote)"
+        s"""transport.deliverMessage(FakeTransportMessage(src=$src, dst=$dst, bytes=$parsedProtoString), string=None))"""
+      case TriggerTimer((address, name)) => "TODO"
+    }
+  }
+
+  def unitTest(): Seq[String] = {
+    history.map(commandToUnitTest)
   }
 }

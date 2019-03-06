@@ -163,6 +163,13 @@
             <h3 class="frankenpaxos-box-title">Log</h3>
             <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)"></frankenpaxos-log>
           </div>
+
+          <!-- Unit test. -->
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Unit Test</h3>
+            <frankenpaxos-unittest :transport="transport">
+            </frankenpaxos-unittest>
+          </div>
         </div>
       </div>
     </div>

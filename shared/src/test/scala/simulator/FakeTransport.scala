@@ -69,11 +69,10 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
   override type Address = FakeTransportAddress
   override val addressSerializer = FakeTransportAddressSerializer
   override type Timer = FakeTransportTimer
-  type Message = FakeTransportMessage
 
-  val actors = mutable.HashMap[FakeTransport#Address, Actor[FakeTransport]]()
-  val timers = mutable.HashMap[(FakeTransport#Address, String), Timer]()
-  var messages = mutable.Buffer[FakeTransport#Message]()
+  val actors = mutable.Map[FakeTransport#Address, Actor[FakeTransport]]()
+  val timers = mutable.Map[(FakeTransport#Address, String), Timer]()
+  var messages = mutable.Buffer[FakeTransportMessage]()
 
   override def register(
       address: FakeTransport#Address,
@@ -84,8 +83,7 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
                       |but this transport already has an actor bound to
                       |$address.""".stripMargin.replaceAll("\n", " "))
     }
-
-    actors.put(address, actor)
+    actors(address) = actor
   }
 
   override def send(
@@ -93,16 +91,17 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
       dst: FakeTransport#Address,
       bytes: Array[Byte]
   ): Unit = {
-    if (actors.contains(dst)) {
-      val dstActor = actors(dst)
-      val serializer = dstActor.serializer
-      val string = serializer.toPrettyString(serializer.fromBytes(bytes))
-      messages += FakeTransportMessage(src,
-                                       dst,
-                                       bytes.to[IndexedSeq],
-                                       Some(string))
-    } else {
-      messages += FakeTransportMessage(src, dst, bytes.to[IndexedSeq], None)
+    actors.get(dst) match {
+      case Some(dstActor) =>
+        val serializer = dstActor.serializer
+        val string = serializer.toPrettyString(serializer.fromBytes(bytes))
+        messages += FakeTransportMessage(src,
+                                         dst,
+                                         bytes.to[IndexedSeq],
+                                         Some(string))
+
+      case None =>
+        messages += FakeTransportMessage(src, dst, bytes.to[IndexedSeq], None)
     }
   }
 
@@ -140,13 +139,13 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
   }
 
   def runningTimers(): Set[(FakeTransport#Address, String)] = {
-    val running =
-      for ((address_and_name, timer) <- timers if timer.running)
-        yield (address_and_name, timer)
-    running.keySet.to[Set]
+    timers
+      .filter({ case (address_name, timer) => timer.running })
+      .keySet
+      .to[Set]
   }
 
-  def deliverMessage(msg: FakeTransport#Message): Unit = {
+  def deliverMessage(msg: FakeTransportMessage): Unit = {
     if (!messages.contains(msg)) {
       logger.warn(s"Attempted to deliver unsent message $msg.")
       return
@@ -154,9 +153,8 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
     messages -= msg
 
     actors.get(msg.dst) match {
-      case Some(actor) => {
+      case Some(actor) =>
         actor.receiveImpl(msg.src, msg.bytes.to[Array])
-      }
       case None =>
         logger.warn(
           s"Attempted to deliver a message to an actor at address " +
@@ -201,7 +199,7 @@ object FakeTransport {
     }
   }
 
-  case class DeliverMessage(msg: FakeTransport#Message) extends Command
+  case class DeliverMessage(msg: FakeTransportMessage) extends Command
 
   case class TriggerTimer(address_and_name: (FakeTransport#Address, String))
       extends Command
