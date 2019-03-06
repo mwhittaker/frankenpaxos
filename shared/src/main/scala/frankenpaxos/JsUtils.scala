@@ -10,8 +10,14 @@ import scala.scalajs.js.annotation._
 object JsUtils {
   def seqToJs[A](s: Seq[A]): js.Array[A] = s.toJSArray
   def seqToJs[A](s: mutable.Seq[A]): js.Array[A] = s.toJSArray
+
+  def setToJs[A](m: Set[A]): js.Array[A] = seqToJs(m.to[Seq])
+  def setToJs[A](m: mutable.Set[A]): js.Array[A] = seqToJs(m.to[mutable.Seq])
+
   def mapToJs[A](m: mutable.Map[String, A]): js.Dictionary[A] = m.toJSDictionary
+
   def optionToJs[A](o: Option[A]): js.UndefOr[A] = o.orUndefined
+
   def tupleToJs[A1, A2](t: (A1, A2)): js.Array[Any] =
     seqToJs(Seq[Any](t._1, t._2))
   def tupleToJs[A1, A2, A3](t: (A1, A2, A3)): js.Array[Any] =

@@ -75,6 +75,7 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       extends Command
 
   val actors = mutable.Map[JsTransport#Address, Actor[JsTransport]]()
+  var partitionedActors = Set[JsTransport#Address]()
   val timers = mutable.Buffer[JsTransport#Timer]()
   var bufferedMessages = mutable.Buffer[JsTransportMessage]()
   var stagedMessages = mutable.Buffer[JsTransportMessage]()
@@ -111,7 +112,9 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       dst: JsTransport#Address,
       bytes: Array[Byte]
   ): Unit = {
-    bufferedMessages += JsTransportMessage(src, dst, bytes)
+    if (!partitionedActors.contains(src) && !partitionedActors.contains(dst)) {
+      bufferedMessages += JsTransportMessage(src, dst, bytes)
+    }
   }
 
   override def timer(
@@ -199,6 +202,20 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     }
 
     stagedMessages -= msg
+  }
+
+  def partitionActor(address: JsTransport#Address): Unit = {
+    // Note that if we write `partitionedActors += address`, Vue won't detect
+    // the change. We write the code like this so that Vue detects changes to
+    // partitionedActors.
+    partitionedActors = partitionedActors + address
+  }
+
+  def unpartitionActor(address: JsTransport#Address): Unit = {
+    // Note that if we write `partitionedActors -= address`, Vue won't detect
+    // the change. We write the code like this so that Vue detects changes to
+    // partitionedActors.
+    partitionedActors = partitionedActors - address
   }
 
   def commandToUnitTest(command: Command): String = {

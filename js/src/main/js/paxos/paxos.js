@@ -80,6 +80,7 @@ function make_nodes(Paxos, snap) {
   // Clients.
   nodes[Paxos.client1.address] = {
     actor: Paxos.client1,
+    color: flat_red,
     svgs: [
       snap.circle(50, 50, 20).attr(colored(flat_red)),
       snap.text(50, 52, '1').attr(number_style),
@@ -87,6 +88,7 @@ function make_nodes(Paxos, snap) {
   }
   nodes[Paxos.client2.address] = {
     actor: Paxos.client2,
+    color: flat_red,
     svgs: [
       snap.circle(50, 150, 20).attr(colored(flat_red)),
       snap.text(50, 152, '2').attr(number_style),
@@ -94,6 +96,7 @@ function make_nodes(Paxos, snap) {
   }
   nodes[Paxos.client3.address] = {
     actor: Paxos.client3,
+    color: flat_red,
     svgs: [
       snap.circle(50, 250, 20).attr(colored(flat_red)),
       snap.text(50, 252, '3').attr(number_style),
@@ -103,6 +106,7 @@ function make_nodes(Paxos, snap) {
   // Proposers.
   nodes[Paxos.proposer1.address] = {
     actor: Paxos.proposer1,
+    color: flat_blue,
     svgs: [
       snap.circle(200, 100, 20).attr(colored(flat_blue)),
       snap.text(200, 102, '1').attr(number_style),
@@ -110,6 +114,7 @@ function make_nodes(Paxos, snap) {
   }
   nodes[Paxos.proposer2.address] = {
     actor: Paxos.proposer2,
+    color: flat_blue,
     svgs: [
       snap.circle(200, 200, 20).attr(colored(flat_blue)),
       snap.text(200, 202, '2').attr(number_style),
@@ -119,6 +124,7 @@ function make_nodes(Paxos, snap) {
   // Acceptors.
   nodes[Paxos.acceptor1.address] = {
     actor: Paxos.acceptor1,
+    color: flat_green,
     svgs: [
       snap.circle(350, 50, 20).attr(colored(flat_green)),
       snap.text(350, 52, '1').attr(number_style),
@@ -126,6 +132,7 @@ function make_nodes(Paxos, snap) {
   }
   nodes[Paxos.acceptor2.address] = {
     actor: Paxos.acceptor2,
+    color: flat_green,
     svgs: [
       snap.circle(350, 150, 20).attr(colored(flat_green)),
       snap.text(350, 152, '2').attr(number_style),
@@ -133,6 +140,7 @@ function make_nodes(Paxos, snap) {
   }
   nodes[Paxos.acceptor3.address] = {
     actor: Paxos.acceptor3,
+    color: flat_green,
     svgs: [
       snap.circle(350, 250, 20).attr(colored(flat_green)),
       snap.text(350, 252, '3').attr(number_style),
@@ -190,6 +198,16 @@ function make_app(Paxos, snap, app_id) {
         } else {
           // Impossible!
         }
+      },
+    },
+
+    methods: {
+      partition: function(address) {
+        nodes[address].svgs[0].attr({fill: "#7f8c8d"})
+      },
+
+      unpartition: function(address) {
+        nodes[address].svgs[0].attr({fill: nodes[address].color})
       },
     },
   });

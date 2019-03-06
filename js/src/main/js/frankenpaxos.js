@@ -252,6 +252,52 @@ Vue.component("frankenpaxos-staged-messages", {
   `
 });
 
+Vue.component('frankenpaxos-partition', {
+  props: ['transport', 'address'],
+
+  computed: {
+    partitionedActors: function() {
+      return this.JsUtils.setToJs(this.transport.partitionedActors);
+    },
+  },
+
+  methods: {
+    partition: function() {
+      this.transport.partitionActor(this.address);
+      this.$emit('partition', this.address);
+    }
+  },
+
+  template: `
+    <button class="frankenpaxos-button"
+       v-bind:disabled="partitionedActors.includes(address)"
+       v-on:click="partition">Partition</button>
+  `,
+});
+
+Vue.component('frankenpaxos-unpartition', {
+  props: ['transport', 'address'],
+
+  computed: {
+    partitionedActors: function() {
+      return this.JsUtils.setToJs(this.transport.partitionedActors);
+    },
+  },
+
+  methods: {
+    unpartition: function() {
+      this.transport.unpartitionActor(this.address);
+      this.$emit('unpartition', this.address);
+    }
+  },
+
+  template: `
+    <button class="frankenpaxos-button"
+       v-bind:disabled="!partitionedActors.includes(address)"
+       v-on:click="unpartition">Unpartition</button>
+  `,
+});
+
 Vue.component('frankenpaxos-unittest', {
   props: ['transport'],
   methods: {
@@ -268,7 +314,8 @@ Vue.component('frankenpaxos-unittest', {
   },
   template: `
     <div>
-      <button v-on:click="copy">Copy to clipboard</button>
+      <button class="frankenpaxos-button"
+               v-on:click="copy">Copy to clipboard</button>
       <div class="frankenpaxos-unittest">
         <div v-for="line in JsUtils.seqToJs(transport.unitTest())">
           <span class="frankenpaxos-unittest-line">

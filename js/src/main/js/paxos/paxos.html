@@ -80,7 +80,19 @@
           <!-- Actor data. -->
           <div class="frankenpaxos-box">
             <h3 class="frankenpaxos-box-title">Data</h3>
-            <div>name: {{node.actor.address.address}}</div>
+            <div>
+              <span>{{node.actor.address.address}}</span>
+              <frankenpaxos-partition :transport=transport
+                                      :address=node.actor.address
+                                      v-on:partition=partition>
+                partition
+              </frankenpaxos-partition>
+              <frankenpaxos-unpartition :transport=transport
+                                        :address=node.actor.address
+                                        v-on:unpartition=unpartition>
+                partition
+              </frankenpaxos-unpartition>
+            </div>
             <keep-alive>
               <component :is="current_component" :node="node"></component>
             </keep-alive>
