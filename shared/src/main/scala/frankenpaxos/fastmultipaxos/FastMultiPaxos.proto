@@ -4,6 +4,7 @@
 //      | ---------------> |                     |     ProposeRequest
 //      | -----------------^-------------------> |     ProposeRequest
 //      | <--------------- |                     |     ProposeReply
+//      | <--------------- |                     |     LeaderInfo
 //      |                  | ------------------> |     Phase1a
 //      |                  | <------------------ |     Phase1b
 //      |                  | ------------------> |     Phase2a
@@ -46,7 +47,10 @@ message Command {
 }
 
 message ProposeRequest {
-  required Command command = 1;
+  // When a client proposes a command, it includes the round that it thinks the
+  // leader is currently in.
+  required int32 round = 1;
+  required Command command = 2;
 }
 
 message ProposeReply {
@@ -61,6 +65,12 @@ message ProposeReply {
 
   // The result of executing the command.
   required bytes result = 3;
+}
+
+// A leader sends a LeaderInfo message to a client to inform it of the current
+// round.
+message LeaderInfo {
+  required int32 round = 1;
 }
 
 message Phase1a {
@@ -124,6 +134,7 @@ message ValueChosen {
 
 message ClientInbound {
   oneof request {
+    LeaderInfo leader_info = 1;
     ProposeReply propose_reply = 2;
   }
 }

@@ -230,6 +230,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       request: ProposeRequest
   ): Unit = {
+    println("Received handleProposeRequest")
+    val client = chan[Client[Transport]](src, Client.serializer)
+
     // If we've cached the result of this proposed command in the client table,
     // then we can reply to the client directly. Note that only the leader
     // replies to the client since ProposeReplies include the round of the
@@ -238,11 +241,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Some((clientId, result)) =>
         if (request.command.clientId == clientId && state != Inactive) {
           logger.debug(
-            s"""The latest command for client $src (i.e., command $clientId)
-               |was found in the client table.""".stripMargin
-              .replaceAll("\n", " ")
+            s"The latest command for client $src (i.e., command $clientId)" +
+              s"was found in the client table."
           )
-          val client = chan[Client[Transport]](src, Client.serializer)
           client.send(
             ClientInbound().withProposeReply(
               ProposeReply(round = round,
@@ -255,30 +256,48 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
     }
 
+    println("Matching")
     state match {
       case Inactive =>
+        println("Inactive")
         logger.debug("Leader received propose request but is inactive.")
 
       case Phase1(_, pendingProposals, _) =>
-        // We buffer all pending proposals in phase 1 and process them later
-        // when we enter phase 2.
-        pendingProposals += ((src, request))
+        println("Phase 1")
+        if (request.round != round) {
+          // We don't want to process requests from out of date clients.
+          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
+        } else {
+          // We buffer all pending proposals in phase 1 and process them later
+          // when we enter phase 2.
+          pendingProposals += ((src, request))
+        }
 
       case Phase2(pendingEntries, phase2bs, _) =>
-        // TODO(mwhittaker): If we're in a fast round, we may want to
-        // transition to a higher round in this case because it might mean that
-        // the acceptors are dead.
-        for (acceptor <- acceptors) {
-          acceptor.send(
-            AcceptorInbound().withPhase2A(
-              Phase2a(slot = nextSlot, round = round)
-                .withCommand(request.command)
-            )
-          )
+        println("Phase 2")
+        if (request.round != round) {
+          // We don't want to process requests from out of date clients.
+          println("sending to client.")
+          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
+          return
         }
-        pendingEntries(nextSlot) = ECommand(request.command)
-        phase2bs(nextSlot) = mutable.Map()
-        nextSlot += 1
+
+        config.roundSystem.roundType(round) match {
+          case ClassicRound =>
+            val phase2a = Phase2a(slot = nextSlot, round = round)
+              .withCommand(request.command)
+            acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+            pendingEntries(nextSlot) = ECommand(request.command)
+            phase2bs(nextSlot) = mutable.Map()
+            nextSlot += 1
+
+          case FastRound =>
+            // If we're in a fast round, and the client knows we're in a fast
+            // round (because request.round == round), then the client should
+            // not be sending the leader any requests. It only does so if there
+            // was a failure. In this case, we change to a higher round.
+            leaderChange(address)
+        }
     }
   }
 
@@ -343,8 +362,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Phase1(phase1bs, pendingProposals, resendPhase1as) =>
         if (request.round != round) {
           logger.debug(
-            s"""Leader received phase 1b in round ${request.round}, but is in
-               |round $round.""".stripMargin.replaceAll("\n", " ")
+            s"eader received phase 1b in round ${request.round}, but is in" +
+              s"round $round."
           )
           return
         }
@@ -560,21 +579,26 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Wait for sufficiently many phase2b replies.
         phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
-        phase2bs(phase2b.slot)(phase2b.acceptorId) = phase2b
+        phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
+        println(phase2bs(phase2b.slot))
+        println(phase2.phase2bs(phase2b.slot))
+
         phase2bChosenInSlot(phase2, phase2b.slot) match {
           case NothingReadyYet =>
-          // Don't do anything.
+            // Don't do anything.
+            logger.debug(s"Nothing ready yet in slot ${phase2b.slot}.")
 
           case ClassicReady(entry) =>
+            logger.debug(s"A value has been chosen in ${phase2b.slot}.")
             choose(entry)
 
           case FastReady(entry) =>
+            logger.debug(s"A value has been chosen in ${phase2b.slot}.")
             choose(entry)
 
           case FastStuck =>
             // The fast round is stuck, so we start again in a higher round.
-            // TODO(mwhittaker): We should add pending requests to resolve the
-            // stuck entries.
+            logger.debug(s"${phase2b.slot} is stuck.")
             leaderChange(address)
         }
     }
@@ -597,6 +621,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         logger.check_eq(entry, existingEntry)
       case None =>
         log(valueChosen.slot) = entry
+        executeLog()
     }
   }
 
@@ -652,11 +677,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // Switch over to a new leader. If the new leader is ourselves, then we
   // increase our round and enter a new round.
   def leaderChange(leader: Transport#Address): Unit = {
-    // TODO(mwhittaker): Only go to fast round if a superquorum of nodes are
-    // alive.
-    val nextRound = config.roundSystem
-      .nextFastRound(leaderId, round)
-      .getOrElse(config.roundSystem.nextClassicRound(leaderId, round))
+    // Try to go to a fast round if we think that a fast quorum of acceptors
+    // are alive. If we think fewer than a fast quorum of acceptors are alive,
+    // then proceed to a classic round.
+    val nextRound = if (heartbeat.unsafeAlive().size >= config.fastQuorumSize) {
+      config.roundSystem
+        .nextFastRound(leaderId, round)
+        .getOrElse(config.roundSystem.nextClassicRound(leaderId, round))
+    } else {
+      config.roundSystem.nextClassicRound(leaderId, round)
+    }
 
     (state, leader == address) match {
       case (Inactive, true) =>

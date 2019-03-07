@@ -54,8 +54,8 @@ object Participant {
 object HeartbeatOptions {
   val default = HeartbeatOptions(
     failPeriod = java.time.Duration.ofSeconds(5),
-    successPeriod = java.time.Duration.ofSeconds(30),
-    numRetries = 5
+    successPeriod = java.time.Duration.ofSeconds(10),
+    numRetries = 3
   )
 }
 

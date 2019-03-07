@@ -80,20 +80,17 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   private val reproposeTimer: Transport#Timer = timer(
     "reproposeTimer",
     // TODO(mwhittaker): Make this a parameter.
-    java.time.Duration.ofSeconds(5),
+    java.time.Duration.ofSeconds(10),
     () => {
       pendingCommand match {
-        case Some(PendingCommand(id, command, _)) =>
-          val request = ProposeRequest(
-            Command(clientAddress = addressAsBytes,
-                    clientId = id,
-                    command = ByteString.copyFrom(command))
-          )
+        case None =>
+          logger.fatal("Attempting to repropose, but no value was proposed.")
+
+        case Some(pendingCommand) =>
+          val request = toProposeRequest(pendingCommand)
           for ((_, leader) <- leaders) {
             leader.send(LeaderInbound().withProposeRequest(request))
           }
-        case None =>
-          logger.fatal("Attempting to repropose, but no value was proposed.")
       }
       reproposeTimer.start()
     }
@@ -103,9 +100,57 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
     inbound.request match {
+      case Request.LeaderInfo(r)   => handleLeaderInfo(src, r)
       case Request.ProposeReply(r) => handleProposeReply(src, r)
       case Request.Empty =>
         logger.fatal("Empty ClientInbound encountered.")
+    }
+  }
+
+  private def toProposeRequest(
+      pendingCommand: PendingCommand
+  ): ProposeRequest = {
+    val PendingCommand(id, command, _) = pendingCommand
+    ProposeRequest(
+      round = round,
+      Command(clientAddress = addressAsBytes,
+              clientId = id,
+              command = ByteString.copyFrom(command))
+    )
+  }
+
+  private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
+    val request = toProposeRequest(pendingCommand)
+    config.roundSystem.roundType(round) match {
+      case ClassicRound =>
+        val leader = leaders(config.roundSystem.leader(round))
+        leader.send(LeaderInbound().withProposeRequest(request))
+      case FastRound =>
+        for (acceptor <- acceptors) {
+          acceptor.send(AcceptorInbound().withProposeRequest(request))
+        }
+    }
+  }
+
+  private def handleLeaderInfo(
+      src: Transport#Address,
+      leaderInfo: LeaderInfo
+  ): Unit = {
+    (pendingCommand, leaderInfo.round > round) match {
+      case (_, false) =>
+      // Ignore older rounds.
+
+      case (None, true) =>
+        // We update our round, but no command is pending, so we don't have to
+        // do anything.
+        round = leaderInfo.round
+
+      case (Some(pendingCommand), true) =>
+        // Update our round and re-send the pending command with the new round
+        // information.
+        round = leaderInfo.round
+        sendProposeRequest(pendingCommand)
+        reproposeTimer.reset()
     }
   }
 
@@ -122,11 +167,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           promise.success(proposeReply.result.toByteArray())
         } else {
           logger.warn(s"""Received a reply for unpending command with id
-                  |'${proposeReply.clientId}'.""".stripMargin)
+            |'${proposeReply.clientId}'.""".stripMargin)
         }
       case None =>
         logger.warn(s"""Received a reply for unpending command with id
-                |'${proposeReply.clientId}'.""".stripMargin)
+          |'${proposeReply.clientId}'.""".stripMargin)
     }
   }
 
@@ -141,20 +186,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
       case None =>
         pendingCommand = Some(PendingCommand(id, command, promise))
-        val request = ProposeRequest(
-          Command(clientAddress = addressAsBytes,
-                  clientId = id,
-                  command = ByteString.copyFrom(command))
-        )
-        config.roundSystem.roundType(round) match {
-          case ClassicRound =>
-            val leader = leaders(config.roundSystem.leader(round))
-            leader.send(LeaderInbound().withProposeRequest(request))
-          case FastRound =>
-            for (acceptor <- acceptors) {
-              acceptor.send(AcceptorInbound().withProposeRequest(request))
-            }
-        }
+        sendProposeRequest(pendingCommand.get)
         reproposeTimer.start()
         id += 1
     }
