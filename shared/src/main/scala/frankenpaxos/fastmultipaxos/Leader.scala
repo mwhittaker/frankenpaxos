@@ -579,6 +579,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
+        // Ignore responses for entries that have already been chosen.
+        if (log.contains(phase2b.slot)) {
+          logger.debug(
+            s"A leader received a phase 2b response for slot " +
+              s"${phase2b.slot} but a value has already been chosen in this " +
+              s"slot."
+          )
+          return
+        }
+
         // Wait for sufficiently many phase2b replies.
         phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
         phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)

@@ -51,7 +51,10 @@ object Simulator {
       runOne(sim, subrun).isSuccess
     }
 
-    Test.check(Test.Parameters.default, prop) match {
+    val params = Test.Parameters.default
+      .withMinSuccessfulTests(1500)
+      .withWorkers(Runtime.getRuntime().availableProcessors())
+    Test.check(params, prop) match {
       case Test.Result(Test.Failed(arg :: _, _), _, _, _, _) => {
         val subrun = arg.arg.asInstanceOf[Seq[Sim#Command]]
         Some(BadHistory(subrun, runOne(sim, subrun).failed.get))
