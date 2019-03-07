@@ -21,7 +21,6 @@ object JsTransportAddressSerializer extends Serializer[JsTransportAddress] {
 
 @JSExportAll
 class JsTransportTimer(
-    val owner: JsTransport,
     val address: JsTransport#Address,
     // We don't name this parameter `name` because we don't want to override
     // the `name` method in frankenpaxos.Timer with the same name.
@@ -47,7 +46,6 @@ class JsTransportTimer(
     if (running) {
       running = false
       f()
-      owner.history += owner.TriggerTimer((address, name()))
     }
   }
 
@@ -125,7 +123,10 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   ): JsTransport#Timer = {
     // TODO(mwhittaker): If a timer already exists with the given name and it
     // is stopped, delete it. We are replacing that timer with a new one.
-    val timer = new JsTransportTimer(this, address, name, delay, f)
+    val timer = new JsTransportTimer(address, name, delay, () => {
+      history += TriggerTimer((address, name))
+      f()
+    })
     timers += timer
     timer
   }
