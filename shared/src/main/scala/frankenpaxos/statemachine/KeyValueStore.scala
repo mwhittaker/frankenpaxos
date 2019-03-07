@@ -1,11 +1,13 @@
 package frankenpaxos.statemachine
 
 import collection.mutable
+import scala.scalajs.js.annotation._
 
 object InputSerializer extends frankenpaxos.ProtoSerializer[Input]
 
 object OutputSerializer extends frankenpaxos.ProtoSerializer[Output]
 
+@JSExportAll
 class KeyValueStore extends TypedStateMachine[Input, Output] {
   private val kvs = mutable.Map[String, String]()
 
@@ -15,7 +17,7 @@ class KeyValueStore extends TypedStateMachine[Input, Output] {
   override val inputSerializer = InputSerializer
   override val outputSerializer = OutputSerializer
 
-  def typedRun(input: Input): Output = {
+  override def typedRun(input: Input): Output = {
     import Input.Request
     input.request match {
       case Request.GetRequest(GetRequest(keys)) =>

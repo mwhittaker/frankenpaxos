@@ -4,6 +4,7 @@ import frankenpaxos.Actor
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
+import frankenpaxos.statemachine.AppendLog
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -57,7 +58,8 @@ class FastMultiPaxos {
     val leader = new Leader[JsTransport](JsTransportAddress(s"Leader $i"),
                                          transport,
                                          new JsLogger(),
-                                         config)
+                                         config,
+                                         new AppendLog())
     (logger, leader)
   }
   val (leader1logger, leader1) = leaders(0)
@@ -76,13 +78,13 @@ class FastMultiPaxos {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.fastpaxos.SimulatedFastMultiPaxos")
+@JSExportTopLevel("frankenpaxos.fastmultipaxos.SimulatedFastMultiPaxos")
 object SimulatedFastMultiPaxos {
   val FastMultiPaxos = new FastMultiPaxos();
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.fastpaxos.ClickthroughFastMultiPaxos")
+@JSExportTopLevel("frankenpaxos.fastmultipaxos.ClickthroughFastMultiPaxos")
 object ClickthroughFastMultiPaxos {
   val FastMultiPaxos = new FastMultiPaxos();
 }

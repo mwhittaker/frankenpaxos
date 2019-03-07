@@ -1,7 +1,9 @@
 package frankenpaxos.statemachine
 
 import collection.mutable
+import scala.scalajs.js.annotation._
 
+@JSExportAll
 class AppendLog extends StateMachine {
   private var xs = mutable.Buffer[String]()
 

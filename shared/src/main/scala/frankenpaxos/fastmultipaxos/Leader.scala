@@ -2,11 +2,13 @@ package frankenpaxos.fastmultipaxos
 
 import collection.immutable.SortedMap
 import collection.mutable
+import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
+import frankenpaxos.statemachine.StateMachine
 import scala.collection.breakOut
 import scala.scalajs.js.annotation._
 
@@ -28,7 +30,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: Config[Transport]
+    config: Config[Transport],
+    val stateMachine: StateMachine
 ) extends Actor(address, transport, logger) {
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = LeaderInbound
@@ -72,8 +75,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // and the leader later executes x yielding response y, then c1 maps to (2,
   // y) in the client table.
   @JSExport
-  protected val clientTable: mutable.Map[Transport#Address, (Int, String)] =
-    mutable.Map()
+  protected val clientTable =
+    mutable.Map[Transport#Address, (Int, Array[Byte])]()
 
   // At any point in time, the leader knows that all slots less than
   // chosenWatermark have been chosen. That is, for every `slot` <
@@ -241,7 +244,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           val client = chan[Client[Transport]](src, Client.serializer)
           client.send(
             ClientInbound().withProposeReply(
-              ProposeReply(round = round, clientId = clientId, result = result)
+              ProposeReply(round = round,
+                           clientId = clientId,
+                           result = ByteString.copyFrom(result))
             )
           )
         }
@@ -259,6 +264,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         pendingProposals += ((src, request))
 
       case Phase2(pendingEntries, phase2bs, _) =>
+        // TODO(mwhittaker): If we're in a fast round, we may want to
+        // transition to a higher round in this case because it might mean that
+        // the acceptors are dead.
         for (acceptor <- acceptors) {
           acceptor.send(
             AcceptorInbound().withPhase2A(
@@ -667,15 +675,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
         case ECommand(Command(clientAddress, clientId, command)) =>
-          // TODO(mwhittaker): Introduce a state machine replication
-          // abstraction. For now, we just echo back the command.
+          val output = stateMachine.run(command.toByteArray())
           val client = chan[Client[Transport]](
             transport.addressSerializer.fromBytes(clientAddress.toByteArray()),
             Client.serializer
           )
           client.send(
             ClientInbound().withProposeReply(
-              ProposeReply(round = round, clientId = clientId, result = command)
+              ProposeReply(round = round,
+                           clientId = clientId,
+                           result = ByteString.copyFrom(output))
             )
           )
         case ENoop => // Do nothing.
@@ -694,7 +703,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           log.get(slot) match {
             case Some(ECommand(command)) =>
               val address = new String(command.clientAddress.toByteArray)
-              Seq(s"$address.${command.clientId}", command.command)
+              Seq(s"$address.${command.clientId}", command.command.toString())
             case Some(ENoop) => Seq("noop")
             case None        => Seq("")
           }

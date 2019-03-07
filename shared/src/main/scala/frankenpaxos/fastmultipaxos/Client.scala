@@ -55,7 +55,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // restriction hurts performance a bit---a single client cannot pipeline
   // requests---but it simplifies the design of the protocol.
   @JSExportAll
-  case class PendingCommand(id: Int, command: String, result: Promise[String])
+  case class PendingCommand(
+      id: Int,
+      command: Array[Byte],
+      result: Promise[Array[Byte]]
+  )
 
   @JSExport
   protected var pendingCommand: Option[PendingCommand] = None
@@ -83,7 +87,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           val request = ProposeRequest(
             Command(clientAddress = addressAsBytes,
                     clientId = id,
-                    command = command)
+                    command = ByteString.copyFrom(command))
           )
           for ((_, leader) <- leaders) {
             leader.send(LeaderInbound().withProposeRequest(request))
@@ -115,7 +119,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           round = proposeReply.round
           pendingCommand = None
           reproposeTimer.stop()
-          promise.success(proposeReply.result)
+          promise.success(proposeReply.result.toByteArray())
         } else {
           logger.warn(s"""Received a reply for unpending command with id
                   |'${proposeReply.clientId}'.""".stripMargin)
@@ -126,7 +130,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def _propose(command: String, promise: Promise[String]): Unit = {
+  private def _propose(
+      command: Array[Byte],
+      promise: Promise[Array[Byte]]
+  ): Unit = {
     pendingCommand match {
       case Some(_) =>
         val err = "You cannot propose a command while one is pending."
@@ -137,7 +144,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         val request = ProposeRequest(
           Command(clientAddress = addressAsBytes,
                   clientId = id,
-                  command = command)
+                  command = ByteString.copyFrom(command))
         )
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
@@ -154,10 +161,19 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Interface /////////////////////////////////////////////////////////////////
-  // TODO(mwhittaker): Add a state machine abstraction.
-  def propose(command: String): Future[String] = {
-    val promise = Promise[String]()
+  def propose(command: Array[Byte]): Future[Array[Byte]] = {
+    val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(() => _propose(command, promise))
     promise.future
+  }
+
+  def propose(command: String): Future[String] = {
+    val promise = Promise[Array[Byte]]()
+    transport.executionContext.execute(
+      () => _propose(command.getBytes(), promise)
+    )
+    promise.future.map(new String(_))(
+      concurrent.ExecutionContext.Implicits.global
+    )
   }
 }

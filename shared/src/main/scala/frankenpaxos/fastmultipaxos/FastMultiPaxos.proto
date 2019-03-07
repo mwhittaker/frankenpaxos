@@ -42,8 +42,7 @@ message Command {
   // id. The pair of (client address, client id) uniquely identify a command.
   required int32 client_id = 2;
 
-  // TODO(mwhittaker): Add state machine abstraction.
-  required string command = 3;
+  required bytes command = 3;
 }
 
 message ProposeRequest {
@@ -61,8 +60,7 @@ message ProposeReply {
   required int32 client_id = 2;
 
   // The result of executing the command.
-  // TODO(mwhittaker): Add state machine abstraction.
-  required string result = 3;
+  required bytes result = 3;
 }
 
 message Phase1a {

@@ -59,6 +59,7 @@ let leader_info = {
       <div>clientTable = {{node.actor.clientTable}}</div>
       <div>chosenWatermark = {{node.actor.chosenWatermark}}</div>
       <div>nextSlot = {{node.actor.nextSlot}}</div>
+      <div>stateMachine = {{node.actor.stateMachine.toString()}}</div>
       <div>state = {{node.actor.state}}</div>
       <div>
         <table class="leaderLog">
@@ -325,11 +326,12 @@ function make_app(FastMultiPaxos, snap, app_id) {
 }
 
 function main() {
-  make_app(frankenpaxos.fastpaxos.SimulatedFastMultiPaxos.FastMultiPaxos,
+  let fmp = frankenpaxos.fastmultipaxos;
+  make_app(fmp.SimulatedFastMultiPaxos.FastMultiPaxos,
            Snap('#simulated_animation'),
            '#simulated_app');
 
-  make_app(frankenpaxos.fastpaxos.ClickthroughFastMultiPaxos.FastMultiPaxos,
+  make_app(fmp.ClickthroughFastMultiPaxos.FastMultiPaxos,
            Snap('#clickthrough_animation'),
            '#clickthrough_app');
 }

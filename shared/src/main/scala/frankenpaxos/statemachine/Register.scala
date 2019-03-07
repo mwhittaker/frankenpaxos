@@ -1,5 +1,8 @@
 package frankenpaxos.statemachine
 
+import scala.scalajs.js.annotation._
+
+@JSExportAll
 class Register extends StateMachine {
   private var x: String = ""
 
