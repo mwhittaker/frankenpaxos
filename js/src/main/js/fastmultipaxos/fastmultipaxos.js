@@ -119,6 +119,7 @@ function make_nodes(FastMultiPaxos, snap) {
   let clients_x = 50;
   nodes[FastMultiPaxos.client1.address] = {
     actor: FastMultiPaxos.client1,
+    color: flat_red,
     svgs: [
       snap.circle(clients_x, 100, 20).attr(colored(flat_red)),
       snap.text(clients_x, 102, '1').attr(number_style),
@@ -126,6 +127,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.client2.address] = {
     actor: FastMultiPaxos.client2,
+    color: flat_red,
     svgs: [
       snap.circle(clients_x, 200, 20).attr(colored(flat_red)),
       snap.text(clients_x, 202, '2').attr(number_style),
@@ -133,6 +135,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.client3.address] = {
     actor: FastMultiPaxos.client3,
+    color: flat_red,
     svgs: [
       snap.circle(clients_x, 300, 20).attr(colored(flat_red)),
       snap.text(clients_x, 302, '3').attr(number_style),
@@ -144,6 +147,7 @@ function make_nodes(FastMultiPaxos, snap) {
   let leader1_y = 50;
   nodes[FastMultiPaxos.leader1.address] = {
     actor: FastMultiPaxos.leader1,
+    color: flat_blue,
     svgs: [
       snap.circle(leaders_x, leader1_y, 20).attr(colored(flat_blue)),
       snap.text(leaders_x, leader1_y, '1').attr(number_style),
@@ -151,6 +155,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.leader1.electionAddress] = {
     actor: FastMultiPaxos.leader1.election,
+    color: flat_blue,
     svgs: [
       snap.circle(leaders_x + 50, leader1_y, 15).attr(colored(flat_blue)),
       snap.text(leaders_x + 50, leader1_y, 'e').attr(small_number_style),
@@ -158,6 +163,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.leader1.heartbeatAddress] = {
     actor: FastMultiPaxos.leader1.heartbeat,
+    color: flat_blue,
     svgs: [
       snap.circle(leaders_x + 100, leader1_y, 15).attr(colored(flat_blue)),
       snap.text(leaders_x + 100, leader1_y, 'h').attr(small_number_style),
@@ -167,6 +173,7 @@ function make_nodes(FastMultiPaxos, snap) {
   let leader2_y = 350;
   nodes[FastMultiPaxos.leader2.address] = {
     actor: FastMultiPaxos.leader2,
+    color: flat_blue,
     svgs: [
       snap.circle(leaders_x, leader2_y, 20).attr(colored(flat_blue)),
       snap.text(leaders_x, leader2_y, '2').attr(number_style),
@@ -174,6 +181,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.leader2.electionAddress] = {
     actor: FastMultiPaxos.leader2.election,
+    color: flat_blue,
     svgs: [
       snap.circle(leaders_x + 50, leader2_y, 15).attr(colored(flat_blue)),
       snap.text(leaders_x + 50, leader2_y, 'e').attr(small_number_style),
@@ -181,6 +189,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.leader2.heartbeatAddress] = {
     actor: FastMultiPaxos.leader2.heartbeat,
+    color: flat_blue,
     svgs: [
       snap.circle(leaders_x + 100, leader2_y, 15).attr(colored(flat_blue)),
       snap.text(leaders_x + 100, leader2_y, 'h').attr(small_number_style),
@@ -191,6 +200,7 @@ function make_nodes(FastMultiPaxos, snap) {
   let acceptors_x = 350;
   nodes[FastMultiPaxos.acceptor1.address] = {
     actor: FastMultiPaxos.acceptor1,
+    color: flat_green,
     svgs: [
       snap.circle(acceptors_x, 100, 20).attr(colored(flat_green)),
       snap.text(acceptors_x, 102, '1').attr(number_style),
@@ -198,6 +208,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.acceptor2.address] = {
     actor: FastMultiPaxos.acceptor2,
+    color: flat_green,
     svgs: [
       snap.circle(acceptors_x, 200, 20).attr(colored(flat_green)),
       snap.text(acceptors_x, 202, '2').attr(number_style),
@@ -205,6 +216,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.acceptor3.address] = {
     actor: FastMultiPaxos.acceptor3,
+    color: flat_green,
     svgs: [
       snap.circle(acceptors_x, 300, 20).attr(colored(flat_green)),
       snap.text(acceptors_x, 302, '3').attr(number_style),
@@ -214,6 +226,7 @@ function make_nodes(FastMultiPaxos, snap) {
   // Acceptor heartbeats.
   nodes[FastMultiPaxos.acceptor1.heartbeatAddress] = {
     actor: FastMultiPaxos.acceptor1.heartbeat,
+    color: flat_green,
     svgs: [
       snap.circle(acceptors_x - 40, 100 - 40, 15).attr(colored(flat_green)),
       snap.text(acceptors_x - 40, 100 - 40, 'h').attr(small_number_style),
@@ -221,6 +234,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.acceptor2.heartbeatAddress] = {
     actor: FastMultiPaxos.acceptor2.heartbeat,
+    color: flat_green,
     svgs: [
       snap.circle(acceptors_x - 40, 200 - 40, 15).attr(colored(flat_green)),
       snap.text(acceptors_x - 40, 200 - 40, 'h').attr(small_number_style),
@@ -228,6 +242,7 @@ function make_nodes(FastMultiPaxos, snap) {
   }
   nodes[FastMultiPaxos.acceptor3.heartbeatAddress] = {
     actor: FastMultiPaxos.acceptor3.heartbeat,
+    color: flat_green,
     svgs: [
       snap.circle(acceptors_x - 40, 300 - 40, 15).attr(colored(flat_green)),
       snap.text(acceptors_x - 40, 300 - 40, 'h').attr(small_number_style),
@@ -285,6 +300,16 @@ function make_app(FastMultiPaxos, snap, app_id) {
           // Impossible!
           console.assert(false);
         }
+      },
+    },
+
+    methods: {
+      partition: function(address) {
+        nodes[address].svgs[0].attr({fill: "#7f8c8d"})
+      },
+
+      unpartition: function(address) {
+        nodes[address].svgs[0].attr({fill: nodes[address].color})
       },
     },
   });

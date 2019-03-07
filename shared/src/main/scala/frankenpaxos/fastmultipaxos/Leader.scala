@@ -481,7 +481,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case FastRound =>
         phase2bs.getOrElseUpdate(slot, mutable.Map())
         if (phase2bs(slot).size < config.classicQuorumSize) {
-          logger.debug(s"${phase2bs(slot).size}")
           return NothingReadyYet
         }
 
@@ -505,7 +504,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           }
         }
 
-        logger.debug("down here")
         NothingReadyYet
     }
   }
@@ -623,16 +621,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     (state, leader == address) match {
       case (Inactive, true) =>
         // We are the new leader!
+        logger.debug(s"Leader $address was inactive, but is now the leader.")
         round = nextRound
         sendPhase1as()
         resendPhase1asTimer.start()
         state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
 
       case (Inactive, false) =>
-      // Don't do anything. We're still not the leader.
+        // Don't do anything. We're still not the leader.
+        logger.debug(s"Leader $address was inactive and still is.")
 
       case (Phase1(_, _, resendPhase1asTimer), true) =>
         // We were and still are the leader, but in a higher round.
+        logger.debug(s"Leader $address was the leader and still is.")
         round = nextRound
         sendPhase1as()
         resendPhase1asTimer.reset()
@@ -640,11 +641,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case (Phase1(_, _, resendPhase1asTimer), false) =>
         // We are no longer the leader!
+        logger.debug(s"Leader $address was the leader, but no longer is.")
         resendPhase1asTimer.stop()
         state = Inactive
 
       case (Phase2(_, _, resendPhase2asTimer), true) =>
         // We were and still are the leader, but in a higher round.
+        logger.debug(s"Leader $address was the leader and still is.")
         resendPhase2asTimer.stop()
         round = nextRound
         sendPhase1as()
@@ -653,6 +656,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case (Phase2(_, _, resendPhase2asTimer), false) =>
         // We are no longer the leader!
+        logger.debug(s"Leader $address was the leader, but no longer is.")
         resendPhase2asTimer.stop()
         state = Inactive
     }

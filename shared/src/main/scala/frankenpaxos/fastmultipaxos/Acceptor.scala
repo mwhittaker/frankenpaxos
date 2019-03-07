@@ -167,22 +167,33 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     // Ignore messages from smaller rounds.
     if (phase2a.round < round) {
-      logger.info(
+      logger.debug(
         s"An acceptor received a phase 2a message for round " +
           s"${phase2a.round} but is in round $round."
       )
       return
     }
 
-    // Ignore messages from our current round if we've already voted.
-    // TODO(mwhittaker): For liveness, I think we want to re-send our votes.
-    // Otherwise, the leader could be unaware a value is chosen and re-send a
-    // phase 2a that is ignored by all the acceptors.
+    // Ignore messages from our current round if we've already voted. Though,
+    // we do relay our vote again to the leader for liveness.
     if (phase2a.round == voteRound) {
-      logger.info(
+      logger.check_gt(voteRound, -1)
+      logger.debug(
         s"An acceptor received a phase 2a message for round " +
-          s"${phase2a.round} but has already voted in round $round."
+          s"${phase2a.round} but has already voted in round $round. The " +
+          s"acceptor is relaying its vote again."
       )
+      val leader = leaders(config.roundSystem.leader(round))
+      var phase2b =
+        Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = voteRound)
+      phase2b = voteValue match {
+        case VVCommand(command: Command) => phase2b.withCommand(command)
+        case VVNoop                      => phase2b.withNoop(Noop())
+        case VVNothing =>
+          logger.fatal("It's impossible for us to have voted for nothing.")
+          ???
+      }
+      leader.send(LeaderInbound().withPhase2B(phase2b))
       return
     }
 
