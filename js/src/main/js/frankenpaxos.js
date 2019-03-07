@@ -326,3 +326,66 @@ Vue.component('frankenpaxos-unittest', {
     </div>
   `
 });
+
+Vue.component('frankenpaxos-map', {
+  props: ['map'],
+
+  data: function() {
+    return {
+      jsMap: typeof this.map !== 'undefined' ?
+               frankenpaxos.JsUtils.mapToJs(this.map) :
+               {},
+    };
+  },
+
+  watch: {
+    map: {
+      handler: function(map) {
+        this.jsMap = typeof map !== 'undefined' ?
+                       frankenpaxos.JsUtils.mapToJs(map) :
+                       {};
+      },
+      deep: true,
+    }
+  },
+
+  template: `
+    <table class="frankenpaxos-map">
+      <tr v-for="kv in jsMap">
+        <td>{{kv[0]}}</td>
+        <td><slot :value="kv[1]">{{kv[1]}}</slot></td>
+      </tr>
+    </table>
+  `
+});
+
+Vue.component('frankenpaxos-seq', {
+  props: ['seq'],
+
+  data: function() {
+    return {
+      jsSeq: typeof this.seq !== 'undefined' ?
+               frankenpaxos.JsUtils.seqToJs(this.seq):
+               {},
+    };
+  },
+
+  watch: {
+    seq: {
+      handler: function(seq) {
+        this.jsSeq = typeof seq !== 'undefined' ?
+                       frankenpaxos.JsUtils.seqToJs(seq) :
+                       {};
+      },
+      deep: true,
+    }
+  },
+
+  template: `
+    <table class="frankenpaxos-seq">
+      <tr v-for="x in jsSeq">
+        <td><slot :value="x">{{x}}</slot></td>
+      </tr>
+    </table>
+  `
+});

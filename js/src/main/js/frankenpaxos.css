@@ -61,6 +61,26 @@
 .frankenpaxos-messages-dst {}
 .frankenpaxos-messages-text {}
 
+/* Maps ***********************************************************************/
+.frankenpaxos-map {
+  border-collapse: collapse;
+}
+
+.frankenpaxos-map td {
+  border: 1pt solid black;
+  padding: 4pt;
+}
+
+/* Seqs ***********************************************************************/
+.frankenpaxos-seq {
+  border-collapse: collapse;
+}
+
+.frankenpaxos-seq td {
+  border: 1pt solid black;
+  padding: 4pt;
+}
+
 /* Unit test ******************************************************************/
 .frankenpaxos-unittest {
   border: 1pt solid black;

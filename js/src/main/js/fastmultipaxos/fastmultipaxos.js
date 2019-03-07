@@ -56,12 +56,39 @@ let leader_info = {
   template: `
     <div>
       <div>round = {{node.actor.round}}</div>
-      <div>clientTable = {{node.actor.clientTable}}</div>
       <div>chosenWatermark = {{node.actor.chosenWatermark}}</div>
       <div>nextSlot = {{node.actor.nextSlot}}</div>
       <div>stateMachine = {{node.actor.stateMachine.toString()}}</div>
+      <div>clientTable = <frankenpaxos-map :map=node.actor.clientTable>
+                         </frankenpaxos-map></div>
       <div>state = {{node.actor.state}}</div>
-      <div>log = {{node.actor.log}}</div>
+      <div>
+        phase1bs =
+        <frankenpaxos-map :map=node.actor.state.phase1bs>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        pendingProposals =
+        <frankenpaxos-seq :seq=node.actor.state.pendingProposals>
+        </frankenpaxos-seq>
+      </div>
+      <div>
+        pendingEntries =
+        <frankenpaxos-map :map=node.actor.state.pendingEntries>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        phase2bs =
+        <frankenpaxos-map :map=node.actor.state.phase2bs v-slot="slotProps">
+          <frankenpaxos-map :map="slotProps.value">
+          </frankenpaxos-map>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        log =
+        <frankenpaxos-map :map=node.actor.log>
+        </frankenpaxos-map>
+      </div>
     </div>
   `,
 };
@@ -72,8 +99,15 @@ let acceptor_info = {
   template: `
     <div>
       <div>round = {{node.actor.round}}</div>
-      <div>log = {{node.actor.log}}</div>
       <div>nextSlot = {{node.actor.nextSlot}}</div>
+      <div>
+        log prefix =
+        <frankenpaxos-map :map=node.actor.log.prefix()>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        log tail = {{node.actor.log.tail}}
+      </div>
     </div>
   `,
 };

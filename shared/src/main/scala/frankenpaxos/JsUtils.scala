@@ -14,7 +14,12 @@ object JsUtils {
   def setToJs[A](m: Set[A]): js.Array[A] = seqToJs(m.to[Seq])
   def setToJs[A](m: mutable.Set[A]): js.Array[A] = seqToJs(m.to[mutable.Seq])
 
-  def mapToJs[A](m: mutable.Map[String, A]): js.Dictionary[A] = m.toJSDictionary
+  def mapToJs[K, V](m: Map[K, V]): js.Array[js.Array[Any]] = {
+    seqToJs(m.map({ case (k, v) => tupleToJs((k, v)) }).to[Seq])
+  }
+  def mapToJs[K, V](m: mutable.Map[K, V]): js.Array[js.Array[Any]] = {
+    seqToJs(m.map({ case (k, v) => tupleToJs((k, v)) }).to[mutable.Seq])
+  }
 
   def optionToJs[A](o: Option[A]): js.UndefOr[A] = o.orUndefined
 

@@ -1,6 +1,7 @@
 package frankenpaxos.fastmultipaxos
 
 import collection.mutable
+import scala.scalajs.js.annotation._
 
 // A Log[A] represents a log of entries of type A with a potentially infinite
 // tail consisting of some fixed value. For example, this is a Log[Char]:
@@ -41,6 +42,7 @@ import collection.mutable
 //   |   | b |   | e |   | e | e | f | f | f | ....
 //   +---+---+---+---+---+---+---+---+---+---+---+-
 //     0   1   2   3   4   5   6   7   8   9
+@JSExportAll
 class Log[A] {
   // The finite prefix of the log. map(i) stores the value in slot i.
   private[this] var map: mutable.SortedMap[Int, A] = mutable.SortedMap()
@@ -50,7 +52,8 @@ class Log[A] {
   // infinite tail of value `tailValue` starting in slot `tailSlot`. Note that
   // the largest slot in `map` is always less than `tailSlot`. Thus, there is
   // never a slot that is in `map` and covered by `tail`.
-  private var tail: Option[(Int, A)] = None
+  @JSExport
+  protected var tail: Option[(Int, A)] = None
 
   override def toString(): String = {
     map.toString() + " with tail " + tail.toString()

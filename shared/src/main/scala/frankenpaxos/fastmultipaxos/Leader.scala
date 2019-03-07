@@ -75,7 +75,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // and the leader later executes x yielding response y, then c1 maps to (2,
   // y) in the client table.
   @JSExport
-  protected val clientTable =
+  protected var clientTable =
     mutable.Map[Transport#Address, (Int, Array[Byte])]()
 
   // At any point in time, the leader knows that all slots less than
@@ -230,7 +230,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       request: ProposeRequest
   ): Unit = {
-    println("Received handleProposeRequest")
     val client = chan[Client[Transport]](src, Client.serializer)
 
     // If we've cached the result of this proposed command in the client table,
@@ -256,16 +255,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
     }
 
-    println("Matching")
     state match {
       case Inactive =>
-        println("Inactive")
         logger.debug("Leader received propose request but is inactive.")
 
       case Phase1(_, pendingProposals, _) =>
         println("Phase 1")
         if (request.round != round) {
           // We don't want to process requests from out of date clients.
+          logger.debug(
+            s"Leader received a propose request in round " +
+              s"${request.round}, but is in round $round."
+          )
           client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
         } else {
           // We buffer all pending proposals in phase 1 and process them later
@@ -274,10 +275,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
       case Phase2(pendingEntries, phase2bs, _) =>
-        println("Phase 2")
         if (request.round != round) {
           // We don't want to process requests from out of date clients.
-          println("sending to client.")
+          logger.debug(
+            s"Leader received a propose request in round " +
+              s"${request.round}, but is in round $round."
+          )
           client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
           return
         }
@@ -752,6 +755,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
           val output = stateMachine.run(command.toByteArray())
           clientTable(clientAddress) = (clientId, output)
+          // clientTable = clientTable + (clientAddress -> (clientId, output))
           val client = chan[Client[Transport]](clientAddress, Client.serializer)
           client.send(
             ClientInbound().withProposeReply(
