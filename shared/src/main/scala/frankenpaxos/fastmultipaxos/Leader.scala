@@ -220,6 +220,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Request.ProposeRequest(r) => handleProposeRequest(src, r)
       case Request.Phase1B(r)        => handlePhase1b(src, r)
       case Request.Phase2B(r)        => handlePhase2b(src, r)
+      case Request.ValueChosen(r)    => handleValueChosen(src, r)
       case Request.Empty =>
         logger.fatal("Empty LeaderInbound encountered.")
     }
@@ -520,6 +521,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2b: Phase2b
   ): Unit = {
+    def toValueChosen(slot: Slot, entry: Entry): ValueChosen = {
+      entry match {
+        case ECommand(command) =>
+          ValueChosen(slot = slot).withCommand(command)
+        case ENoop => ValueChosen(slot = slot).withNoop(Noop())
+      }
+    }
+
     state match {
       case Inactive | Phase1(_, _, _) =>
         logger.debug(
@@ -527,6 +536,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case phase2 @ Phase2(pendingEntries, phase2bs, _) =>
+        def choose(entry: Entry): Unit = {
+          log(phase2b.slot) = entry
+          pendingEntries -= phase2b.slot
+          phase2bs -= phase2b.slot
+          executeLog()
+          for (leader <- otherLeaders) {
+            leader.send(
+              LeaderInbound()
+                .withValueChosen(toValueChosen(phase2b.slot, entry))
+            )
+          }
+        }
+
         // Ignore responses that are not in our current round.
         if (phase2b.round != round) {
           logger.debug(
@@ -544,20 +566,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           // Don't do anything.
 
           case ClassicReady(entry) =>
-            log(phase2b.slot) = entry
-            pendingEntries -= phase2b.slot
-            phase2bs -= phase2b.slot
-            // TODO(mwhittaker): Inform other leaders that this value has been
-            // chosen.
-            executeLog()
+            choose(entry)
 
           case FastReady(entry) =>
-            log(phase2b.slot) = entry
-            pendingEntries -= phase2b.slot
-            phase2bs -= phase2b.slot
-            // TODO(mwhittaker): Inform other leaders that this value has been
-            // chosen.
-            executeLog()
+            choose(entry)
 
           case FastStuck =>
             // The fast round is stuck, so we start again in a higher round.
@@ -565,6 +577,26 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             // stuck entries.
             leaderChange(address)
         }
+    }
+  }
+
+  private def handleValueChosen(
+      src: Transport#Address,
+      valueChosen: ValueChosen
+  ): Unit = {
+    val entry = valueChosen.value match {
+      case ValueChosen.Value.Command(command) => ECommand(command)
+      case ValueChosen.Value.Noop(_)          => ENoop
+      case ValueChosen.Value.Empty =>
+        logger.fatal("Empty ValueChosen.Vote")
+        ???
+    }
+
+    log.get(valueChosen.slot) match {
+      case Some(existingEntry) =>
+        logger.check_eq(entry, existingEntry)
+      case None =>
+        log(valueChosen.slot) = entry
     }
   }
 

@@ -8,8 +8,8 @@
 //      |                  | <------------------ |     Phase1b
 //      |                  | ------------------> |     Phase2a
 //      |                  | <------------------ |     Phase2b
-//      |                  |                     |
-//      |                  |                     |
+//      |                  | ----------.         |     ValueChosen
+//      |                  | <---------'         |
 //      |                  |                     |
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
@@ -114,6 +114,14 @@ message Phase2b {
   }
 }
 
+message ValueChosen {
+  required int32 slot = 1;
+  oneof value {
+    Command command = 2;
+    Noop noop = 3;
+  }
+}
+
 message ClientInbound {
   oneof request {
     ProposeReply propose_reply = 2;
@@ -125,6 +133,7 @@ message LeaderInbound {
     ProposeRequest propose_request = 1;
     Phase1b phase1b = 2;
     Phase2b phase2b = 3;
+    ValueChosen value_chosen = 4;
   }
 }
 
