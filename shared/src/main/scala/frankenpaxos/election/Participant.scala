@@ -284,6 +284,8 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
               ParticipantInbound().withPing(Ping(round = round))
             )
           }
+
+          callbacks.foreach(_(address))
         }
       }
       case Leader(pingTimer) => {
@@ -311,17 +313,14 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     val t = noPingTimer()
     t.start()
     state = Follower(t, leader)
-
-    for (callback <- callbacks) {
-      callback(leader)
-    }
+    callbacks.foreach(_(leader))
   }
 
   // Timers ////////////////////////////////////////////////////////////////////
   private def pingTimer(): Transport#Timer = {
     // We make `t` a lazy val to avoid the circular definition.
     lazy val t: Transport#Timer = timer(
-      "pingTimer",
+      s"pingTimer.$round",
       options.pingPeriod,
       () => {
         for (address <- addresses) {
@@ -337,7 +336,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
   private def noPingTimer(): Transport#Timer = {
     timer(
-      "noPingTimer",
+      s"noPingTimer.$round",
       randomDuration(options.noPingTimeoutMin, options.noPingTimeoutMax),
       () => {
         state match {
@@ -360,7 +359,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
   private def notEnoughVotesTimer(): Transport#Timer = {
     timer(
-      "notEnoughVotes",
+      s"notEnoughVotes.$round",
       randomDuration(
         options.notEnoughVotesTimeoutMin,
         options.notEnoughVotesTimeoutMax
