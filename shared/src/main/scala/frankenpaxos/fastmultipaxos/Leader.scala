@@ -260,7 +260,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         logger.debug("Leader received propose request but is inactive.")
 
       case Phase1(_, pendingProposals, _) =>
-        println("Phase 1")
         if (request.round != round) {
           // We don't want to process requests from out of date clients.
           logger.debug(
@@ -583,9 +582,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Wait for sufficiently many phase2b replies.
         phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
         phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
-        println(phase2bs(phase2b.slot))
-        println(phase2.phase2bs(phase2b.slot))
-
         phase2bChosenInSlot(phase2, phase2b.slot) match {
           case NothingReadyYet =>
             // Don't do anything.
