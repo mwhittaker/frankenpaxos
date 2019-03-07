@@ -131,6 +131,12 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         s"An acceptor received a phase 1a message for round " +
           s"${phase1a.round} but is in round $round."
       )
+      val leader = chan[Leader[Transport]](src, Leader.serializer)
+      leader.send(
+        LeaderInbound().withPhase1BNack(
+          Phase1bNack(acceptorId = acceptorId, round = round)
+        )
+      )
       return
     }
 

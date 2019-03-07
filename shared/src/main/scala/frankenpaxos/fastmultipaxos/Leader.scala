@@ -183,7 +183,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // election participant, not of the leader.
     val leaderAddress =
       config.leaderAddresses(config.leaderElectionAddresses.indexOf(address))
-    leaderChange(leaderAddress)
+    leaderChange(leaderAddress, round)
   })
 
   // Leaders monitor acceptors to make sure they are still alive.
@@ -219,6 +219,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     inbound.request match {
       case Request.ProposeRequest(r) => handleProposeRequest(src, r)
       case Request.Phase1B(r)        => handlePhase1b(src, r)
+      case Request.Phase1BNack(r)    => handlePhase1bNack(src, r)
       case Request.Phase2B(r)        => handlePhase2b(src, r)
       case Request.ValueChosen(r)    => handleValueChosen(src, r)
       case Request.Empty =>
@@ -250,8 +251,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                            result = ByteString.copyFrom(result))
             )
           )
+          return
         }
-        return
       case None =>
     }
 
@@ -298,7 +299,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             // round (because request.round == round), then the client should
             // not be sending the leader any requests. It only does so if there
             // was a failure. In this case, we change to a higher round.
-            leaderChange(address)
+            logger.debug(
+              s"Leader received a client request during fast round. We are " +
+                s"increasing our round."
+            )
+            leaderChange(address, round)
         }
     }
   }
@@ -475,6 +480,25 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private def handlePhase1bNack(
+      src: Transport#Address,
+      nack: Phase1bNack
+  ): Unit = {
+    state match {
+      case Inactive | Phase2(_, _, _) =>
+        logger.debug("Leader received phase 1b nack, but is not in phase 1.")
+
+      case Phase1(_, _, _) =>
+        if (nack.round > round) {
+          logger.debug(
+            s"Leader running phase 1 in round $round got nack in round " +
+              s"${nack.round}. Increasing round."
+          )
+          leaderChange(address, nack.round)
+        }
+    }
+  }
+
   private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {
     phase2bVote match {
       case Phase2b.Vote.Command(command) => ECommand(command)
@@ -608,7 +632,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           case FastStuck =>
             // The fast round is stuck, so we start again in a higher round.
             logger.debug(s"${phase2b.slot} is stuck.")
-            leaderChange(address)
+            leaderChange(address, round)
         }
     }
   }
@@ -657,12 +681,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               )
           }
 
-          (pendingEntries.get(slot), phase2bs.get(slot)) match {
-            case (Some(entry), _) =>
+          (log.contains(slot), pendingEntries.get(slot), phase2bs.get(slot)) match {
+            case (true, _, _) =>
+            // If `slot` is chosen, we don't resend anything.
+            //
+            case (false, Some(entry), _) =>
               // If we have some pending entry, then we propose that.
               acceptors.foreach(_.send(entryToPhase2a(entry)))
 
-            case (None, Some(phase2bsInSlot)) =>
+            case (false, None, Some(phase2bsInSlot)) =>
               // If there is no pending entry, then we propose the value with
               // the most votes so far. If no value has been voted, then we
               // just propose Noop.
@@ -676,7 +703,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 acceptors.foreach(_.send(msg))
               }
 
-            case (None, None) =>
+            case (false, None, None) =>
               acceptors.foreach(_.send(entryToPhase2a(ENoop)))
           }
         }
@@ -684,17 +711,21 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Switch over to a new leader. If the new leader is ourselves, then we
-  // increase our round and enter a new round.
-  def leaderChange(leader: Transport#Address): Unit = {
+  // increase our round and enter a new round larger than `higherThanRound`.
+  def leaderChange(leader: Transport#Address, higherThanRound: Int): Unit = {
+    logger.check_ge(higherThanRound, round)
+
     // Try to go to a fast round if we think that a fast quorum of acceptors
     // are alive. If we think fewer than a fast quorum of acceptors are alive,
     // then proceed to a classic round.
     val nextRound = if (heartbeat.unsafeAlive().size >= config.fastQuorumSize) {
       config.roundSystem
-        .nextFastRound(leaderId, round)
-        .getOrElse(config.roundSystem.nextClassicRound(leaderId, round))
+        .nextFastRound(leaderId, higherThanRound)
+        .getOrElse(
+          config.roundSystem.nextClassicRound(leaderId, higherThanRound)
+        )
     } else {
-      config.roundSystem.nextClassicRound(leaderId, round)
+      config.roundSystem.nextClassicRound(leaderId, higherThanRound)
     }
 
     (state, leader == address) match {
@@ -749,27 +780,31 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             clientAddressBytes.toByteArray()
           )
 
-          // True if this command has not already been executed.
+          // True if this command has already been executed.
           val executed = clientTable.get(clientAddress) match {
             case Some((highestClientId, _)) => clientId <= highestClientId
             case None                       => false
           }
 
-          if (executed) {
-            return
-          }
+          if (!executed) {
+            val output = stateMachine.run(command.toByteArray())
+            clientTable(clientAddress) = (clientId, output)
 
-          val output = stateMachine.run(command.toByteArray())
-          clientTable(clientAddress) = (clientId, output)
-          // clientTable = clientTable + (clientAddress -> (clientId, output))
-          val client = chan[Client[Transport]](clientAddress, Client.serializer)
-          client.send(
-            ClientInbound().withProposeReply(
-              ProposeReply(round = round,
-                           clientId = clientId,
-                           result = ByteString.copyFrom(output))
-            )
-          )
+            // Note that only the leader replies to the client since
+            // ProposeReplies include the round of the leader, and only the
+            // leader knows this.
+            if (state != Inactive) {
+              val client =
+                chan[Client[Transport]](clientAddress, Client.serializer)
+              client.send(
+                ClientInbound().withProposeReply(
+                  ProposeReply(round = round,
+                               clientId = clientId,
+                               result = ByteString.copyFrom(output))
+                )
+              )
+            }
+          }
         case ENoop => // Do nothing.
       }
       chosenWatermark += 1

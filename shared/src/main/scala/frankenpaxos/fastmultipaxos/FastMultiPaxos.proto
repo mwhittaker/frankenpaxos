@@ -7,6 +7,7 @@
 //      | <--------------- |                     |     LeaderInfo
 //      |                  | ------------------> |     Phase1a
 //      |                  | <------------------ |     Phase1b
+//      |                  | <------------------ |     Phase1bNack
 //      |                  | ------------------> |     Phase2a
 //      |                  | <------------------ |     Phase2b
 //      |                  | ----------.         |     ValueChosen
@@ -102,6 +103,11 @@ message Phase1b {
   repeated Phase1bVote vote = 3;
 }
 
+message Phase1bNack {
+  required int32 acceptor_id = 1;
+  required int32 round = 2;
+}
+
 message Phase2a {
   required int32 slot = 1;
   required int32 round = 2;
@@ -143,8 +149,9 @@ message LeaderInbound {
   oneof request {
     ProposeRequest propose_request = 1;
     Phase1b phase1b = 2;
-    Phase2b phase2b = 3;
-    ValueChosen value_chosen = 4;
+    Phase1bNack phase1b_nack = 3;
+    Phase2b phase2b = 4;
+    ValueChosen value_chosen = 5;
   }
 }
 
