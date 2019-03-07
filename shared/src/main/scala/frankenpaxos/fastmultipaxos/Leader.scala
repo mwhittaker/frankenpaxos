@@ -671,15 +671,26 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   def executeLog(): Unit = {
-    // TODO(mwhittaker): Update client table.
     while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
-        case ECommand(Command(clientAddress, clientId, command)) =>
-          val output = stateMachine.run(command.toByteArray())
-          val client = chan[Client[Transport]](
-            transport.addressSerializer.fromBytes(clientAddress.toByteArray()),
-            Client.serializer
+        case ECommand(Command(clientAddressBytes, clientId, command)) =>
+          val clientAddress = transport.addressSerializer.fromBytes(
+            clientAddressBytes.toByteArray()
           )
+
+          // True if this command has not already been executed.
+          val executed = clientTable.get(clientAddress) match {
+            case Some((highestClientId, _)) => clientId <= highestClientId
+            case None                       => false
+          }
+
+          if (executed) {
+            return
+          }
+
+          val output = stateMachine.run(command.toByteArray())
+          clientTable(clientAddress) = (clientId, output)
+          val client = chan[Client[Transport]](clientAddress, Client.serializer)
           client.send(
             ClientInbound().withProposeReply(
               ProposeReply(round = round,
