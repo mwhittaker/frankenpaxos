@@ -703,23 +703,4 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       chosenWatermark += 1
     }
   }
-
-  // JS Helpers ////////////////////////////////////////////////////////////////
-  def logJs(): Seq[Seq[String]] = {
-    if (log.size == 0) {
-      Seq()
-    } else {
-      (0 to log.lastKey).map(
-        (slot) => {
-          log.get(slot) match {
-            case Some(ECommand(command)) =>
-              val address = new String(command.clientAddress.toByteArray)
-              Seq(s"$address.${command.clientId}", command.command.toString())
-            case Some(ENoop) => Seq("noop")
-            case None        => Seq("")
-          }
-        }
-      )
-    }
-  }
 }

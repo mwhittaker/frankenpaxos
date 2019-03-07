@@ -61,15 +61,7 @@ let leader_info = {
       <div>nextSlot = {{node.actor.nextSlot}}</div>
       <div>stateMachine = {{node.actor.stateMachine.toString()}}</div>
       <div>state = {{node.actor.state}}</div>
-      <div>
-        <table class="leaderLog">
-          <tr>
-            <td v-for="ss in JsUtils.seqToJs(node.actor.logJs())">
-              <div v-for="s in JsUtils.seqToJs(ss)" class="command">{{s}}</div>
-            </td>
-          </tr>
-        </table>
-      </div>
+      <div>log = {{node.actor.log}}</div>
     </div>
   `,
 };
