@@ -17,7 +17,7 @@ class EPaxos(val f: Int) {
   val config = Config[FakeTransport](
     f = f,
     replicaAddresses = for (i <- 1 to numReplicas)
-      yield FakeTransportAddress(s"Replica $i"),
+      yield FakeTransportAddress(s"Replica $i")
   )
 
   // Clients.
@@ -43,11 +43,9 @@ class EPaxos(val f: Int) {
 
 sealed trait EPaxosCommand
 case class Propose(clientIndex: Int, value: String) extends EPaxosCommand
-case class TransportCommand(command: FakeTransport.Command)
-    extends EPaxosCommand
+case class TransportCommand(command: FakeTransportCommand) extends EPaxosCommand
 
-class SimulatedEPaxos(val f: Int)
-    extends SimulatedSystem[SimulatedEPaxos] {
+class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
   override type System = (EPaxos, Set[String])
   override type State = Set[String]
   override type Command = EPaxosCommand
@@ -111,7 +109,10 @@ class SimulatedEPaxos(val f: Int)
     val instanceCommandMapping: mutable.Map[String, Int] = mutable.Map()
     for (state <- newState) {
       val tokens: Array[String] = state.split(": ")
-      instanceCommandMapping.put(tokens(0), instanceCommandMapping.getOrElse(tokens(0), 0) + 1)
+      instanceCommandMapping.put(
+        tokens(0),
+        instanceCommandMapping.getOrElse(tokens(0), 0) + 1
+      )
     }
 
     for (key <- instanceCommandMapping.keys) {
