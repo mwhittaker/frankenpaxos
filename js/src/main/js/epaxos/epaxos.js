@@ -19,8 +19,8 @@ let client_info = {
 
   template: `
     <div>
-      <div>proposed value: {{node.actor.proposedValue}}</div>
-      <div>state: {{node.actor.state}}</div>
+      <div>proposed value = {{node.actor.proposedValue}}</div>
+      <div>state = {{node.actor.state}}</div>
       <button v-on:click="propose">Propose</button>
       <input v-model="proposal" v-on:keyup.enter="propose"></input>
     </div>
@@ -32,12 +32,51 @@ let replica_info = {
 
   template: `
     <div>
-      <div>nextAvailableInstance: {{node.actor.nextAvailableInstance}}</div> 
-      <div>stateMachine: {{node.actor.stateMachine}}</div>
-      <div>commands: {{node.actor.commands}}</div>
-      <div>preacceptResponses: {{node.actor.preacceptResponses}}</div>
-      <div>acceptOkResponses: {{node.actor.acceptOkResponses}}</div>
-      <div>interferenceData: {{node.actor.interferenceData}}</div>
+      <div>nextAvailableInstance = {{node.actor.nextAvailableInstance}}</div>
+      <div>stateMachine = {{node.actor.stateMachine}}</div>
+
+      <div>
+        commands =
+        <frankenpaxos-map :map=node.actor.commands>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        preacceptResponses =
+        <frankenpaxos-map :map=node.actor.preacceptResponses v-slot="slotProps">
+          <frankenpaxos-seq :seq="slotProps.value">
+          </frankenpaxos-seq>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        acceptOkResponses =
+        <frankenpaxos-map :map=node.actor.acceptOkResponses v-slot="slotProps">
+          <frankenpaxos-seq :seq="slotProps.value">
+          </frankenpaxos-seq>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        prepareResponses =
+        <frankenpaxos-map :map=node.actor.prepareResponses v-slot="slotProps">
+          <frankenpaxos-seq :seq="slotProps.value">
+          </frankenpaxos-seq>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        instanceClientMapping =
+        <frankenpaxos-map :map=node.actor.instanceClientMapping>
+        </frankenpaxos-map>
+      </div>
+      <div>ballot = {{node.actor.ballot}}</div>
+      <div>
+        ballotMapping =
+        <frankenpaxos-map :map=node.actor.ballotMapping>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        interferenceData =
+        <frankenpaxos-map :map=node.actor.interferenceData>
+        </frankenpaxos-map>
+      </div>
     </div>
   `,
 };
@@ -65,60 +104,66 @@ function make_nodes(EPaxos, snap) {
     'stroke-width': '1px',
   }
 
-  let client_x = 50;
-  let replica_x = 150;
+  let client_x = 125;
+  let replica_x = 275;
 
   let nodes = {};
 
   // Clients.
   nodes[EPaxos.client1.address] = {
     actor: EPaxos.client1,
+    color: flat_red,
     svgs: [
       snap.circle(client_x, 50, 20).attr(colored(flat_red)),
-      snap.text(client_x, 52, '1').attr(number_style),
+      snap.text(client_x, 50, '1').attr(number_style),
     ],
   };
   nodes[EPaxos.client2.address] = {
     actor: EPaxos.client2,
+    color: flat_red,
     svgs: [
-      snap.circle(client_x, 150, 20).attr(colored(flat_red)),
-      snap.text(client_x, 152, '2').attr(number_style),
+      snap.circle(client_x - 100, 150, 20).attr(colored(flat_red)),
+      snap.text(client_x - 100, 150, '2').attr(number_style),
     ],
   };
   nodes[EPaxos.client3.address] = {
     actor: EPaxos.client3,
+    color: flat_red,
     svgs: [
       snap.circle(client_x, 250, 20).attr(colored(flat_red)),
-      snap.text(client_x, 252, '3').attr(number_style),
+      snap.text(client_x, 250, '3').attr(number_style),
     ],
   };
 
   // Replicas.
   nodes[EPaxos.replica1.address] = {
     actor: EPaxos.replica1,
+    color: flat_blue,
     svgs: [
-      snap.circle(replica_x, 100, 20).attr(colored(flat_blue)),
-      snap.text(replica_x, 102, '1').attr(number_style),
+      snap.circle(replica_x, 50, 20).attr(colored(flat_blue)),
+      snap.text(replica_x, 50, '1').attr(number_style),
     ],
   };
   nodes[EPaxos.replica2.address] = {
     actor: EPaxos.replica2,
+    color: flat_blue,
     svgs: [
-      snap.circle(replica_x, 200, 20).attr(colored(flat_blue)),
-      snap.text(replica_x, 202, '2').attr(number_style),
+      snap.circle(replica_x + 100, 150, 20).attr(colored(flat_blue)),
+      snap.text(replica_x + 100, 150, '2').attr(number_style),
     ],
   };
   nodes[EPaxos.replica3.address] = {
     actor: EPaxos.replica3,
+    color: flat_blue,
     svgs: [
-      snap.circle(replica_x, 300, 20).attr(colored(flat_blue)),
-      snap.text(replica_x, 302, '3').attr(number_style),
+      snap.circle(replica_x, 250, 20).attr(colored(flat_blue)),
+      snap.text(replica_x, 250, '3').attr(number_style),
     ],
   };
 
   // Node titles.
-  snap.text(client_x, 15, 'Clients').attr({'text-anchor': 'middle'});
-  snap.text(replica_x, 15, 'Replicas').attr({'text-anchor': 'middle'});
+  snap.text(client_x - 50, 15, 'Clients').attr({'text-anchor': 'middle'});
+  snap.text(replica_x + 50, 15, 'Replicas').attr({'text-anchor': 'middle'});
 
   return nodes;
 }
@@ -130,15 +175,7 @@ function make_app(EPaxos, snap, app_id) {
   let vue_app = new Vue({
     el: app_id,
 
-    // components: {
-    //   'abbreviated-acceptor-info': abbreviated_acceptor_info,
-    // },
-
     data: {
-      // JsUtils: frankenpaxos.JsUtils,
-      // acceptor1: nodes[Paxos.acceptor1.address],
-      // acceptor2: nodes[Paxos.acceptor2.address],
-      // acceptor3: nodes[Paxos.acceptor3.address],
       node: nodes[EPaxos.client1.address],
       transport: EPaxos.transport,
       send_message: (message, callback) => {
@@ -150,7 +187,7 @@ function make_app(EPaxos, snap, app_id) {
         snap.prepend(svg_message);
         svg_message.animate(
           {cx: dst.svgs[0].attr("cx"), cy: dst.svgs[0].attr("cy")},
-          250 + Math.random() * 200,
+          500 + Math.random() * 200,
           callback);
       }
     },
@@ -165,6 +202,16 @@ function make_app(EPaxos, snap, app_id) {
           // Impossible!
           console.assert(false);
         }
+      },
+    },
+
+    methods: {
+      partition: function(address) {
+        nodes[address].svgs[0].attr({fill: "#7f8c8d"})
+      },
+
+      unpartition: function(address) {
+        nodes[address].svgs[0].attr({fill: nodes[address].color})
       },
     },
   });

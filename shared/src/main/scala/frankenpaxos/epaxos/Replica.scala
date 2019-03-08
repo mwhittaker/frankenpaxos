@@ -88,7 +88,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   var prepareResponses: mutable.Map[Instance, mutable.ListBuffer[PrepareOk]] =
     mutable.Map()
 
-  private var instanceClientMapping: mutable.Map[Instance, Transport#Address] =
+  var instanceClientMapping: mutable.Map[Instance, Transport#Address] =
     mutable.Map()
   interferenceData.put(CommandPair("1", "2"), true)
   interferenceData.put(CommandPair("2", "1"), true)

@@ -61,12 +61,10 @@
               <frankenpaxos-partition :transport=transport
                                       :address=node.actor.address
                                       v-on:partition=partition>
-                partition
               </frankenpaxos-partition>
               <frankenpaxos-unpartition :transport=transport
                                         :address=node.actor.address
                                         v-on:unpartition=unpartition>
-                partition
               </frankenpaxos-unpartition>
             </div>
             <keep-alive>

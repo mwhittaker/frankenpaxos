@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>MultiPaxos</title>
+  <title>EPaxos</title>
   <meta name=viewport content="width=device-width, initial-scale=1">
   <link href="../frankenpaxos.css" rel="stylesheet">
   <style type="text/css">
@@ -34,17 +34,6 @@
       width: 400px;
       height: 300px;
     }
-
-    .columns {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 12pt;
-    }
-
-    .column {
-      margin-left: 6pt;
-      margin-right: 6pt;
-    }
   </style>
 </head>
 <body>
@@ -67,7 +56,19 @@
           <!-- Actor data. -->
           <div class="frankenpaxos-box">
             <h3 class="frankenpaxos-box-title">Data</h3>
-            <div>name: {{node.actor.address.address}}</div>
+            <div>
+              <span>{{node.actor.address.address}}</span>
+              <frankenpaxos-partition
+                :transport=transport
+                :address=node.actor.address
+                v-on:partition=partition>
+              </frankenpaxos-partition>
+              <frankenpaxos-unpartition
+                :transport=transport
+                :address=node.actor.address
+                v-on:unpartition=unpartition>
+              </frankenpaxos-unpartition>
+            </div>
             <keep-alive>
               <component :is="current_component" :node="node"></component>
             </keep-alive>
@@ -138,6 +139,15 @@
             <h3 class="frankenpaxos-box-title">Log</h3>
             <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)">
             </frankenpaxos-log>
+          </div>
+
+          <hr class="frankenpaxos-hr"></hr>
+
+          <!-- Unit test. -->
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Unit Test</h3>
+            <frankenpaxos-unittest :transport="transport">
+            </frankenpaxos-unittest>
           </div>
         </div>
       </div>
