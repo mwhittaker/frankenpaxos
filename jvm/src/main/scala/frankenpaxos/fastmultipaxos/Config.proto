@@ -1,0 +1,31 @@
+syntax = "proto2";
+
+package frankenpaxos.fastmultipaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.fastmultipaxos"
+  flat_package: true
+};
+
+message HostPortProto {
+  required string host = 1;
+  required int32 port = 2;
+}
+
+enum RoundSystemType {
+  CLASSIC_ROUND_ROBIN = 0;
+  ROUND_ZERO_FAST = 1;
+  MIXED_ROUND_ROBIN = 2;
+}
+
+message ConfigProto {
+  required int32 f = 1;
+  repeated HostPortProto leaderAddress = 2;
+  repeated HostPortProto leaderElectionAddress = 3;
+  repeated HostPortProto leaderHeartbeatAddress = 4;
+  repeated HostPortProto acceptorAddress = 5;
+  repeated HostPortProto acceptorHeartbeatAddress = 6;
+  required RoundSystemType roundSystemType = 7;
+}
