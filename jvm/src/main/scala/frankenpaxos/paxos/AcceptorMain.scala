@@ -38,7 +38,7 @@ object AcceptorMain extends App {
 
   val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger);
-  val config = NettyConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
+  val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
   val address = config.acceptorAddresses(flags.index)
   new Acceptor[NettyTcpTransport](address, transport, logger, config);
 }

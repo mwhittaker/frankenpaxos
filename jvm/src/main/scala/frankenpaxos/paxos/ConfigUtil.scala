@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 
-object NettyConfigUtil {
+object ConfigUtil {
   def fromProto(proto: NettyConfigProto): Config[NettyTcpTransport] = {
     Config(
       f = proto.f,

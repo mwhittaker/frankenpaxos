@@ -7,11 +7,9 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
   .settings(
     name := "frankenpaxos",
     libraryDependencies ++= Seq(
-      "ch.qos.logback" % "logback-classic" % "1.2.3",
       "com.github.scopt" %% "scopt" % "3.7.0",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion % "protobuf",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion,
-      "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
       "io.netty" % "netty-all" % "4.1.25.Final",
       "org.scala-js" %% "scalajs-library" % scalaJSVersion % "provided",
       "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",

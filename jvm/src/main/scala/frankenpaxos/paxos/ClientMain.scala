@@ -44,7 +44,7 @@ object ClientMain extends App {
   val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger);
   val address = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port))
-  val config = NettyConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
+  val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
   val paxosClient =
     new Client[NettyTcpTransport](address, transport, logger, config)
 
