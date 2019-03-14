@@ -188,6 +188,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     transport.executionContext.execute(
       () => _propose(command.getBytes(), promise)
     )
+
     promise.future
   }
 }

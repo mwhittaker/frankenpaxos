@@ -143,11 +143,11 @@ class SimulatedEPaxos(val f: Int)
         val r = scala.util.Random
         val index: Int = r.nextInt(commands.size)
 
-        for (rep <- ePaxos.replicas) {
+        /*for (rep <- ePaxos.replicas) {
           rep.stateMachine.addConflict(commands(index).getBytes(), value.getBytes())
-        }
+        }*/
 
-        ePaxos.clients(clientId).propose(value)
+        ePaxos.clients(clientId).propose("SET a " + value)
       case TransportCommand(command) =>
         FakeTransport.runCommand(ePaxos.transport, command)
     }

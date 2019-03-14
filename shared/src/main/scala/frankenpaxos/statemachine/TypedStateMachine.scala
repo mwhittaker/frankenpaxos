@@ -8,9 +8,15 @@ trait TypedStateMachine[I, O] extends StateMachine {
   def inputSerializer: frankenpaxos.Serializer[I]
   def outputSerializer: frankenpaxos.Serializer[O]
   def typedRun(input: I): O
+  def typedConflicts(firstCommand: I, secondCommand: I): Boolean
 
   override def run(input: Array[Byte]): Array[Byte] = {
     val output = typedRun(inputSerializer.fromBytes(input))
     outputSerializer.toBytes(output)
+  }
+
+  override def conflicts(firstCommand: Array[Byte],
+                         secondCommand: Array[Byte]): Boolean = {
+    true
   }
 }
