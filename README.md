@@ -15,6 +15,10 @@ sbt:frankenpaxos> frankenpaxosJS/compile   # Build the javascript code.
 sbt:frankenpaxos> frankenpaxos/compile     # Build all the code.
 sbt:frankenpaxos> frankenpaxosJVM/test     # Run the tests.
 sbt:frankenpaxos> frankenpaxosJS/fastOptJs # Compile to javascript.
+sbt:frankenpaxos> frankenpaxosJVM/assembly # Assemble a JAR.
+
+$ # Run the JAR.
+$ java -cp jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar <main>
 ```
 
 Core code is in the [`shared`](shared/) directory, JVM-specific code is in the
