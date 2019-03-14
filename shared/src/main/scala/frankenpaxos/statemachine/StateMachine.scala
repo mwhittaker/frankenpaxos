@@ -8,4 +8,5 @@ package frankenpaxos.statemachine
 // abstraction should support undo.
 trait StateMachine {
   def run(input: Array[Byte]): Array[Byte]
+  def conflicts(firstCommand: Array[Byte], secondCommand: Array[Byte]): Boolean
 }

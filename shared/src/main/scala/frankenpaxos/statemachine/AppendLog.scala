@@ -13,4 +13,7 @@ class AppendLog extends StateMachine {
     xs += new String(input)
     (xs.size - 1).toString().getBytes()
   }
+
+  override def conflicts(firstCommand: Array[Byte],
+                         secondCommand: Array[Byte]): Boolean = true
 }

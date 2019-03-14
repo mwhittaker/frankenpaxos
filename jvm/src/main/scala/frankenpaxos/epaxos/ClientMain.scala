@@ -7,6 +7,7 @@ import frankenpaxos.PrintLogger
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import scala.io.Source
 
 
 object ClientMain extends App {
@@ -48,13 +49,20 @@ object ClientMain extends App {
   val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
   val paxosClient =
     new Client[NettyTcpTransport](address, transport, logger, config)
+  val commandsToRun = Source.fromFile("/Users/neil/Documents/Databases/frankenpaxos/zeno/jvm/src/main/scala/frankenpaxos/epaxos/commands.txt").getLines().toList
 
-  while (true) {
-    val value = readLine()
-    paxosClient
-      .propose(value)
-      .foreach(value => println(s"$value was chosen."))(
-        scala.concurrent.ExecutionContext.global
-      )
+  val start_time = java.time.Instant.now()
+  for (value <- commandsToRun) {
+    //val value = readLine()
+    val future = paxosClient.propose(value)
+    println(concurrent.Await.result(future, concurrent.duration.Duration.Inf))
+    //paxosClient
+    //  .propose(value)
+      //.foreach(value => println(s"$value was chosen."))(
+      //  scala.concurrent.ExecutionContext.global
+      //)
   }
+  val stop_time = java.time.Instant.now()
+  val duration = java.time.Duration.between(start_time, stop_time)
+  println("Client throughput is: " + duration.toMillis)
 }

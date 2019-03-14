@@ -3,15 +3,17 @@ import com.google.protobuf.ByteString
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
+import scala.scalajs.js.annotation.{JSExport, JSExportAll}
 
+@JSExportAll
 class StateMachine {
 
   val state: ListBuffer[String] = ListBuffer()
 
   def init(): mutable.Map[(Array[Byte], Array[Byte]), Boolean] = {
     val data = mutable.Map[(Array[Byte], Array[Byte]), Boolean]()
-    data.put((Array(1), Array(2)), true)
-    data.put((Array(2), Array(1)), true)
+    data.put((Array(1.toByte), Array(2.toByte)), true)
+    data.put((Array(2.toByte), Array(1.toByte)), true)
     data
   }
 

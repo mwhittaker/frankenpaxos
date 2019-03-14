@@ -1,25 +1,28 @@
 package epaxos
-import frankenpaxos.epaxos.{DependencyGraph, StateMachine}
+import com.google.protobuf.ByteString
+import frankenpaxos.epaxos.{Command, DependencyGraph, StateMachine}
+import frankenpaxos.statemachine.KeyValueStore
 import org.scalatest.FlatSpec
 
+import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 class DependencyGraphTest extends FlatSpec {
 
   "Dependency Graph execution" should "work correctly for a simple 6 node example" in {
-    val commandOne: (String, Int) = ("0", 1)
-    val commandTwo: (String, Int) = ("1", 2)
-    val commandThree: (String, Int) = ("2", 3)
-    val commandFour: (String, Int) = ("3", 4)
-    val commandFive: (String, Int) = ("4", 5)
-    val commandSix: (String, Int) = ("5", 6)
+    val commandOne: (Command, Int) = (Command(ByteString.copyFromUtf8("0"), 0, ByteString.copyFromUtf8("SET a 0")), 1)
+    val commandTwo: (Command, Int) = (Command(ByteString.copyFromUtf8("0"), 0, ByteString.copyFromUtf8("SET a 1")), 2)
+    val commandThree: (Command, Int) = (Command(ByteString.copyFromUtf8("0"), 0, ByteString.copyFromUtf8("SET a 2")), 3)
+    val commandFour: (Command, Int) = (Command(ByteString.copyFromUtf8("0"), 0, ByteString.copyFromUtf8("SET a 3")), 4)
+    val commandFive: (Command, Int) = (Command(ByteString.copyFromUtf8("0"), 0, ByteString.copyFromUtf8("SET a 4")), 5)
+    val commandSix: (Command, Int) = (Command(ByteString.copyFromUtf8("0"), 0, ByteString.copyFromUtf8("SET a 5")), 6)
 
-    val listBufferOne: ListBuffer[(String, Int)] = ListBuffer(commandTwo)
-    val listBufferTwo: ListBuffer[(String, Int)] = ListBuffer(commandThree, commandFour, commandFive)
-    val listBufferThree: ListBuffer[(String, Int)] = ListBuffer(commandOne, commandFive)
-    val listBufferFour: ListBuffer[(String, Int)] = ListBuffer(commandSix)
-    val listBufferFive: ListBuffer[(String, Int)] = ListBuffer(commandSix)
-    val listBufferSix: ListBuffer[(String, Int)] = ListBuffer(commandFive)
+    val listBufferOne: ListBuffer[(Command, Int)] = ListBuffer(commandTwo)
+    val listBufferTwo: ListBuffer[(Command, Int)] = ListBuffer(commandThree, commandFour, commandFive)
+    val listBufferThree: ListBuffer[(Command, Int)] = ListBuffer(commandOne, commandFive)
+    val listBufferFour: ListBuffer[(Command, Int)] = ListBuffer(commandSix)
+    val listBufferFive: ListBuffer[(Command, Int)] = ListBuffer(commandSix)
+    val listBufferSix: ListBuffer[(Command, Int)] = ListBuffer(commandFive)
 
     val graph: DependencyGraph = new DependencyGraph()
     graph.addNeighbors(commandOne, listBufferOne)
@@ -29,8 +32,18 @@ class DependencyGraphTest extends FlatSpec {
     graph.addNeighbors(commandFive, listBufferFive)
     graph.addNeighbors(commandSix, listBufferSix)
 
-    val stateMachine: StateMachine = new StateMachine()
-    graph.executeGraph(stateMachine)
-    assert(ListBuffer(4, 5, 3, 0, 1, 2).toString().equals(stateMachine.getCurrentState()))
+    val stateMachine: KeyValueStore = new KeyValueStore()
+    graph.executeGraph(stateMachine, mutable.Set.empty)
+    println(stateMachine.toString())
+    assert(Map("a" -> 2).toString().equals(stateMachine.toString()))
+  }
+
+  "Dependency Graph" should "work on a single disconnected graph" in {
+    val command: (Command, Int) = (Command(ByteString.copyFromUtf8("0"), 0, ByteString.copyFromUtf8("SET a 0")), 1)
+    val graph: DependencyGraph = new DependencyGraph()
+    graph.addNeighbors(command, ListBuffer.empty)
+    val stateMachine: KeyValueStore = new KeyValueStore()
+    graph.executeGraph(stateMachine, mutable.Set.empty)
+    println(stateMachine.toString())
   }
 }
