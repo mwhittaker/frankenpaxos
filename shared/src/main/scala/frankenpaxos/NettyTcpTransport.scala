@@ -408,4 +408,8 @@ class NettyTcpTransport(private val logger: Logger)
   override def executionContext(): ExecutionContext = {
     scala.concurrent.ExecutionContext.fromExecutorService(eventLoop)
   }
+
+  def shutdown(): Unit = {
+    eventLoop.shutdownGracefully().await()
+  }
 }

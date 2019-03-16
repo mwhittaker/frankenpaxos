@@ -23,7 +23,7 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
     PB.protoSources in Compile := Seq(
       file("shared/src/main"),
       file("jvm/src/main")
-    )
+    ),
   )
   .jvmSettings()
   .jsSettings(
