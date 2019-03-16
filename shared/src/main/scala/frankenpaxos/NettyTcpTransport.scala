@@ -26,8 +26,8 @@ import io.netty.handler.codec.bytes.ByteArrayDecoder
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import io.netty.handler.logging.LoggingHandler
 import io.netty.util.concurrent.ScheduledFuture
-import java.net.SocketAddress
 import java.net.InetSocketAddress
+import java.net.SocketAddress
 import java.util.concurrent.Callable
 import java.util.concurrent.TimeUnit
 import scala.collection.mutable.HashMap
@@ -76,9 +76,8 @@ class NettyTcpTimer(
   override def start(): Unit = {
     scheduledFuture match {
       case Some(_) =>
-        logger.warn(
-          s"Attempting to start timer $name, but the timer is already started."
-        );
+      // The timer is already started, so we don't have to do anything.
+
       case None =>
         val callable = new Callable[Unit]() {
           override def call(): Unit = {
@@ -99,10 +98,8 @@ class NettyTcpTimer(
   override def stop(): Unit = {
     scheduledFuture match {
       case Some(future) => future.cancel(false);
-      case None =>
-        logger.warn(
-          s"Attempting to stop timer $name, but the timer is already stopped."
-        );
+      case None         =>
+      // The timer is already stopped, so we don't have to do anything.
     }
   }
 }

@@ -84,7 +84,6 @@ def main(args) -> None:
                 ],
                 'roundSystemType': RoundSystemType.CLASSIC_ROUND_ROBIN,
             }
-            print(config)
             config_filename = suite.write_string('config.pbtxt',
                                                  message_to_pbtext(config))
 
@@ -123,6 +122,9 @@ def main(args) -> None:
                         '--host', host.IP(),
                         '--port', str(11000),
                         '--config', config_filename,
+                        '--duration', '20s',
+                        '--num_threads', '2',
+                        '--output_file_prefix', bench.abspath(f'client_{i}'),
                     ]
                     bench.write_string(f'client_{i}_cmd.txt', ' '.join(cmd))
                     out = bench.create_file(f'client_{i}_out.txt')

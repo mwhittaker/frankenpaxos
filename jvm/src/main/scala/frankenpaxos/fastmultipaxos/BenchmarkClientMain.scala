@@ -1,9 +1,10 @@
 package frankenpaxos.fastmultipaxos
 
+import com.github.tototoshi.csv.CSVWriter
 import frankenpaxos.Actor
+import frankenpaxos.FileLogger
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
-import frankenpaxos.PrintLogger
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -14,7 +15,9 @@ object BenchmarkClientMain extends App {
       host: String = "localhost",
       port: Int = 9000,
       paxosConfigFile: File = new File("."),
-      duration: Duration = 5 seconds
+      duration: Duration = 5 seconds,
+      numThreads: Int = 1,
+      outputFilePrefix: String = ""
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
@@ -38,6 +41,16 @@ object BenchmarkClientMain extends App {
       .valueName("<duration>")
       .action((x, f) => f.copy(duration = x))
       .text("Benchmark duration")
+
+    opt[Int]('t', "num_threads")
+      .valueName("<num threads>")
+      .action((x, f) => f.copy(numThreads = x))
+      .text("Number of client threads")
+
+    opt[String]('o', "output_file_prefix")
+      .valueName("<output file prefix>")
+      .action((x, f) => f.copy(outputFilePrefix = x))
+      .text("Output file prefix")
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
@@ -45,20 +58,54 @@ object BenchmarkClientMain extends App {
     case None        => ???
   }
 
-  val logger = new PrintLogger()
-  val transport = new NettyTcpTransport(logger);
-  val address = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port))
-  val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
-  val paxosClient =
-    new Client[NettyTcpTransport](address, transport, logger, config)
+  val start_time = java.time.Instant.now()
+  val stop_time =
+    start_time.plus(java.time.Duration.ofNanos(flags.duration.toNanos))
+  val threads = for (i <- 0 until flags.numThreads) yield {
+    val thread = new Thread {
+      override def run() {
+        val logger = new FileLogger(s"${flags.outputFilePrefix}_$i.txt")
+        val transport = new NettyTcpTransport(logger);
+        val address = NettyTcpAddress(
+          new InetSocketAddress(flags.host, flags.port + i)
+        )
+        val config =
+          ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
+        val latency_writer =
+          CSVWriter.open(new File(s"${flags.outputFilePrefix}_$i.csv"))
+        latency_writer.writeRow(
+          Seq("host", "port", "start", "stop", "latency_nanos")
+        )
+        val paxosClient =
+          new Client[NettyTcpTransport](address, transport, logger, config)
 
-  val start = java.time.Instant.now()
-  val stop = start.plus(java.time.Duration.ofNanos(flags.duration.toNanos))
-  while (java.time.Instant.now().isBefore(stop)) {
-    // Note that this client will only work for some state machine (e.g.,
-    // Register and AppendLog) and won't work for others (e.g., KeyValueStore).
-    val future = paxosClient.propose("foo")
-    concurrent.Await.result(future, concurrent.duration.Duration.Inf)
+        while (java.time.Instant.now().isBefore(stop_time)) {
+          // Note that this client will only work for some state machine (e.g.,
+          // Register and AppendLog) and won't work for others (e.g.,
+          // KeyValueStore).
+          val cmd_start = java.time.Instant.now()
+          val future = paxosClient.propose("foo")
+          concurrent.Await.result(future, concurrent.duration.Duration.Inf)
+          val cmd_stop = java.time.Instant.now()
+          val latency = java.time.Duration.between(cmd_start, cmd_stop)
+          latency_writer.writeRow(
+            Seq(
+              flags.host,
+              (flags.port + i).toString(),
+              cmd_start.toString(),
+              cmd_stop.toString(),
+              latency.toNanos().toString()
+            )
+          )
+        }
+        transport.shutdown()
+      }
+    }
+    thread.start()
+    thread
   }
-  transport.shutdown()
+
+  for (thread <- threads) {
+    thread.join()
+  }
 }

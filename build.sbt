@@ -25,7 +25,9 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
       file("jvm/src/main")
     ),
   )
-  .jvmSettings()
+  .jvmSettings(
+      libraryDependencies += "com.github.tototoshi" %% "scala-csv" % "1.3.5"
+    )
   .jsSettings(
     libraryDependencies += "org.scala-js" %%% "scalajs-java-time" % "0.2.5"
   )
