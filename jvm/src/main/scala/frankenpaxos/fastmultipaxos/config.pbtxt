@@ -7,6 +7,8 @@ leaderHeartbeatAddress { host: "localhost" port: 9002 }
 leaderHeartbeatAddress { host: "localhost" port: 9102 }
 acceptorAddress { host: "localhost" port: 10000 }
 acceptorAddress { host: "localhost" port: 10100 }
-acceptorHeartbeatAddress { host: "localhost" port: 10002 }
-acceptorHeartbeatAddress { host: "localhost" port: 10102 }
+acceptorAddress { host: "localhost" port: 10200 }
+acceptorHeartbeatAddress { host: "localhost" port: 10001 }
+acceptorHeartbeatAddress { host: "localhost" port: 10101 }
+acceptorHeartbeatAddress { host: "localhost" port: 10201 }
 roundSystemType: MIXED_ROUND_ROBIN

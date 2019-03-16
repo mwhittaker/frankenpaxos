@@ -182,7 +182,6 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
       case Leader(pingTimer) => {
         // We are the leader and received a ping from ourselves. We can just
         // ignore this ping.
-        logger.check_eq(address, src)
       }
     }
   }

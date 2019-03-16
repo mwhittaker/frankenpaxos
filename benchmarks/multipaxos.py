@@ -48,6 +48,9 @@ class MultiPaxosNet(object):
         # Connect the two switches.
         self.net.addLink(self.client_switch, self.switch)
 
+        # Add controller.
+        self.net.addController('c')
+
 def main(args) -> None:
     with SuiteDirectory(args.suite_directory, 'multipaxos') as suite:
         suite.write_dict('args.json', vars(args))
@@ -91,8 +94,8 @@ def main(args) -> None:
                     cmd = [
                         'java', '-cp', os.path.abspath(args.jar),
                         'frankenpaxos.fastmultipaxos.AcceptorMain',
-                        '-i', str(i),
-                        '-c', config_filename,
+                        '--index', str(i),
+                        '--config', config_filename,
                     ]
                     bench.write_string(f'acceptor_{i}_cmd.txt', ' '.join(cmd))
                     out = bench.create_file(f'acceptor_{i}_out.txt')
@@ -104,8 +107,8 @@ def main(args) -> None:
                     cmd = [
                         'java', '-cp', os.path.abspath(args.jar),
                         'frankenpaxos.fastmultipaxos.LeaderMain',
-                        '-i', str(i),
-                        '-c', config_filename,
+                        '--index', str(i),
+                        '--config', config_filename,
                     ]
                     bench.write_string(f'leader_{i}_cmd.txt', ' '.join(cmd))
                     out = bench.create_file(f'leader_{i}_out.txt')
@@ -117,9 +120,9 @@ def main(args) -> None:
                     cmd = [
                         'java', '-cp', os.path.abspath(args.jar),
                         'frankenpaxos.fastmultipaxos.BenchmarkClientMain',
-                        '-h', host.IP(),
-                        '-p', str(11000),
-                        '-c', config_filename,
+                        '--host', host.IP(),
+                        '--port', str(11000),
+                        '--config', config_filename,
                     ]
                     bench.write_string(f'client_{i}_cmd.txt', ' '.join(cmd))
                     out = bench.create_file(f'client_{i}_out.txt')
