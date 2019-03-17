@@ -1,10 +1,12 @@
 from .benchmark import BenchmarkDirectory, SuiteDirectory
-from tqdm import tqdm
 from .proto_util import message_to_pbtext
+from .util import Reaped
+from contextlib import ExitStack
 from enum import Enum
 from mininet.net import Mininet
 from mininet.topo import Topo
 from subprocess import Popen
+from tqdm import tqdm
 from typing import Dict, List, NamedTuple
 import argparse
 import csv
@@ -123,60 +125,69 @@ def run_benchmark(bench: BenchmarkDirectory,
         config_filename = bench.abspath('config.pbtxt')
         bench.write_string(config_filename, message_to_pbtext(config))
 
-        # Launch acceptors.
-        acceptors: List[Popen] = []
-        for (i, host) in enumerate(pnet.acceptors):
-            cmd = [
-                'java',
-                '-cp', os.path.abspath(args.jar),
-                'frankenpaxos.fastmultipaxos.AcceptorMain',
-                '--index', str(i),
-                '--config', config_filename,
-            ]
-            bench.write_string(f'acceptor_{i}_cmd.txt', ' '.join(cmd))
-            out = bench.create_file(f'acceptor_{i}_out.txt')
-            err = bench.create_file(f'acceptor_{i}_err.txt')
-            acceptors.append(host.popen(cmd, stdout=out, stderr=err))
+        # We want to ensure that all processes are always killed.
+        with ExitStack() as stack:
+            # Launch acceptors.
+            acceptors: List[Popen] = []
+            for (i, host) in enumerate(pnet.acceptors):
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args.jar),
+                    'frankenpaxos.fastmultipaxos.AcceptorMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                ]
+                bench.write_string(f'acceptor_{i}_cmd.txt', ' '.join(cmd))
+                out = bench.create_file(f'acceptor_{i}_out.txt')
+                err = bench.create_file(f'acceptor_{i}_err.txt')
+                p = host.popen(cmd, stdout=out, stderr=err)
+                stack.enter_context(Reaped(p))
+                acceptors.append(p)
 
-        # Launch leaders.
-        leaders: List[Popen] = []
-        for (i, host) in enumerate(pnet.leaders):
-            cmd = [
-                'java',
-                '-cp', os.path.abspath(args.jar),
-                'frankenpaxos.fastmultipaxos.LeaderMain',
-                '--index', str(i),
-                '--config', config_filename,
-            ]
-            bench.write_string(f'leader_{i}_cmd.txt', ' '.join(cmd))
-            out = bench.create_file(f'leader_{i}_out.txt')
-            err = bench.create_file(f'leader_{i}_err.txt')
-            leaders.append(host.popen(cmd, stdout=out, stderr=err))
+            # Launch leaders.
+            leaders: List[Popen] = []
+            for (i, host) in enumerate(pnet.leaders):
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args.jar),
+                    'frankenpaxos.fastmultipaxos.LeaderMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                ]
+                bench.write_string(f'leader_{i}_cmd.txt', ' '.join(cmd))
+                out = bench.create_file(f'leader_{i}_out.txt')
+                err = bench.create_file(f'leader_{i}_err.txt')
+                p = host.popen(cmd, stdout=out, stderr=err)
+                stack.enter_context(Reaped(p))
+                leaders.append(p)
 
-        # Launch clients.
-        clients: List[Popen] = []
-        for (i, host) in enumerate(pnet.clients):
-            cmd = [
-                'java',
-                '-cp', os.path.abspath(args.jar),
-                'frankenpaxos.fastmultipaxos.BenchmarkClientMain',
-                '--host', host.IP(),
-                '--port', str(11000),
-                '--config', config_filename,
-                '--duration', '20s',
-                '--num_threads', str(input.num_threads_per_client),
-                '--output_file_prefix', bench.abspath(f'client_{i}'),
-            ]
-            bench.write_string(f'client_{i}_cmd.txt', ' '.join(cmd))
-            out = bench.create_file(f'client_{i}_out.txt')
-            err = bench.create_file(f'client_{i}_err.txt')
-            clients.append(host.popen(cmd, stdout=out, stderr=err))
+            # Launch clients.
+            clients: List[Popen] = []
+            for (i, host) in enumerate(pnet.clients):
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args.jar),
+                    'frankenpaxos.fastmultipaxos.BenchmarkClientMain',
+                    '--host', host.IP(),
+                    '--port', str(11000),
+                    '--config', config_filename,
+                    '--duration', '20s',
+                    '--num_threads', str(input.num_threads_per_client),
+                    '--output_file_prefix', bench.abspath(f'client_{i}'),
+                ]
+                bench.write_string(f'client_{i}_cmd.txt', ' '.join(cmd))
+                out = bench.create_file(f'client_{i}_out.txt')
+                err = bench.create_file(f'client_{i}_err.txt')
+                p = host.popen(cmd, stdout=out, stderr=err)
+                stack.enter_context(Reaped(p))
+                clients.append(p)
 
-        # Wait for clients to finish and then terminate leaders and acceptors.
-        for p in clients:
-            p.wait()
-        for p in leaders + acceptors:
-            p.terminate()
+            # Wait for clients to finish and then terminate leaders and
+            # acceptors.
+            for p in clients:
+                p.wait()
+            for p in leaders + acceptors:
+                p.terminate()
 
         # Every client thread j on client i writes results to `client_i_j.csv`.
         # We concatenate these results into a single CSV file.
