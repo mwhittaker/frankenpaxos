@@ -143,11 +143,18 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       case (None, true) =>
         // We update our round, but no command is pending, so we don't have to
         // do anything.
+        logger.info(
+          s"Client transitioning from round $round to ${leaderInfo.round}."
+        )
         round = leaderInfo.round
 
       case (Some(pendingCommand), true) =>
         // Update our round and re-send the pending command with the new round
         // information.
+        logger.info(
+          s"Client transitioning from round $round to ${leaderInfo.round}. " +
+            s"Resending pending command to leader."
+        )
         round = leaderInfo.round
         sendProposeRequest(pendingCommand)
         reproposeTimer.reset()

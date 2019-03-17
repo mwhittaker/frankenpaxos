@@ -378,10 +378,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Wait until we receive a quorum of phase 1bs.
         phase1bs(request.acceptorId) = request
         if (phase1bs.size < config.classicQuorumSize) {
-          logger.debug(
-            s"Leader does not have enough phase 1b votes yet. It has " +
-              s"${phase1bs.size} but needs ${config.classicQuorumSize}."
-          )
           return
         }
 
@@ -437,8 +433,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             .max,
           if (log.size == 0) -1 else log.lastKey
         )
-        logger.debug(s"Leader chosenWatermark = $chosenWatermark.")
-        logger.debug(s"Leader endSlot = $endSlot.")
 
         // For every unchosen slot between the chosenWatermark and endSlot,
         // choose a value to propose and propose it.
@@ -618,20 +612,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
         phase2bChosenInSlot(phase2, phase2b.slot) match {
           case NothingReadyYet =>
-            // Don't do anything.
-            logger.debug(s"Nothing ready yet in slot ${phase2b.slot}.")
+          // Don't do anything.
 
           case ClassicReady(entry) =>
-            logger.debug(s"A value has been chosen in ${phase2b.slot}.")
             choose(entry)
 
           case FastReady(entry) =>
-            logger.debug(s"A value has been chosen in ${phase2b.slot}.")
             choose(entry)
 
           case FastStuck =>
             // The fast round is stuck, so we start again in a higher round.
-            logger.debug(s"${phase2b.slot} is stuck.")
+            logger.debug(
+              s"Slot ${phase2b.slot} is stuck. Changing to a higher round."
+            )
             leaderChange(address, round)
         }
     }

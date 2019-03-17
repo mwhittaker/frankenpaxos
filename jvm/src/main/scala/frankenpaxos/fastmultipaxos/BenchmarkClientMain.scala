@@ -65,6 +65,7 @@ object BenchmarkClientMain extends App {
     val thread = new Thread {
       override def run() {
         val logger = new FileLogger(s"${flags.outputFilePrefix}_$i.txt")
+        logger.debug(s"Client $i started.")
         val transport = new NettyTcpTransport(logger);
         val address = NettyTcpAddress(
           new InetSocketAddress(flags.host, flags.port + i)

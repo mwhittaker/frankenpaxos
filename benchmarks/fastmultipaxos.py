@@ -12,6 +12,7 @@ import argparse
 import csv
 import os
 import pandas as pd
+import time
 
 
 class RoundSystemType(Enum):
@@ -26,6 +27,8 @@ class Input(NamedTuple):
     num_clients: int
     num_threads_per_client: int
     round_system_type: str
+    duration_seconds: float
+    client_lag_seconds: float
 
 
 class Output(NamedTuple):
@@ -187,6 +190,10 @@ def run_benchmark(bench: BenchmarkDirectory,
             stack.enter_context(Reaped(p))
             leaders.append(p)
 
+        # Wait a bit so that a stable leader can elect itself. If we start
+        # clients too soon, they may not talk to a stable leader.
+        time.sleep(input.client_lag_seconds)
+
         # Launch clients.
         clients: List[Popen] = []
         for (i, host) in enumerate(net.clients()):
@@ -197,7 +204,7 @@ def run_benchmark(bench: BenchmarkDirectory,
                 '--host', host.IP(),
                 '--port', str(11000),
                 '--config', config_filename,
-                '--duration', '20s',
+                '--duration', f'{input.duration_seconds}s',
                 '--num_threads', str(input.num_threads_per_client),
                 '--output_file_prefix', bench.abspath(f'client_{i}'),
             ]
@@ -234,8 +241,8 @@ def run_benchmark(bench: BenchmarkDirectory,
         )
 
 
-def main(args) -> None:
-    with SuiteDirectory(args.suite_directory, 'multipaxos') as suite:
+def _main(args) -> None:
+    with SuiteDirectory(args.suite_directory, 'fastmultipaxos') as suite:
         print(f'Running benchmark suite in {suite.path}.')
         suite.write_dict('args.json', vars(args))
         results_file = suite.create_file('results.csv')
@@ -247,7 +254,9 @@ def main(args) -> None:
                   f=f,
                   num_clients=num_clients,
                   num_threads_per_client=num_threads_per_client,
-                  round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name)
+                  round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+                  duration_seconds=10,
+                  client_lag_seconds=3)
             for f in [1]
             for num_clients in range(1, 3)
             for num_threads_per_client in range(1, 4)
@@ -290,4 +299,4 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 if __name__ == '__main__':
-    main(get_parser().parse_args())
+    _main(get_parser().parse_args())

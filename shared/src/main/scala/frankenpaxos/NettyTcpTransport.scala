@@ -244,12 +244,11 @@ class NettyTcpTransport(private val logger: Logger)
       channel: Channel
   ): Unit = {
     if (channels.contains((localAddress, remoteAddress))) {
-      // TODO(mwhittaker): Replace with fatal assertion.
-      val err = s"A channel between remote address $remoteAddress and " +
-        s"local address $localAddress is being registered, but an existing " +
-        s"channel between these addresses already exists.";
-      logger.error(err)
-      throw new IllegalStateException(err);
+      logger.fatal(
+        s"A channel between remote address $remoteAddress and " +
+          s"local address $localAddress is being registered, but an " +
+          s"existing channel between these addresses already exists."
+      )
     }
     channels.put((localAddress, remoteAddress), channel);
   }
@@ -326,7 +325,6 @@ class NettyTcpTransport(private val logger: Logger)
 
     channels.get((src, dst)) match {
       case Some(channel) => {
-        logger.info("Existing channel found for write")
         channel
           .writeAndFlush(bytes)
           .addListener(
