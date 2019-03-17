@@ -1,0 +1,11 @@
+#! /usr/bin/env bash
+
+# See README.md for details.
+
+set -euo pipefail
+
+main() {
+    sudo PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$(which python)" "$@"
+}
+
+main "$@"
