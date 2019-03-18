@@ -1,4 +1,5 @@
 import contextlib
+import pandas as pd
 import subprocess
 
 # Imagine you have the following python code in a file called sleep.py. The

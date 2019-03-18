@@ -16,3 +16,13 @@ message ServerInbound {
 message ClientInbound {
   required string msg = 1;
 }
+
+message BenchmarkServerInbound {
+  required int32 id = 1;
+  required string msg = 2;
+}
+
+message BenchmarkClientInbound {
+  required int32 id = 1;
+  required string msg = 2;
+}

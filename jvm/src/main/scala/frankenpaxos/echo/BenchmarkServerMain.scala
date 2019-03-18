@@ -7,7 +7,7 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 
-object ServerMain extends App {
+object BenchmarkServerMain extends App {
   case class Flags(
       host: String = "localhost",
       port: Int = 9000
@@ -33,5 +33,5 @@ object ServerMain extends App {
   val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger)
   val address = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port))
-  new Server[NettyTcpTransport](address, transport, logger)
+  new BenchmarkServer[NettyTcpTransport](address, transport, logger)
 }
