@@ -69,7 +69,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     voteValue match {
       case (_, Some(r)) =>
         if (round <= r && voteRound < r) {
-          voteRound = round
+          round = r
+          voteRound = r
           voteValue = (Some(proposeRequest.v), None)
           val client = chan[Client[Transport]](src, Client.serializer)
           client.send(
@@ -124,7 +125,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // If the leader sends us the designated `any` value, then we vote for the
-    // next thing that we receive. Otherwise, we vote now.
+    // next thing that we receive. Otherwise, we vote now. Note that any can
+    // only come in round 0, not in any other round (which is a classic round).
     phase2a.value match {
       case Some(v) =>
         round = phase2a.round
@@ -138,7 +140,11 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
       case None =>
-        voteValue = (voteValue._1, Some(phase2a.round))
+        if (phase2a.round == 0) {
+          voteValue = (voteValue._1, Some(0))
+        } else {
+          voteValue = (voteValue._1, None)
+        }
     }
   }
 }

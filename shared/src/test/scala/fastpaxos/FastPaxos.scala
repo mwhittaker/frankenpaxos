@@ -140,4 +140,36 @@ class SimulatedFastPaxos(val f: Int)
     }
     (fastPaxos, allChosenValues ++ chosenValues(fastPaxos))
   }
+
+  def commandToString(command: SimulatedFastPaxos#Command): String = {
+    val fastPaxos = new FastPaxos(f)
+    command match {
+      case Propose(clientIndex, value) =>
+        val clientAddress = fastPaxos.clients(clientIndex).address.address
+        s"Propose($clientAddress, $value)"
+
+      case TransportCommand(DeliverMessage(msg)) =>
+        val dstActor = fastPaxos.transport.actors(msg.dst)
+        val s = dstActor.serializer.toPrettyString(
+          dstActor.serializer.fromBytes(msg.bytes.to[Array])
+        )
+        s"DeliverMessage(src=${msg.src.address}, dst=${msg.dst.address})\n$s"
+
+      case TransportCommand(TriggerTimer((address, name))) =>
+        s"TriggerTimer(${address.address}:$name)"
+    }
+  }
+
+  def historyToString(history: Seq[SimulatedFastPaxos#Command]): String = {
+    def indent(s: String, n: Int): String = {
+      s.replaceAll("\n", "\n" + " " * n)
+    }
+    history.zipWithIndex
+      .map({
+        case (command, i) =>
+          val num = "%3d".format(i)
+          s"$num. ${indent(commandToString(command), 5)}"
+      })
+      .mkString("\n")
+  }
 }

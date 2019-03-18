@@ -19,9 +19,7 @@ class FastPaxosSpec extends FlatSpec {
           throwable.printStackTrace(pw)
 
           val formatted_history = history.map(_.toString).mkString("\n")
-          fail(s"""f=$f
-                  |${sw.toString()}
-                  |$formatted_history""".stripMargin)
+          fail(s"$sw\n${sim.historyToString(history)}")
         }
         case None => {}
       }
