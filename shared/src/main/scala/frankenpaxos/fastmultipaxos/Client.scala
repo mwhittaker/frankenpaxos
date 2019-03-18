@@ -87,6 +87,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           logger.fatal("Attempting to repropose, but no value was proposed.")
 
         case Some(pendingCommand) =>
+          logger.debug(s"Reproposing pending value in round $round.")
           val request = toProposeRequest(pendingCommand)
           for ((_, leader) <- leaders) {
             leader.send(LeaderInbound().withProposeRequest(request))

@@ -480,6 +480,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         for (slot <- chosenWatermark to endSlot) {
           val proposal: Entry = chooseProposal(votes, slot)
           val phase2a = Phase2a(slot = slot, round = round)
+          leaderLogger.debug(s"Sending $proposal in slot $slot.")
           val msg = proposal match {
             case ECommand(command) =>
               AcceptorInbound().withPhase2A(phase2a.withCommand(command))
@@ -583,6 +584,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         if (!voteValueCounts.exists({
               case (_, count) => count + votesLeft >= config.fastQuorumSize
             })) {
+          leaderLogger.debug(
+            s"Slot $slot stuck with following histogram: $voteValueCounts."
+          )
           return FastStuck
         }
 
@@ -669,6 +673,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
           case FastStuck =>
             // The fast round is stuck, so we start again in a higher round.
+            // TODO(mwhittaker): We might want to have all stuck things pending
+            // for the next round.
             leaderLogger.debug(
               s"Slot ${phase2b.slot} is stuck. Changing to a higher round."
             )
