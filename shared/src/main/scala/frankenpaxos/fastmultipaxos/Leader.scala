@@ -339,11 +339,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Given a quorum of phase1b votes, determine a safe value to propose in slot
-  // `slot`.
+  // `slot` and a set of other commands that could have been proposed in the
+  // slot.
   def chooseProposal(
       votes: collection.Map[AcceptorId, SortedMap[Slot, Phase1bVote]],
       slot: Slot
-  ): Entry = {
+  ): (Entry, Set[Command]) = {
     def phase1bVoteValueToEntry(voteValue: Phase1bVote.Value): Entry = {
       import Phase1bVote.Value
       voteValue match {
@@ -370,22 +371,41 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // If no acceptor has voted yet, we're free to propose anything. Here, we
     // propose noop.
     if (k == -1) {
-      return ENoop
+      return (ENoop, Set())
     }
 
     // If V = {v} is a singleton set, then we must propose v.
     if (V.to[Set].size == 1) {
-      return phase1bVoteValueToEntry(V.head.get)
+      return (phase1bVoteValueToEntry(V.head.get), Set())
     }
 
     // If there exists a v in V such that O4(v), then we must propose it.
     val o4vs = frankenpaxos.Util.popularItems(V, config.quorumMajoritySize)
     if (o4vs.size > 0) {
       leaderLogger.check_eq(o4vs.size, 1)
-      return phase1bVoteValueToEntry(o4vs.head.get)
+      return (phase1bVoteValueToEntry(o4vs.head.get), Set())
     }
 
-    ENoop
+    // Otherwise, we can propose anything! Here, we propose one of the values
+    // in V, and return the rest in V as also potential proposals.
+    //
+    // TODO(mwhittaker): Think about whether it is smart to return all the
+    // commands seen and not just those in V. We may have to smartly track
+    // commands that have already been chosen or are already pending and not
+    // re-send them. If acceptors are lagging behind (e.g., because
+    // thriftiness), their votes may be very stale.
+    (phase1bVoteValueToEntry(V.head.get),
+     V.map({
+         case Some(Phase1bVote.Value.Command(command)) =>
+           command
+         case Some(Phase1bVote.Value.Noop(_)) =>
+           logger.fatal(s"Noop vote in round $k.")
+         case Some(Phase1bVote.Value.Empty) =>
+           logger.fatal(s"Empty vote in round $k.")
+         case None =>
+           logger.fatal(s"None vote in round $k.")
+       })
+       .to[Set])
   }
 
   private def handlePhase1b(
@@ -472,24 +492,29 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           if (log.size == 0) -1 else log.lastKey
         )
 
-        // For every unchosen slot between the chosenWatermark and endSlot,
-        // choose a value to propose and propose it.
         val pendingEntries = mutable.SortedMap[Slot, Entry]()
         val phase2bs =
           mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]]()
+
+        // For every unchosen slot between the chosenWatermark and endSlot,
+        // choose a value to propose and propose it. We also collect a set of
+        // other commands to propose and propose them later.
+        val proposedCommands = mutable.Set[Command]()
+        val yetToProposeCommands = mutable.Set[Command]()
         for (slot <- chosenWatermark to endSlot) {
-          val proposal: Entry = chooseProposal(votes, slot)
+          val (proposal, commands) = chooseProposal(votes, slot)
+          yetToProposeCommands ++= commands
+          pendingEntries(slot) = proposal
+          phase2bs(slot) = mutable.Map[AcceptorId, Phase2b]()
+
           val phase2a = Phase2a(slot = slot, round = round)
-          leaderLogger.debug(s"Sending $proposal in slot $slot.")
           val msg = proposal match {
             case ECommand(command) =>
+              proposedCommands += command
               AcceptorInbound().withPhase2A(phase2a.withCommand(command))
             case ENoop =>
               AcceptorInbound().withPhase2A(phase2a.withNoop(Noop()))
           }
-
-          pendingEntries(slot) = proposal
-          phase2bs(slot) = mutable.Map[AcceptorId, Phase2b]()
           acceptors.foreach(_.send(msg))
         }
 
@@ -498,8 +523,23 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Replay the pending proposals.
         nextSlot = endSlot + 1
-        for ((src, proposal) <- pendingProposals) {
-          handleProposeRequest(src, proposal)
+        for ((_, proposal) <- pendingProposals) {
+          val phase2a = Phase2a(slot = nextSlot, round = round)
+            .withCommand(proposal.command)
+          acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+          pendingEntries(nextSlot) = ECommand(proposal.command)
+          phase2bs(nextSlot) = mutable.Map()
+          nextSlot += 1
+        }
+
+        // Replay the safe to propose values that we haven't just proposed.
+        for (command <- yetToProposeCommands.diff(proposedCommands)) {
+          val phase2a =
+            Phase2a(slot = nextSlot, round = round).withCommand(command)
+          acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+          pendingEntries(nextSlot) = ECommand(command)
+          phase2bs(nextSlot) = mutable.Map()
+          nextSlot += 1
         }
 
         // If this is a fast round, send a suffix of anys.
