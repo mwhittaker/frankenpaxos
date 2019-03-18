@@ -6,8 +6,9 @@ import scala.collection.mutable
 class FakeLogger extends Logger {
   val logs = mutable.Buffer[String]()
 
-  override def fatal(message: String): Unit = {
+  override def fatal(message: String): Nothing = {
     logs += s"[FATAL] $message"
+    throw new AssertionError(message)
   }
 
   override def error(message: String): Unit = {

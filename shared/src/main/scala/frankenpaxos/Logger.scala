@@ -4,7 +4,7 @@ import Ordering.Implicits._
 
 trait Logger {
   // Logging.
-  def fatal(message: String): Unit
+  def fatal(message: String): Nothing
   def error(message: String): Unit
   def warn(message: String): Unit
   def info(message: String): Unit

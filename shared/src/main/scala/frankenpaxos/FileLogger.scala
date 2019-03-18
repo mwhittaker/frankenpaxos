@@ -8,14 +8,15 @@ class FileLogger(filename: String) extends Logger {
     s"[Thread ${Thread.currentThread().getId()}] " + s
   }
 
-  override def fatal(message: String): Unit = {
+  override def fatal(message: String): Nothing = {
     writer.println(withThreadId("[FATAL] ") + message)
     val stackTraceElements =
       for (e <- Thread.currentThread().getStackTrace())
         yield e.toString()
     writer.println(stackTraceElements.mkString("\n"))
     writer.flush()
-    System.exit(1);
+    System.exit(1)
+    ???
   }
 
   override def error(message: String): Unit = {

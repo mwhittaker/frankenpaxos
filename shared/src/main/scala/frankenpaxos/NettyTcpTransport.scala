@@ -1,5 +1,6 @@
 package frankenpaxos
 
+import collection.mutable
 import io.netty.bootstrap.Bootstrap
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.ByteBuf
@@ -30,7 +31,6 @@ import java.net.InetSocketAddress
 import java.net.SocketAddress
 import java.util.concurrent.Callable
 import java.util.concurrent.TimeUnit
-import scala.collection.mutable.HashMap
 import scala.concurrent.ExecutionContext
 import scala.util.Try
 
@@ -81,23 +81,23 @@ class NettyTcpTimer(
       case None =>
         val callable = new Callable[Unit]() {
           override def call(): Unit = {
-            scheduledFuture = None;
-            f();
+            scheduledFuture = None
+            f()
           }
-        };
+        }
         scheduledFuture = Some(
           eventLoop.schedule(
             callable,
             delay.toNanos(),
             java.util.concurrent.TimeUnit.NANOSECONDS
           )
-        );
+        )
     }
   }
 
   override def stop(): Unit = {
     scheduledFuture match {
-      case Some(future) => future.cancel(false);
+      case Some(future) => future.cancel(false)
       case None         =>
       // The timer is already stopped, so we don't have to do anything.
     }
@@ -114,13 +114,13 @@ class NettyTcpTransport(private val logger: Logger)
       val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress)
       msg match {
         case bytes: Array[Byte] => {
-          actor.receiveImpl(remoteAddress, bytes);
+          actor.receiveImpl(remoteAddress, bytes)
         }
         case _ =>
-          val err = "A message was received that wasn't of type Array[Byte]. " +
-            "This is impossible.";
-          logger.error(err);
-          throw new IllegalStateException(err);
+          logger.fatal(
+            "A message was received that wasn't of type Array[Byte]. " +
+              "This is impossible."
+          )
       }
     }
   }
@@ -128,17 +128,17 @@ class NettyTcpTransport(private val logger: Logger)
   private class ServerHandler(actor: Actor[NettyTcpTransport])
       extends CommonHandler(actor) {
     override def channelRegistered(ctx: ChannelHandlerContext): Unit = {
-      val localAddress = NettyTcpAddress(ctx.channel.localAddress());
-      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress());
-      registerChannel(localAddress, remoteAddress, ctx.channel());
-      ctx.fireChannelRegistered();
+      val localAddress = NettyTcpAddress(ctx.channel.localAddress())
+      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress())
+      registerChannel(localAddress, remoteAddress, ctx.channel())
+      ctx.fireChannelRegistered()
     }
 
     override def channelUnregistered(ctx: ChannelHandlerContext): Unit = {
-      val localAddress = NettyTcpAddress(ctx.channel.localAddress());
-      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress());
-      unregisterChannel(localAddress, remoteAddress);
-      ctx.fireChannelUnregistered();
+      val localAddress = NettyTcpAddress(ctx.channel.localAddress())
+      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress())
+      unregisterChannel(localAddress, remoteAddress)
+      ctx.fireChannelUnregistered()
     }
   }
 
@@ -149,15 +149,15 @@ class NettyTcpTransport(private val logger: Logger)
     override def channelUnregistered(ctx: ChannelHandlerContext): Unit = {
       if (ctx.channel.localAddress() != null &&
           ctx.channel.remoteAddress() != null) {
-        val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress());
-        unregisterActor(NettyTcpAddress(ctx.channel.localAddress()));
-        unregisterChannel(localAddress, remoteAddress);
-        ctx.fireChannelUnregistered();
+        val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress())
+        unregisterActor(NettyTcpAddress(ctx.channel.localAddress()))
+        unregisterChannel(localAddress, remoteAddress)
+        ctx.fireChannelUnregistered()
       } else {
         logger.warn(
           "Unregistering a channel with null source or destination " +
             "addresses. The connection must have failed."
-        );
+        )
       }
     }
   }
@@ -166,14 +166,14 @@ class NettyTcpTransport(private val logger: Logger)
       extends ChannelFutureListener {
     override def operationComplete(future: ChannelFuture): Unit = {
       if (future.isSuccess()) {
-        return;
+        return
       }
 
       if (future.isCancelled()) {
-        logger.warn(s"Future was cancelled: $message");
+        logger.warn(s"Future was cancelled: $message")
       } else {
-        logger.warn(s"Future failed: $message");
-        logger.warn(future.cause().getStackTraceString);
+        logger.warn(s"Future failed: $message")
+        logger.warn(future.cause().getStackTraceString)
       }
     }
   }
@@ -181,7 +181,7 @@ class NettyTcpTransport(private val logger: Logger)
   private class CloseOnFailureFutureListener extends ChannelFutureListener {
     override def operationComplete(future: ChannelFuture): Unit = {
       if (!future.isSuccess()) {
-        future.channel.close();
+        future.channel.close()
       }
     }
   }
@@ -201,26 +201,31 @@ class NettyTcpTransport(private val logger: Logger)
   // used.
   //
   // [1]: https://netty.io/wiki/user-guide-for-4.x.html
-  private val eventLoop = new NioEventLoopGroup(1);
+  private val eventLoop = new NioEventLoopGroup(1)
 
   private val actors =
-    new HashMap[NettyTcpTransport#Address, Actor[NettyTcpTransport]]();
-  private val channels =
-    new HashMap[(NettyTcpTransport#Address, NettyTcpTransport#Address), Channel]
+    mutable.Map[NettyTcpTransport#Address, Actor[NettyTcpTransport]]()
+
+  sealed trait ChanOrPending
+  case class Chan(channel: Channel) extends ChanOrPending
+  case class Pending(msgs: mutable.Buffer[Array[Byte]]) extends ChanOrPending
+
+  private val channels = mutable.Map[
+    (NettyTcpTransport#Address, NettyTcpTransport#Address),
+    ChanOrPending
+  ]()
 
   private def registerActor(
       address: NettyTcpTransport#Address,
       actor: Actor[NettyTcpTransport]
   ): Unit = {
     if (actors.contains(address)) {
-      // TODO(mwittaker): Replace with a fatal assertion.
-      val err =
+      logger.fatal(
         s"Attempting to register an actor with address $address, but this " +
-          s"transport already has an actor bound to $address.";
-      logger.error(err);
-      throw new IllegalStateException(err);
+          s"transport already has an actor bound to $address."
+      )
     }
-    actors.put(address, actor);
+    actors.put(address, actor)
   }
 
   private def unregisterActor(
@@ -228,13 +233,11 @@ class NettyTcpTransport(private val logger: Logger)
   ): Unit = {
     actors.remove(address) match {
       case Some(_) => {}
-      case None    =>
-        // TODO(mwittaker): Replace with a fatal assertion.
-        val err =
+      case None =>
+        logger.fatal(
           s"Attempting to unregister an actor with address $address, but " +
-            s"this transport doesn't have an actor bound to $address.";
-        logger.error(err);
-        throw new IllegalStateException(err);
+            s"this transport doesn't have an actor bound to $address."
+        )
     }
   }
 
@@ -243,14 +246,32 @@ class NettyTcpTransport(private val logger: Logger)
       remoteAddress: NettyTcpTransport#Address,
       channel: Channel
   ): Unit = {
-    if (channels.contains((localAddress, remoteAddress))) {
-      logger.fatal(
-        s"A channel between remote address $remoteAddress and " +
-          s"local address $localAddress is being registered, but an " +
-          s"existing channel between these addresses already exists."
-      )
+    channels.get((localAddress, remoteAddress)) match {
+      case Some(Chan(_)) =>
+        logger.fatal(
+          s"A channel between remote address $remoteAddress and " +
+            s"local address $localAddress is being registered, but an " +
+            s"existing channel between these addresses already exists."
+        )
+
+      case Some(Pending(msgs)) =>
+        logger.info(
+          s"A channel between remote address $remoteAddress and " +
+            s"local address $localAddress is being registered, and a set of " +
+            s"${msgs.size} pending messages was found. We are sending the " +
+            s"pending messages along the channel."
+        )
+        channels((localAddress, remoteAddress)) = Chan(channel)
+        msgs.foreach(channel.write(_))
+        channel.flush()
+
+      case None =>
+        logger.info(
+          s"Successfully registering channel between remote address " +
+            s"$remoteAddress and local address $localAddress."
+        )
+        channels((localAddress, remoteAddress)) = Chan(channel)
     }
-    channels.put((localAddress, remoteAddress), channel);
   }
 
   private def unregisterChannel(
@@ -258,15 +279,18 @@ class NettyTcpTransport(private val logger: Logger)
       remoteAddress: NettyTcpTransport#Address
   ): Unit = {
     channels.remove((localAddress, remoteAddress)) match {
-      case Some(_) => {}
-      case None    =>
-        // TODO(mwhittaker): Replace with fatal assertion.
-        val err =
+      case Some(_) =>
+        logger.info(
+          s"Successfully unregistered channel between remote address " +
+            s"$remoteAddress and local address $localAddress."
+        )
+
+      case None =>
+        logger.fatal(
           s"A channel between remote address $remoteAddress and local " +
             s"address $localAddress is being unregistered, but an existing " +
-            s"channel between these addresses doesn not exists.";
-        logger.error(err)
-        throw new IllegalStateException(err);
+            s"channel between these addresses doesn not exists."
+        )
     }
   }
 
@@ -274,7 +298,7 @@ class NettyTcpTransport(private val logger: Logger)
       address: NettyTcpTransport#Address,
       actor: Actor[NettyTcpTransport]
   ): Unit = {
-    registerActor(address, actor);
+    registerActor(address, actor)
 
     new ServerBootstrap()
       .group(eventLoop)
@@ -287,16 +311,16 @@ class NettyTcpTransport(private val logger: Logger)
           logger.info(
             s"Server socket on address ${channel.localAddress} established " +
               s"connection with ${channel.remoteAddress}."
-          );
+          )
           channel.pipeline.addLast(
             "frameDecoder",
             new LengthFieldBasedFrameDecoder(1048576, 0, 4, 0, 4)
-          );
-          channel.pipeline.addLast("bytesDecoder", new ByteArrayDecoder());
-          channel.pipeline.addLast(new ServerHandler(actor));
-          // channel.pipeline.addLast(new LoggingHandler());
-          channel.pipeline.addLast("frameEncoder", new LengthFieldPrepender(4));
-          channel.pipeline.addLast("bytesEncoder", new ByteArrayEncoder());
+          )
+          channel.pipeline.addLast("bytesDecoder", new ByteArrayDecoder())
+          channel.pipeline.addLast(new ServerHandler(actor))
+          // channel.pipeline.addLast(new LoggingHandler())
+          channel.pipeline.addLast("frameEncoder", new LengthFieldPrepender(4))
+          channel.pipeline.addLast("bytesEncoder", new ByteArrayEncoder())
         }
       })
       .bind(address.socketAddress)
@@ -305,7 +329,7 @@ class NettyTcpTransport(private val logger: Logger)
           s"A socket could not be bound to ${address.socketAddress}."
         ),
         new CloseOnFailureFutureListener()
-      );
+      )
   }
 
   def send(
@@ -316,15 +340,14 @@ class NettyTcpTransport(private val logger: Logger)
     val actor = actors.get(src) match {
       case Some(actor) => actor
       case None =>
-        logger.warn(
+        logger.fatal(
           s"Attempted to send from $src to $dst, but no actor for address " +
             s"$src was found."
-        );
-        return;
+        )
     }
 
     channels.get((src, dst)) match {
-      case Some(channel) => {
+      case Some(Chan(channel)) =>
         channel
           .writeAndFlush(bytes)
           .addListener(
@@ -332,8 +355,18 @@ class NettyTcpTransport(private val logger: Logger)
               s"Unable to send message from $src to $dst."
             )
           )
-      }
-      case None => {
+
+      case Some(Pending(msgs)) =>
+        logger.info(
+          s"Attempted to send a message from $src to $dst, but a channel is " +
+            s"currently pending. The message is being buffered for later."
+        )
+        msgs += bytes
+
+      case None =>
+        logger.info(
+          s"No channel was found between $src and $dst, so we are creating one."
+        )
         new Bootstrap()
           .group(eventLoop)
           .channel(classOf[NioSocketChannel])
@@ -344,15 +377,15 @@ class NettyTcpTransport(private val logger: Logger)
               channel.pipeline.addLast(
                 "frameDecoder",
                 new LengthFieldBasedFrameDecoder(1048576, 0, 4, 0, 4)
-              );
+              )
               channel.pipeline
-                .addLast("bytesDecoder", new ByteArrayDecoder());
-              channel.pipeline.addLast(new ClientHandler(src, actor));
-              // channel.pipeline.addLast(new LoggingHandler());
+                .addLast("bytesDecoder", new ByteArrayDecoder())
+              channel.pipeline.addLast(new ClientHandler(src, actor))
+              // channel.pipeline.addLast(new LoggingHandler())
               channel.pipeline
-                .addLast("frameEncoder", new LengthFieldPrepender(4));
+                .addLast("frameEncoder", new LengthFieldPrepender(4))
               channel.pipeline
-                .addLast("bytesEncoder", new ByteArrayEncoder());
+                .addLast("bytesEncoder", new ByteArrayEncoder())
             }
           })
           .connect(dst.socketAddress)
@@ -362,20 +395,19 @@ class NettyTcpTransport(private val logger: Logger)
             new ChannelFutureListener() {
               override def operationComplete(future: ChannelFuture): Unit = {
                 if (!future.isSuccess()) {
-                  return;
+                  return
                 }
 
                 logger.info(
                   s"Client socket on address " +
                     s"${future.channel.localAddress} established " +
                     s"connection with ${future.channel.remoteAddress}."
-                );
-
+                )
                 registerActor(
                   NettyTcpAddress(future.channel.localAddress),
                   actor
-                );
-                registerChannel(src, dst, future.channel);
+                )
+                registerChannel(src, dst, future.channel)
 
                 future.channel
                   .writeAndFlush(bytes)
@@ -383,11 +415,10 @@ class NettyTcpTransport(private val logger: Logger)
                     new LogFailureFutureListener(
                       s"Unable to send message from $src to $dst."
                     )
-                  );
+                  )
               }
             }
-          );
-      }
+          )
     }
   }
 

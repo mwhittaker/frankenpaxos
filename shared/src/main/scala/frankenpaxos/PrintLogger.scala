@@ -9,7 +9,7 @@ class PrintLogger extends Logger {
     s"[Thread ${Thread.currentThread().getId()}] " + s
   }
 
-  override def fatal(message: String): Unit = {
+  override def fatal(message: String): Nothing = {
     def show(s: String): Unit = {
       println(
         colored(Console.WHITE + Console.RED_B, withThreadId("[FATAL] ")) + s
@@ -21,7 +21,8 @@ class PrintLogger extends Logger {
       for (e <- Thread.currentThread().getStackTrace())
         yield e.toString()
     show(stackTraceElements.mkString("\n"))
-    System.exit(1);
+    System.exit(1)
+    ???
   }
 
   override def error(message: String): Unit = {

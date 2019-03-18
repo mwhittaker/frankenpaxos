@@ -21,14 +21,15 @@ case class JsLogEntry(typ: JsLogEntryType.Value, text: String)
 class JsLogger extends Logger {
   val log = Buffer[JsLogEntry]()
 
-  override def fatal(message: String): Unit = {
+  override def fatal(message: String): Nothing = {
     // TODO(mwhittaker): Crash program.
     log += JsLogEntry(JsLogEntryType.Fatal, s"$message")
     val stackTraceElements =
       for (e <- Thread.currentThread().getStackTrace())
         yield e.toString()
     println(stackTraceElements.mkString("\n"))
-    System.exit(1);
+    System.exit(1)
+    ???
   }
 
   override def error(message: String): Unit = {
