@@ -16,12 +16,12 @@ def _main(args) -> None:
                   round_system_type=round_system_type,
                   duration_seconds=15,
                   client_lag_seconds=10)
-            for num_threads_per_client in range(2, 5)
+            for num_threads_per_client in range(1, 5)
             for round_system_type in [
-                # RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+                RoundSystemType.CLASSIC_ROUND_ROBIN.name,
                 RoundSystemType.MIXED_ROUND_ROBIN.name,
             ]
-        ] * 2
+        ] * 3
         for input in tqdm(inputs):
             with suite.benchmark_directory() as bench:
                 with SingleSwitchNet(

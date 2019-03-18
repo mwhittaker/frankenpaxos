@@ -103,6 +103,8 @@ object BenchmarkClientMain extends App {
       }
     }
     thread.start()
+    // Sleep slightly to stagger clients.
+    Thread.sleep(100 /*ms*/ )
     thread
   }
 
