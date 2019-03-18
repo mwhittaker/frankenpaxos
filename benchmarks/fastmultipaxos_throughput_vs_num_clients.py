@@ -15,7 +15,7 @@ def _main(args) -> None:
                   num_threads_per_client=num_threads_per_client,
                   round_system_type=round_system_type,
                   duration_seconds=15,
-                  client_lag_seconds=3)
+                  client_lag_seconds=5)
             for num_threads_per_client in range(2, 5)
             for round_system_type in [
                 # RoundSystemType.CLASSIC_ROUND_ROBIN.name,

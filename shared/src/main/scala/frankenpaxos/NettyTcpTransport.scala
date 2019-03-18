@@ -262,7 +262,15 @@ class NettyTcpTransport(private val logger: Logger)
             s"pending messages along the channel."
         )
         channels((localAddress, remoteAddress)) = Chan(channel)
-        msgs.foreach(channel.write(_))
+        msgs.foreach(
+          channel
+            .write(_)
+            .addListener(
+              new LogFailureFutureListener(
+                s"Unable to send message from $localAddress to $remoteAddress."
+              )
+            )
+        )
         channel.flush()
 
       case None =>
@@ -367,6 +375,7 @@ class NettyTcpTransport(private val logger: Logger)
         logger.info(
           s"No channel was found between $src and $dst, so we are creating one."
         )
+        channels((src, dst)) = Pending(mutable.Buffer(bytes))
         new Bootstrap()
           .group(eventLoop)
           .channel(classOf[NioSocketChannel])
@@ -395,27 +404,19 @@ class NettyTcpTransport(private val logger: Logger)
             new ChannelFutureListener() {
               override def operationComplete(future: ChannelFuture): Unit = {
                 if (!future.isSuccess()) {
-                  return
-                }
-
-                logger.info(
-                  s"Client socket on address " +
-                    s"${future.channel.localAddress} established " +
-                    s"connection with ${future.channel.remoteAddress}."
-                )
-                registerActor(
-                  NettyTcpAddress(future.channel.localAddress),
-                  actor
-                )
-                registerChannel(src, dst, future.channel)
-
-                future.channel
-                  .writeAndFlush(bytes)
-                  .addListener(
-                    new LogFailureFutureListener(
-                      s"Unable to send message from $src to $dst."
-                    )
+                  unregisterChannel(src, dst)
+                } else {
+                  logger.info(
+                    s"Client socket on address " +
+                      s"${future.channel.localAddress} established " +
+                      s"connection with ${future.channel.remoteAddress}."
                   )
+                  registerActor(
+                    NettyTcpAddress(future.channel.localAddress),
+                    actor
+                  )
+                  registerChannel(src, dst, future.channel)
+                }
               }
             }
           )

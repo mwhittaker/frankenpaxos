@@ -201,6 +201,34 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       config.acceptorHeartbeatAddresses.to[Set]
     )
 
+  // Custom logger.
+  val leaderLogger = new Logger {
+    private def withInfo(s: String): String = {
+      val stateString = state match {
+        case Phase1(_, _, _) => "Phase 1"
+        case Phase2(_, _, _) => "Phase 2"
+        case Inactive        => "Inactive"
+      }
+      s"[$stateString, round=$round] " + s
+    }
+
+    override def fatal(message: String): Nothing =
+      logger.fatal(withInfo(message))
+
+    override def error(message: String): Unit =
+      logger.error(withInfo(message))
+
+    override def warn(message: String): Unit =
+      logger.warn(withInfo(message))
+
+    override def info(message: String): Unit =
+      logger.info(withInfo(message))
+
+    override def debug(message: String): Unit =
+      logger.debug(withInfo(message))
+
+  }
+
   // Methods ///////////////////////////////////////////////////////////////////
   private def sendPhase1as(): Unit = {
     for (acceptor <- acceptors) {
@@ -223,7 +251,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Phase2B(r)        => handlePhase2b(src, r)
       case Request.ValueChosen(r)    => handleValueChosen(src, r)
       case Request.Empty =>
-        logger.fatal("Empty LeaderInbound encountered.")
+        leaderLogger.fatal("Empty LeaderInbound encountered.")
     }
   }
 
@@ -240,7 +268,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     clientTable.get(src) match {
       case Some((clientId, result)) =>
         if (request.command.clientId == clientId && state != Inactive) {
-          logger.debug(
+          leaderLogger.debug(
             s"The latest command for client $src (i.e., command $clientId)" +
               s"was found in the client table."
           )
@@ -258,14 +286,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
     state match {
       case Inactive =>
-        logger.debug("Leader received propose request but is inactive.")
+        leaderLogger.debug(
+          s"Leader received propose request from $src but is inactive."
+        )
 
       case Phase1(_, pendingProposals, _) =>
         if (request.round != round) {
           // We don't want to process requests from out of date clients.
-          logger.debug(
-            s"Leader received a propose request in round " +
-              s"${request.round}, but is in round $round."
+          leaderLogger.debug(
+            s"Leader received a propose request from $src in round " +
+              s"${request.round}, but is in round $round. Sending leader info."
           )
           client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
         } else {
@@ -277,9 +307,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Phase2(pendingEntries, phase2bs, _) =>
         if (request.round != round) {
           // We don't want to process requests from out of date clients.
-          logger.debug(
-            s"Leader received a propose request in round " +
-              s"${request.round}, but is in round $round."
+          leaderLogger.debug(
+            s"Leader received a propose request from $src in round " +
+              s"${request.round}, but is in round $round. Sending leader info."
           )
           client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
           return
@@ -299,9 +329,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             // round (because request.round == round), then the client should
             // not be sending the leader any requests. It only does so if there
             // was a failure. In this case, we change to a higher round.
-            logger.debug(
-              s"Leader received a client request during fast round. We are " +
-                s"increasing our round."
+            leaderLogger.debug(
+              s"Leader received a client request from $src during a fast " +
+                s"round. We are increasing our round."
             )
             leaderChange(address, round)
         }
@@ -320,7 +350,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Value.Command(command) => ECommand(command)
         case Value.Noop(_)          => ENoop
         case Value.Empty =>
-          logger.fatal("Empty Phase1bVote.Value.")
+          leaderLogger.fatal("Empty Phase1bVote.Value.")
           ???
       }
     }
@@ -351,7 +381,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // If there exists a v in V such that O4(v), then we must propose it.
     val o4vs = frankenpaxos.Util.popularItems(V, config.quorumMajoritySize)
     if (o4vs.size > 0) {
-      logger.check_eq(o4vs.size, 1)
+      leaderLogger.check_eq(o4vs.size, 1)
       return phase1bVoteValueToEntry(o4vs.head.get)
     }
 
@@ -363,14 +393,22 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       request: Phase1b
   ): Unit = {
     state match {
-      case Inactive | Phase2(_, _, _) =>
-        logger.debug("Leader received phase 1b, but is not in phase 1.")
+      case Inactive =>
+        leaderLogger.debug(
+          s"Leader received phase 1b from $src, but is inactive."
+        )
+
+      case Phase2(_, _, _) =>
+        leaderLogger.debug(
+          s"Leader received phase 1b from $src, but is in phase 2b in " +
+            s"round $round."
+        )
 
       case Phase1(phase1bs, pendingProposals, resendPhase1as) =>
         if (request.round != round) {
-          logger.debug(
-            s"eader received phase 1b in round ${request.round}, but is in" +
-              s"round $round."
+          leaderLogger.debug(
+            s"eader received phase 1b from $src in round ${request.round}, " +
+              s"but is in round $round."
           )
           return
         }
@@ -480,13 +518,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     state match {
       case Inactive | Phase2(_, _, _) =>
-        logger.debug("Leader received phase 1b nack, but is not in phase 1.")
+        leaderLogger.debug(
+          s"Leader received phase 1b nack from $src, but is not in phase 1."
+        )
 
       case Phase1(_, _, _) =>
         if (nack.round > round) {
-          logger.debug(
+          leaderLogger.debug(
             s"Leader running phase 1 in round $round got nack in round " +
-              s"${nack.round}. Increasing round."
+              s"${nack.round} from $src. Increasing round."
           )
           leaderChange(address, nack.round)
         }
@@ -498,7 +538,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Phase2b.Vote.Command(command) => ECommand(command)
       case Phase2b.Vote.Noop(_)          => ENoop
       case Phase2b.Vote.Empty =>
-        logger.fatal("Empty Phase2b.Vote")
+        leaderLogger.fatal("Empty Phase2b.Vote")
         ???
     }
   }
@@ -569,9 +609,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     state match {
-      case Inactive | Phase1(_, _, _) =>
-        logger.debug(
-          "A leader received a phase 2b response but is not in phase 2"
+      case Inactive =>
+        leaderLogger.debug(
+          s"A leader received a phase 2b response in round ${phase2b.round} " +
+            s"from $src but is inactive."
+        )
+
+      case Phase1(_, _, _) =>
+        leaderLogger.debug(
+          s"A leader received a phase 2b response in round ${phase2b.round} " +
+            s"from $src but is in phase 1 of round $round."
         )
 
       case phase2 @ Phase2(pendingEntries, phase2bs, _) =>
@@ -590,19 +637,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Ignore responses that are not in our current round.
         if (phase2b.round != round) {
-          logger.debug(
+          leaderLogger.debug(
             s"A leader received a phase 2b response for round " +
-              s"${phase2b.round} but is in round ${round}."
+              s"${phase2b.round} from $src but is in round ${round}."
           )
           return
         }
 
         // Ignore responses for entries that have already been chosen.
         if (log.contains(phase2b.slot)) {
-          logger.debug(
+          leaderLogger.debug(
             s"A leader received a phase 2b response for slot " +
-              s"${phase2b.slot} but a value has already been chosen in this " +
-              s"slot."
+              s"${phase2b.slot} from $src but a value has already been " +
+              s"chosen in this slot."
           )
           return
         }
@@ -622,7 +669,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
           case FastStuck =>
             // The fast round is stuck, so we start again in a higher round.
-            logger.debug(
+            leaderLogger.debug(
               s"Slot ${phase2b.slot} is stuck. Changing to a higher round."
             )
             leaderChange(address, round)
@@ -638,13 +685,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case ValueChosen.Value.Command(command) => ECommand(command)
       case ValueChosen.Value.Noop(_)          => ENoop
       case ValueChosen.Value.Empty =>
-        logger.fatal("Empty ValueChosen.Vote")
+        leaderLogger.fatal("Empty ValueChosen.Vote")
         ???
     }
 
     log.get(valueChosen.slot) match {
       case Some(existingEntry) =>
-        logger.check_eq(entry, existingEntry)
+        leaderLogger.check_eq(entry, existingEntry)
       case None =>
         log(valueChosen.slot) = entry
         executeLog()
@@ -654,7 +701,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   def resendPhase2as(): Unit = {
     state match {
       case Inactive | Phase1(_, _, _) =>
-        logger.fatal("Executing resendPhase2as not in phase 2.")
+        leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
 
       case Phase2(pendingEntries, phase2bs, _) =>
         val endSlot: Int = math.max(
@@ -706,7 +753,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // Switch over to a new leader. If the new leader is ourselves, then we
   // increase our round and enter a new round larger than `higherThanRound`.
   def leaderChange(leader: Transport#Address, higherThanRound: Int): Unit = {
-    logger.check_ge(higherThanRound, round)
+    leaderLogger.check_ge(higherThanRound, round)
 
     // Try to go to a fast round if we think that a fast quorum of acceptors
     // are alive. If we think fewer than a fast quorum of acceptors are alive,
@@ -724,7 +771,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     (state, leader == address) match {
       case (Inactive, true) =>
         // We are the new leader!
-        logger.debug(s"Leader $address was inactive, but is now the leader.")
+        leaderLogger.debug(
+          s"Leader $address was inactive, but is now the leader."
+        )
         round = nextRound
         sendPhase1as()
         resendPhase1asTimer.start()
@@ -732,11 +781,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case (Inactive, false) =>
         // Don't do anything. We're still not the leader.
-        logger.debug(s"Leader $address was inactive and still is.")
+        leaderLogger.debug(s"Leader $address was inactive and still is.")
 
       case (Phase1(_, _, resendPhase1asTimer), true) =>
         // We were and still are the leader, but in a higher round.
-        logger.debug(s"Leader $address was the leader and still is.")
+        leaderLogger.debug(s"Leader $address was the leader and still is.")
         round = nextRound
         sendPhase1as()
         resendPhase1asTimer.reset()
@@ -744,13 +793,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case (Phase1(_, _, resendPhase1asTimer), false) =>
         // We are no longer the leader!
-        logger.debug(s"Leader $address was the leader, but no longer is.")
+        leaderLogger.debug(s"Leader $address was the leader, but no longer is.")
         resendPhase1asTimer.stop()
         state = Inactive
 
       case (Phase2(_, _, resendPhase2asTimer), true) =>
         // We were and still are the leader, but in a higher round.
-        logger.debug(s"Leader $address was the leader and still is.")
+        leaderLogger.debug(s"Leader $address was the leader and still is.")
         resendPhase2asTimer.stop()
         round = nextRound
         sendPhase1as()
@@ -759,7 +808,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case (Phase2(_, _, resendPhase2asTimer), false) =>
         // We are no longer the leader!
-        logger.debug(s"Leader $address was the leader, but no longer is.")
+        leaderLogger.debug(s"Leader $address was the leader, but no longer is.")
         resendPhase2asTimer.stop()
         state = Inactive
     }
