@@ -97,8 +97,10 @@ class NettyTcpTimer(
 
   override def stop(): Unit = {
     scheduledFuture match {
-      case Some(future) => future.cancel(false)
-      case None         =>
+      case Some(future) =>
+        future.cancel(false)
+        scheduledFuture = None
+      case None =>
       // The timer is already stopped, so we don't have to do anything.
     }
   }
