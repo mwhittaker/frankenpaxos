@@ -42,7 +42,9 @@ def main(args) -> None:
     ax.grid()
     ax.legend(loc='best')
     fig.set_tight_layout(True)
-    fig.savefig(os.path.join(args.output, 'latency.pdf'))
+    filename = os.path.join(args.output, 'latency.pdf')
+    fig.savefig(filename)
+    print(f'Writing plot to {filename}.')
 
     # Plot throughput.
     fig, ax = plt.subplots()
@@ -67,7 +69,9 @@ def main(args) -> None:
     ax.grid()
     ax.legend(loc='best')
     fig.set_tight_layout(True)
-    fig.savefig(os.path.join(args.output, 'throughput.pdf'))
+    filename = os.path.join(args.output, 'throughput.pdf')
+    fig.savefig(filename)
+    print(f'Writing plot to {filename}.')
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()

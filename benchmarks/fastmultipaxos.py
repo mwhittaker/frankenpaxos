@@ -1,6 +1,7 @@
 from . import proto_util
+from . import util
 from .benchmark import BenchmarkDirectory, SuiteDirectory
-from .util import Reaped
+from .util import read_csvs, Reaped
 from contextlib import ExitStack
 from enum import Enum
 from mininet.net import Mininet
@@ -37,7 +38,24 @@ class Output(NamedTuple):
     p90_latency: float
     p95_latency: float
     p99_latency: float
-    throughput: float
+
+    mean_1_second_throughput: float
+    median_1_second_throughput: float
+    p90_1_second_throughput: float
+    p95_1_second_throughput: float
+    p99_1_second_throughput: float
+
+    mean_2_second_throughput: float
+    median_2_second_throughput: float
+    p90_2_second_throughput: float
+    p95_2_second_throughput: float
+    p99_2_second_throughput: float
+
+    mean_5_second_throughput: float
+    median_5_second_throughput: float
+    p90_5_second_throughput: float
+    p95_5_second_throughput: float
+    p99_5_second_throughput: float
 
 
 class FastMultiPaxosNet(object):
@@ -138,13 +156,6 @@ class SingleSwitchNet(FastMultiPaxosNet):
         }
 
 
-def _read_csvs(filenames: List[str]) -> pd.DataFrame:
-    dfs: List[pd.DataFrame] = []
-    for filename in filenames:
-        dfs.append(pd.read_csv(filename, header=0))
-    return pd.concat(dfs)
-
-
 def run_benchmark(bench: BenchmarkDirectory,
                   args: argparse.Namespace,
                   input: Input,
@@ -223,21 +234,41 @@ def run_benchmark(bench: BenchmarkDirectory,
 
         # Every client thread j on client i writes results to `client_i_j.csv`.
         # We concatenate these results into a single CSV file.
-        df = _read_csvs([bench.abspath(f'client_{i}_{j}.csv')
+        df = read_csvs([bench.abspath(f'client_{i}_{j}.csv')
                         for i in range(input.num_clients)
                         for j in range(input.num_threads_per_client)])
+        df['start'] = pd.to_datetime(df['start'])
+        df['stop'] = pd.to_datetime(df['stop'])
+        df = df.set_index('start').sort_index(0)
+        df['throughput_1s'] = util.throughput(df, 1000)
+        df['throughput_2s'] = util.throughput(df, 2000)
+        df['throughput_5s'] = util.throughput(df, 5000)
         df.to_csv(bench.abspath('data.csv'))
 
-        earliest_start = pd.to_datetime(df['start']).min()
-        latest_stop = pd.to_datetime(df['stop']).max()
-        duration = (latest_stop - earliest_start).total_seconds()
         return Output(
             mean_latency = df['latency_nanos'].mean(),
             median_latency = df['latency_nanos'].median(),
             p90_latency = df['latency_nanos'].quantile(.90),
             p95_latency = df['latency_nanos'].quantile(.95),
             p99_latency = df['latency_nanos'].quantile(.99),
-            throughput = df.shape[0] / duration
+
+            mean_1_second_throughput = df['throughput_1s'].mean(),
+            median_1_second_throughput = df['throughput_1s'].median(),
+            p90_1_second_throughput = df['throughput_1s'].quantile(.90),
+            p95_1_second_throughput = df['throughput_1s'].quantile(.95),
+            p99_1_second_throughput = df['throughput_1s'].quantile(.99),
+
+            mean_2_second_throughput = df['throughput_2s'].mean(),
+            median_2_second_throughput = df['throughput_2s'].median(),
+            p90_2_second_throughput = df['throughput_2s'].quantile(.90),
+            p95_2_second_throughput = df['throughput_2s'].quantile(.95),
+            p99_2_second_throughput = df['throughput_2s'].quantile(.99),
+
+            mean_5_second_throughput = df['throughput_5s'].mean(),
+            median_5_second_throughput = df['throughput_5s'].median(),
+            p90_5_second_throughput = df['throughput_5s'].quantile(.90),
+            p95_5_second_throughput = df['throughput_5s'].quantile(.95),
+            p99_5_second_throughput = df['throughput_5s'].quantile(.99),
         )
 
 
