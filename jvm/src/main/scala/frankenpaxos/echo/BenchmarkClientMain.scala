@@ -105,18 +105,17 @@ object BenchmarkClientMain extends App {
           // Note that this client will only work for some state machine (e.g.,
           // Register and AppendLog) and won't work for others (e.g.,
           // KeyValueStore).
-          val cmd_start = java.time.Instant.now()
+          val cmd_start = System.nanoTime()
           val future = client.echo(".")
           concurrent.Await.result(future, concurrent.duration.Duration.Inf)
-          val cmd_stop = java.time.Instant.now()
-          val latency = java.time.Duration.between(cmd_start, cmd_stop)
+          val cmd_stop = System.nanoTime()
           latency_writer.writeRow(
             Seq(
               flags.host,
               (flags.port + i).toString(),
               cmd_start.toString(),
               cmd_stop.toString(),
-              latency.toNanos().toString()
+              (cmd_stop - cmd_start).toString()
             )
           )
         }

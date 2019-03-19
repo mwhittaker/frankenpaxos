@@ -62,6 +62,6 @@ def read_csvs(filenames: List[str]) -> pd.DataFrame:
 #   11:01:16 am - 11:02:16 am | 3 / 60     |
 #
 # This is what `throughput` computes.
-def throughput(df: pd.DataFrame, window_size_seconds: float) -> pd.Series:
+def throughput(df: pd.DataFrame, window_size_ms: float) -> pd.Series:
     s = pd.Series(0, index=df.sort_index(0).index)
-    return s.rolling(f'{window_size_seconds}s').count() / window_size_seconds
+    return s.rolling(f'{window_size_ms}ms').count() / (window_size_ms / 1000)

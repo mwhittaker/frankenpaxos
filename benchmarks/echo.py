@@ -149,9 +149,9 @@ def run_benchmark(bench: BenchmarkDirectory,
         df['start'] = pd.to_datetime(df['start'])
         df['stop'] = pd.to_datetime(df['stop'])
         df = df.set_index('start').sort_index(0)
-        df['throughput_1s'] = util.throughput(df, 1)
-        df['throughput_2s'] = util.throughput(df, 2)
-        df['throughput_5s'] = util.throughput(df, 5)
+        df['throughput_1s'] = util.throughput(df, 1000)
+        df['throughput_2s'] = util.throughput(df, 2000)
+        df['throughput_5s'] = util.throughput(df, 5000)
         df.to_csv(bench.abspath('data.csv'))
 
         return Output(
@@ -193,7 +193,7 @@ def _main(args) -> None:
             Input(net_name='SingleSwitchNet',
                   num_clients=num_clients,
                   num_threads_per_client=num_threads_per_client,
-                  duration_seconds=3)
+                  duration_seconds=30)
             for num_clients in range(1, 4)
             for num_threads_per_client in range(1, 5)
         ] * 3
