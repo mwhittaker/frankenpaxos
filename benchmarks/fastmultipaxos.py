@@ -23,13 +23,19 @@ class RoundSystemType(Enum):
 
 
 class Input(NamedTuple):
+    # System-wide parameters.
     net_name: str
     f: int
     num_clients: int
     num_threads_per_client: int
     round_system_type: str
+
+    # Benchmark parameters.
     duration_seconds: float
     client_lag_seconds: float
+
+    # Client parameters.
+    client_repropose_period_seconds: float
 
 
 class Output(NamedTuple):
@@ -215,6 +221,8 @@ def run_benchmark(bench: BenchmarkDirectory,
                 '--host', host.IP(),
                 '--port', str(11000),
                 '--config', config_filename,
+                '--repropose_period',
+                    f'{input.client_repropose_period_seconds}s',
                 '--duration', f'{input.duration_seconds}s',
                 '--num_threads', str(input.num_threads_per_client),
                 '--output_file_prefix', bench.abspath(f'client_{i}'),
@@ -282,16 +290,15 @@ def _main(args) -> None:
 
         inputs = [
             Input(net_name='SingleSwitchNet',
-                  f=f,
-                  num_clients=num_clients,
-                  num_threads_per_client=num_threads_per_client,
-                  round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
-                  duration_seconds=10,
-                  client_lag_seconds=3)
-            for f in [1]
-            for num_clients in range(1, 3)
-            for num_threads_per_client in range(1, 4)
-        ] * 2
+                f=1,
+                num_clients=1,
+                num_threads_per_client=1,
+                round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+                duration_seconds=15,
+                client_lag_seconds=3,
+                client_repropose_period_seconds=10,
+            )
+        ] * 3
         for input in tqdm(inputs):
             with suite.benchmark_directory() as bench:
                 with SingleSwitchNet(

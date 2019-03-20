@@ -23,11 +23,24 @@ object Client {
 }
 
 @JSExportAll
+case class ClientOptions(
+    reproposePeriod: java.time.Duration
+)
+
+@JSExportAll
+object ClientOptions {
+  val default = ClientOptions(
+    reproposePeriod = java.time.Duration.ofSeconds(10)
+  )
+}
+
+@JSExportAll
 class Client[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: Config[Transport]
+    config: Config[Transport],
+    options: ClientOptions = ClientOptions.default
 ) extends Actor(address, transport, logger) {
   // Fields ////////////////////////////////////////////////////////////////////
   override type InboundMessage = ClientInbound
@@ -79,8 +92,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // quickly enough, it resends its proposal to all of the leaders.
   private val reproposeTimer: Transport#Timer = timer(
     "reproposeTimer",
-    // TODO(mwhittaker): Make this a parameter.
-    java.time.Duration.ofSeconds(10),
+    options.reproposePeriod,
     () => {
       pendingCommand match {
         case None =>

@@ -15,6 +15,7 @@ object BenchmarkClientMain extends App {
       host: String = "localhost",
       port: Int = 9000,
       paxosConfigFile: File = new File("."),
+      options: ClientOptions = ClientOptions.default,
       duration: Duration = 5 seconds,
       numThreads: Int = 1,
       outputFilePrefix: String = ""
@@ -35,6 +36,15 @@ object BenchmarkClientMain extends App {
       .required()
       .valueName("<file>")
       .action((x, f) => f.copy(paxosConfigFile = x))
+      .text("Configuration file.")
+
+    opt[Duration]("repropose_period")
+      .valueName("<repropose_period>")
+      .action((x, f) => {
+        val d = java.time.Duration.ofNanos(x.toNanos)
+        val options = f.options.copy(reproposePeriod = d)
+        f.copy(options = options)
+      })
       .text("Configuration file.")
 
     opt[Duration]('d', "duration")
@@ -58,9 +68,9 @@ object BenchmarkClientMain extends App {
     case None        => ???
   }
 
-  val start_time = java.time.Instant.now()
-  val stop_time =
-    start_time.plus(java.time.Duration.ofNanos(flags.duration.toNanos))
+  val startTime = java.time.Instant.now()
+  val stopTime =
+    startTime.plus(java.time.Duration.ofNanos(flags.duration.toNanos))
   val threads = for (i <- 0 until flags.numThreads) yield {
     val thread = new Thread {
       override def run() {
@@ -80,22 +90,23 @@ object BenchmarkClientMain extends App {
         val paxosClient =
           new Client[NettyTcpTransport](address, transport, logger, config)
 
-        while (java.time.Instant.now().isBefore(stop_time)) {
+        while (java.time.Instant.now().isBefore(stopTime)) {
           // Note that this client will only work for some state machine (e.g.,
           // Register and AppendLog) and won't work for others (e.g.,
           // KeyValueStore).
-          val cmd_start = java.time.Instant.now()
-          val future = paxosClient.propose("foo")
-          concurrent.Await.result(future, concurrent.duration.Duration.Inf)
-          val cmd_stop = java.time.Instant.now()
-          val latency = java.time.Duration.between(cmd_start, cmd_stop)
+          val cmdStart = java.time.Instant.now()
+          val cmdStartNanos = System.nanoTime()
+          concurrent.Await
+            .result(paxosClient.propose("."), concurrent.duration.Duration.Inf)
+          val cmdStopNanos = System.nanoTime()
+          val cmdStop = java.time.Instant.now()
           latency_writer.writeRow(
             Seq(
               flags.host,
               (flags.port + i).toString(),
-              cmd_start.toString(),
-              cmd_stop.toString(),
-              latency.toNanos().toString()
+              cmdStart.toString(),
+              cmdStop.toString(),
+              (cmdStopNanos - cmdStartNanos).toString()
             )
           )
         }

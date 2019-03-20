@@ -12,7 +12,7 @@ object LeaderMain extends App {
   case class Flags(
       index: Int = -1,
       paxosConfigFile: File = new File("."),
-      stateMachineType: statemachine.StateMachineType = statemachine.TAppendLog
+      stateMachineType: statemachine.StateMachineType = statemachine.TRegister
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
