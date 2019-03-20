@@ -1,11 +1,20 @@
 #! /usr/bin/env bash
 
-# See README.md for details.
+# This directory contains FrankenPaxos benchmarks. Benchmarks use mininet,
+# which requires sudo, so we have to run the benchmarks with sudo. However, we
+# have to be a bit careful running the python program as sudo. As sudo, we may
+# have a different python version, a different python path, a different path,
+# and so on. This script allows us to run the benchmarks with everything set up
+# appropriately.
 
 set -euo pipefail
 
 main() {
-    sudo PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$(which python)" "$@"
+    sudo \
+        PATH="$PATH" \
+        PYTHONPATH="$PYTHONPATH" \
+        JAVA_HOME="$JAVA_HOME" \
+        "$(which python)" "$@"
 }
 
 main "$@"

@@ -98,9 +98,10 @@ def run_benchmark(bench: BenchmarkDirectory,
                   args: argparse.Namespace,
                   input: Input,
                   net: EchoNet) -> Output:
-    # We want to ensure that all processes are always killed.
-    with ExitStack() as stack:
-        # Launch server.
+    # Launch server.
+    server_proc = bench.popen(
+        net.server().popen,
+        label='server',
         cmd = [
             'java',
             '-cp', os.path.abspath(args.jar),
@@ -108,15 +109,30 @@ def run_benchmark(bench: BenchmarkDirectory,
             '--host', net.server().IP(),
             '--port', '9000',
         ]
-        bench.write_string(f'server_cmd.txt', ' '.join(cmd))
-        out = bench.create_file(f'server_out.txt')
-        err = bench.create_file(f'server_err.txt')
-        server_proc = net.server().popen(cmd, stdout=out, stderr=err)
-        stack.enter_context(Reaped(server_proc))
+    )
 
-        # Launch leaders.
-        client_procs: List[Popen] = []
-        for (i, host) in enumerate(net.clients()):
+    if (args.profile):
+        server_perf_proc = bench.popen(
+            net.server().popen,
+            label='server_perf',
+            cmd=[
+                'perf',
+                'record',
+                '-F', str(args.perf_record_freq),
+                '-o', f'/tmp/perf-{server_proc.pid}.data',
+                '-p', str(server_proc.pid),
+                '--timestamp',
+                '-g',
+                '--', 'sleep', str(input.duration_seconds),
+            ],
+        )
+
+    # Launch clients.
+    client_procs: List[Popen] = []
+    for (i, host) in enumerate(net.clients()):
+        client_proc = bench.popen(
+            net.server().popen,
+            label=f'client_{i}',
             cmd = [
                 'java',
                 '-cp', os.path.abspath(args.jar),
@@ -129,56 +145,70 @@ def run_benchmark(bench: BenchmarkDirectory,
                 '--num_threads', str(input.num_threads_per_client),
                 '--output_file_prefix', bench.abspath(f'client_{i}'),
             ]
-            bench.write_string(f'client_{i}_cmd.txt', ' '.join(cmd))
-            out = bench.create_file(f'client_{i}_out.txt')
-            err = bench.create_file(f'client_{i}_err.txt')
-            proc = host.popen(cmd, stdout=out, stderr=err)
-            stack.enter_context(Reaped(proc))
-            client_procs.append(proc)
-
-        # Wait for clients to finish and then terminate server.
-        for proc in client_procs:
-            proc.wait()
-        server_proc.terminate()
-
-        # Every client thread j on client i writes results to `client_i_j.csv`.
-        # We concatenate these results into a single CSV file.
-        df = read_csvs([bench.abspath(f'client_{i}_{j}.csv')
-                        for i in range(input.num_clients)
-                        for j in range(input.num_threads_per_client)])
-        df['start'] = pd.to_datetime(df['start'])
-        df['stop'] = pd.to_datetime(df['stop'])
-        df = df.set_index('start').sort_index(0)
-        df['throughput_1s'] = util.throughput(df, 1000)
-        df['throughput_2s'] = util.throughput(df, 2000)
-        df['throughput_5s'] = util.throughput(df, 5000)
-        df.to_csv(bench.abspath('data.csv'))
-
-        return Output(
-            mean_latency = df['latency_nanos'].mean(),
-            median_latency = df['latency_nanos'].median(),
-            p90_latency = df['latency_nanos'].quantile(.90),
-            p95_latency = df['latency_nanos'].quantile(.95),
-            p99_latency = df['latency_nanos'].quantile(.99),
-
-            mean_1_second_throughput = df['throughput_1s'].mean(),
-            median_1_second_throughput = df['throughput_1s'].median(),
-            p90_1_second_throughput = df['throughput_1s'].quantile(.90),
-            p95_1_second_throughput = df['throughput_1s'].quantile(.95),
-            p99_1_second_throughput = df['throughput_1s'].quantile(.99),
-
-            mean_2_second_throughput = df['throughput_2s'].mean(),
-            median_2_second_throughput = df['throughput_2s'].median(),
-            p90_2_second_throughput = df['throughput_2s'].quantile(.90),
-            p95_2_second_throughput = df['throughput_2s'].quantile(.95),
-            p99_2_second_throughput = df['throughput_2s'].quantile(.99),
-
-            mean_5_second_throughput = df['throughput_5s'].mean(),
-            median_5_second_throughput = df['throughput_5s'].median(),
-            p90_5_second_throughput = df['throughput_5s'].quantile(.90),
-            p95_5_second_throughput = df['throughput_5s'].quantile(.95),
-            p99_5_second_throughput = df['throughput_5s'].quantile(.99),
         )
+        client_procs.append(client_proc)
+
+    # Wait for clients to finish.
+    for client_proc in client_procs:
+        client_proc.wait()
+
+    # Process perf profiles.
+    if args.profile:
+        bench.popen(
+            Popen,
+            label=f'server_perf_map',
+            cmd = ['create-java-perf-map.sh', str(server_proc.pid)]
+        ).wait()
+        bench.popen(
+            Popen,
+            label=f'server_perf_script',
+            cmd=['perf', 'script',
+                # '-f', 'comm,tid,time,event,ip,sym,dso',
+                '-i', f'/tmp/perf-{server_proc.pid}.data'],
+            out=bench.create_file('server_stacks.txt'),
+        ).wait()
+
+    # Kill server.
+    server_proc.terminate()
+
+    # Every client thread j on client i writes results to `client_i_j.csv`.
+    # We concatenate these results into a single CSV file.
+    df = read_csvs([bench.abspath(f'client_{i}_{j}.csv')
+                    for i in range(input.num_clients)
+                    for j in range(input.num_threads_per_client)])
+    df['start'] = pd.to_datetime(df['start'])
+    df['stop'] = pd.to_datetime(df['stop'])
+    df = df.set_index('start').sort_index(0)
+    df['throughput_1s'] = util.throughput(df, 1000)
+    df['throughput_2s'] = util.throughput(df, 2000)
+    df['throughput_5s'] = util.throughput(df, 5000)
+    df.to_csv(bench.abspath('data.csv'))
+
+    return Output(
+        mean_latency = df['latency_nanos'].mean(),
+        median_latency = df['latency_nanos'].median(),
+        p90_latency = df['latency_nanos'].quantile(.90),
+        p95_latency = df['latency_nanos'].quantile(.95),
+        p99_latency = df['latency_nanos'].quantile(.99),
+
+        mean_1_second_throughput = df['throughput_1s'].mean(),
+        median_1_second_throughput = df['throughput_1s'].median(),
+        p90_1_second_throughput = df['throughput_1s'].quantile(.90),
+        p95_1_second_throughput = df['throughput_1s'].quantile(.95),
+        p99_1_second_throughput = df['throughput_1s'].quantile(.99),
+
+        mean_2_second_throughput = df['throughput_2s'].mean(),
+        median_2_second_throughput = df['throughput_2s'].median(),
+        p90_2_second_throughput = df['throughput_2s'].quantile(.90),
+        p95_2_second_throughput = df['throughput_2s'].quantile(.95),
+        p99_2_second_throughput = df['throughput_2s'].quantile(.99),
+
+        mean_5_second_throughput = df['throughput_5s'].mean(),
+        median_5_second_throughput = df['throughput_5s'].median(),
+        p90_5_second_throughput = df['throughput_5s'].quantile(.90),
+        p95_5_second_throughput = df['throughput_5s'].quantile(.95),
+        p99_5_second_throughput = df['throughput_5s'].quantile(.99),
+    )
 
 
 def _main(args) -> None:
@@ -226,6 +256,17 @@ def get_parser() -> argparse.ArgumentParser:
             'jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar'
         ),
         help='FrankenPaxos JAR file'
+    )
+    parser.add_argument(
+        '-p', '--profile',
+        action='store_true',
+        help='Profile code'
+    )
+    parser.add_argument(
+        '--perf_record_freq',
+        type=int,
+        default=1000,
+        help='Perf record frequency'
     )
     return parser
 

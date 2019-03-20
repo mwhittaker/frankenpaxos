@@ -22,6 +22,7 @@ class Reaped(object):
     def __exit__(self, cls, exn, traceback) -> None:
         self.p.terminate()
 
+
 # pd.read_csv reads in a CSV file and converts it to a dataframe. read_csvs
 # reads in a _set_ of CSVs, concatenates them together, and converts the
 # concatenation to a dataframe.
@@ -30,6 +31,7 @@ def read_csvs(filenames: List[str]) -> pd.DataFrame:
     for filename in filenames:
         dfs.append(pd.read_csv(filename, header=0))
     return pd.concat(dfs, ignore_index=True)
+
 
 # Consider a timestamp indexed dataframe:
 #

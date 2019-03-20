@@ -1,23 +1,25 @@
 # Benchmarks
+This directory contains FrankenPaxos benchmarks written in Python 3.
 
-This directory contains FrankenPaxos benchmarks. Benchmarks use mininet, which
-requires sudo, so you'll have to run the benchmarks with sudo. However, you
-have to be a bit careful running the python program as sudo. As sudo, you may
-have a different python version, a different python path, a different path, and
-so on. Thus, we recommend you run benchmarks like this:
+## Getting Started
+We highly recommend that you run these benchmarks from within a fresh conda
+environment or virtualenv or something similar. For example:
 
 ```bash
-sudo PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$(which python)" \
-    -m benchmarks.fastmultipaxos
+conda create --name frankenpaxos python=3.6
+source activate frankenpaxos
+pip install -r benchmarks/requirements.txt
 ```
 
-`PATH="$PATH" PYTHONPATH="$PYTHONPATH"` ensures that you keep the same PATH and
-PYTHONPATH as sudo. `$(which python)` ensures that you use the same python
-version. `-m benchmarks.fastmultipaxos` specifies which benchmark to run. The
-rest is flags to the benchmark.
-
-Alternatively, you can use the `sudopython` script which does this for you:
+The benchmarks use mininet for network emulation, and mininet requires sudo, so
+you'll have to run the benchmarks with sudo. However, you have to be a bit
+careful running the python program as sudo. As sudo, you may have a different
+python version, a different python path, a different path, and so on. Thus, we
+recommend you run benchmarks using the `sudopython` script. `sudopython` takes
+care of all of this for you.
 
 ```bash
-sudopython -m benchmarks.fastmultipaxos
+./benchmarks/sudopython -m benchmarks.echo
+./benchmarks/sudopython -m benchmarks.fastmultipaxos
+./benchmarks/sudopython -m benchmarks.fastmultipaxos_throughput_vs_num_clients
 ```

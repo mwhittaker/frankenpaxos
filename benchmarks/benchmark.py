@@ -1,9 +1,12 @@
-from typing import Dict, IO
+from .util import Reaped
+from contextlib import ExitStack
+from typing import Any, Dict, IO, List
 import datetime
 import json
 import os
 import random
 import string
+import subprocess
 
 class SuiteDirectory(object):
     def __init__(self, path: str, name: str = None) -> None:
@@ -57,14 +60,25 @@ class BenchmarkDirectory(object):
         self.path = os.path.abspath(path)
         os.makedirs(self.path)
 
+        # We want to ensure that all processes run within a benchmark are
+        # terminated if the benchmark is killed. Thus, we put all processes in
+        # this stack.
+        self.process_stack = ExitStack()
+
+        # A mapping from pid to command label.
+        self.pids: Dict[int, str] = dict()
+
     def __str__(self) -> str:
         return f'BenchmarkDirectory({self.path})'
 
     def __enter__(self):
+        self.process_stack.__enter__()
         self.write_string('start_time.txt', str(datetime.datetime.now()))
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, cls, exn, trace):
+        self.process_stack.__exit__(cls, exn, trace)
+        self.write_dict('pids.json', self.pids)
         self.write_string('end_time.txt', str(datetime.datetime.now()))
 
     def abspath(self, filename: str) -> str:
@@ -81,6 +95,28 @@ class BenchmarkDirectory(object):
     def write_dict(self, filename: str, d: Dict) -> str:
         self.write_string(filename, json.dumps(d, indent=4))
         return self.abspath(filename)
+
+    def popen(self,
+              f: Any,
+              label: str,
+              cmd: List[str],
+              out = None,
+              err = None,
+              **kwargs) -> subprocess.Popen:
+        """Runs a command within this directory.
+
+        `popen` runs a command, recording the command, its stdout, and its
+        stderr within the benchmark directory. `f` is a function like
+        subprocess.Popen. `label` is an arbitrary name for the command. `cmd`
+        and `kwargs` are passed to `f`.
+        """
+        self.write_string(f'{label}_cmd.txt', ' '.join(cmd))
+        out = out or self.create_file(f'{label}_out.txt')
+        err = err or self.create_file(f'{label}_err.txt')
+        proc = f(cmd, stdout=out, stderr=err, **kwargs)
+        self.process_stack.enter_context(Reaped(proc))
+        self.pids[proc.pid] = label
+        return proc
 
 def _random_string(n: int) -> str:
     return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
