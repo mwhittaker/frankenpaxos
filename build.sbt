@@ -6,6 +6,7 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
   .in(file("."))
   .settings(
     name := "frankenpaxos",
+    scalacOptions ++= Seq("-J-XX:+PreserveFramePointer"),
     libraryDependencies ++= Seq(
       "com.github.scopt" %% "scopt" % "3.7.0",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion % "protobuf",
@@ -15,7 +16,8 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
       "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",
       "org.scalacheck" %% "scalacheck" % "1.14.0" % "test",
       "org.scalactic" %% "scalactic" % "3.0.5",
-      "org.scalatest" %% "scalatest" % "3.0.5" % "test"
+      "org.scalatest" %% "scalatest" % "3.0.5" % "test",
+      "com.github.tototoshi" %% "scala-csv" % "1.3.5"
     ),
     PB.targets in Compile := Seq(
       scalapb.gen() -> (sourceManaged in Compile).value
@@ -25,9 +27,6 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
       file("jvm/src/main")
     ),
   )
-  .jvmSettings(
-      libraryDependencies += "com.github.tototoshi" %% "scala-csv" % "1.3.5"
-    )
   .jsSettings(
     libraryDependencies += "org.scala-js" %%% "scalajs-java-time" % "0.2.5"
   )

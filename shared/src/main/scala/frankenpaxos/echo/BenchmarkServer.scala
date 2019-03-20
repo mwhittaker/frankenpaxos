@@ -35,6 +35,6 @@ class BenchmarkServer[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     val client =
       chan[BenchmarkClient[Transport]](src, BenchmarkClient.serializer)
-    client.send(BenchmarkClientInbound(id = request.id, msg = request.msg))
+    client.send(BenchmarkClientInbound(msg = request.msg))
   }
 }

@@ -1,5 +1,6 @@
 package frankenpaxos.echo
 
+import collection.mutable
 import com.github.tototoshi.csv.CSVWriter
 import frankenpaxos.Actor
 import frankenpaxos.FileLogger
@@ -63,70 +64,27 @@ object BenchmarkClientMain extends App {
     case None        => ???
   }
 
-  // val logger = new PrintLogger()
-  // val transport = new NettyTcpTransport(logger)
-  // val chatClient =
-  //   new Client[NettyTcpTransport](srcAddress, dstAddress, transport, logger)
-  // var ok = true
-  // while (ok) {
-  //   val line = readLine()
-  //   ok = line != null
-  //   if (ok) {
-  //     chatClient.echo(line)
-  //   }
-  // }
-
-  val start_time = java.time.Instant.now()
-  val stop_time =
-    start_time.plus(java.time.Duration.ofNanos(flags.duration.toNanos))
-  val threads = for (i <- 0 until flags.numThreads) yield {
-    val thread = new Thread {
-      override def run() {
-        val logger = new FileLogger(s"${flags.outputFilePrefix}_$i.txt")
-        logger.debug(s"Client $i started.")
-        val transport = new NettyTcpTransport(logger)
-        val srcAddress = NettyTcpAddress(
-          new InetSocketAddress(flags.host, flags.port + i)
-        )
-        val dstAddress = NettyTcpAddress(
-          new InetSocketAddress(flags.serverHost, flags.serverPort)
-        )
-        val latency_writer =
-          CSVWriter.open(new File(s"${flags.outputFilePrefix}_$i.csv"))
-        latency_writer.writeRow(
-          Seq("host", "port", "start", "stop", "latency_nanos")
-        )
-        val client = new BenchmarkClient[NettyTcpTransport](srcAddress,
-                                                            dstAddress,
-                                                            transport,
-                                                            logger)
-
-        while (java.time.Instant.now().isBefore(stop_time)) {
-          // Note that this client will only work for some state machine (e.g.,
-          // Register and AppendLog) and won't work for others (e.g.,
-          // KeyValueStore).
-          val cmd_start = System.nanoTime()
-          val future = client.echo(".")
-          concurrent.Await.result(future, concurrent.duration.Duration.Inf)
-          val cmd_stop = System.nanoTime()
-          latency_writer.writeRow(
-            Seq(
-              flags.host,
-              (flags.port + i).toString(),
-              cmd_start.toString(),
-              cmd_stop.toString(),
-              (cmd_stop - cmd_start).toString()
-            )
-          )
-        }
-        transport.shutdown()
-      }
-    }
-    thread.start()
-    thread
+  val clients_and_transports = for (i <- 0 until flags.numThreads) yield {
+    val logger = new FileLogger(s"${flags.outputFilePrefix}_$i.txt")
+    logger.debug(s"Client $i started.")
+    val transport = new NettyTcpTransport(logger)
+    val srcAddress = NettyTcpAddress(
+      new InetSocketAddress(flags.host, flags.port + i)
+    )
+    val dstAddress = NettyTcpAddress(
+      new InetSocketAddress(flags.serverHost, flags.serverPort)
+    )
+    val client = new BenchmarkClient[NettyTcpTransport](
+      srcAddress,
+      dstAddress,
+      transport,
+      logger,
+      s"${flags.outputFilePrefix}_$i.csv"
+    )
+    (client, transport)
   }
-
-  for (thread <- threads) {
-    thread.join()
+  Thread.sleep(flags.duration.toMillis)
+  for ((_, transport) <- clients_and_transports) {
+    transport.shutdown()
   }
 }

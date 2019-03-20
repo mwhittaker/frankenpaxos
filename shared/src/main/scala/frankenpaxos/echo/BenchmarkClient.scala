@@ -1,9 +1,12 @@
 package frankenpaxos.echo
 
+import collection.mutable
+import com.github.tototoshi.csv.CSVWriter
 import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import java.io.File
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.scalajs.js.annotation._
@@ -27,7 +30,8 @@ class BenchmarkClient[Transport <: frankenpaxos.Transport[Transport]](
     srcAddress: Transport#Address,
     dstAddress: Transport#Address,
     transport: Transport,
-    logger: Logger
+    logger: Logger,
+    outputFilename: String
 ) extends Actor(srcAddress, transport, logger) {
   override type InboundMessage = BenchmarkClientInbound
   override def serializer = BenchmarkClient.serializer
@@ -35,38 +39,33 @@ class BenchmarkClient[Transport <: frankenpaxos.Transport[Transport]](
   private val server =
     chan[BenchmarkServer[Transport]](dstAddress, BenchmarkServer.serializer)
 
-  private var id: Int = 0
+  private val latencyWriter = CSVWriter.open(new File(outputFilename))
+  latencyWriter.writeRow(Seq("address", "start", "stop", "latency_nanos"))
 
-  private var promise: Option[Promise[Unit]] = None
+  private val startTimeNanos = mutable.Buffer[Long]()
+  private val startTimes = mutable.Buffer[java.time.Instant]()
+
+  startTimeNanos += System.nanoTime()
+  startTimes += java.time.Instant.now()
+  server.send(BenchmarkServerInbound(msg = "."))
 
   override def receive(src: Transport#Address, reply: InboundMessage): Unit = {
-    promise match {
-      case Some(p) =>
-        if (reply.id == id) {
-          id += 1
-          p.success(())
-          promise = None
-        }
+    val stopTimeNano = System.nanoTime()
+    val stopTime = java.time.Instant.now()
+    val startTimeNano = startTimeNanos.remove(0)
+    val startTime = startTimes.remove(0)
 
-      case None =>
-      // Do nothing.
-    }
-  }
+    startTimeNanos += System.nanoTime()
+    startTimes += java.time.Instant.now()
+    server.send(BenchmarkServerInbound(msg = "."))
 
-  private def _echo(msg: String, promise: Promise[Unit]): Unit = {
-    this.promise match {
-      case Some(p) =>
-        promise.failure(new IllegalArgumentException())
-
-      case None =>
-        this.promise = Some(promise)
-        server.send(BenchmarkServerInbound(id = id, msg = msg))
-    }
-  }
-
-  def echo(msg: String): Future[Unit] = {
-    val promise = Promise[Unit]()
-    transport.executionContext.execute(() => _echo(msg, promise))
-    promise.future
+    latencyWriter.writeRow(
+      Seq(
+        srcAddress.toString(),
+        startTime.toString(),
+        stopTime.toString(),
+        (stopTimeNano - startTimeNano).toString()
+      )
+    )
   }
 }

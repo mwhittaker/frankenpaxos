@@ -18,11 +18,9 @@ message ClientInbound {
 }
 
 message BenchmarkServerInbound {
-  required int32 id = 1;
   required string msg = 2;
 }
 
 message BenchmarkClientInbound {
-  required int32 id = 1;
   required string msg = 2;
 }
