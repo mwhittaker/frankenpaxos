@@ -101,7 +101,7 @@ def run_benchmark(bench: BenchmarkDirectory,
                   net: EchoNet) -> Output:
     # Launch server.
     server_proc = bench.popen(
-        net.server().popen,
+        f=net.server().popen,
         label='server',
         cmd = [
             'java',
@@ -109,30 +109,15 @@ def run_benchmark(bench: BenchmarkDirectory,
             'frankenpaxos.echo.BenchmarkServerMain',
             '--host', net.server().IP(),
             '--port', '9000',
-        ]
+        ],
+        profile=args.profile
     )
 
-    if (args.profile):
-        server_perf_proc = bench.popen(
-            net.server().popen,
-            label='server_perf',
-            cmd=[
-                'perf',
-                'record',
-                '-F', str(args.perf_record_freq),
-                '-o', f'/tmp/perf-{server_proc.pid}.data',
-                '-p', str(server_proc.pid),
-                '--timestamp',
-                '-g',
-                '--', 'sleep', str(input.duration_seconds),
-            ],
-        )
-
     # Launch clients.
-    client_procs: List[Popen] = []
+    client_procs = []
     for (i, host) in enumerate(net.clients()):
         client_proc = bench.popen(
-            net.server().popen,
+            f=net.server().popen,
             label=f'client_{i}',
             cmd = [
                 'java',
@@ -152,23 +137,6 @@ def run_benchmark(bench: BenchmarkDirectory,
     # Wait for clients to finish.
     for client_proc in client_procs:
         client_proc.wait()
-
-    # Process perf profiles.
-    if args.profile:
-        bench.popen(
-            Popen,
-            label=f'server_perf_map',
-            cmd = ['create-java-perf-map.sh', str(server_proc.pid)]
-        ).wait()
-        bench.popen(
-            Popen,
-            label=f'server_perf_script',
-            cmd=['perf', 'script',
-                # '-f', 'comm,tid,time,event,ip,sym,dso',
-                '-i', f'/tmp/perf-{server_proc.pid}.data'],
-            out=bench.create_file('server_stacks.txt'),
-        ).wait()
-        subprocess.call(['gzip', bench.abspath('server_stacks.txt')])
 
     # Kill server.
     server_proc.terminate()
@@ -277,12 +245,6 @@ def get_parser() -> argparse.ArgumentParser:
         '-p', '--profile',
         action='store_true',
         help='Profile code'
-    )
-    parser.add_argument(
-        '--perf_record_freq',
-        type=int,
-        default=1000,
-        help='Perf record frequency'
     )
     return parser
 
