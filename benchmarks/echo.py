@@ -13,6 +13,7 @@ import argparse
 import csv
 import os
 import pandas as pd
+import subprocess
 import time
 
 class Input(NamedTuple):
@@ -167,15 +168,17 @@ def run_benchmark(bench: BenchmarkDirectory,
                 '-i', f'/tmp/perf-{server_proc.pid}.data'],
             out=bench.create_file('server_stacks.txt'),
         ).wait()
+        subprocess.call(['gzip', bench.abspath('server_stacks.txt')])
 
     # Kill server.
     server_proc.terminate()
 
-    # Every client thread j on client i writes results to `client_i_j.csv`.
-    # We concatenate these results into a single CSV file.
-    df = read_csvs([bench.abspath(f'client_{i}_{j}.csv')
-                    for i in range(input.num_clients)
-                    for j in range(input.num_threads_per_client)])
+    # Every client thread j on client i writes results to `client_i_j.csv`.  We
+    # concatenate these results into a single CSV file.
+    client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
+                   for i in range(input.num_clients)
+                   for j in range(input.num_threads_per_client)]
+    df = read_csvs(client_csvs)
     df['start'] = pd.to_datetime(df['start'])
     df['stop'] = pd.to_datetime(df['stop'])
     df = df.set_index('start').sort_index(0)
@@ -183,6 +186,13 @@ def run_benchmark(bench: BenchmarkDirectory,
     df['throughput_2s'] = util.throughput(df, 2000)
     df['throughput_5s'] = util.throughput(df, 5000)
     df.to_csv(bench.abspath('data.csv'))
+
+    # Since we concatenate and save the file, we can throw away the originals.
+    for client_csv in client_csvs:
+        os.remove(client_csv)
+
+    # We also compress the output data since it can get big.
+    subprocess.call(['gzip', bench.abspath('data.csv')])
 
     return Output(
         mean_latency = df['latency_nanos'].mean(),
@@ -223,9 +233,15 @@ def _main(args) -> None:
             Input(net_name='SingleSwitchNet',
                   num_clients=num_clients,
                   num_threads_per_client=num_threads_per_client,
-                  duration_seconds=30)
-            for num_clients in range(1, 4)
-            for num_threads_per_client in range(1, 5)
+                  duration_seconds=15)
+            for (num_clients, num_threads_per_client) in [
+                (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6),
+                (2, 1), (2, 2), (2, 3),
+                (3, 1),
+                (4, 1),
+                (5, 1),
+                (6, 1),
+            ]
         ] * 3
         for input in tqdm(inputs):
             with suite.benchmark_directory() as bench:
