@@ -649,7 +649,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           }
         }
         logger.info("Got to adding empty edge graph: " + command.toString)
-        graph.addNeighbors((command, commandSeqNum), edgeList)
+        //graph.addNeighbors((command, commandSeqNum), edgeList)
+        graph.addCommands((command, commandSeqNum), edgeList)
       }
     }
 
@@ -677,7 +678,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def executeGraph(graph: DependencyGraph): Unit = {
-    graph.executeGraph(stateMachine, executedCommands)
+    //graph.executeGraph(stateMachine, executedCommands)
+    graph.executeDependencyGraph(stateMachine, executedCommands)
     logger.info(graph.debug)
     //stateMachine.state.append("234")
   }
