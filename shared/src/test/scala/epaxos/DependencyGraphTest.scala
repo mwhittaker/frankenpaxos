@@ -25,25 +25,26 @@ class DependencyGraphTest extends FlatSpec {
     val listBufferSix: ListBuffer[(Command, Int)] = ListBuffer(commandFive)
 
     val graph: DependencyGraph = new DependencyGraph()
-    graph.addNeighbors(commandOne, listBufferOne)
-    graph.addNeighbors(commandTwo, listBufferTwo)
-    graph.addNeighbors(commandThree, listBufferThree)
-    graph.addNeighbors(commandFour, listBufferFour)
-    graph.addNeighbors(commandFive, listBufferFive)
-    graph.addNeighbors(commandSix, listBufferSix)
+    graph.addCommands(commandOne, listBufferOne)
+    graph.addCommands(commandTwo, listBufferTwo)
+    graph.addCommands(commandThree, listBufferThree)
+    graph.addCommands(commandFour, listBufferFour)
+    graph.addCommands(commandFive, listBufferFive)
+    graph.addCommands(commandSix, listBufferSix)
 
     val stateMachine: KeyValueStore = new KeyValueStore()
-    graph.executeGraph(stateMachine, mutable.Set.empty)
+    graph.executeDependencyGraph(stateMachine, mutable.Set.empty)
     println(stateMachine.toString())
+    println("Sequence: " + graph.debug)
     assert(Map("a" -> 2).toString().equals(stateMachine.toString()))
   }
 
   "Dependency Graph" should "work on a single disconnected graph" in {
     val command: (Command, Int) = (Command(ByteString.copyFromUtf8("0"), 0, ByteString.copyFromUtf8("SET a 0")), 1)
     val graph: DependencyGraph = new DependencyGraph()
-    graph.addNeighbors(command, ListBuffer.empty)
+    graph.addCommands(command, ListBuffer.empty)
     val stateMachine: KeyValueStore = new KeyValueStore()
-    graph.executeGraph(stateMachine, mutable.Set.empty)
+    graph.executeDependencyGraph(stateMachine, mutable.Set.empty)
     println(stateMachine.toString())
   }
 }

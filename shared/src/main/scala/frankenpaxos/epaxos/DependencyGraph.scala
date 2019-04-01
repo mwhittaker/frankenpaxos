@@ -1,21 +1,64 @@
 package frankenpaxos.epaxos
 
+import java.util.{Collections, Comparator}
+
 import frankenpaxos.statemachine._
+import org.jgrapht
+import org.jgrapht.graph.EdgeReversedGraph
+import org.jgrapht.traverse.TopologicalOrderIterator
 import scalax.collection.GraphEdge._
 import scalax.collection.GraphPredef._
-import scalax.collection.mutable.Graph
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.scalajs.js.annotation.JSExportAll
+import org.jgrapht._
+import org.jgrapht.alg.KosarajuStrongConnectivityInspector
+import org.jgrapht.alg.interfaces.StrongConnectivityAlgorithm
+import org.jgrapht.graph.{DefaultEdge, SimpleDirectedGraph}
 
 @JSExportAll
 class DependencyGraph {
 
   val graph: scalax.collection.mutable.Graph[(Command, Int), DiEdge] = scalax.collection.mutable.Graph()
   var debug: String = ""
+  var directedGraph: SimpleDirectedGraph[(Command, Int), DefaultEdge] =
+    new SimpleDirectedGraph[(Command, Int), DefaultEdge](classOf[DefaultEdge])
 
-  def addNeighbors(command: (Command, Int), edges: ListBuffer[(Command, Int)]): Unit = {
+  def addCommands(command: (Command, Int), edges: ListBuffer[(Command, Int)]): Unit = {
+    directedGraph.addVertex(command)
+    for (edge <- edges) {
+      directedGraph.addVertex(edge)
+      if (!(edge._1.equals(command._1) && edge._2.equals(command._2))) {
+       directedGraph.addEdge(command, edge)
+      }
+    }
+  }
+
+  def executeDependencyGraph(stateMachine: KeyValueStore, executedCommands: mutable.Set[Command]): Unit = {
+    val sccAlg: StrongConnectivityAlgorithm[(Command, Int), DefaultEdge] =
+      new KosarajuStrongConnectivityInspector[(Command, Int), DefaultEdge](directedGraph)
+    val sccGraph: Graph[Graph[(Command, Int), DefaultEdge], DefaultEdge] = sccAlg.getCondensation
+    val reversedGraph: EdgeReversedGraph[Graph[(Command, Int), DefaultEdge], DefaultEdge] =
+      new EdgeReversedGraph[Graph[(Command, Int), DefaultEdge], DefaultEdge](sccGraph)
+    val topSorted: TopologicalOrderIterator[Graph[(Command, Int), DefaultEdge], DefaultEdge] =
+      new TopologicalOrderIterator[Graph[(Command, Int), DefaultEdge], DefaultEdge](reversedGraph)
+    while (topSorted.hasNext) {
+      val scc = topSorted.next()
+      val sortedVertices: java.util.stream.Stream[(Command, Int)]  = scc.vertexSet.stream().sorted(Comparator.comparingInt(_._2))
+      val iterator = sortedVertices.iterator()
+      while (iterator.hasNext) {
+        val vertex = iterator.next()
+        if (!executedCommands.contains(vertex._1)) {
+          debug = debug + vertex._1.command.toStringUtf8 + "\n"
+          executeCommand(vertex._1.command.toStringUtf8, stateMachine)
+          executedCommands.add(vertex._1)
+        }
+      }
+    }
+  }
+
+  /*def addNeighbors(command: (Command, Int), edges: ListBuffer[(Command, Int)]): Unit = {
     graph.add(command)
     for (edge <- edges) {
       graph += (command ~> edge)
@@ -111,7 +154,7 @@ class DependencyGraph {
         }
       }
     }
-  }
+  }*/
 
   private def executeCommand(command: String, stateMachine: KeyValueStore): Unit = {
     val tokens = command.split(" ")

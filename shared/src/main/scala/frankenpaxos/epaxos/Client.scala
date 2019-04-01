@@ -124,12 +124,14 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def sendReadRequest(command: Command, instance: Instance): Unit = {
-    val replica = replicas(instance.leaderIndex)
-    logger.info("Sending replica message: " + instance.leaderIndex)
-    replica.send(ReplicaInbound().withRead(Read(
-      instance,
-      command
-    )))
+    //val replica = replicas(instance.leaderIndex)
+    //logger.info("Sending replica message: " + instance.leaderIndex)
+    for ((_, replica) <- replicas) {
+      replica.send(ReplicaInbound().withRead(Read(
+        instance,
+        command
+      )))
+    }
   }
 
   private def handleProposeReply(
