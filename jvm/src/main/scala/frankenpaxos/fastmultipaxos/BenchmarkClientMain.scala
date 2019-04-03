@@ -110,7 +110,7 @@ object BenchmarkClientMain extends App {
             )
           )
         }
-        transport.shutdown()
+        transport.shutdown().await()
       }
     }
     thread.start()

@@ -26,6 +26,7 @@ import io.netty.handler.codec.LengthFieldPrepender
 import io.netty.handler.codec.bytes.ByteArrayDecoder
 import io.netty.handler.codec.bytes.ByteArrayEncoder
 import io.netty.handler.logging.LoggingHandler
+import io.netty.util.concurrent.Future
 import io.netty.util.concurrent.ScheduledFuture
 import java.net.InetSocketAddress
 import java.net.SocketAddress
@@ -438,7 +439,7 @@ class NettyTcpTransport(private val logger: Logger)
     scala.concurrent.ExecutionContext.fromExecutorService(eventLoop)
   }
 
-  def shutdown(): Unit = {
-    eventLoop.shutdownGracefully().await()
+  def shutdown(): Future[_] = {
+    eventLoop.shutdownGracefully()
   }
 }

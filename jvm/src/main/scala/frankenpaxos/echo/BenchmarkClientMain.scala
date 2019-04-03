@@ -66,7 +66,6 @@ object BenchmarkClientMain extends App {
 
   val clients_and_transports = for (i <- 0 until flags.numThreads) yield {
     val logger = new FileLogger(s"${flags.outputFilePrefix}_$i.txt")
-    logger.debug(s"Client $i started.")
     val transport = new NettyTcpTransport(logger)
     val srcAddress = NettyTcpAddress(
       new InetSocketAddress(flags.host, flags.port + i)
@@ -83,8 +82,14 @@ object BenchmarkClientMain extends App {
     )
     (client, transport)
   }
+
   Thread.sleep(flags.duration.toMillis)
-  for ((_, transport) <- clients_and_transports) {
-    transport.shutdown()
-  }
+
+  // Shutting down a transport takes roughly 2 seconds. Thus, if we have a
+  // large number of clients, shutting down all the transports sequentially
+  // takes a long time. So, we make sure to shutdown all the transports
+  // concurrently.
+  clients_and_transports
+    .map({ case (_, transport) => transport.shutdown() })
+    .foreach(_.await())
 }
