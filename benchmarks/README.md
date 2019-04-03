@@ -8,6 +8,7 @@ environment or virtualenv or something similar. For example:
 ```bash
 conda create --name frankenpaxos python=3.6
 source activate frankenpaxos
+pip install --upgrade pip
 pip install -r benchmarks/requirements.txt
 ```
 
