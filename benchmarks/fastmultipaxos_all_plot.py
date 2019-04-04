@@ -26,12 +26,12 @@ def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
     ])
 
     for (name, group) in grouped:
-        stats = group.groupby('num_threads_per_client').agg([np.mean, np.std])
+        stats = group.groupby('num_clients').agg([np.mean, np.std])
         mean = stats[column]['mean']
-        std = stats[column]['std']
+        std = stats[column]['std'].fillna(0)
         line = ax.plot(mean, '.-', label=translate_name(name))[0]
         color = line.get_color()
-        ax.fill_between(group.index, mean - std, mean + std, color=color,
+        ax.fill_between(stats.index, mean - std, mean + std, color=color,
                         alpha=0.25)
 
     ax.set_title(wrapped(
@@ -47,8 +47,8 @@ def main(args) -> None:
 
     # Fast multipaxos with 0.01 second repropose is degenerate, so we filter it
     # out.
-    df = df[~((df['round_system_type'] == 'MIXED_ROUND_ROBIN') &
-              (df['client_repropose_period_seconds'] == 0.01))]
+    # df = df[~((df['round_system_type'] == 'MIXED_ROUND_ROBIN') &
+    #           (df['client_repropose_period_seconds'] == 0.01))]
 
     # Convert nanos to millis.
     df['mean_latency'] /= 1e6
@@ -73,38 +73,6 @@ def main(args) -> None:
     filename = os.path.join(args.output, 'fast_multipaxos.pdf')
     fig.savefig(filename)
     print(f'Wrote plot to {filename}.')
-    return
-
-
-    fig, ax = plt.subplots()
-    for (name, group) in grouped:
-        grouped = group.groupby('num_threads_per_client')['median_latency'].mean()
-        ax.plot(grouped.index, grouped / 1e6, label=str(name))
-    ax.set_title('Latency')
-    ax.set_xlabel('Number of clients')
-    ax.set_ylabel('Latency (ms)')
-    ax.legend(loc='best')
-    ax.grid()
-    fig.set_tight_layout(True)
-    filename = os.path.join(args.output, 'fmp_median_latency.pdf')
-    fig.savefig(filename)
-    print(f'Writing plot to {filename}.')
-
-    fig, ax = plt.subplots()
-    grouped = df.groupby(['round_system_type',
-                          'client_repropose_period_seconds'])
-    for (name, group) in grouped:
-        grouped = group.groupby('num_threads_per_client')['p90_1_second_throughput'].mean()
-        ax.plot(grouped.index, grouped, label=str(name))
-    ax.set_title('Throughput')
-    ax.set_xlabel('Number of clients')
-    ax.set_ylabel('P90 1 second throughput')
-    ax.legend(loc='best')
-    ax.grid()
-    fig.set_tight_layout(True)
-    filename = os.path.join(args.output, 'fmp_p90_1_second_throughput.pdf')
-    fig.savefig(filename)
-    print(f'Writing plot to {filename}.')
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
