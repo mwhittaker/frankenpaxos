@@ -49,7 +49,7 @@ object ClientMain extends App {
   while (true) {
     // Note that this client will only work for some state machine (e.g.,
     // Register and AppendLog) and won't work for others (e.g., KeyValueStore).
-    val value = readLine()
+    val value = scala.io.StdIn.readLine()
     val future = paxosClient.propose(value)
     println(concurrent.Await.result(future, concurrent.duration.Duration.Inf))
   }

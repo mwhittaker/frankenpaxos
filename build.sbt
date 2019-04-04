@@ -1,4 +1,5 @@
-import sbtcrossproject.CrossPlugin.autoImport.{crossProject, CrossType}
+import sbtcrossproject.CrossPlugin.autoImport.CrossType
+import sbtcrossproject.CrossPlugin.autoImport.crossProject
 
 name := "frankenpaxos"
 
@@ -6,7 +7,19 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
   .in(file("."))
   .settings(
     name := "frankenpaxos",
-    scalacOptions ++= Seq("-J-XX:+PreserveFramePointer"),
+    scalacOptions ++= Seq(
+      // This option is needed to get nice Java flame graphs. See [1] for more
+      // information.
+      //
+      // [1]: https://medium.com/netflix-techblog/java-in-flames-e763b3d32166
+      "-J-XX:+PreserveFramePointer",
+
+      // These flags enable all warnings and make them fatal.
+      "-unchecked",
+      "-deprecation",
+      "-feature",
+      "-Xfatal-warnings",
+    ),
     libraryDependencies ++= Seq(
       "com.github.scopt" %% "scopt" % "3.7.0",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion % "protobuf",

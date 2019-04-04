@@ -15,8 +15,11 @@ trait TypedStateMachine[I, O] extends StateMachine {
     outputSerializer.toBytes(output)
   }
 
-  override def conflicts(firstCommand: Array[Byte],
-                         secondCommand: Array[Byte]): Boolean = {
-    true
+  override def conflicts(
+      firstCommand: Array[Byte],
+      secondCommand: Array[Byte]
+  ): Boolean = {
+    typedConflicts(inputSerializer.fromBytes(firstCommand),
+                   inputSerializer.fromBytes(secondCommand))
   }
 }

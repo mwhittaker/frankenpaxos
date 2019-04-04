@@ -193,7 +193,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     val result = stateMachine.typedConflicts(firstInput, secondInput)
-    logger.info("Command conflicts: " + stateMachine.debug)
+    // logger.info("Command conflicts: " + stateMachine.debug)
     result
   }
 
@@ -680,7 +680,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private def executeGraph(graph: DependencyGraph): Unit = {
     //graph.executeGraph(stateMachine, executedCommands)
     graph.executeDependencyGraph(stateMachine, executedCommands)
-    logger.info(graph.debug)
+    // logger.info(graph.debug)
     //stateMachine.state.append("234")
   }
 }

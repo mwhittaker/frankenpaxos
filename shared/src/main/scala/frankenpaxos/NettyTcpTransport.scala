@@ -176,7 +176,7 @@ class NettyTcpTransport(private val logger: Logger)
         logger.warn(s"Future was cancelled: $message")
       } else {
         logger.warn(s"Future failed: $message")
-        logger.warn(future.cause().getStackTraceString)
+        logger.warn(future.cause().getStackTrace.mkString("\n"))
       }
     }
   }

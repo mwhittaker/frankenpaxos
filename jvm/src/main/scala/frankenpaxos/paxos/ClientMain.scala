@@ -49,7 +49,7 @@ object ClientMain extends App {
     new Client[NettyTcpTransport](address, transport, logger, config)
 
   while (true) {
-    val value = readLine()
+    val value = scala.io.StdIn.readLine()
     paxosClient
       .propose(value)
       .foreach(value => println(s"$value was chosen."))(

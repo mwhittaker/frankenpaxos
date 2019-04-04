@@ -54,7 +54,7 @@ object ClientMain extends App {
     new Client[NettyTcpTransport](srcAddress, dstAddress, transport, logger)
   var ok = true
   while (ok) {
-    val line = readLine()
+    val line = scala.io.StdIn.readLine()
     ok = line != null
     if (ok) {
       chatClient.echo(line)

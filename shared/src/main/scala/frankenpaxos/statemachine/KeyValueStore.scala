@@ -12,11 +12,8 @@ object OutputSerializer extends frankenpaxos.ProtoSerializer[Output]
 @JSExportAll
 class KeyValueStore extends TypedStateMachine[Input, Output] {
   private val kvs = mutable.Map[String, String]()
-  private var state = ""
-  var debug = ""
 
-  override def toString(): String =
-    kvs.toString()
+  override def toString(): String = kvs.toString()
 
   override val inputSerializer = InputSerializer
   override val outputSerializer = OutputSerializer
@@ -38,23 +35,36 @@ class KeyValueStore extends TypedStateMachine[Input, Output] {
     }
   }
 
-  override def typedConflicts(firstCommand: Input, secondCommand: Input): Boolean = {
+  private def keys(input: Input): Set[String] = {
     import Input.Request
-    var firstValue: Seq[String] = null
-    var secondValue: Seq[String] = null
+    input.request match {
+      case Request.GetRequest(GetRequest(keys)) =>
+        keys.to[Set]
+      case Request.SetRequest(SetRequest(keyValues)) =>
+        keyValues.map({ case SetKeyValuePair(k, _) => k }).to[Set]
+      case Request.Empty =>
+        throw new IllegalStateException()
+    }
+  }
 
-    debug = "Commands 1: " + firstCommand.request.toString + "\n"
-    debug = debug + "Commands 2: "  + secondCommand.request.toString
-    if (firstCommand.request.isGetRequest && secondCommand.request.isGetRequest)
-      return false
-    firstCommand.request match {
-      case Request.SetRequest(SetRequest(keyValues)) => firstValue = keyValues.map(_.key)
-      case Request.GetRequest(GetRequest(keys)) => firstValue = keys
+  override def typedConflicts(
+      firstCommand: Input,
+      secondCommand: Input
+  ): Boolean = {
+    import Input.Request
+
+    (firstCommand.request, secondCommand.request) match {
+      case (Request.GetRequest(_), Request.GetRequest(_)) =>
+        // Get requests do not conflict.
+        false
+
+      case (Request.SetRequest(_), Request.GetRequest(_)) |
+          (Request.GetRequest(_), Request.SetRequest(_)) |
+          (Request.SetRequest(_), Request.SetRequest(_)) =>
+        keys(firstCommand).intersect(keys(secondCommand)).nonEmpty
+
+      case (Request.Empty, _) | (_, Request.Empty) =>
+        throw new IllegalStateException()
     }
-    secondCommand.request match {
-      case Request.SetRequest(SetRequest(keyValues)) => secondValue = keyValues.map(_.key)
-      case Request.GetRequest(GetRequest(keys)) => secondValue = keys
-    }
-    firstValue.intersect(secondValue).nonEmpty
   }
 }
