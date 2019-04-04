@@ -68,7 +68,6 @@ def main(args) -> None:
     plot(df, ax[1], 'p90_latency', 'P90 latency')
     plot(df, ax[2], 'median_1_second_throughput', 'Median throughput (1 second windows)')
     plot(df, ax[3], 'p90_1_second_throughput', 'P90 throughput (1 second windows)')
-    # plot_1_second_throughput(df[df['num_clients'] == 1], ax[1])
 
     fig.set_tight_layout(True)
     filename = os.path.join(args.output, 'fast_multipaxos.pdf')

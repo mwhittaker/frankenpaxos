@@ -11,19 +11,17 @@ def _main(args) -> None:
         inputs = [
             Input(net_name='SingleSwitchNet',
                 f=1,
-                num_clients=1,
-                num_threads_per_client=num_threads_per_client,
+                num_clients=num_clients,
+                num_threads_per_client=1,
                 round_system_type=round_system_type,
                 duration_seconds=15,
                 client_lag_seconds=5,
                 client_repropose_period_seconds=client_repropose_period_seconds,
             )
-            for round_system_type in [
-                RoundSystemType.CLASSIC_ROUND_ROBIN.name,
-                RoundSystemType.MIXED_ROUND_ROBIN.name,
-            ]
-            for client_repropose_period_seconds in [0.01, 0.1, 1, 10]
-            for num_threads_per_client in range(1, 5)
+            for num_clients in range(1, 15)
+            for client_repropose_period_seconds in [0.1, 1, 10]
+            for round_system_type in [RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+                                      RoundSystemType.MIXED_ROUND_ROBIN.name]
         ] * 3
         for input in tqdm(inputs):
             with suite.benchmark_directory() as bench:
