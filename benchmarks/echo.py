@@ -202,14 +202,8 @@ def _main(args) -> None:
                   num_clients=num_clients,
                   num_threads_per_client=num_threads_per_client,
                   duration_seconds=15)
-            for (num_clients, num_threads_per_client) in [
-                (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6),
-                (2, 1), (2, 2), (2, 3),
-                (3, 1),
-                (4, 1),
-                (5, 1),
-                (6, 1),
-            ]
+            for (num_clients, num_threads_per_client) in
+                [x for n in range(1, 30) for x in [(1, n), (n, 1)]]
         ] * 3
         for input in tqdm(inputs):
             with suite.benchmark_directory() as bench:
