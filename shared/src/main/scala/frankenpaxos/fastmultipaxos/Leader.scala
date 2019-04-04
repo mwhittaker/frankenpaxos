@@ -690,11 +690,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Ignore responses for entries that have already been chosen.
         if (log.contains(phase2b.slot)) {
-          leaderLogger.debug(
-            s"A leader received a phase 2b response for slot " +
-              s"${phase2b.slot} from $src but a value has already been " +
-              s"chosen in this slot."
-          )
+          // Without thriftiness, this is the normal case, so it prints a LOT.
+          // So, we comment it out.
+          //
+          // leaderLogger.debug(
+          //   s"A leader received a phase 2b response for slot " +
+          //     s"${phase2b.slot} from $src but a value has already been " +
+          //     s"chosen in this slot."
+          // )
           return
         }
 
