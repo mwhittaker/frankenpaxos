@@ -7,7 +7,7 @@ class EPaxosTest extends FlatSpec {
     "A Paxos instance" should "only ever choose a single value" in {
     // TODO(mwhittaker): If a test case fails, show the log.
     // TODO(mwhittaker): Uniquely id each message.
-    for (f <- 1 to 1) {
+    for (f <- 1 to 2) {
       val sim = new SimulatedEPaxos(f)
       Simulator
         .simulate(sim, runLength = 100, numRuns = 1000)

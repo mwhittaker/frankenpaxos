@@ -35,7 +35,6 @@ class DependencyGraphTest extends FlatSpec {
     val stateMachine: KeyValueStore = new KeyValueStore()
     graph.executeDependencyGraph(stateMachine, mutable.Set.empty)
     println(stateMachine.toString())
-    println("Sequence: " + graph.debug)
     assert(Map("a" -> 2).toString().equals(stateMachine.toString()))
   }
 

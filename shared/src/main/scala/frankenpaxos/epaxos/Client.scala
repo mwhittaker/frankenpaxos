@@ -28,6 +28,16 @@ object Client {
 }
 
 @JSExportAll
+case class ClientOptions(reproposePeriod: java.time.Duration)
+
+@JSExportAll
+object ClientOptions {
+  val default = ClientOptions(
+    reproposePeriod = java.time.Duration.ofSeconds(10)
+  )
+}
+
+@JSExportAll
 class Client[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
@@ -97,7 +107,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     import ClientInbound.Request
     inbound.request match {
       case Request.RequestReply(r) => handleProposeReply(src, r)
-      case Request.ReadReply(r) => handleReadReply(src, r)
       case Request.Empty =>
         logger.fatal("Empty ClientInbound encountered.")
     }
@@ -123,17 +132,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     replica.send(ReplicaInbound().withClientRequest(request))
   }
 
-  private def sendReadRequest(command: Command, instance: Instance): Unit = {
-    //val replica = replicas(instance.leaderIndex)
-    //logger.info("Sending replica message: " + instance.leaderIndex)
-    for ((_, replica) <- replicas) {
-      replica.send(ReplicaInbound().withRead(Read(
-        instance,
-        command
-      )))
-    }
-  }
-
   private def handleProposeReply(
       src: Transport#Address,
       proposeReply: RequestReply
@@ -144,7 +142,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           pendingCommand = None
           reproposeTimer.stop()
           promise.success(proposeReply.commandInstance)
-          sendReadRequest(proposeReply.command, proposeReply.commandInstance)
         } else {
           logger.warn(s"""Received a reply for unpending command with id
             |'${proposeReply.command.clientId}'.""".stripMargin)
@@ -153,12 +150,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         logger.warn(s"""Received a reply for unpending command with id
           |'${proposeReply.command.clientId}'.""".stripMargin)
     }
-  }
-
-  private def handleReadReply(address: Transport#Address, readReply: ReadReply): Unit = {
-    executionMap.put(readReply.command, readReply.state)
-    //println(readReply.state)
-    logger.info("State is " + readReply.state)
   }
 
   private def _propose(
