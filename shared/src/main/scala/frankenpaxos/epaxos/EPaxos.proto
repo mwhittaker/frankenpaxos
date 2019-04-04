@@ -120,13 +120,11 @@ message ReplicaInbound {
     Prepare prepare_request = 7;
     PrepareOk prepare_ok = 8;
     NACK nack = 9;
-    Read read = 10;
   }
 }
 
 message ClientInbound {
   oneof request {
     RequestReply requestReply = 1;
-    ReadReply readReply = 2;
   }
 }

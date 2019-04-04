@@ -21,9 +21,9 @@ import org.jgrapht.graph.{DefaultEdge, SimpleDirectedGraph}
 class DependencyGraph {
 
   val graph: scalax.collection.mutable.Graph[(Command, Int), DiEdge] = scalax.collection.mutable.Graph()
-  var debug: String = ""
   var directedGraph: SimpleDirectedGraph[(Command, Int), DefaultEdge] =
     new SimpleDirectedGraph[(Command, Int), DefaultEdge](classOf[DefaultEdge])
+  val verticesToRemove = mutable.Set[(Command, Int)]()
 
   def addCommands(command: (Command, Int), edges: ListBuffer[(Command, Int)]): Unit = {
     directedGraph.addVertex(command)
@@ -43,6 +43,7 @@ class DependencyGraph {
       new EdgeReversedGraph[Graph[(Command, Int), DefaultEdge], DefaultEdge](sccGraph)
     val topSorted: TopologicalOrderIterator[Graph[(Command, Int), DefaultEdge], DefaultEdge] =
       new TopologicalOrderIterator[Graph[(Command, Int), DefaultEdge], DefaultEdge](reversedGraph)
+
     while (topSorted.hasNext) {
       val scc = topSorted.next()
       val sortedVertices: java.util.stream.Stream[(Command, Int)]  = scc.vertexSet.stream().sorted(Comparator.comparingInt(_._2))
@@ -50,10 +51,10 @@ class DependencyGraph {
       while (iterator.hasNext) {
         val vertex = iterator.next()
         if (!executedCommands.contains(vertex._1)) {
-          debug = debug + vertex._1.command.toStringUtf8 + "\n"
           executeCommand(vertex._1.command.toStringUtf8, stateMachine)
           executedCommands.add(vertex._1)
         }
+        directedGraph.removeVertex(vertex)
       }
     }
   }

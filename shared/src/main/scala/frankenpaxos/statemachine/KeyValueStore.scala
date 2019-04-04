@@ -12,6 +12,9 @@ object OutputSerializer extends frankenpaxos.ProtoSerializer[Output]
 @JSExportAll
 class KeyValueStore extends TypedStateMachine[Input, Output] {
   private val kvs = mutable.Map[String, String]()
+  private var state = ""
+  var debug = ""
+  var executedCommands: mutable.ListBuffer[Input] = mutable.ListBuffer[Input]()
 
   override def toString(): String = kvs.toString()
 
@@ -19,6 +22,8 @@ class KeyValueStore extends TypedStateMachine[Input, Output] {
   override val outputSerializer = OutputSerializer
 
   override def typedRun(input: Input): Output = {
+    state = state + input.request.toString + "\n"
+    executedCommands.append(input)
     import Input.Request
     input.request match {
       case Request.GetRequest(GetRequest(keys)) =>

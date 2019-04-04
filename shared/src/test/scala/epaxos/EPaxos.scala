@@ -79,6 +79,20 @@ class SimulatedEPaxos(val f: Int)
       commands.add(client.pendingCommand.get.command)
     }
     commands.toSet*/
+    var minStateMachine = Int.MaxValue
+    for (replica <- ePaxos.replicas) {
+      minStateMachine = Math.min(minStateMachine, replica.stateMachine.executedCommands.size)
+    }
+    for (i <- 1 to minStateMachine) {
+      var set = mutable.Set[String]()
+      for (replica <- ePaxos.replicas) {
+        set.add(replica.stateMachine.executedCommands(i).request.toString)
+      }
+      if (set.size != 1) {
+        println("Test failed")
+        return set.toSet
+      }
+    }
     Set.empty
   }
 
@@ -96,6 +110,11 @@ class SimulatedEPaxos(val f: Int)
       newState: SimulatedEPaxos#State,
       oldState: Option[SimulatedEPaxos#State]
   ): Option[String] = {
+    if (newState.size > 1) {
+      return Some(
+        "State machines are not linearizable"
+      )
+    }
     None
   }
 
