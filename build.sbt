@@ -11,7 +11,7 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
       "com.github.scopt" %% "scopt" % "3.7.0",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion % "protobuf",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion,
-      "io.netty" % "netty-all" % "4.1.25.Final",
+      "io.netty" % "netty-all" % "4.1.34.Final",
       "org.scala-js" %% "scalajs-library" % scalaJSVersion % "provided",
       "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",
       "org.scalacheck" %% "scalacheck" % "1.14.0" % "test",
