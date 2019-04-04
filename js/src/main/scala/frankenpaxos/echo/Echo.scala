@@ -1,11 +1,12 @@
 package frankenpaxos.echo
 
-import scala.collection.mutable
-import scala.scalajs.js.annotation._
 import frankenpaxos.Actor
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
+import frankenpaxos.monitoring.FakeCollectors
+import scala.collection.mutable
+import scala.scalajs.js.annotation._
 
 @JSExportAll
 class Echo {
@@ -16,7 +17,10 @@ class Echo {
   // Server.
   val serverAddress = JsTransportAddress("Server")
   val serverLogger = new JsLogger()
-  val server = new Server[JsTransport](serverAddress, transport, serverLogger)
+  val server = new Server[JsTransport](serverAddress,
+                                       transport,
+                                       serverLogger,
+                                       new ServerMetrics(FakeCollectors))
 
   // Clients.
   val clientA = new Client[JsTransport](
