@@ -1,28 +1,42 @@
 package frankenpaxos.echo
 
-import java.net.InetAddress
-import java.net.InetSocketAddress
 import frankenpaxos.Actor
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
+import io.prometheus.client.exporter.HTTPServer
+import io.prometheus.client.hotspot.DefaultExports
+import java.net.InetAddress
+import java.net.InetSocketAddress
 
 object ServerMain extends App {
   case class Flags(
       host: String = "localhost",
-      port: Int = 9000
+      port: Int = 9000,
+      prometheusHost: String = "0.0.0.0",
+      prometheusPort: Int = 8009
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
     opt[String]("host")
       .valueName("<host>")
       .action((x, f) => f.copy(host = x))
-      .text("Hostname")
+      .text(s"Hostname (default: ${Flags().host})")
 
     opt[Int]("port")
       .valueName("<port>")
       .action((x, f) => f.copy(port = x))
-      .text("Port")
+      .text(s"Port (default: ${Flags().port})")
+
+    opt[String]("prometheus_host")
+      .valueName("<host>")
+      .action((x, f) => f.copy(prometheusHost = x))
+      .text(s"Prometheus hostname (default: ${Flags().prometheusHost})")
+
+    opt[Int]("prometheus_port")
+      .valueName("<port>")
+      .action((x, f) => f.copy(prometheusPort = x))
+      .text(s"Prometheus port (default: ${Flags().prometheusPort})")
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
@@ -33,5 +47,12 @@ object ServerMain extends App {
   val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger)
   val address = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port))
-  new Server[NettyTcpTransport](address, transport, logger)
+  val server = new Server[NettyTcpTransport](address, transport, logger)
+
+  DefaultExports.initialize()
+  val prometheusServer =
+    new HTTPServer(flags.prometheusHost, flags.prometheusPort)
+  logger.info(
+    s"Prometheus server running on ${flags.prometheusHost}:${flags.prometheusPort}"
+  )
 }

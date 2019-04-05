@@ -12,29 +12,29 @@ object ClientMain extends App {
       serverHost: String = "localhost",
       serverPort: Int = 9000,
       host: String = "localhost",
-      port: Int = 9001
+      port: Int = 10000
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
     opt[String]("server_host")
       .valueName("<host>")
       .action((x, f) => f.copy(serverHost = x))
-      .text("Server hostname")
+      .text(s"Server hostname (default: ${Flags().serverHost})")
 
     opt[Int]("server_port")
       .valueName("<port>")
       .action((x, f) => f.copy(serverPort = x))
-      .text("Server port")
+      .text(s"Server port (default: ${Flags().serverPort})")
 
     opt[String]("host")
       .valueName("<host>")
       .action((x, f) => f.copy(host = x))
-      .text("Client hostname")
+      .text(s"Client hostname (default: ${Flags().host})")
 
     opt[Int]("port")
       .valueName("<port>")
       .action((x, f) => f.copy(port = x))
-      .text("Client port")
+      .text(s"Client port (default: ${Flags().port})")
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
