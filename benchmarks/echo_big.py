@@ -8,6 +8,7 @@ def _main(args) -> None:
             num_threads_per_client=num_threads_per_client,
             duration_seconds=duration_seconds,
             profiled=args.profile,
+            prometheus_scrape_interval_ms=500,
         )
         for num_clients in range(1, 30)
         for num_threads_per_client in [1]

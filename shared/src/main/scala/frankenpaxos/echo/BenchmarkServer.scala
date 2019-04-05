@@ -3,6 +3,9 @@ package frankenpaxos.echo
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.PrometheusCollectors
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import scala.scalajs.js.annotation._
@@ -20,11 +23,22 @@ object BenchmarkServer {
   val serializer = BenchmarkServerInboundSerializer
 }
 
+class BenchmarkServerMetrics(collectors: Collectors) {
+  val echoRequestsTotal: Counter = collectors.counter
+    .build()
+    .name("echo_requests_total")
+    .help("Total echo requests.")
+    .register()
+}
+
 @JSExportAll
 class BenchmarkServer[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
-    logger: Logger
+    logger: Logger,
+    metrics: BenchmarkServerMetrics = new BenchmarkServerMetrics(
+      PrometheusCollectors
+    )
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = BenchmarkServerInbound
   override def serializer = BenchmarkServer.serializer
@@ -35,6 +49,7 @@ class BenchmarkServer[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     val client =
       chan[BenchmarkClient[Transport]](src, BenchmarkClient.serializer)
+    metrics.echoRequestsTotal.inc()
     client.send(BenchmarkClientInbound(msg = request.msg))
   }
 }

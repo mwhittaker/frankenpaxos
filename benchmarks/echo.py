@@ -15,6 +15,8 @@ import os
 import pandas as pd
 import subprocess
 import time
+import yaml
+
 
 class Input(NamedTuple):
     net_name: str
@@ -22,6 +24,7 @@ class Input(NamedTuple):
     num_threads_per_client: int
     duration_seconds: float
     profiled: bool
+    prometheus_scrape_interval_ms: float
 
 
 class Output(NamedTuple):
@@ -70,6 +73,7 @@ class EchoNet(object):
     def server(self) -> Node:
         raise NotImplementedError()
 
+
 class SingleSwitchNet(EchoNet):
     def __init__(self, num_clients: int) -> None:
         self._clients: List[Node] = []
@@ -96,10 +100,47 @@ class SingleSwitchNet(EchoNet):
     def server(self) -> Node:
         return self._server
 
+
 def run_benchmark(bench: BenchmarkDirectory,
                   args: argparse.Namespace,
                   input: Input,
                   net: EchoNet) -> Output:
+    # Launch Prometheus.
+    #
+    # A Prometheus configuration file looks something like this:
+    #
+    #   global:
+    #     scrape_interval: 15s
+    #
+    #   scrape_configs:
+    #     - job_name: 'echo_server'
+    #       static_configs: [{targets: ['localhost:9090']}]
+    prometheus_config = {
+        'global': {
+            'scrape_interval': f'{input.prometheus_scrape_interval_ms}ms'
+        },
+        'scrape_configs': [
+            {
+                'job_name': 'echo_server',
+                'static_configs': [
+                    {'targets': [f'{net.server().IP()}:9001']},
+                ],
+            }
+        ],
+    }
+    bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
+
+    prometheus = bench.popen(
+        f=net.server().popen,
+        label='prometheus',
+        cmd = [
+            'prometheus',
+            f'--config.file={bench.abspath("prometheus.yml")}',
+            f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
+            '--log.level=debug',
+        ],
+    )
+
     # Launch server.
     server_proc = bench.popen(
         f=net.server().popen,
@@ -110,8 +151,10 @@ def run_benchmark(bench: BenchmarkDirectory,
             'frankenpaxos.echo.BenchmarkServerMain',
             '--host', net.server().IP(),
             '--port', '9000',
+            '--prometheus_host', net.server().IP(),
+            '--prometheus_port', '9001',
         ],
-        profile=args.profile
+        profile=input.profiled
     )
 
     # Launch clients.
@@ -139,8 +182,9 @@ def run_benchmark(bench: BenchmarkDirectory,
     for client_proc in client_procs:
         client_proc.wait()
 
-    # Kill server.
+    # Kill server and prometheus.
     server_proc.terminate()
+    prometheus.terminate()
 
     # Every client thread j on client i writes results to `client_i_j.csv`.  We
     # concatenate these results into a single CSV file.
@@ -189,7 +233,6 @@ def run_benchmark(bench: BenchmarkDirectory,
         p99_5_second_throughput = df['throughput_5s'].quantile(.99),
     )
 
-MakeNet = Callable[[argparse.Namespace, List[Input]], EchoNet]
 
 def run_suite(args: argparse.Namespace,
               inputs: List[Input],
@@ -219,13 +262,12 @@ def _main(args) -> None:
         Input(
             net_name='SingleSwitchNet',
             num_clients=num_clients,
-            num_threads_per_client=num_threads_per_client,
-            duration_seconds=duration_seconds,
+            num_threads_per_client=1,
+            duration_seconds=10,
             profiled=args.profile,
+            prometheus_scrape_interval_ms=200,
         )
-        for num_clients in [1]
-        for num_threads_per_client in [1, 2, 3]
-        for duration_seconds in [10]
+        for num_clients in [1, 2, 3]
     ]
 
     def make_net(input) -> EchoNet:
