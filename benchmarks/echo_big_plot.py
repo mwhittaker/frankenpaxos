@@ -5,7 +5,7 @@ import os
 import pandas as pd
 
 def plot_latency(df: pd.DataFrame, ax) -> None:
-    grouped = df.groupby('num_threads_per_client').agg([np.mean, np.std])
+    grouped = df.groupby('num_clients').agg([np.mean, np.std])
     columns = {
         'mean_latency': 'mean',
         'median_latency': 'median',
@@ -28,7 +28,7 @@ def plot_latency(df: pd.DataFrame, ax) -> None:
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
 def plot_1_second_throughput(df: pd.DataFrame, ax) -> None:
-    grouped = df.groupby('num_threads_per_client').agg([np.mean, np.std])
+    grouped = df.groupby('num_clients').agg([np.mean, np.std])
     columns = {
         'mean_1_second_throughput': 'mean',
         'median_1_second_throughput': 'median',
@@ -60,13 +60,12 @@ def main(args) -> None:
     num_plots = 2
     fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8))
 
-    plot_latency(df[df['num_clients'] == 1], ax[0])
-    plot_1_second_throughput(df[df['num_clients'] == 1], ax[1])
+    plot_latency(df, ax[0])
+    plot_1_second_throughput(df, ax[1])
 
     fig.set_tight_layout(True)
-    filename = os.path.join(args.output, 'echo.pdf')
-    fig.savefig(filename)
-    print(f'Wrote plot to {filename}.')
+    fig.savefig(args.output)
+    print(f'Wrote plot to {args.output}.')
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
@@ -78,8 +77,8 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '-o', '--output',
         type=str,
-        default='.',
-        help='Output directory'
+        default='echo_big.pdf',
+        help='Output filename.'
     )
     return parser
 

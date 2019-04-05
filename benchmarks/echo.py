@@ -8,7 +8,7 @@ from mininet.net import Mininet
 from mininet.node import Node
 from subprocess import Popen
 from tqdm import tqdm
-from typing import Dict, List, NamedTuple
+from typing import Callable, Dict, List, NamedTuple
 import argparse
 import csv
 import os
@@ -21,6 +21,7 @@ class Input(NamedTuple):
     num_clients: int
     num_threads_per_client: int
     duration_seconds: float
+    profiled: bool
 
 
 class Output(NamedTuple):
@@ -188,32 +189,49 @@ def run_benchmark(bench: BenchmarkDirectory,
         p99_5_second_throughput = df['throughput_5s'].quantile(.99),
     )
 
+MakeNet = Callable[[argparse.Namespace, List[Input]], EchoNet]
 
-def _main(args) -> None:
+def run_suite(args: argparse.Namespace,
+              inputs: List[Input],
+              make_net: Callable[[Input], EchoNet]) -> None:
     with SuiteDirectory(args.suite_directory, 'echo') as suite:
         print(f'Running benchmark suite in {suite.path}.')
         suite.write_dict('args.json', vars(args))
+        suite.write_string('inputs.txt', '\n'.join(str(i) for i in inputs))
+
         results_file = suite.create_file('results.csv')
         results_writer = csv.writer(results_file)
         results_writer.writerow(Input._fields + Output._fields)
 
-        inputs = [
-            Input(net_name='SingleSwitchNet',
-                  num_clients=num_clients,
-                  num_threads_per_client=num_threads_per_client,
-                  duration_seconds=15)
-            for (num_clients, num_threads_per_client) in
-                [x for n in range(1, 30) for x in [(1, n), (n, 1)]]
-        ] * 3
         for input in tqdm(inputs):
             with suite.benchmark_directory() as bench:
-                with SingleSwitchNet(num_clients=input.num_clients) as net:
+                with make_net(input) as net:
                     bench.write_string('input.txt', str(input))
                     bench.write_dict('input.json', input._asdict())
                     output = run_benchmark(bench, args, input, net)
                     row = [str(x) for x in list(input) + list(output)]
                     results_writer.writerow(row)
                     results_file.flush()
+
+
+def _main(args) -> None:
+    inputs = [
+        Input(
+            net_name='SingleSwitchNet',
+            num_clients=num_clients,
+            num_threads_per_client=num_threads_per_client,
+            duration_seconds=duration_seconds,
+            profiled=args.profile,
+        )
+        for num_clients in [1]
+        for num_threads_per_client in [1, 2, 3]
+        for duration_seconds in [10]
+    ]
+
+    def make_net(input) -> EchoNet:
+        return SingleSwitchNet(num_clients=input.num_clients)
+
+    run_suite(args, inputs, make_net)
 
 
 def get_parser() -> argparse.ArgumentParser:
