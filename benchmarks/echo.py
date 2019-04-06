@@ -1,7 +1,7 @@
 from . import proto_util
 from . import util
 from .benchmark import BenchmarkDirectory, SuiteDirectory
-from .prometheus import PrometheusServer
+from .prometheus import prometheus_config, PrometheusQueryer
 from .util import read_csvs, Reaped
 from contextlib import ExitStack
 from enum import Enum
@@ -25,15 +25,15 @@ class Input(NamedTuple):
     num_threads_per_client: int
     duration_seconds: float
     profiled: bool
-    prometheus_scrape_interval_ms: float
+    prometheus_scrape_interval_ms: int
 
 
 class Output(NamedTuple):
-    mean_latency: float
-    median_latency: float
-    p90_latency: float
-    p95_latency: float
-    p99_latency: float
+    mean_latency_ms: float
+    median_latency_ms: float
+    p90_latency_ms: float
+    p95_latency_ms: float
+    p99_latency_ms: float
 
     mean_1_second_throughput: float
     median_1_second_throughput: float
@@ -106,44 +106,6 @@ def run_benchmark(bench: BenchmarkDirectory,
                   args: argparse.Namespace,
                   input: Input,
                   net: EchoNet) -> Output:
-    # Launch Prometheus.
-    #
-    # A Prometheus configuration file looks something like this:
-    #
-    #   global:
-    #     scrape_interval: 15s
-    #
-    #   scrape_configs:
-    #     - job_name: 'echo_server'
-    #       static_configs: [{targets: ['localhost:9090']}]
-    prometheus_config = {
-        'global': {
-            'scrape_interval': f'{input.prometheus_scrape_interval_ms}ms'
-        },
-        'scrape_configs': [
-            {
-                'job_name': 'echo_server',
-                'static_configs': [
-                    {'targets': [f'{net.server().IP()}:9001']},
-                ],
-            }
-        ],
-    }
-    bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
-
-    prometheus = bench.popen(
-        f=net.server().popen,
-        label='prometheus',
-        cmd = [
-            'prometheus',
-            f'--config.file={bench.abspath("prometheus.yml")}',
-            f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
-            '--log.level=debug',
-        ],
-    )
-
-    time.sleep(3)
-
     # Launch server.
     server_proc = bench.popen(
         f=net.server().popen,
@@ -159,6 +121,23 @@ def run_benchmark(bench: BenchmarkDirectory,
         ],
         profile=input.profiled
     )
+
+    # Launch Prometheus, and give it some time to start.
+    config = prometheus_config(
+        input.prometheus_scrape_interval_ms,
+        {'echo_server': f'{net.server().IP()}:9001'}
+    )
+    bench.write_string('prometheus.yml', yaml.dump(config))
+    prometheus = bench.popen(
+        f=net.server().popen,
+        label='prometheus',
+        cmd = [
+            'prometheus',
+            f'--config.file={bench.abspath("prometheus.yml")}',
+            f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
+        ],
+    )
+    time.sleep(3)
 
     # Launch clients.
     client_procs = []
@@ -181,26 +160,20 @@ def run_benchmark(bench: BenchmarkDirectory,
         )
         client_procs.append(client_proc)
 
-    # Wait for clients to finish.
+    # Wait for experiment to finish.
     for client_proc in client_procs:
         client_proc.wait()
-
-    # Kill server and prometheus.
     server_proc.terminate()
     prometheus.terminate()
 
-    # Every client thread j on client i writes results to `client_i_j.csv`.  We
+    # Every client thread j on client i writes results to `client_i_j.csv`. We
     # concatenate these results into a single CSV file.
     client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
                    for i in range(input.num_clients)
                    for j in range(input.num_threads_per_client)]
-    df = read_csvs(client_csvs)
-    df['start'] = pd.to_datetime(df['start'])
-    df['stop'] = pd.to_datetime(df['stop'])
-    df = df.set_index('start').sort_index(0)
-    df['throughput_1s'] = util.throughput(df, 1000)
-    df['throughput_2s'] = util.throughput(df, 2000)
-    df['throughput_5s'] = util.throughput(df, 5000)
+    df = (read_csvs(client_csvs, parse_dates=['start', 'stop'])
+             .set_index('start')
+             .sort_index(0))
     df.to_csv(bench.abspath('data.csv'))
 
     # Since we concatenate and save the file, we can throw away the originals.
@@ -211,38 +184,42 @@ def run_benchmark(bench: BenchmarkDirectory,
     subprocess.call(['gzip', bench.abspath('data.csv')])
 
     # Next, we scrape data from Prometheus.
-    with PrometheusServer(bench.abspath('prometheus_data')) as p:
-        p_df = p.query('echo_requests_total[1y]')
-        p_df = p_df.rename(columns={p_df.columns[0]: 'echo_requests_total'})
-        p_df['throughput_1s'] = util.rate(p_df['echo_requests_total'], 1000)
-        p_df['throughput_2s'] = util.rate(p_df['echo_requests_total'], 2000)
-        p_df['throughput_5s'] = util.rate(p_df['echo_requests_total'], 5000)
-        p_df.to_csv(bench.abspath('prometheus_data.csv'))
+    pq = PrometheusQueryer(
+        tsdb_path=bench.abspath('prometheus_data'),
+        popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
+    )
+    p_df = pd.DataFrame()
+    p_df[['echo_requests_total']] = pq.query('echo_requests_total[1y]')
+    p_df.to_csv(bench.abspath('prometheus_data.csv'))
 
+    latency_ms = df['latency_nanos'] / 1e6
+    throughput_1s = util.throughput(df, 1000)
+    throughput_2s = util.throughput(df, 2000)
+    throughput_5s = util.throughput(df, 5000)
     return Output(
-        mean_latency = df['latency_nanos'].mean(),
-        median_latency = df['latency_nanos'].median(),
-        p90_latency = df['latency_nanos'].quantile(.90),
-        p95_latency = df['latency_nanos'].quantile(.95),
-        p99_latency = df['latency_nanos'].quantile(.99),
+        mean_latency_ms = latency_ms.mean(),
+        median_latency_ms = latency_ms.median(),
+        p90_latency_ms = latency_ms.quantile(.90),
+        p95_latency_ms = latency_ms.quantile(.95),
+        p99_latency_ms = latency_ms.quantile(.99),
 
-        mean_1_second_throughput = df['throughput_1s'].mean(),
-        median_1_second_throughput = df['throughput_1s'].median(),
-        p90_1_second_throughput = df['throughput_1s'].quantile(.90),
-        p95_1_second_throughput = df['throughput_1s'].quantile(.95),
-        p99_1_second_throughput = df['throughput_1s'].quantile(.99),
+        mean_1_second_throughput = throughput_1s.mean(),
+        median_1_second_throughput = throughput_1s.median(),
+        p90_1_second_throughput = throughput_1s.quantile(.90),
+        p95_1_second_throughput = throughput_1s.quantile(.95),
+        p99_1_second_throughput = throughput_1s.quantile(.99),
 
-        mean_2_second_throughput = df['throughput_2s'].mean(),
-        median_2_second_throughput = df['throughput_2s'].median(),
-        p90_2_second_throughput = df['throughput_2s'].quantile(.90),
-        p95_2_second_throughput = df['throughput_2s'].quantile(.95),
-        p99_2_second_throughput = df['throughput_2s'].quantile(.99),
+        mean_2_second_throughput = throughput_2s.mean(),
+        median_2_second_throughput = throughput_2s.median(),
+        p90_2_second_throughput = throughput_2s.quantile(.90),
+        p95_2_second_throughput = throughput_2s.quantile(.95),
+        p99_2_second_throughput = throughput_2s.quantile(.99),
 
-        mean_5_second_throughput = df['throughput_5s'].mean(),
-        median_5_second_throughput = df['throughput_5s'].median(),
-        p90_5_second_throughput = df['throughput_5s'].quantile(.90),
-        p95_5_second_throughput = df['throughput_5s'].quantile(.95),
-        p99_5_second_throughput = df['throughput_5s'].quantile(.99),
+        mean_5_second_throughput = throughput_5s.mean(),
+        median_5_second_throughput = throughput_5s.median(),
+        p90_5_second_throughput = throughput_5s.quantile(.90),
+        p95_5_second_throughput = throughput_5s.quantile(.95),
+        p99_5_second_throughput = throughput_5s.quantile(.99),
     )
 
 

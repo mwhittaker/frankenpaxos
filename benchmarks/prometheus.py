@@ -4,14 +4,34 @@ import requests
 import subprocess
 import time
 
-class PrometheusServer:
+
+def prometheus_config(scrape_interval_ms: int, jobs: Dict[str, str]):
+    """
+    prometheus_config returns a JSON representation of a prometheus.yml
+    configuration file. jobs maps job names to addresses.
+    """
+    return {
+        'global': {
+            'scrape_interval': f'{scrape_interval_ms}ms'
+        },
+        'scrape_configs': [
+            {
+                'job_name': job_name,
+                'static_configs': [{'targets': [address]}],
+            }
+            for (job_name, address) in jobs.items()
+        ],
+    }
+
+
+class PrometheusQueryer:
     """A queryable Prometheus server.
 
-    PrometheusServer can be used to execute PromQL [1] queries against
+    PrometheusQueryer can be used to execute PromQL [1] queries against
     Prometheus data stored in a data directory named `tsdb_path`. For example,
     imagine we have Prometheus data stored in `data/`. We can do the following:
 
-        with PrometheusServer('data/') as prometheus:
+        with PrometheusQueryer('data/') as prometheus:
             df = prometheus.query('up[24h]')
 
     `df` is the result of running the PromQL query `up[24h]` and might look
@@ -34,7 +54,8 @@ class PrometheusServer:
     [1]: https://prometheus.io/docs/prometheus/latest/querying/basics/
     """
 
-    def __init__(self, tsdb_path: str) -> None:
+    # popen is a function like Popen.
+    def __init__(self, tsdb_path: str, popen = subprocess.Popen) -> None:
         # We launch prometheus with an empty configuration file.
         empty_prometheus_config = '/tmp/empty_prometheus.yml'
         with open(empty_prometheus_config, 'w') as f:
@@ -48,11 +69,9 @@ class PrometheusServer:
             f'--storage.tsdb.path={tsdb_path}',
             f'--web.listen-address={self.address}',
         ]
-        self.proc = subprocess.Popen(cmd,
-                                     stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL)
+        self.proc = popen(cmd)
 
-    def __enter__(self) -> 'PrometheusServer':
+    def __enter__(self) -> 'PrometheusQueryer':
         return self
 
     def __exit__(self, cls, exn, traceback) -> None:

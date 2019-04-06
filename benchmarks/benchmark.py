@@ -1,6 +1,6 @@
-from .util import Reaped
-from contextlib import ExitStack
+from . import util
 from typing import Any, Dict, IO, List, Union
+import contextlib
 import datetime
 import json
 import os
@@ -63,7 +63,7 @@ class BenchmarkDirectory(object):
         # We want to ensure that all processes run within a benchmark are
         # terminated if the benchmark is killed. Thus, we put all processes in
         # this stack.
-        self.process_stack = ExitStack()
+        self.process_stack = contextlib.ExitStack()
 
         # A mapping from pid to command label.
         self.pids: Dict[int, str] = dict()
@@ -145,7 +145,7 @@ class BenchmarkDirectory(object):
             self.pids[proc.pid] = label
 
         # Make sure the process is eventually killed.
-        self.process_stack.enter_context(Reaped(proc))
+        self.process_stack.enter_context(util.Reaped(proc))
         return proc
 
 def _random_string(n: int) -> str:

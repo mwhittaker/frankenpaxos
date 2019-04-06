@@ -5,73 +5,79 @@ import matplotlib.pyplot as plt
 import os
 import pandas as pd
 
+def plot_latency(args: argparse.Namespace,
+                 ax: plt.Axes,
+                 df: pd.DataFrame) -> None:
+    latency_ms = df['latency_nanos'] / 1e6
+    if args.stds:
+        mu = latency_ms.mean()
+        sigma = latency_ms.std()
+        df = df[np.abs(latency_ms - mu) <= (args.stds * sigma)]
+
+    ax.plot_date(latency_ms.index,
+                 latency_ms.rolling('250ms').mean(),
+                 label='250ms',
+                 fmt='-',
+                 alpha=0.5)
+    ax.plot_date(latency_ms.index,
+                 latency_ms.rolling('500ms').mean(),
+                 label='500ms',
+                 fmt='-',
+                 alpha=0.7)
+    ax.plot_date(latency_ms.index,
+                 latency_ms.rolling('1s').mean(),
+                 label='1s',
+                 fmt='-')
+    ax.set_title('Latency')
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Latency (ms)')
+
+def plot_throughput(args: argparse.Namespace,
+                    ax: plt.Axes,
+                    df: pd.DataFrame) -> None:
+    # Plot throughput.
+    ax.plot_date(df.index,
+                 util.throughput(df, 250),
+                 label='250ms',
+                 fmt='-',
+                 alpha=0.5)
+    ax.plot_date(df.index,
+                 util.throughput(df, 500),
+                 label='500ms',
+                 fmt='-',
+                 alpha=0.7)
+    ax.plot_date(df.index,
+                 util.throughput(df, 1000),
+                 label='1s',
+                 fmt='-')
+    ax.set_title('Throughput')
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Throughput')
+
 def main(args) -> None:
-    df = pd.read_csv(args.data_csv)
-    df['start'] = pd.to_datetime(df['start'])
-    df['stop'] = pd.to_datetime(df['stop'])
-    df['latency_millis'] = df['latency_nanos'] / 1e6
-    df = df.set_index('start').sort_index(0)
+    df = pd.read_csv(args.data_csv, parse_dates=['start', 'stop'])
+    df.index = df['start']
+
+    # Drop first bit of data.
+    start_time = df['start'].iloc[0]
+    new_start_time = start_time + pd.DateOffset(seconds=args.drop)
+    df = df[df['start'] >= new_start_time]
 
     # See [1] for figure size defaults.
     #
     # [1]: https://matplotlib.org/api/_as_gen/matplotlib.pyplot.figure.html
     fig, ax = plt.subplots(2, 1, figsize=(6.4, 2 * 4.8))
-
-    # Plot latency.
-    if args.stds:
-        lm = df['latency_millis']
-        stripped = df[np.abs(lm - lm.mean()) <= (args.stds * lm.std())]
-    else:
-        stripped = df
-
-    lm = df['latency_millis']
-    ax[0].plot_date(
-        stripped.index,
-        stripped['latency_millis'].rolling('100ms').mean(),
-        label='100ms',
-        fmt='-')
-    ax[0].plot_date(
-        stripped.index,
-        stripped['latency_millis'].rolling('500ms').mean(),
-        label='500ms',
-        fmt='-')
-    ax[0].plot_date(
-        stripped.index,
-        stripped['latency_millis'].rolling('1s').mean(),
-        label='1s',
-        fmt='-')
-    ax[0].set_title('Latency')
-    ax[0].set_xlabel('Time')
-    ax[0].set_ylabel('Latency (ms)')
-    ax[0].grid()
-    ax[0].legend(loc='best')
-
-    # Plot throughput.
-    ax[1].plot_date(
-        df.index,
-        util.throughput(df, 100),
-        label='100ms',
-        fmt='-')
-    ax[1].plot_date(
-        df.index,
-        util.throughput(df, 500),
-        label='500ms',
-        fmt='-')
-    ax[1].plot_date(
-        df.index,
-        util.throughput(df, 1000),
-        label='1s',
-        fmt='-')
-    ax[1].set_title('Throughput')
-    ax[1].set_xlabel('Time')
-    ax[1].set_ylabel('Throughput')
-    ax[1].grid()
-    ax[1].legend(loc='best')
-
-    # Save figure.
+    plot_latency(args, ax[0], df)
+    plot_throughput(args, ax[1], df)
+    for axes in ax:
+        axes.grid()
+        axes.legend(loc='best')
+        for label in axes.get_xticklabels():
+            label.set_ha('right')
+            label.set_rotation(20)
     fig.set_tight_layout(True)
     fig.savefig(args.output)
-    print(f'Writing plot to {args.output}.')
+    print(f'Wrote plot to {args.output}.')
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
@@ -79,6 +85,12 @@ def get_parser() -> argparse.ArgumentParser:
         'data_csv',
         type=str,
         help='data.csv file'
+    )
+    parser.add_argument(
+        '-d', '--drop',
+        type=float,
+        default=0,
+        help='Drop this number of seconds from the beginning of the benchmark.'
     )
     parser.add_argument(
         '-s', '--stds',
@@ -95,4 +107,6 @@ def get_parser() -> argparse.ArgumentParser:
     return parser
 
 if __name__ == '__main__':
+    from pandas.plotting import register_matplotlib_converters
+    register_matplotlib_converters()
     main(get_parser().parse_args())

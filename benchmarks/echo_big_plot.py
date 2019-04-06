@@ -7,15 +7,15 @@ import pandas as pd
 def plot_latency(df: pd.DataFrame, ax) -> None:
     grouped = df.groupby('num_clients').agg([np.mean, np.std])
     columns = {
-        'mean_latency': 'mean',
-        'median_latency': 'median',
-        'p90_latency': 'P90',
-        'p95_latency': 'P95',
-        'p99_latency': 'P99',
+        'mean_latency_ms': 'mean',
+        'median_latency_ms': 'median',
+        'p90_latency_ms': 'P90',
+        'p95_latency_ms': 'P95',
+        'p99_latency_ms': 'P99',
     }
     for column in columns:
-        mean = grouped[column]['mean'] / 1e6
-        std = grouped[column]['std'] / 1e6
+        mean = grouped[column]['mean']
+        std = grouped[column]['std']
         line = ax.plot(mean, '.-', label=columns[column])[0]
         color = line.get_color()
         ax.fill_between(grouped.index, mean - std, mean + std, color=color,

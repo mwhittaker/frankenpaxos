@@ -25,7 +25,7 @@ class Reaped(object):
         self.p.terminate()
 
 
-def read_csvs(filenames: List[str]) -> pd.DataFrame:
+def read_csvs(filenames: List[str], **kwargs) -> pd.DataFrame:
     """
     pd.read_csv reads in a CSV file and converts it to a dataframe. read_csvs
     reads in a _set_ of CSVs, concatenates them together, and converts the
@@ -33,7 +33,7 @@ def read_csvs(filenames: List[str]) -> pd.DataFrame:
     """
     dfs: List[pd.DataFrame] = []
     for filename in filenames:
-        dfs.append(pd.read_csv(filename, header=0))
+        dfs.append(pd.read_csv(filename, header=0, **kwargs))
     return pd.concat(dfs, ignore_index=True)
 
 
