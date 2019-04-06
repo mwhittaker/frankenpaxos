@@ -3,16 +3,18 @@ import contextlib
 import pandas as pd
 import subprocess
 
-# Imagine you have the following python code in a file called sleep.py. The
-# code creates a subprocess and waits for it to terminate.
-#
-#   p = subprocess.Popen(['sleep', '100'])
-#   p.wait()
-#
-# If you run `python sleep.py` and then kill the process before it terminates,
-# sometimes the subprocess lives on. The Reaped context manager ensures that
-# the process is killed, even if an exception is thrown.
 class Reaped(object):
+    """
+    Imagine you have the following python code in a file called sleep.py. The
+    code creates a subprocess and waits for it to terminate.
+
+      p = subprocess.Popen(['sleep', '100'])
+      p.wait()
+
+    If you run `python sleep.py` and then kill the process before it terminates,
+    sometimes the subprocess lives on. The Reaped context manager ensures that
+    the process is killed, even if an exception is thrown.
+    """
     def __init__(self, p: subprocess.Popen) -> None:
         self.p = p
 
@@ -23,47 +25,88 @@ class Reaped(object):
         self.p.terminate()
 
 
-# pd.read_csv reads in a CSV file and converts it to a dataframe. read_csvs
-# reads in a _set_ of CSVs, concatenates them together, and converts the
-# concatenation to a dataframe.
 def read_csvs(filenames: List[str]) -> pd.DataFrame:
+    """
+    pd.read_csv reads in a CSV file and converts it to a dataframe. read_csvs
+    reads in a _set_ of CSVs, concatenates them together, and converts the
+    concatenation to a dataframe.
+    """
     dfs: List[pd.DataFrame] = []
     for filename in filenames:
         dfs.append(pd.read_csv(filename, header=0))
     return pd.concat(dfs, ignore_index=True)
 
 
-# Consider a timestamp indexed dataframe:
-#
-#                 latency
-#   11:00:01 am | 100     |
-#   11:00:03 am | 200     |
-#   11:00:54 am | 300     |
-#   11:01:34 am | 400     |
-#   11:02:16 am | 500     |
-#
-# Imagine we divide the data into 1 minute rolling windows with every window
-# having its right edge be a entry in the dataframe. We'd get the following
-# windows and latencies:
-#
-#                               latencies
-#   10:59:01 am - 11:00:01 am | [100]           |
-#   10:59:03 am - 11:00:03 am | [100, 200]      |
-#   10:59:54 am - 11:00:54 am | [100, 200, 300] |
-#   11:00:34 am - 11:01:34 am | [300, 400]      |
-#   11:01:16 am - 11:02:16 am | [300, 400, 500] |
-#
-# If we count the number of entries in each window and divide by the window
-# size, we get the throughput of each window measured in events per second.
-#
-#                               throughput
-#   10:59:01 am - 11:00:01 am | 1 / 60     |
-#   10:59:03 am - 11:00:03 am | 2 / 60     |
-#   10:59:54 am - 11:00:54 am | 3 / 60     |
-#   11:00:34 am - 11:01:34 am | 2 / 60     |
-#   11:01:16 am - 11:02:16 am | 3 / 60     |
-#
-# This is what `throughput` computes.
 def throughput(df: pd.DataFrame, window_size_ms: float) -> pd.Series:
+    """
+    Consider a timestamp indexed dataframe:
+
+                    latency
+      11:00:01 am | 100     |
+      11:00:03 am | 200     |
+      11:00:54 am | 300     |
+      11:01:34 am | 400     |
+      11:02:16 am | 500     |
+
+    Imagine we divide the data into 1 minute rolling windows with every window
+    having its right edge be a entry in the dataframe. We'd get the following
+    windows and latencies:
+
+                                  latencies
+      10:59:01 am - 11:00:01 am | [100]           |
+      10:59:03 am - 11:00:03 am | [100, 200]      |
+      10:59:54 am - 11:00:54 am | [100, 200, 300] |
+      11:00:34 am - 11:01:34 am | [300, 400]      |
+      11:01:16 am - 11:02:16 am | [300, 400, 500] |
+
+    If we count the number of entries in each window and divide by the window
+    size, we get the throughput of each window measured in events per second.
+
+                                  throughput
+      10:59:01 am - 11:00:01 am | 1 / 60     |
+      10:59:03 am - 11:00:03 am | 2 / 60     |
+      10:59:54 am - 11:00:54 am | 3 / 60     |
+      11:00:34 am - 11:01:34 am | 2 / 60     |
+      11:01:16 am - 11:02:16 am | 3 / 60     |
+
+    This is what `throughput` computes.
+    """
     s = pd.Series(0, index=df.sort_index(0).index)
     return s.rolling(f'{window_size_ms}ms').count() / (window_size_ms / 1000)
+
+
+def rate(s: pd.Series, window_size_ms: float) -> pd.Series:
+    """
+    Consider a series of data `s` that looks like this:
+
+        | 12:00:01.00 | 10  |
+        | 12:00:01.25 | 20  |
+        | 12:00:01.50 | 30  |
+        | 12:00:02.50 | 100 |
+
+    `rate(s, n)` returns the rate of change of the value in `s` computed over
+    sliding windows of `n` milliseconds. Every window's right boundary is a
+    value in `s`. In this example, `rate(s, 500)` returns the following:
+
+        | 12:00:01.00 | na | # Only one point in window.
+        | 12:00:01.25 | 40 | # (20 - 10) / 0.25 s
+        | 12:00:01.50 | 40 | # (30 - 10) / 0.5 s
+        | 12:00:02.50 | na | # Only one point in wndow.
+
+    And `rate(s, 1000)` returns the following
+
+        | 12:00:01.00 | na | # Only one point in window.
+        | 12:00:01.25 | 40 | # (20 - 10) / 0.25 s
+        | 12:00:01.50 | 40 | # (30 - 10) / 0.5 s
+        | 12:00:02.50 | 70 | # (100 - 30) / 1s
+    """
+    def _dxdt(s: pd.Series) -> float:
+        dx = s.iloc[-1] - s.iloc[0]
+        dt = (s.index[-1] - s.index[0]).total_seconds()
+        return dx / dt
+
+    # We set min_periods=2 because if we only have one data point in a window,
+    # the rate in the window is ill defined.
+    return (s.sort_index(0)
+             .rolling(f'{window_size_ms}ms', min_periods=2)
+             .apply(_dxdt, raw=False))

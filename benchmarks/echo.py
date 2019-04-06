@@ -1,6 +1,7 @@
 from . import proto_util
 from . import util
 from .benchmark import BenchmarkDirectory, SuiteDirectory
+from .prometheus import PrometheusServer
 from .util import read_csvs, Reaped
 from contextlib import ExitStack
 from enum import Enum
@@ -141,6 +142,8 @@ def run_benchmark(bench: BenchmarkDirectory,
         ],
     )
 
+    time.sleep(3)
+
     # Launch server.
     server_proc = bench.popen(
         f=net.server().popen,
@@ -206,6 +209,15 @@ def run_benchmark(bench: BenchmarkDirectory,
 
     # We also compress the output data since it can get big.
     subprocess.call(['gzip', bench.abspath('data.csv')])
+
+    # Next, we scrape data from Prometheus.
+    with PrometheusServer(bench.abspath('prometheus_data')) as p:
+        p_df = p.query('echo_requests_total[1y]')
+        p_df = p_df.rename(columns={p_df.columns[0]: 'echo_requests_total'})
+        p_df['throughput_1s'] = util.rate(p_df['echo_requests_total'], 1000)
+        p_df['throughput_2s'] = util.rate(p_df['echo_requests_total'], 2000)
+        p_df['throughput_5s'] = util.rate(p_df['echo_requests_total'], 5000)
+        p_df.to_csv(bench.abspath('prometheus_data.csv'))
 
     return Output(
         mean_latency = df['latency_nanos'].mean(),
