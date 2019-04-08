@@ -37,7 +37,9 @@ class FastMultiPaxos(val f: Int) {
       new Client[FakeTransport](FakeTransportAddress(s"Client $i"),
                                 transport,
                                 logger,
-                                config)
+                                config,
+                                ClientOptions.default,
+                                new ClientMetrics(FakeCollectors))
 
   // Leaders.
   val leaders = for (i <- 1 to numLeaders)

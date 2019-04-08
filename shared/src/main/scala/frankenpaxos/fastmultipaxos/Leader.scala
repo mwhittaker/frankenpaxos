@@ -88,11 +88,6 @@ class LeaderMetrics(collectors: Collectors) {
     .name("fast_multipaxos_leader_next_slot")
     .help("The next free slot in the log.")
     .register()
-
-  // TODO(mwhittaker): Gauges for
-  // - leader changes
-  // - current state?
-  // - stuck?
 }
 
 @JSExportAll

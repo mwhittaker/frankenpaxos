@@ -4,6 +4,7 @@ import frankenpaxos.Actor
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
+import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.AppendLog
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
@@ -46,7 +47,12 @@ class FastMultiPaxos {
   val clients = for (i <- 1 to 3) yield {
     val logger = new JsLogger()
     val address = JsTransportAddress(s"Client $i")
-    val client = new Client[JsTransport](address, transport, logger, config)
+    val client = new Client[JsTransport](address,
+                                         transport,
+                                         logger,
+                                         config,
+                                         ClientOptions.default,
+                                         new ClientMetrics(FakeCollectors))
     (logger, client)
   }
   val (client1logger, client1) = clients(0)
@@ -59,7 +65,8 @@ class FastMultiPaxos {
                                          transport,
                                          new JsLogger(),
                                          config,
-                                         new AppendLog())
+                                         new AppendLog(),
+                                         new LeaderMetrics(FakeCollectors))
     (logger, leader)
   }
   val (leader1logger, leader1) = leaders(0)

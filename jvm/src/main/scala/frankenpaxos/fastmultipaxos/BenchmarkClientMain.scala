@@ -5,6 +5,9 @@ import frankenpaxos.Actor
 import frankenpaxos.FileLogger
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
+import frankenpaxos.PrintLogger
+import io.prometheus.client.exporter.HTTPServer
+import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -14,6 +17,8 @@ object BenchmarkClientMain extends App {
   case class Flags(
       host: String = "localhost",
       port: Int = 9000,
+      prometheusHost: String = "0.0.0.0",
+      prometheusPort: Int = 8009,
       paxosConfigFile: File = new File("."),
       options: ClientOptions = ClientOptions.default,
       duration: Duration = 5 seconds,
@@ -31,6 +36,18 @@ object BenchmarkClientMain extends App {
       .valueName("<port>")
       .action((x, f) => f.copy(port = x))
       .text("Client port")
+
+    opt[String]("prometheus_host")
+      .valueName("<host>")
+      .action((x, f) => f.copy(prometheusHost = x))
+      .text(s"Prometheus hostname (default: ${Flags().prometheusHost})")
+
+    opt[Int]("prometheus_port")
+      .valueName("<port>")
+      .action((x, f) => f.copy(prometheusPort = x))
+      .text(
+        s"Prometheus port; -1 to disable (default: ${Flags().prometheusPort})"
+      )
 
     opt[File]('c', "config")
       .required()
@@ -68,6 +85,23 @@ object BenchmarkClientMain extends App {
     case None        => ???
   }
 
+  // Start prometheus.
+  val logger = new PrintLogger()
+  val prometheusServer = if (flags.prometheusPort != -1) {
+    DefaultExports.initialize()
+    logger.info(
+      s"Prometheus server running on ${flags.prometheusHost}:" +
+        s"${flags.prometheusPort}"
+    )
+    Some(new HTTPServer(flags.prometheusHost, flags.prometheusPort))
+  } else {
+    logger.info(
+      s"Prometheus server not running because a port of -1 was given."
+    )
+    None
+  }
+
+  // Start clients.
   val startTime = java.time.Instant.now()
   val stopTime =
     startTime.plus(java.time.Duration.ofNanos(flags.duration.toNanos))
@@ -122,4 +156,6 @@ object BenchmarkClientMain extends App {
   for (thread <- threads) {
     thread.join()
   }
+
+  prometheusServer.foreach(_.stop())
 }

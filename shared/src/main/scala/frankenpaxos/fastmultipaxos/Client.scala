@@ -6,7 +6,12 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import scala.concurrent.{Future, Promise}
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.Gauge
+import frankenpaxos.monitoring.PrometheusCollectors
+import scala.concurrent.Future
+import scala.concurrent.Promise
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -35,12 +40,22 @@ object ClientOptions {
 }
 
 @JSExportAll
+class ClientMetrics(collectors: Collectors) {
+  val responsesTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_client_responses_total")
+    .help("Total number of successful client responses.")
+    .register()
+}
+
+@JSExportAll
 class Client[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
-    options: ClientOptions = ClientOptions.default
+    options: ClientOptions = ClientOptions.default,
+    metrics: ClientMetrics = new ClientMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   // Fields ////////////////////////////////////////////////////////////////////
   override type InboundMessage = ClientInbound
@@ -185,13 +200,18 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           pendingCommand = None
           reproposeTimer.stop()
           promise.success(proposeReply.result.toByteArray())
+          metrics.responsesTotal.inc()
         } else {
-          logger.warn(s"""Received a reply for unpending command with id
-            |'${proposeReply.clientId}'.""".stripMargin)
+          logger.warn(
+            s"Received a reply for unpending command with id " +
+              s"'${proposeReply.clientId}'."
+          )
         }
       case None =>
-        logger.warn(s"""Received a reply for unpending command with id
-          |'${proposeReply.clientId}'.""".stripMargin)
+        logger.warn(
+          s"Received a reply for unpending command with id " +
+            s"'${proposeReply.clientId}'."
+        )
     }
   }
 

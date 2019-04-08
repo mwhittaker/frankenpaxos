@@ -216,7 +216,10 @@ def run_benchmark(bench: BenchmarkDirectory,
     # Launch Prometheus.
     prometheus_config = prometheus.prometheus_config(
         input.prometheus_scrape_interval_ms,
-        {'fast_multipaxos_leader': [f'{l.IP()}:12345' for l in net.leaders()]}
+        {
+          'fast_multipaxos_leader': [f'{l.IP()}:12345' for l in net.leaders()],
+          'fast_multipaxos_client': [f'{c.IP()}:12345' for c in net.clients()],
+        }
     )
     bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
     prometheus_server = bench.popen(
@@ -244,7 +247,9 @@ def run_benchmark(bench: BenchmarkDirectory,
                 '-cp', os.path.abspath(args.jar),
                 'frankenpaxos.fastmultipaxos.BenchmarkClientMain',
                 '--host', host.IP(),
-                '--port', str(11000),
+                '--port', "11000",
+                '--prometheus_host', host.IP(),
+                '--prometheus_port', "12345",
                 '--config', config_filename,
                 '--repropose_period',
                     f'{input.client_repropose_period_seconds}s',
@@ -283,8 +288,22 @@ def run_benchmark(bench: BenchmarkDirectory,
         tsdb_path=bench.abspath('prometheus_data'),
         popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
     )
-    p_df = pd.DataFrame()
-    p_df = pq.query('fast_multipaxos_leader_requests_total[1y]')
+    p_df = pq.query(
+        '{__name__=~"fast_multipaxos_.*", job=~"fast_multipaxos_.*"}[1y]')
+    def _rename(old_column) -> str:
+        address_to_instance_name = {
+            **{f'{host.IP()}:12345': f'leader_{i}'
+               for (i, host) in enumerate(net.leaders())},
+            **{f'{host.IP()}:12345': f'client_{i}'
+               for (i, host) in enumerate(net.clients())},
+        }
+        label = dict(old_column)
+        instance_name = address_to_instance_name[label["instance"]]
+        if "type" in label:
+            return f'{label["__name__"]}_{label["type"]}_{instance_name}'
+        else:
+            return f'{label["__name__"]}_{instance_name}'
+    p_df = p_df.rename(columns=_rename)
     p_df.to_csv(bench.abspath('prometheus_data.csv'))
 
     latency_ms = df['latency_nanos'] / 1e6
