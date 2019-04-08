@@ -40,7 +40,7 @@ class BenchmarkClient[Transport <: frankenpaxos.Transport[Transport]](
     chan[BenchmarkServer[Transport]](dstAddress, BenchmarkServer.serializer)
 
   private val latencyWriter = CSVWriter.open(new File(outputFilename))
-  latencyWriter.writeRow(Seq("address", "start", "stop", "latency_nanos"))
+  latencyWriter.writeRow(Seq("start", "stop", "latency_nanos", "address"))
 
   private val startTimeNanos = mutable.Buffer[Long]()
   private val startTimes = mutable.Buffer[java.time.Instant]()
@@ -61,10 +61,10 @@ class BenchmarkClient[Transport <: frankenpaxos.Transport[Transport]](
 
     latencyWriter.writeRow(
       Seq(
-        srcAddress.toString(),
         startTime.toString(),
         stopTime.toString(),
-        (stopTimeNano - startTimeNano).toString()
+        (stopTimeNano - startTimeNano).toString(),
+        srcAddress.toString()
       )
     )
   }
