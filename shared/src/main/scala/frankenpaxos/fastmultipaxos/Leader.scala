@@ -43,12 +43,17 @@ class LeaderMetrics(collectors: Collectors) {
     .help("Total number of executed state machine commands.")
     .register()
 
-  val distinctExecutedCommandsTotal: Counter = collectors.counter
+  val executedNoopsTotal: Counter = collectors.counter
     .build()
-    .name("fast_multipaxos_leader_distinct_executed_commands_total")
-    .help("Total number of _distinct_ executed state machine commands.")
+    .name("fast_multipaxos_leader_executed_noops_total")
+    .help("Total number of \"executed\" noops.")
     .register()
 
+  val repeatedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_repeated_commands_total")
+    .help("Total number of commands that were chosen but already executed.")
+    .register()
   // TODO(mwhittaker): Gauges for
   // - chosen watermark
   // - next slot
@@ -919,6 +924,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           if (!executed) {
             val output = stateMachine.run(command.toByteArray())
             clientTable(clientAddress) = (clientId, output)
+            metrics.executedCommandsTotal.inc()
 
             // Note that only the leader replies to the client since
             // ProposeReplies include the round of the leader, and only the
@@ -934,8 +940,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 )
               )
             }
+          } else {
+            metrics.repeatedCommandsTotal.inc()
           }
-        case ENoop => // Do nothing.
+        case ENoop =>
+          // Do nothing.
+          metrics.executedNoopsTotal.inc()
       }
       chosenWatermark += 1
     }
