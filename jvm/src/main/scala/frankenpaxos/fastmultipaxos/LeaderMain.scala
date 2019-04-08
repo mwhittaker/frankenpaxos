@@ -6,13 +6,17 @@ import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.statemachine
 import frankenpaxos.statemachine.Flags.stateMachineTypeRead
+import io.prometheus.client.exporter.HTTPServer
+import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
 
 object LeaderMain extends App {
   case class Flags(
       index: Int = -1,
       paxosConfigFile: File = new File("."),
-      stateMachineType: statemachine.StateMachineType = statemachine.TRegister
+      stateMachineType: statemachine.StateMachineType = statemachine.TRegister,
+      prometheusHost: String = "0.0.0.0",
+      prometheusPort: Int = 8009
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
@@ -31,7 +35,19 @@ object LeaderMain extends App {
     opt[statemachine.StateMachineType]('s', "state_machine")
       .valueName(statemachine.Flags.valueName)
       .action((x, f) => f.copy(stateMachineType = x))
-      .text("State machine type")
+      .text(s"State machine type (default: ${Flags().stateMachineType})")
+
+    opt[String]("prometheus_host")
+      .valueName("<host>")
+      .action((x, f) => f.copy(prometheusHost = x))
+      .text(s"Prometheus hostname (default: ${Flags().prometheusHost})")
+
+    opt[Int]("prometheus_port")
+      .valueName("<port>")
+      .action((x, f) => f.copy(prometheusPort = x))
+      .text(
+        s"Prometheus port; -1 to disable (default: ${Flags().prometheusPort})"
+      )
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
@@ -44,9 +60,23 @@ object LeaderMain extends App {
   val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
   val address = config.leaderAddresses(flags.index)
   val stateMachine = statemachine.Flags.make(flags.stateMachineType)
-  new Leader[NettyTcpTransport](address,
-                                transport,
-                                logger,
-                                config,
-                                stateMachine)
+  val server = new Leader[NettyTcpTransport](address,
+                                             transport,
+                                             logger,
+                                             config,
+                                             stateMachine)
+
+  if (flags.prometheusPort != -1) {
+    DefaultExports.initialize()
+    val prometheusServer =
+      new HTTPServer(flags.prometheusHost, flags.prometheusPort)
+    logger.info(
+      s"Prometheus server running on ${flags.prometheusHost}:" +
+        s"${flags.prometheusPort}"
+    )
+  } else {
+    logger.info(
+      s"Prometheus server not running because a port of -1 was given."
+    )
+  }
 }

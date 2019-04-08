@@ -1,20 +1,22 @@
+from . import prometheus
 from . import proto_util
 from . import util
+from . import util
 from .benchmark import BenchmarkDirectory, SuiteDirectory
-from .util import read_csvs, Reaped
 from contextlib import ExitStack
 from enum import Enum
 from mininet.net import Mininet
 from mininet.node import Node
 from subprocess import Popen
 from tqdm import tqdm
-from typing import Dict, List, NamedTuple
+from typing import Callable, Dict, List, NamedTuple
 import argparse
 import csv
 import os
 import pandas as pd
 import subprocess
 import time
+import yaml
 
 
 class RoundSystemType(Enum):
@@ -30,6 +32,9 @@ class Input(NamedTuple):
     num_clients: int
     num_threads_per_client: int
     round_system_type: str
+    profiled: bool
+    monitored: bool
+    prometheus_scrape_interval_ms: int
 
     # Benchmark parameters.
     duration_seconds: float
@@ -40,11 +45,11 @@ class Input(NamedTuple):
 
 
 class Output(NamedTuple):
-    mean_latency: float
-    median_latency: float
-    p90_latency: float
-    p95_latency: float
-    p99_latency: float
+    mean_latency_ms: float
+    median_latency_ms: float
+    p90_latency_ms: float
+    p95_latency_ms: float
+    p99_latency_ms: float
 
     mean_1_second_throughput: float
     median_1_second_throughput: float
@@ -201,10 +206,28 @@ def run_benchmark(bench: BenchmarkDirectory,
                 'frankenpaxos.fastmultipaxos.LeaderMain',
                 '--index', str(i),
                 '--config', config_filename,
+                '--prometheus_host', host.IP(),
+                '--prometheus_port', '12345',
             ],
             profile=args.profile,
         )
         leader_procs.append(proc)
+
+    # Launch Prometheus.
+    prometheus_config = prometheus.prometheus_config(
+        input.prometheus_scrape_interval_ms,
+        {'fast_multipaxos_leader': [f'{l.IP()}:12345' for l in net.leaders()]}
+    )
+    bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
+    prometheus_server = bench.popen(
+        f=net.leaders()[0].popen,
+        label='prometheus',
+        cmd = [
+            'prometheus',
+            f'--config.file={bench.abspath("prometheus.yml")}',
+            f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
+        ],
+    )
 
     # Wait a bit so that a stable leader can elect itself. If we start
     # clients too soon, they may not talk to a stable leader.
@@ -232,10 +255,10 @@ def run_benchmark(bench: BenchmarkDirectory,
         )
         client_procs.append(proc)
 
-    # Wait for clients to finish and then terminate leaders and acceptors.
+    # Wait for clients to finish and then terminate everything.
     for proc in client_procs:
         proc.wait()
-    for proc in leader_procs + acceptor_procs:
+    for proc in leader_procs + acceptor_procs + [prometheus_server]:
         proc.terminate()
 
     # Every client thread j on client i writes results to `client_i_j.csv`.
@@ -243,13 +266,9 @@ def run_benchmark(bench: BenchmarkDirectory,
     client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
                    for i in range(input.num_clients)
                    for j in range(input.num_threads_per_client)]
-    df = read_csvs(client_csvs)
-    df['start'] = pd.to_datetime(df['start'])
-    df['stop'] = pd.to_datetime(df['stop'])
-    df = df.set_index('start').sort_index(0)
-    df['throughput_1s'] = util.throughput(df, 1000)
-    df['throughput_2s'] = util.throughput(df, 2000)
-    df['throughput_5s'] = util.throughput(df, 5000)
+    df = (util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
+              .set_index('start')
+              .sort_index(0))
     df.to_csv(bench.abspath('data.csv'))
 
     # Since we concatenate and save the file, we can throw away the originals.
@@ -259,59 +278,61 @@ def run_benchmark(bench: BenchmarkDirectory,
     # We also compress the output data since it can get big.
     subprocess.call(['gzip', bench.abspath('data.csv')])
 
+    # Scrape data from Prometheus.
+    pq = prometheus.PrometheusQueryer(
+        tsdb_path=bench.abspath('prometheus_data'),
+        popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
+    )
+    p_df = pd.DataFrame()
+    p_df = pq.query('fast_multipaxos_leader_requests_total[1y]')
+    p_df.to_csv(bench.abspath('prometheus_data.csv'))
+
+    latency_ms = df['latency_nanos'] / 1e6
+    throughput_1s = util.throughput(df, 1000)
+    throughput_2s = util.throughput(df, 2000)
+    throughput_5s = util.throughput(df, 5000)
     return Output(
-        mean_latency = df['latency_nanos'].mean(),
-        median_latency = df['latency_nanos'].median(),
-        p90_latency = df['latency_nanos'].quantile(.90),
-        p95_latency = df['latency_nanos'].quantile(.95),
-        p99_latency = df['latency_nanos'].quantile(.99),
+        mean_latency_ms = latency_ms.mean(),
+        median_latency_ms = latency_ms.median(),
+        p90_latency_ms = latency_ms.quantile(.90),
+        p95_latency_ms = latency_ms.quantile(.95),
+        p99_latency_ms = latency_ms.quantile(.99),
 
-        mean_1_second_throughput = df['throughput_1s'].mean(),
-        median_1_second_throughput = df['throughput_1s'].median(),
-        p90_1_second_throughput = df['throughput_1s'].quantile(.90),
-        p95_1_second_throughput = df['throughput_1s'].quantile(.95),
-        p99_1_second_throughput = df['throughput_1s'].quantile(.99),
+        mean_1_second_throughput = throughput_1s.mean(),
+        median_1_second_throughput = throughput_1s.median(),
+        p90_1_second_throughput = throughput_1s.quantile(.90),
+        p95_1_second_throughput = throughput_1s.quantile(.95),
+        p99_1_second_throughput = throughput_1s.quantile(.99),
 
-        mean_2_second_throughput = df['throughput_2s'].mean(),
-        median_2_second_throughput = df['throughput_2s'].median(),
-        p90_2_second_throughput = df['throughput_2s'].quantile(.90),
-        p95_2_second_throughput = df['throughput_2s'].quantile(.95),
-        p99_2_second_throughput = df['throughput_2s'].quantile(.99),
+        mean_2_second_throughput = throughput_2s.mean(),
+        median_2_second_throughput = throughput_2s.median(),
+        p90_2_second_throughput = throughput_2s.quantile(.90),
+        p95_2_second_throughput = throughput_2s.quantile(.95),
+        p99_2_second_throughput = throughput_2s.quantile(.99),
 
-        mean_5_second_throughput = df['throughput_5s'].mean(),
-        median_5_second_throughput = df['throughput_5s'].median(),
-        p90_5_second_throughput = df['throughput_5s'].quantile(.90),
-        p95_5_second_throughput = df['throughput_5s'].quantile(.95),
-        p99_5_second_throughput = df['throughput_5s'].quantile(.99),
+        mean_5_second_throughput = throughput_5s.mean(),
+        median_5_second_throughput = throughput_5s.median(),
+        p90_5_second_throughput = throughput_5s.quantile(.90),
+        p95_5_second_throughput = throughput_5s.quantile(.95),
+        p99_5_second_throughput = throughput_5s.quantile(.99),
     )
 
 
-def _main(args) -> None:
-    with SuiteDirectory(args.suite_directory, 'fastmultipaxos') as suite:
+def run_suite(args: argparse.Namespace,
+              inputs: List[Input],
+              make_net: Callable[[Input], FastMultiPaxosNet]) -> None:
+    with SuiteDirectory(args.suite_directory, 'fast_multipaxos') as suite:
         print(f'Running benchmark suite in {suite.path}.')
         suite.write_dict('args.json', vars(args))
+        suite.write_string('inputs.txt', '\n'.join(str(i) for i in inputs))
+
         results_file = suite.create_file('results.csv')
         results_writer = csv.writer(results_file)
         results_writer.writerow(Input._fields + Output._fields)
 
-        inputs = [
-            Input(net_name='SingleSwitchNet',
-                f=1,
-                num_clients=1,
-                num_threads_per_client=1,
-                round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
-                duration_seconds=15,
-                client_lag_seconds=3,
-                client_repropose_period_seconds=10,
-            )
-        ] * 3
         for input in tqdm(inputs):
             with suite.benchmark_directory() as bench:
-                with SingleSwitchNet(
-                        f=input.f,
-                        num_clients=input.num_clients,
-                        rs_type = RoundSystemType[input.round_system_type]
-                     ) as net:
+                with make_net(input) as net:
                     bench.write_string('input.txt', str(input))
                     bench.write_dict('input.json', input._asdict())
                     output = run_benchmark(bench, args, input, net)
@@ -320,31 +341,36 @@ def _main(args) -> None:
                     results_file.flush()
 
 
+def _main(args) -> None:
+    inputs = [
+        Input(
+            net_name='SingleSwitchNet',
+            f=1,
+            num_clients=num_clients,
+            num_threads_per_client=1,
+            round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+            profiled=args.profile,
+            monitored=args.monitor,
+            prometheus_scrape_interval_ms=200,
+            duration_seconds=10,
+            client_lag_seconds=3,
+            client_repropose_period_seconds=10,
+        )
+        for num_clients in [1, 2]
+    ] * 2
+
+    def make_net(input) -> FastMultiPaxosNet:
+        return SingleSwitchNet(
+            f=input.f,
+            num_clients=input.num_clients,
+            rs_type = RoundSystemType[input.round_system_type]
+        )
+
+    run_suite(args, inputs, make_net)
+
+
 def get_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument(
-        '-s', '--suite_directory',
-        type=str,
-        default='/tmp',
-        help='Benchmark suite directory'
-    )
-    parser.add_argument(
-        '-j', '--jar',
-        type=str,
-        default = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            '..',
-            'jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar'
-        ),
-        help='FrankenPaxos JAR file'
-    )
-    parser.add_argument(
-        '-p', '--profile',
-        action='store_true',
-        help='Profile code'
-    )
-    return parser
+    return util.get_parser()
 
 
 if __name__ == '__main__':

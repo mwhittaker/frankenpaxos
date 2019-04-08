@@ -8,6 +8,9 @@ import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.statemachine.StateMachine
 import scala.collection.breakOut
 import scala.scalajs.js.annotation._
@@ -26,12 +29,41 @@ object Leader {
 }
 
 @JSExportAll
+class LeaderMetrics(collectors: Collectors) {
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val executedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_executed_commands_total")
+    .help("Total number of executed state machine commands.")
+    .register()
+
+  val distinctExecutedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_distinct_executed_commands_total")
+    .help("Total number of _distinct_ executed state machine commands.")
+    .register()
+
+  // TODO(mwhittaker): Gauges for
+  // - chosen watermark
+  // - next slot
+  // - leader changes
+  // - current state?
+}
+
+@JSExportAll
 class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
-    val stateMachine: StateMachine
+    stateMachine: StateMachine,
+    metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = LeaderInbound
@@ -259,6 +291,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       request: ProposeRequest
   ): Unit = {
+    metrics.requestsTotal.labels("ProposeRequest").inc()
     val client = chan[Client[Transport]](src, Client.serializer)
 
     // If we've cached the result of this proposed command in the client table,
@@ -412,6 +445,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       request: Phase1b
   ): Unit = {
+    metrics.requestsTotal.labels("Phase1b").inc()
     state match {
       case Inactive =>
         leaderLogger.debug(
@@ -557,6 +591,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       nack: Phase1bNack
   ): Unit = {
+    metrics.requestsTotal.labels("Phase1bNack").inc()
     state match {
       case Inactive | Phase2(_, _, _) =>
         leaderLogger.debug(
@@ -644,6 +679,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2b: Phase2b
   ): Unit = {
+    metrics.requestsTotal.labels("Phase2b").inc()
+
     def toValueChosen(slot: Slot, entry: Entry): ValueChosen = {
       entry match {
         case ECommand(command) =>
@@ -730,6 +767,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       valueChosen: ValueChosen
   ): Unit = {
+    metrics.requestsTotal.labels("ValueChosen").inc()
+
     val entry = valueChosen.value match {
       case ValueChosen.Value.Command(command) => ECommand(command)
       case ValueChosen.Value.Noop(_)          => ENoop

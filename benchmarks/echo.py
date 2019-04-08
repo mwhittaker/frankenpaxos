@@ -1,8 +1,8 @@
 from . import proto_util
 from . import util
+from . import util
 from .benchmark import BenchmarkDirectory, SuiteDirectory
 from .prometheus import prometheus_config, PrometheusQueryer
-from .util import read_csvs, Reaped
 from contextlib import ExitStack
 from enum import Enum
 from mininet.net import Mininet
@@ -125,7 +125,7 @@ def run_benchmark(bench: BenchmarkDirectory,
     # Launch Prometheus, and give it some time to start.
     config = prometheus_config(
         input.prometheus_scrape_interval_ms,
-        {'echo_server': f'{net.server().IP()}:9001'}
+        {'echo_server': [f'{net.server().IP()}:9001']}
     )
     bench.write_string('prometheus.yml', yaml.dump(config))
     prometheus = bench.popen(
@@ -171,7 +171,7 @@ def run_benchmark(bench: BenchmarkDirectory,
     client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
                    for i in range(input.num_clients)
                    for j in range(input.num_threads_per_client)]
-    df = (read_csvs(client_csvs, parse_dates=['start', 'stop'])
+    df = (util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
              .set_index('start')
              .sort_index(0))
     df.to_csv(bench.abspath('data.csv'))
@@ -257,7 +257,7 @@ def _main(args) -> None:
             prometheus_scrape_interval_ms=200,
         )
         for num_clients in [1, 2, 3]
-    ]
+    ] * 2
 
     def make_net(input) -> EchoNet:
         return SingleSwitchNet(num_clients=input.num_clients)
@@ -266,30 +266,7 @@ def _main(args) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument(
-        '-s', '--suite_directory',
-        type=str,
-        default='/tmp',
-        help='Benchmark suite directory'
-    )
-    parser.add_argument(
-        '-j', '--jar',
-        type=str,
-        default = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            '..',
-            'jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar'
-        ),
-        help='FrankenPaxos JAR file'
-    )
-    parser.add_argument(
-        '-p', '--profile',
-        action='store_true',
-        help='Profile code'
-    )
-    return parser
+    return util.get_parser()
 
 
 if __name__ == '__main__':

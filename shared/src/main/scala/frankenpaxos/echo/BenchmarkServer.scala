@@ -19,10 +19,12 @@ object BenchmarkServerInboundSerializer
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
 
+@JSExportAll
 object BenchmarkServer {
   val serializer = BenchmarkServerInboundSerializer
 }
 
+@JSExportAll
 class BenchmarkServerMetrics(collectors: Collectors) {
   val echoRequestsTotal: Counter = collectors.counter
     .build()

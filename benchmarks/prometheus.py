@@ -1,11 +1,11 @@
-from typing import Dict, FrozenSet, Tuple
+from typing import Dict, FrozenSet, List, Tuple
 import pandas as pd
 import requests
 import subprocess
 import time
 
 
-def prometheus_config(scrape_interval_ms: int, jobs: Dict[str, str]):
+def prometheus_config(scrape_interval_ms: int, jobs: Dict[str, List[str]]):
     """
     prometheus_config returns a JSON representation of a prometheus.yml
     configuration file. jobs maps job names to addresses.
@@ -17,9 +17,9 @@ def prometheus_config(scrape_interval_ms: int, jobs: Dict[str, str]):
         'scrape_configs': [
             {
                 'job_name': job_name,
-                'static_configs': [{'targets': [address]}],
+                'static_configs': [{'targets': addressses}],
             }
-            for (job_name, address) in jobs.items()
+            for (job_name, addressses) in jobs.items()
         ],
     }
 

@@ -1,5 +1,6 @@
 package frankenpaxos.fastmultipaxos
 
+import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator._
 import frankenpaxos.statemachine.AppendLog
 import org.scalacheck
@@ -45,7 +46,8 @@ class FastMultiPaxos(val f: Int) {
                                 transport,
                                 logger,
                                 config,
-                                new AppendLog())
+                                new AppendLog(),
+                                new LeaderMetrics(FakeCollectors))
 
   // Acceptors.
   val acceptors = for (i <- 1 to numAcceptors)
