@@ -53,7 +53,28 @@ class LeaderMetrics(collectors: Collectors) {
   val repeatedCommandsTotal: Counter = collectors.counter
     .build()
     .name("fast_multipaxos_leader_repeated_commands_total")
-    .help("Total number of commands that were chosen but already executed.")
+    .help("Total number of commands that were redundantly chosen.")
+    .register()
+
+  val chosenCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_chosen_commands_total")
+    .labelNames("type") // "fast" or "classic".
+    .help(
+      "Total number of commands that were chosen (with potential duplicates)."
+    )
+    .register()
+
+  val leaderChangesTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_leader_changes_total")
+    .help("Total number of leader changes.")
+    .register()
+
+  val stuckTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_stuck_total")
+    .help("Total number of times the leader got stuck in phase 2.")
     .register()
 
   val chosenWatermark: Gauge = collectors.gauge
@@ -770,9 +791,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
           case ClassicReady(entry) =>
             choose(entry)
+            metrics.chosenCommandsTotal.labels("classic").inc()
 
           case FastReady(entry) =>
             choose(entry)
+            metrics.chosenCommandsTotal.labels("fast").inc()
 
           case FastStuck =>
             // The fast round is stuck, so we start again in a higher round.
@@ -782,6 +805,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               s"Slot ${phase2b.slot} is stuck. Changing to a higher round."
             )
             leaderChange(address, round)
+            metrics.stuckTotal.inc()
         }
     }
   }
@@ -865,6 +889,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // increase our round and enter a new round larger than `higherThanRound`.
   def leaderChange(leader: Transport#Address, higherThanRound: Int): Unit = {
     leaderLogger.check_ge(higherThanRound, round)
+    metrics.leaderChangesTotal.inc()
 
     // Try to go to a fast round if we think that a fast quorum of acceptors
     // are alive. If we think fewer than a fast quorum of acceptors are alive,
