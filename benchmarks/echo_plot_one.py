@@ -1,38 +1,14 @@
+from . import plot_latency_and_throughput
 from . import util
-import numpy as np
 import argparse
 import matplotlib.pyplot as plt
+import numpy as np
 import os
 import pandas as pd
 
-def plot_latency(stds: float,
-                 ax: plt.Axes,
-                 df: pd.DataFrame) -> None:
-    latency_ms = df['latency_nanos'] / 1e6
-    if stds:
-        mu = latency_ms.mean()
-        sigma = latency_ms.std()
-        df = df[np.abs(latency_ms - mu) <= (stds * sigma)]
-
-    ax.plot_date(latency_ms.index,
-                 latency_ms.rolling('250ms').mean(),
-                 label='250ms',
-                 fmt='-',
-                 alpha=0.5)
-    ax.plot_date(latency_ms.index,
-                 latency_ms.rolling('500ms').mean(),
-                 label='500ms',
-                 fmt='-',
-                 alpha=0.7)
-    ax.plot_date(latency_ms.index,
-                 latency_ms.rolling('1s').mean(),
-                 label='1s',
-                 fmt='-')
-    ax.set_title('Latency')
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Latency (ms)')
-
-def plot_throughput(ax: plt.Axes, df: pd.DataFrame) -> None:
+def plot_throughput( ax: plt.Axes,
+                    df: pd.DataFrame,
+                    p_df: pd.DataFrame) -> None:
     # Plot throughput.
     ax.plot_date(df.index,
                  util.throughput(df, 250),
@@ -48,25 +24,44 @@ def plot_throughput(ax: plt.Axes, df: pd.DataFrame) -> None:
                  util.throughput(df, 1000),
                  label='1s',
                  fmt='-')
+    if p_df is not None:
+        prometheus_throughput = util.rate(p_df['echo_requests_total'], 1000)
+        ax.plot_date(prometheus_throughput.index,
+                     prometheus_throughput,
+                     label='1s (Prometheus)',
+                     fmt='--')
     ax.set_title('Throughput')
     ax.set_xlabel('Time')
     ax.set_ylabel('Throughput')
 
 def main(args) -> None:
+    # Read in data.
     df = pd.read_csv(args.data_csv, parse_dates=['start', 'stop'])
     df.index = df['start']
+    df = df.sort_index(0)
+
+    if args.prometheus_data:
+        p_df = pd.read_csv(args.prometheus_data, index_col=[0], parse_dates=[0])
+        p_df = p_df.sort_index(0)
+    else:
+        p_df = None
 
     # Drop first bit of data.
     start_time = df['start'].iloc[0]
     new_start_time = start_time + pd.DateOffset(seconds=args.drop)
     df = df[df['start'] >= new_start_time]
+    if p_df is not None:
+        start_time = p_df.index[0]
+        new_start_time = start_time + pd.DateOffset(seconds=args.drop)
+        p_df = p_df[p_df.index >= new_start_time]
 
     # See [1] for figure size defaults.
     #
     # [1]: https://matplotlib.org/api/_as_gen/matplotlib.pyplot.figure.html
-    fig, ax = plt.subplots(2, 1, figsize=(6.4, 2 * 4.8))
-    plot_latency(args.stds, ax[0], df)
-    plot_throughput(ax[1], df)
+    num_plots = 2
+    fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8))
+    plot_latency_and_throughput.plot_latency(args.stds, ax[0], df)
+    plot_throughput(ax[1], df, p_df)
     for axes in ax:
         axes.grid()
         axes.legend(loc='best')
@@ -82,25 +77,30 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         'data_csv',
         type=str,
-        help='data.csv file'
+        help='Single benchmark CSV file (e.g., data.csv)',
+    )
+    parser.add_argument(
+        '-p', '--prometheus_data',
+        type=str,
+        help='Prometheus benchmark CSV file (e.g., prometheus_data.csv)',
     )
     parser.add_argument(
         '-d', '--drop',
         type=float,
         default=0,
-        help='Drop this number of seconds from the beginning of the benchmark.'
+        help='Drop this number of seconds from the beginning of the benchmark',
     )
     parser.add_argument(
         '-s', '--stds',
         type=float,
         default=None,
-        help='Latency values that deviate by more that <stds> stds are stripped'
+        help='Latenciesthat deviate by more than <stds> stds are stripped',
     )
     parser.add_argument(
         '-o', '--output',
         type=str,
-        default='latency_and_throughput.pdf',
-        help='Output filename'
+        default='echo_one.pdf',
+        help='Output filename',
     )
     return parser
 
