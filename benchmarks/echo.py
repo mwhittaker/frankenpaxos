@@ -25,6 +25,7 @@ class Input(NamedTuple):
     num_threads_per_client: int
     duration_seconds: float
     profiled: bool
+    monitored: bool
     prometheus_scrape_interval_ms: int
 
 
@@ -123,21 +124,22 @@ def run_benchmark(bench: BenchmarkDirectory,
     )
 
     # Launch Prometheus, and give it some time to start.
-    config = prometheus_config(
-        input.prometheus_scrape_interval_ms,
-        {'echo_server': [f'{net.server().IP()}:9001']}
-    )
-    bench.write_string('prometheus.yml', yaml.dump(config))
-    prometheus = bench.popen(
-        f=net.server().popen,
-        label='prometheus',
-        cmd = [
-            'prometheus',
-            f'--config.file={bench.abspath("prometheus.yml")}',
-            f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
-        ],
-    )
-    time.sleep(3)
+    if input.monitored:
+        config = prometheus_config(
+            input.prometheus_scrape_interval_ms,
+            {'echo_server': [f'{net.server().IP()}:9001']}
+        )
+        bench.write_string('prometheus.yml', yaml.dump(config))
+        prometheus = bench.popen(
+            f=net.server().popen,
+            label='prometheus',
+            cmd = [
+                'prometheus',
+                f'--config.file={bench.abspath("prometheus.yml")}',
+                f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
+            ],
+        )
+        time.sleep(3)
 
     # Launch clients.
     client_procs = []
@@ -164,7 +166,8 @@ def run_benchmark(bench: BenchmarkDirectory,
     for client_proc in client_procs:
         client_proc.wait()
     server_proc.terminate()
-    prometheus.terminate()
+    if input.monitored:
+        prometheus.terminate()
 
     # Every client thread j on client i writes results to `client_i_j.csv`. We
     # concatenate these results into a single CSV file.
@@ -184,13 +187,14 @@ def run_benchmark(bench: BenchmarkDirectory,
     subprocess.call(['gzip', bench.abspath('data.csv')])
 
     # Next, we scrape data from Prometheus.
-    pq = PrometheusQueryer(
-        tsdb_path=bench.abspath('prometheus_data'),
-        popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
-    )
-    p_df = pd.DataFrame()
-    p_df[['echo_requests_total']] = pq.query('echo_requests_total[1y]')
-    p_df.to_csv(bench.abspath('prometheus_data.csv'))
+    if input.monitored:
+        pq = PrometheusQueryer(
+            tsdb_path=bench.abspath('prometheus_data'),
+            popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
+        )
+        p_df = pd.DataFrame()
+        p_df[['echo_requests_total']] = pq.query('echo_requests_total[1y]')
+        p_df.to_csv(bench.abspath('prometheus_data.csv'))
 
     latency_ms = df['latency_nanos'] / 1e6
     throughput_1s = util.throughput(df, 1000)
@@ -254,6 +258,7 @@ def _main(args) -> None:
             num_threads_per_client=1,
             duration_seconds=10,
             profiled=args.profile,
+            monitored=args.monitor,
             prometheus_scrape_interval_ms=200,
         )
         for num_clients in [1, 2, 3]

@@ -214,23 +214,24 @@ def run_benchmark(bench: BenchmarkDirectory,
         leader_procs.append(proc)
 
     # Launch Prometheus.
-    prometheus_config = prometheus.prometheus_config(
-        input.prometheus_scrape_interval_ms,
-        {
-          'fast_multipaxos_leader': [f'{l.IP()}:12345' for l in net.leaders()],
-          'fast_multipaxos_client': [f'{c.IP()}:12345' for c in net.clients()],
-        }
-    )
-    bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
-    prometheus_server = bench.popen(
-        f=net.leaders()[0].popen,
-        label='prometheus',
-        cmd = [
-            'prometheus',
-            f'--config.file={bench.abspath("prometheus.yml")}',
-            f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
-        ],
-    )
+    if input.monitored:
+        prometheus_config = prometheus.prometheus_config(
+            input.prometheus_scrape_interval_ms,
+            {
+              'fast_multipaxos_leader': [f'{l.IP()}:12345' for l in net.leaders()],
+              'fast_multipaxos_client': [f'{c.IP()}:12345' for c in net.clients()],
+            }
+        )
+        bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
+        prometheus_server = bench.popen(
+            f=net.leaders()[0].popen,
+            label='prometheus',
+            cmd = [
+                'prometheus',
+                f'--config.file={bench.abspath("prometheus.yml")}',
+                f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
+            ],
+        )
 
     # Wait a bit so that a stable leader can elect itself. If we start
     # clients too soon, they may not talk to a stable leader.
@@ -263,8 +264,10 @@ def run_benchmark(bench: BenchmarkDirectory,
     # Wait for clients to finish and then terminate everything.
     for proc in client_procs:
         proc.wait()
-    for proc in leader_procs + acceptor_procs + [prometheus_server]:
+    for proc in leader_procs + acceptor_procs:
         proc.terminate()
+    if input.monitored:
+        prometheus_server.terminate()
 
     # Every client thread j on client i writes results to `client_i_j.csv`.
     # We concatenate these results into a single CSV file.
@@ -284,27 +287,28 @@ def run_benchmark(bench: BenchmarkDirectory,
     subprocess.call(['gzip', bench.abspath('data.csv')])
 
     # Scrape data from Prometheus.
-    pq = prometheus.PrometheusQueryer(
-        tsdb_path=bench.abspath('prometheus_data'),
-        popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
-    )
-    p_df = pq.query(
-        '{__name__=~"fast_multipaxos_.*", job=~"fast_multipaxos_.*"}[1y]')
-    def _rename(old_column) -> str:
-        address_to_instance_name = {
-            **{f'{host.IP()}:12345': f'leader_{i}'
-               for (i, host) in enumerate(net.leaders())},
-            **{f'{host.IP()}:12345': f'client_{i}'
-               for (i, host) in enumerate(net.clients())},
-        }
-        label = dict(old_column)
-        instance_name = address_to_instance_name[label["instance"]]
-        if "type" in label:
-            return f'{label["__name__"]}_{label["type"]}_{instance_name}'
-        else:
-            return f'{label["__name__"]}_{instance_name}'
-    p_df = p_df.rename(columns=_rename)
-    p_df.to_csv(bench.abspath('prometheus_data.csv'))
+    if input.monitored:
+        pq = prometheus.PrometheusQueryer(
+            tsdb_path=bench.abspath('prometheus_data'),
+            popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
+        )
+        p_df = pq.query(
+            '{__name__=~"fast_multipaxos_.*", job=~"fast_multipaxos_.*"}[1y]')
+        def _rename(old_column) -> str:
+            address_to_instance_name = {
+                **{f'{host.IP()}:12345': f'leader_{i}'
+                   for (i, host) in enumerate(net.leaders())},
+                **{f'{host.IP()}:12345': f'client_{i}'
+                   for (i, host) in enumerate(net.clients())},
+            }
+            label = dict(old_column)
+            instance_name = address_to_instance_name[label["instance"]]
+            if "type" in label:
+                return f'{label["__name__"]}_{label["type"]}_{instance_name}'
+            else:
+                return f'{label["__name__"]}_{instance_name}'
+        p_df = p_df.rename(columns=_rename)
+        p_df.to_csv(bench.abspath('prometheus_data.csv'))
 
     latency_ms = df['latency_nanos'] / 1e6
     throughput_1s = util.throughput(df, 1000)
