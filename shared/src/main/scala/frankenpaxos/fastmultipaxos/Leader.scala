@@ -10,6 +10,7 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.statemachine.StateMachine
 import scala.collection.breakOut
@@ -54,11 +55,23 @@ class LeaderMetrics(collectors: Collectors) {
     .name("fast_multipaxos_leader_repeated_commands_total")
     .help("Total number of commands that were chosen but already executed.")
     .register()
+
+  val chosenWatermark: Gauge = collectors.gauge
+    .build()
+    .name("fast_multipaxos_leader_chosen_watermark")
+    .help("The index at which all smaller log entries have been chosen.")
+    .register()
+
+  val nextSlot: Gauge = collectors.gauge
+    .build()
+    .name("fast_multipaxos_leader_next_slot")
+    .help("The next free slot in the log.")
+    .register()
+
   // TODO(mwhittaker): Gauges for
-  // - chosen watermark
-  // - next slot
   // - leader changes
   // - current state?
+  // - stuck?
 }
 
 @JSExportAll
@@ -120,6 +133,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // chosenWatermark, there is an Entry for `slot` in `log`.
   @JSExport
   protected var chosenWatermark: Slot = 0
+  metrics.chosenWatermark.set(chosenWatermark)
 
   // The next slot in which to propose a command.
   //
@@ -127,6 +141,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // ahead.
   @JSExport
   protected var nextSlot: Slot = 0
+  metrics.nextSlot.set(nextSlot)
 
   // The state of the leader.
   @JSExportAll
@@ -290,6 +305,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Empty =>
         leaderLogger.fatal("Empty LeaderInbound encountered.")
     }
+
+    metrics.chosenWatermark.set(chosenWatermark)
+    metrics.nextSlot.set(nextSlot)
   }
 
   private def handleProposeRequest(
