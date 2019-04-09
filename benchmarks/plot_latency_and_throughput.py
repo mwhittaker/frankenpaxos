@@ -5,15 +5,7 @@ import matplotlib.pyplot as plt
 import os
 import pandas as pd
 
-def plot_latency(stds: float,
-                 ax: plt.Axes,
-                 df: pd.DataFrame) -> None:
-    latency_ms = df['latency_nanos'] / 1e6
-    if stds:
-        mu = latency_ms.mean()
-        sigma = latency_ms.std()
-        df = df[np.abs(latency_ms - mu) <= (stds * sigma)]
-
+def plot_latency(ax: plt.Axes, latency_ms: pd.Series) -> None:
     ax.plot_date(latency_ms.index,
                  latency_ms.rolling('250ms').mean(),
                  label='250ms',
@@ -61,11 +53,15 @@ def main(args) -> None:
     new_start_time = start_time + pd.DateOffset(seconds=args.drop)
     df = df[df['start'] >= new_start_time]
 
+    # Drop outliers.
+    latency_ms = df['latency_nanos'] / 1e6
+    latency_ms = latency_ms[~util.outliers(latency_ms, args.stds)]
+
     # See [1] for figure size defaults.
     #
     # [1]: https://matplotlib.org/api/_as_gen/matplotlib.pyplot.figure.html
     fig, ax = plt.subplots(2, 1, figsize=(6.4, 2 * 4.8))
-    plot_latency(args.stds, ax[0], df)
+    plot_latency(ax[0], latency_ms)
     plot_throughput(ax[1], df)
     for axes in ax:
         axes.grid()
@@ -93,7 +89,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '-s', '--stds',
         type=float,
-        default=None,
+        default=1e20,
         help='Latency values that deviate by more that <stds> stds are stripped'
     )
     parser.add_argument(

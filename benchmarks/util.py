@@ -1,6 +1,7 @@
 from typing import List
 import argparse
 import contextlib
+import numpy as np
 import os
 import pandas as pd
 import subprocess
@@ -71,6 +72,12 @@ def read_csvs(filenames: List[str], **kwargs) -> pd.DataFrame:
     for filename in filenames:
         dfs.append(pd.read_csv(filename, header=0, **kwargs))
     return pd.concat(dfs, ignore_index=True)
+
+
+def outliers(s: pd.Series, n: float) -> pd.Series:
+    mu = s.mean()
+    sigma = s.std()
+    return np.abs(s - mu) >= (n * sigma)
 
 
 def throughput(df: pd.DataFrame, window_size_ms: float) -> pd.Series:
