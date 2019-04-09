@@ -114,7 +114,8 @@ class PrometheusQueryer:
                 values = [stream['value']]
 
             timestamps = [t for [t, x] in values]
-            timestamps = pd.to_datetime(timestamps, unit='s', origin='unix')
+            timestamps = (pd.to_datetime(timestamps, unit='s', origin='unix')
+                            .tz_localize('UTC'))
             values = [x for [t, x] in values]
             s = pd.Series(values, index=timestamps)
             series[frozenset(stream['metric'].items())] = s

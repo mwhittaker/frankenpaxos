@@ -5,8 +5,10 @@ import numpy as np
 import os
 import pandas as pd
 
+
 def wrapped(s: str, width: int = 60) -> str:
     return '\n'.join(wrap(s, width))
+
 
 def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
     def translate_paxos_variant(name: str) -> str:
@@ -42,20 +44,9 @@ def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
     ax.grid()
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
+
 def main(args) -> None:
     df = pd.read_csv(args.results)
-
-    # Fast multipaxos with 0.01 second repropose is degenerate, so we filter it
-    # out.
-    # df = df[~((df['round_system_type'] == 'MIXED_ROUND_ROBIN') &
-    #           (df['client_repropose_period_seconds'] == 0.01))]
-
-    # Convert nanos to millis.
-    df['mean_latency'] /= 1e6
-    df['median_latency'] /= 1e6
-    df['p90_latency'] /= 1e6
-    df['p95_latency'] /= 1e6
-    df['p99_latency'] /= 1e6
 
     # See [1] for figure size defaults. We add an extra plot at the bottom for
     # a textual note.
@@ -64,15 +55,17 @@ def main(args) -> None:
     num_plots = 4
     fig, ax = plt.subplots(num_plots, 1, figsize=(1.5 * 6.4, num_plots * 4.8))
 
-    plot(df, ax[0], 'median_latency', 'Median latency')
-    plot(df, ax[1], 'p90_latency', 'P90 latency')
-    plot(df, ax[2], 'median_1_second_throughput', 'Median throughput (1 second windows)')
-    plot(df, ax[3], 'p90_1_second_throughput', 'P90 throughput (1 second windows)')
+    plot(df, ax[0], 'median_latency_ms', 'Median latency')
+    plot(df, ax[1], 'p90_latency_ms', 'P90 latency')
+    plot(df, ax[2], 'median_1_second_throughput',
+                    'Median throughput (1 second windows)')
+    plot(df, ax[3], 'p90_1_second_throughput',
+                    'P90 throughput (1 second windows)')
 
     fig.set_tight_layout(True)
-    filename = os.path.join(args.output, 'fast_multipaxos.pdf')
-    fig.savefig(filename)
-    print(f'Wrote plot to {filename}.')
+    fig.savefig(args.output)
+    print(f'Wrote plot to {args.output}.')
+
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
@@ -85,9 +78,10 @@ def get_parser() -> argparse.ArgumentParser:
         '-o', '--output',
         type=str,
         default='.',
-        help='Output directory'
+        help='Output filename'
     )
     return parser
+
 
 if __name__ == '__main__':
     main(get_parser().parse_args())

@@ -1,9 +1,10 @@
-from . import util
-import numpy as np
+from . import pd_util
 import argparse
 import matplotlib.pyplot as plt
+import numpy as np
 import os
 import pandas as pd
+
 
 def plot_latency(ax: plt.Axes, latency_ms: pd.Series) -> None:
     ax.plot_date(latency_ms.index,
@@ -24,25 +25,27 @@ def plot_latency(ax: plt.Axes, latency_ms: pd.Series) -> None:
     ax.set_xlabel('Time')
     ax.set_ylabel('Latency (ms)')
 
+
 def plot_throughput(ax: plt.Axes, df: pd.DataFrame) -> None:
     # Plot throughput.
-    ax.plot_date(df.index,
-                 util.throughput(df, 250),
+    ax.plot_date(pd_util.throughput(df, 250, trim=True).index,
+                 pd_util.throughput(df, 250, trim=True),
                  label='250ms',
                  fmt='-',
                  alpha=0.5)
-    ax.plot_date(df.index,
-                 util.throughput(df, 500),
+    ax.plot_date(pd_util.throughput(df, 500, trim=True).index,
+                 pd_util.throughput(df, 500, trim=True),
                  label='500ms',
                  fmt='-',
                  alpha=0.7)
-    ax.plot_date(df.index,
-                 util.throughput(df, 1000),
+    ax.plot_date(pd_util.throughput(df, 1000, trim=True).index,
+                 pd_util.throughput(df, 1000, trim=True),
                  label='1s',
                  fmt='-')
     ax.set_title('Throughput')
     ax.set_xlabel('Time')
     ax.set_ylabel('Throughput')
+
 
 def main(args) -> None:
     df = pd.read_csv(args.data_csv, parse_dates=['start', 'stop'])
@@ -55,7 +58,7 @@ def main(args) -> None:
 
     # Drop outliers.
     latency_ms = df['latency_nanos'] / 1e6
-    latency_ms = latency_ms[~util.outliers(latency_ms, args.stds)]
+    latency_ms = latency_ms[~pd_util.outliers(latency_ms, args.stds)]
 
     # See [1] for figure size defaults.
     #
@@ -72,6 +75,7 @@ def main(args) -> None:
     fig.set_tight_layout(True)
     fig.savefig(args.output)
     print(f'Wrote plot to {args.output}.')
+
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
@@ -99,6 +103,7 @@ def get_parser() -> argparse.ArgumentParser:
         help='Output filename'
     )
     return parser
+
 
 if __name__ == '__main__':
     from pandas.plotting import register_matplotlib_converters

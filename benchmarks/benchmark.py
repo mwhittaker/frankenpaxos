@@ -1,4 +1,3 @@
-from . import util
 from typing import Any, Dict, IO, List, Union
 import contextlib
 import datetime
@@ -7,6 +6,37 @@ import os
 import random
 import string
 import subprocess
+
+
+def _random_string(n: int) -> str:
+    return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
+
+
+def _now_string():
+    return str(datetime.datetime.now()).replace(' ', '_')
+
+
+class _Reaped(object):
+    """
+    Imagine you have the following python code in a file called sleep.py. The
+    code creates a subprocess and waits for it to terminate.
+
+      p = subprocess.Popen(['sleep', '100'])
+      p.wait()
+
+    If you run `python sleep.py` and then kill the process before it terminates,
+    sometimes the subprocess lives on. The _Reaped context manager ensures that
+    the process is killed, even if an exception is thrown.
+    """
+    def __init__(self, p: subprocess.Popen) -> None:
+        self.p = p
+
+    def __enter__(self) -> subprocess.Popen:
+        return self.p
+
+    def __exit__(self, cls, exn, traceback) -> None:
+        self.p.terminate()
+
 
 class SuiteDirectory(object):
     def __init__(self, path: str, name: str = None) -> None:
@@ -53,6 +83,7 @@ class SuiteDirectory(object):
         path = os.path.join(self.path,
                             "{:03}{}".format(benchmark_dir_id, name_suffix))
         return BenchmarkDirectory(path)
+
 
 class BenchmarkDirectory(object):
     def __init__(self, path: str) -> None:
@@ -145,15 +176,8 @@ class BenchmarkDirectory(object):
             self.pids[proc.pid] = label
 
         # Make sure the process is eventually killed.
-        self.process_stack.enter_context(util.Reaped(proc))
+        self.process_stack.enter_context(_Reaped(proc))
         return proc
-
-def _random_string(n: int) -> str:
-    return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
-
-
-def _now_string():
-    return str(datetime.datetime.now()).replace(' ', '_')
 
 
 class _ProfiledPopen(object):
@@ -248,26 +272,3 @@ class _ProfiledPopen(object):
 
     def kill(self, *args, **kwargs):
         return self.proc.kill(*args, **kwargs)
-
-# class _ProfiledJavaProc(object):
-#     def __init__(self,
-#                  bench: BenchmarkDirectory,
-#                  label: str,
-#                  proc: subprocess.Popen) -> None:
-#         self.bench = bench
-#         self.label = label
-#         self.proc = proc
-#
-#         self.perf_record_proc = self.bench.popen(
-#             subprocess.Popen,
-#             label=f'{label}_perf_record',
-#             cmd=[
-#                 'perf', 'record',
-#                 '-F', str(args.perf_record_freq),
-#                 '-o', f'/tmp/perf-{server_proc.pid}.data',
-#                 '-p', str(server_proc.pid),
-#                 '--timestamp',
-#                 '-g',
-#                 '--', 'sleep', str(input.duration_seconds),
-#             ],
-#         )

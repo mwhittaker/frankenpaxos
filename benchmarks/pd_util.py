@@ -1,72 +1,13 @@
 from typing import List
-import argparse
-import contextlib
 import numpy as np
-import os
 import pandas as pd
-import subprocess
-
-
-def get_parser() -> argparse.ArgumentParser:
-    """Returns an argument parser with the most commonly used flags."""
-    parser = argparse.ArgumentParser(
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument(
-        '-s', '--suite_directory',
-        type=str,
-        default='/tmp',
-        help='Benchmark suite directory'
-    )
-    parser.add_argument(
-        '-j', '--jar',
-        type=str,
-        default = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            '..',
-            'jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar'
-        ),
-        help='FrankenPaxos JAR file'
-    )
-    parser.add_argument(
-        '-p', '--profile',
-        action='store_true',
-        help='Profile code using perf'
-    )
-    parser.add_argument(
-        '-m', '--monitor',
-        action='store_true',
-        help='Monitor code using prometheus'
-    )
-    return parser
-
-
-class Reaped(object):
-    """
-    Imagine you have the following python code in a file called sleep.py. The
-    code creates a subprocess and waits for it to terminate.
-
-      p = subprocess.Popen(['sleep', '100'])
-      p.wait()
-
-    If you run `python sleep.py` and then kill the process before it terminates,
-    sometimes the subprocess lives on. The Reaped context manager ensures that
-    the process is killed, even if an exception is thrown.
-    """
-    def __init__(self, p: subprocess.Popen) -> None:
-        self.p = p
-
-    def __enter__(self) -> subprocess.Popen:
-        return self.p
-
-    def __exit__(self, cls, exn, traceback) -> None:
-        self.p.terminate()
 
 
 def read_csvs(filenames: List[str], **kwargs) -> pd.DataFrame:
     """
-    pd.read_csv reads in a CSV file and converts it to a dataframe. read_csvs
-    reads in a _set_ of CSVs, concatenates them together, and converts the
-    concatenation to a dataframe.
+    pd.read_csv reads in a _single_ CSV file and converts it to a dataframe.
+    read_csvs reads in a _set_ of CSVs, concatenates them together, and
+    converts the concatenation to a dataframe.
     """
     dfs: List[pd.DataFrame] = []
     for filename in filenames:
@@ -75,12 +16,25 @@ def read_csvs(filenames: List[str], **kwargs) -> pd.DataFrame:
 
 
 def outliers(s: pd.Series, n: float) -> pd.Series:
+    """
+    `outliers(s, n)` is a boolean vector of the values in s that are n or more
+    standard deviations away from the mean. You can use `outliers` to select
+    outliers like this:
+
+        s[outliers(s, n)]
+
+    or prune outliers like this:
+
+        s[~outliers(s, n)]
+    """
     mu = s.mean()
     sigma = s.std()
     return np.abs(s - mu) >= (n * sigma)
 
 
-def throughput(df: pd.DataFrame, window_size_ms: float) -> pd.Series:
+def throughput(df: pd.DataFrame,
+               window_size_ms: float,
+               trim: bool = False) -> pd.Series:
     """
     Consider a timestamp indexed dataframe:
 
@@ -112,10 +66,18 @@ def throughput(df: pd.DataFrame, window_size_ms: float) -> pd.Series:
       11:00:34 am - 11:01:34 am | 2 / 60     |
       11:01:16 am - 11:02:16 am | 3 / 60     |
 
-    This is what `throughput` computes.
+    This is what `throughput` computes. If `trim` is true, the first
+    window_size_ms of throughput data is trimmed.
     """
     s = pd.Series(0, index=df.sort_index(0).index)
-    return s.rolling(f'{window_size_ms}ms').count() / (window_size_ms / 1000)
+    throughput = (s.rolling(f'{window_size_ms}ms').count() /
+                  (window_size_ms / 1000))
+    if trim:
+        t = (throughput.index[0] +
+             pd.DateOffset(microseconds=window_size_ms * 1000))
+        return throughput[throughput.index >= t]
+    else:
+        return throughput
 
 
 def rate(s: pd.Series, window_size_ms: float) -> pd.Series:

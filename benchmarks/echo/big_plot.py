@@ -4,6 +4,7 @@ import numpy as np
 import os
 import pandas as pd
 
+
 def plot_latency(df: pd.DataFrame, ax) -> None:
     grouped = df.groupby('num_clients').agg([np.mean, np.std])
     columns = {
@@ -26,6 +27,7 @@ def plot_latency(df: pd.DataFrame, ax) -> None:
     ax.set_ylabel('Latency (ms)')
     ax.grid()
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
 
 def plot_1_second_throughput(df: pd.DataFrame, ax) -> None:
     grouped = df.groupby('num_clients').agg([np.mean, np.std])
@@ -50,6 +52,7 @@ def plot_1_second_throughput(df: pd.DataFrame, ax) -> None:
     ax.grid()
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
+
 def main(args) -> None:
     df = pd.read_csv(args.results_csv)
 
@@ -66,6 +69,7 @@ def main(args) -> None:
     fig.set_tight_layout(True)
     fig.savefig(args.output)
     print(f'Wrote plot to {args.output}.')
+
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()

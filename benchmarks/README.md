@@ -20,7 +20,6 @@ recommend you run benchmarks using the `sudopython` script. `sudopython` takes
 care of all of this for you.
 
 ```bash
-./benchmarks/sudopython -m benchmarks.echo
-./benchmarks/sudopython -m benchmarks.fastmultipaxos
-./benchmarks/sudopython -m benchmarks.fastmultipaxos_throughput_vs_num_clients
+./scripts/sudopython -m benchmarks.echo.echo
+./scripts/sudopython -m benchmarks.fastmultipaxos.fastmultipaxos
 ```

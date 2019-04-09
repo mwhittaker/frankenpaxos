@@ -1,25 +1,23 @@
-from . import prometheus
-from . import proto_util
-from . import util
-from . import util
-from .benchmark import BenchmarkDirectory, SuiteDirectory
-from contextlib import ExitStack
-from enum import Enum
+from .. import benchmark
+from .. import pd_util
+from .. import prometheus
+from .. import proto_util
+from .. import parser_util
 from mininet.net import Mininet
-from mininet.node import Node
-from subprocess import Popen
-from tqdm import tqdm
 from typing import Callable, Dict, List, NamedTuple
 import argparse
 import csv
+import enum
+import mininet
 import os
 import pandas as pd
 import subprocess
 import time
+import tqdm
 import yaml
 
 
-class RoundSystemType(Enum):
+class RoundSystemType(enum.Enum):
   CLASSIC_ROUND_ROBIN = 0
   ROUND_ZERO_FAST = 1
   MIXED_ROUND_ROBIN = 2
@@ -84,13 +82,13 @@ class FastMultiPaxosNet(object):
     def net(self) -> Mininet:
         raise NotImplementedError()
 
-    def clients(self) -> List[Node]:
+    def clients(self) -> List[mininet.node.Node]:
         raise NotImplementedError()
 
-    def leaders(self) -> List[Node]:
+    def leaders(self) -> List[mininet.node.Node]:
         raise NotImplementedError()
 
-    def acceptors(self) -> List[Node]:
+    def acceptors(self) -> List[mininet.node.Node]:
         raise NotImplementedError()
 
     def config(self) -> proto_util.Message:
@@ -104,9 +102,9 @@ class SingleSwitchNet(FastMultiPaxosNet):
                  rs_type: RoundSystemType) -> None:
         self.f = f
         self.rs_type = rs_type
-        self._clients: List[Node] = []
-        self._leaders: List[Node] = []
-        self._acceptors: List[Node] = []
+        self._clients: List[mininet.node.Node] = []
+        self._leaders: List[mininet.node.Node] = []
+        self._acceptors: List[mininet.node.Node] = []
         self._net = Mininet()
 
         switch = self._net.addSwitch('s1')
@@ -132,13 +130,13 @@ class SingleSwitchNet(FastMultiPaxosNet):
     def net(self) -> Mininet:
         return self._net
 
-    def clients(self) -> List[Node]:
+    def clients(self) -> List[mininet.node.Node]:
         return self._clients
 
-    def leaders(self) -> List[Node]:
+    def leaders(self) -> List[mininet.node.Node]:
         return self._leaders
 
-    def acceptors(self) -> List[Node]:
+    def acceptors(self) -> List[mininet.node.Node]:
         return self._acceptors
 
     def config(self) -> proto_util.Message:
@@ -168,7 +166,7 @@ class SingleSwitchNet(FastMultiPaxosNet):
         }
 
 
-def run_benchmark(bench: BenchmarkDirectory,
+def run_benchmark(bench: benchmark.BenchmarkDirectory,
                   args: argparse.Namespace,
                   input: Input,
                   net: FastMultiPaxosNet) -> Output:
@@ -274,9 +272,9 @@ def run_benchmark(bench: BenchmarkDirectory,
     client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
                    for i in range(input.num_clients)
                    for j in range(input.num_threads_per_client)]
-    df = (util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
-              .set_index('start')
-              .sort_index(0))
+    df = (pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
+                 .set_index('start')
+                 .sort_index(0))
     df.to_csv(bench.abspath('data.csv'))
 
     # Since we concatenate and save the file, we can throw away the originals.
@@ -311,9 +309,9 @@ def run_benchmark(bench: BenchmarkDirectory,
         p_df.to_csv(bench.abspath('prometheus_data.csv'))
 
     latency_ms = df['latency_nanos'] / 1e6
-    throughput_1s = util.throughput(df, 1000)
-    throughput_2s = util.throughput(df, 2000)
-    throughput_5s = util.throughput(df, 5000)
+    throughput_1s = pd_util.throughput(df, 1000)
+    throughput_2s = pd_util.throughput(df, 2000)
+    throughput_5s = pd_util.throughput(df, 5000)
     return Output(
         mean_latency_ms = latency_ms.mean(),
         median_latency_ms = latency_ms.median(),
@@ -344,7 +342,8 @@ def run_benchmark(bench: BenchmarkDirectory,
 def run_suite(args: argparse.Namespace,
               inputs: List[Input],
               make_net: Callable[[Input], FastMultiPaxosNet]) -> None:
-    with SuiteDirectory(args.suite_directory, 'fast_multipaxos') as suite:
+    with benchmark.SuiteDirectory(
+            args.suite_directory, 'fast_multipaxos') as suite:
         print(f'Running benchmark suite in {suite.path}.')
         suite.write_dict('args.json', vars(args))
         suite.write_string('inputs.txt', '\n'.join(str(i) for i in inputs))
@@ -353,7 +352,7 @@ def run_suite(args: argparse.Namespace,
         results_writer = csv.writer(results_file)
         results_writer.writerow(Input._fields + Output._fields)
 
-        for input in tqdm(inputs):
+        for input in tqdm.tqdm(inputs):
             with suite.benchmark_directory() as bench:
                 with make_net(input) as net:
                     bench.write_string('input.txt', str(input))
@@ -393,7 +392,7 @@ def _main(args) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
-    return util.get_parser()
+    return parser_util.get_benchmark_parser()
 
 
 if __name__ == '__main__':

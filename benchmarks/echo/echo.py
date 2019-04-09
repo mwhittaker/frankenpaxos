@@ -1,21 +1,18 @@
-from . import proto_util
-from . import util
-from . import util
-from .benchmark import BenchmarkDirectory, SuiteDirectory
-from .prometheus import prometheus_config, PrometheusQueryer
-from contextlib import ExitStack
-from enum import Enum
+from .. import benchmark
+from .. import parser_util
+from .. import pd_util
+from .. import prometheus
 from mininet.net import Mininet
-from mininet.node import Node
-from subprocess import Popen
-from tqdm import tqdm
 from typing import Callable, Dict, List, NamedTuple
 import argparse
 import csv
+import enum
+import mininet
 import os
 import pandas as pd
 import subprocess
 import time
+import tqdm
 import yaml
 
 
@@ -69,17 +66,17 @@ class EchoNet(object):
     def net(self) -> Mininet:
         raise NotImplementedError()
 
-    def clients(self) -> List[Node]:
+    def clients(self) -> List[mininet.node.Node]:
         raise NotImplementedError()
 
-    def server(self) -> Node:
+    def server(self) -> mininet.node.Node:
         raise NotImplementedError()
 
 
 class SingleSwitchNet(EchoNet):
     def __init__(self, num_clients: int) -> None:
-        self._clients: List[Node] = []
-        self._server: Node = None
+        self._clients: List[mininet.node.Node] = []
+        self._server: mininet.node.Node = None
         self._net = Mininet()
 
         switch = self._net.addSwitch('s1')
@@ -96,14 +93,14 @@ class SingleSwitchNet(EchoNet):
     def net(self) -> Mininet:
         return self._net
 
-    def clients(self) -> List[Node]:
+    def clients(self) -> List[mininet.node.Node]:
         return self._clients
 
-    def server(self) -> Node:
+    def server(self) -> mininet.node.Node:
         return self._server
 
 
-def run_benchmark(bench: BenchmarkDirectory,
+def run_benchmark(bench: benchmark.BenchmarkDirectory,
                   args: argparse.Namespace,
                   input: Input,
                   net: EchoNet) -> Output:
@@ -125,12 +122,12 @@ def run_benchmark(bench: BenchmarkDirectory,
 
     # Launch Prometheus, and give it some time to start.
     if input.monitored:
-        config = prometheus_config(
+        prometheus_config = prometheus.prometheus_config(
             input.prometheus_scrape_interval_ms,
             {'echo_server': [f'{net.server().IP()}:9001']}
         )
-        bench.write_string('prometheus.yml', yaml.dump(config))
-        prometheus = bench.popen(
+        bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
+        prometheus_server = bench.popen(
             f=net.server().popen,
             label='prometheus',
             cmd = [
@@ -167,16 +164,16 @@ def run_benchmark(bench: BenchmarkDirectory,
         client_proc.wait()
     server_proc.terminate()
     if input.monitored:
-        prometheus.terminate()
+        prometheus_server.terminate()
 
     # Every client thread j on client i writes results to `client_i_j.csv`. We
     # concatenate these results into a single CSV file.
     client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
                    for i in range(input.num_clients)
                    for j in range(input.num_threads_per_client)]
-    df = (util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
-             .set_index('start')
-             .sort_index(0))
+    df = (pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
+                 .set_index('start')
+                 .sort_index(0))
     df.to_csv(bench.abspath('data.csv'))
 
     # Since we concatenate and save the file, we can throw away the originals.
@@ -188,7 +185,7 @@ def run_benchmark(bench: BenchmarkDirectory,
 
     # Next, we scrape data from Prometheus.
     if input.monitored:
-        pq = PrometheusQueryer(
+        pq = prometheus.PrometheusQueryer(
             tsdb_path=bench.abspath('prometheus_data'),
             popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
         )
@@ -197,9 +194,9 @@ def run_benchmark(bench: BenchmarkDirectory,
         p_df.to_csv(bench.abspath('prometheus_data.csv'))
 
     latency_ms = df['latency_nanos'] / 1e6
-    throughput_1s = util.throughput(df, 1000)
-    throughput_2s = util.throughput(df, 2000)
-    throughput_5s = util.throughput(df, 5000)
+    throughput_1s = pd_util.throughput(df, 1000)
+    throughput_2s = pd_util.throughput(df, 2000)
+    throughput_5s = pd_util.throughput(df, 5000)
     return Output(
         mean_latency_ms = latency_ms.mean(),
         median_latency_ms = latency_ms.median(),
@@ -230,7 +227,7 @@ def run_benchmark(bench: BenchmarkDirectory,
 def run_suite(args: argparse.Namespace,
               inputs: List[Input],
               make_net: Callable[[Input], EchoNet]) -> None:
-    with SuiteDirectory(args.suite_directory, 'echo') as suite:
+    with benchmark.SuiteDirectory(args.suite_directory, 'echo') as suite:
         print(f'Running benchmark suite in {suite.path}.')
         suite.write_dict('args.json', vars(args))
         suite.write_string('inputs.txt', '\n'.join(str(i) for i in inputs))
@@ -239,7 +236,7 @@ def run_suite(args: argparse.Namespace,
         results_writer = csv.writer(results_file)
         results_writer.writerow(Input._fields + Output._fields)
 
-        for input in tqdm(inputs):
+        for input in tqdm.tqdm(inputs):
             with suite.benchmark_directory() as bench:
                 with make_net(input) as net:
                     bench.write_string('input.txt', str(input))
@@ -271,7 +268,7 @@ def _main(args) -> None:
 
 
 def get_parser() -> argparse.ArgumentParser:
-    return util.get_parser()
+    return parser_util.get_benchmark_parser()
 
 
 if __name__ == '__main__':
