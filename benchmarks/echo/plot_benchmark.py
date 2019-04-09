@@ -11,11 +11,6 @@ import pandas as pd
 def plot_throughput(ax: plt.Axes,
                     df: pd.DataFrame,
                     p_df: pd.DataFrame) -> None:
-    def throughput_trimmed(df, ms):
-        throughput = pd_util.throughput(df, ms)
-        new_start = throughput.index[0] + pd.DateOffset(milliseconds=ms)
-        return throughput[throughput.index >= new_start]
-
     ax.plot_date(pd_util.throughput(df, 250, trim=True).index,
                  pd_util.throughput(df, 250, trim=True),
                  label='250ms',
