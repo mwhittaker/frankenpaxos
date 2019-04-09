@@ -1,4 +1,5 @@
 from typing import Dict, FrozenSet, List, Tuple
+import json
 import pandas as pd
 import requests
 import subprocess
@@ -98,7 +99,14 @@ class PrometheusQueryer:
 
         [1]: https://prometheus.io/docs/prometheus/latest/querying/api/
         """
-        r = requests.get(f'http://{self.address}/api/v1/query?query={q}').json()
+        try:
+            url = f'http://{self.address}/api/v1/query?query={q}'
+            r = requests.get(url).json()
+        except json.decoder.JSONDecodeError as e:
+            print(r)
+            print(r.text)
+            raise e
+
         if r['status'] == 'success':
             pass
         elif r['status'] == 'error':
