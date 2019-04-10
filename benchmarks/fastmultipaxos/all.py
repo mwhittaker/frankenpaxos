@@ -11,11 +11,11 @@ def _main(args) -> None:
             profiled=args.profile,
             monitored=args.monitor,
             prometheus_scrape_interval_ms=200,
-            duration_seconds=15,
+            duration_seconds=20,
             client_lag_seconds=5,
             client_repropose_period_seconds=1,
         )
-        for num_clients in range(1, 15)
+        for num_clients in range(1, 30)
         for round_system_type in [RoundSystemType.CLASSIC_ROUND_ROBIN.name,
                                   RoundSystemType.MIXED_ROUND_ROBIN.name]
     ] * 3

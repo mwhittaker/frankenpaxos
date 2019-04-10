@@ -89,7 +89,8 @@ class PrometheusQueryer:
             try:
                 return self._query_once(q)
             except (ConnectionRefusedError,
-                    requests.exceptions.ConnectionError):
+                    requests.exceptions.ConnectionError,
+                    ValueError):
                 time.sleep(i * 0.1)
         return self._query_once(q)
 
@@ -99,24 +100,21 @@ class PrometheusQueryer:
 
         [1]: https://prometheus.io/docs/prometheus/latest/querying/api/
         """
-        try:
-            url = f'http://{self.address}/api/v1/query?query={q}'
-            r = requests.get(url).json()
-        except json.decoder.JSONDecodeError as e:
-            print(r)
-            print(r.text)
-            raise e
-
-        if r['status'] == 'success':
+        r = requests.get(f'http://{self.address}/api/v1/query',
+                         params={'query': q, 'timeout': '1000s'})
+        if r.status_code == 503:
+            # Service is unavailable.
+            raise ValueError(f'Query "{q}" resulted in a 503.')
+        if r.json()['status'] == 'success':
             pass
-        elif r['status'] == 'error':
+        elif r.json()['status'] == 'error':
             raise ValueError(f'Query "{q}" resulted in error: {r["error"]}.')
         else:
             raise ValueError(f'Unknown status {r["status"]}')
 
         series: Dict[FrozenSet[Tuple[str, str]], pd.Series] = {}
-        for stream in r['data']['result']:
-            if r['data']['resultType'] == 'matrix':
+        for stream in r.json()['data']['result']:
+            if r.json()['data']['resultType'] == 'matrix':
                 values = stream['values']
             else:
                 values = [stream['value']]
