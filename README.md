@@ -63,3 +63,6 @@ following:
    ```
 5. Open up vim and run `:ProjectCreate . -n scala` or `:ProjectRefresh` if the
    project already exists.
+
+## Running Benchmarks
+See the `benchmarks/` directory for information on running benchmarks.
