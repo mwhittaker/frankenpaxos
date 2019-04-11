@@ -15,7 +15,6 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": 1,
   "links": [],
   "panels": [
     {
@@ -27,7 +26,7 @@
       "description": "",
       "fill": 1,
       "gridPos": {
-        "h": 9,
+        "h": 8,
         "w": 24,
         "x": 0,
         "y": 0
@@ -63,12 +62,14 @@
           "expr": "rate(fast_multipaxos_leader_requests_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
+          "legendFormat": "{{type}} ({{instance}})",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(fast_multipaxos_leader_requests_total[1s]))",
+          "expr": "sum(rate(fast_multipaxos_leader_requests_total[1s])) by (instance)",
           "format": "time_series",
           "intervalFactor": 1,
+          "legendFormat": "Sum ({{instance}})",
           "refId": "B"
         }
       ],
@@ -112,6 +113,296 @@
         "align": false,
         "alignLevel": null
       }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fast_multipaxos_leader_executed_commands_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Executed Commands ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(fast_multipaxos_leader_executed_noops_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Executed Noops ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(fast_multipaxos_leader_repeated_commands_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Repeated Commands ({{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(fast_multipaxos_leader_chosen_commands_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Chosen Commands {{type}} ({{instance}})",
+          "refId": "D"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Command Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fast_multipaxos_leader_leader_changes_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Leader Changes ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(fast_multipaxos_leader_stuck_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Stuck ({{instance}})",
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Leader Change Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "id": 6,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fast_multipaxos_client_responses_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(fast_multipaxos_client_responses_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Sum",
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Client Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
     }
   ],
   "refresh": false,
@@ -122,8 +413,8 @@
     "list": []
   },
   "time": {
-    "from": "2019-04-11T16:09:22.459Z",
-    "to": "2019-04-11T16:10:08.522Z"
+    "from": "2019-04-11T16:10:07.094Z",
+    "to": "2019-04-11T16:10:40.297Z"
   },
   "timepicker": {
     "refresh_intervals": [
