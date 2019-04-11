@@ -88,6 +88,18 @@ class LeaderMetrics(collectors: Collectors) {
     .name("fast_multipaxos_leader_next_slot")
     .help("The next free slot in the log.")
     .register()
+
+  val resendPhase1asTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_resend_phase1as_total")
+    .help("Total number of times the leader resent phase 1a messages.")
+    .register()
+
+  val resendPhase2asTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_resend_phase2as_total")
+    .help("Total number of times the leader resent phase 2a messages.")
+    .register()
 }
 
 @JSExportAll
@@ -186,6 +198,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     () => {
       sendPhase1as()
       resendPhase1asTimer.start()
+      metrics.resendPhase1asTotal.inc()
     }
   )
 
@@ -212,6 +225,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     () => {
       resendPhase2as()
       resendPhase2asTimer.start()
+      metrics.resendPhase2asTotal.inc()
     }
   )
 

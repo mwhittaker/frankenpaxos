@@ -46,6 +46,18 @@ class ClientMetrics(collectors: Collectors) {
     .name("fast_multipaxos_client_responses_total")
     .help("Total number of successful client responses.")
     .register()
+
+  val unpendingResponsesTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_client_unpending_responses_total")
+    .help("Total number of unpending client responses.")
+    .register()
+
+  val reproposeTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_client_repropose_total")
+    .help("Total number of times a client reproposes a value..")
+    .register()
 }
 
 @JSExportAll
@@ -206,12 +218,14 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             s"Received a reply for unpending command with id " +
               s"'${proposeReply.clientId}'."
           )
+          metrics.unpendingResponsesTotal.inc()
         }
       case None =>
         logger.warn(
           s"Received a reply for unpending command with id " +
             s"'${proposeReply.clientId}'."
         )
+        metrics.unpendingResponsesTotal.inc()
     }
   }
 
