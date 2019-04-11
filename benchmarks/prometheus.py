@@ -108,9 +108,10 @@ class PrometheusQueryer:
         if r.json()['status'] == 'success':
             pass
         elif r.json()['status'] == 'error':
-            raise ValueError(f'Query "{q}" resulted in error: {r["error"]}.')
+            raise ValueError(f'Query "{q}" resulted in error: ' +
+                             f'{r.json()["error"]}.')
         else:
-            raise ValueError(f'Unknown status {r["status"]}')
+            raise ValueError(f'Unknown status {r.json()["status"]}')
 
         series: Dict[FrozenSet[Tuple[str, str]], pd.Series] = {}
         for stream in r.json()['data']['result']:
