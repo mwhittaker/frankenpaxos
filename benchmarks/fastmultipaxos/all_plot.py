@@ -1,3 +1,7 @@
+# See https://stackoverflow.com/a/19521297/3187068
+import matplotlib
+matplotlib.use('pdf')
+
 from textwrap import wrap
 import argparse
 import matplotlib.pyplot as plt

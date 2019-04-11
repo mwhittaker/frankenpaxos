@@ -1,3 +1,7 @@
+# See https://stackoverflow.com/a/19521297/3187068
+import matplotlib
+matplotlib.use('pdf')
+
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
