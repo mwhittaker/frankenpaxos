@@ -62,7 +62,7 @@ object BenchmarkClientMain extends App {
         val options = f.options.copy(reproposePeriod = d)
         f.copy(options = options)
       })
-      .text("Configuration file.")
+      .text("Repropose period")
 
     opt[Duration]('d', "duration")
       .valueName("<duration>")
@@ -122,7 +122,11 @@ object BenchmarkClientMain extends App {
           Seq("host", "port", "start", "stop", "latency_nanos")
         )
         val paxosClient =
-          new Client[NettyTcpTransport](address, transport, logger, config)
+          new Client[NettyTcpTransport](address,
+                                        transport,
+                                        logger,
+                                        config,
+                                        flags.options)
 
         while (java.time.Instant.now().isBefore(stopTime)) {
           // Note that this client will only work for some state machine (e.g.,

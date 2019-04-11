@@ -121,6 +121,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     "reproposeTimer",
     options.reproposePeriod,
     () => {
+      metrics.reproposeTotal.inc()
       pendingCommand match {
         case None =>
           logger.fatal("Attempting to repropose, but no value was proposed.")
