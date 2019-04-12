@@ -284,30 +284,6 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
     # We also compress the output data since it can get big.
     subprocess.call(['gzip', bench.abspath('data.csv')])
 
-    # Scrape data from Prometheus.
-    if input.monitored:
-        pq = prometheus.PrometheusQueryer(
-            tsdb_path=bench.abspath('prometheus_data'),
-            popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
-        )
-        p_df = pq.query(
-            '{__name__=~"fast_multipaxos_.*", job=~"fast_multipaxos_.*"}[1y]')
-        def _rename(old_column) -> str:
-            address_to_instance_name = {
-                **{f'{host.IP()}:12345': f'leader_{i}'
-                   for (i, host) in enumerate(net.leaders())},
-                **{f'{host.IP()}:12345': f'client_{i}'
-                   for (i, host) in enumerate(net.clients())},
-            }
-            label = dict(old_column)
-            instance_name = address_to_instance_name[label["instance"]]
-            if "type" in label:
-                return f'{label["__name__"]}_{label["type"]}_{instance_name}'
-            else:
-                return f'{label["__name__"]}_{instance_name}'
-        p_df = p_df.rename(columns=_rename)
-        p_df.to_csv(bench.abspath('prometheus_data.csv'))
-
     latency_ms = df['latency_nanos'] / 1e6
     throughput_1s = pd_util.throughput(df, 1000)
     throughput_2s = pd_util.throughput(df, 2000)

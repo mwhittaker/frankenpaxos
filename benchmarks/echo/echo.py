@@ -183,16 +183,6 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
     # We also compress the output data since it can get big.
     subprocess.call(['gzip', bench.abspath('data.csv')])
 
-    # Next, we scrape data from Prometheus.
-    if input.monitored:
-        pq = prometheus.PrometheusQueryer(
-            tsdb_path=bench.abspath('prometheus_data'),
-            popen=lambda c: bench.popen(label='prometheus_querier', cmd=c)
-        )
-        p_df = pd.DataFrame()
-        p_df[['echo_requests_total']] = pq.query('echo_requests_total[1y]')
-        p_df.to_csv(bench.abspath('prometheus_data.csv'))
-
     latency_ms = df['latency_nanos'] / 1e6
     throughput_1s = pd_util.throughput(df, 1000)
     throughput_2s = pd_util.throughput(df, 2000)
