@@ -174,6 +174,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
     config_filename = bench.abspath('config.pbtxt')
     bench.write_string(config_filename,
                        proto_util.message_to_pbtext(net.config()))
+    bench.log('Config file config.pbtxt written.')
 
     # Launch acceptors.
     acceptor_procs = []
@@ -191,6 +192,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
             profile=args.profile,
         )
         acceptor_procs.append(proc)
+    bench.log('Acceptors started.')
 
     # Launch leaders.
     leader_procs = []
@@ -210,6 +212,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
             profile=args.profile,
         )
         leader_procs.append(proc)
+    bench.log('Leaders started.')
 
     # Launch Prometheus.
     if input.monitored:
@@ -230,10 +233,12 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
             ],
         )
+        bench.log('Prometheus started.')
 
     # Wait a bit so that a stable leader can elect itself. If we start
     # clients too soon, they may not talk to a stable leader.
     time.sleep(input.client_lag_seconds)
+    bench.log('Client lag ended.')
 
     # Launch clients.
     client_procs = []
@@ -258,6 +263,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
             ]
         )
         client_procs.append(proc)
+    bench.log('Clients started.')
 
     # Wait for clients to finish and then terminate everything.
     for proc in client_procs:
@@ -266,16 +272,21 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
         proc.terminate()
     if input.monitored:
         prometheus_server.terminate()
+    bench.log('Clients finished and processes terminated.')
 
     # Every client thread j on client i writes results to `client_i_j.csv`.
     # We concatenate these results into a single CSV file.
     client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
                    for i in range(input.num_clients)
                    for j in range(input.num_threads_per_client)]
-    df = (pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
-                 .set_index('start')
-                 .sort_index(0))
+    df = pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
+    bench.log('Data read.')
+    df = df.set_index('start')
+    bench.log('Data index set.')
+    df = df.sort_index(0)
+    bench.log('Data index sorted.')
     df.to_csv(bench.abspath('data.csv'))
+    bench.log('Data written.')
 
     # Since we concatenate and save the file, we can throw away the originals.
     for client_csv in client_csvs:
@@ -283,6 +294,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
 
     # We also compress the output data since it can get big.
     subprocess.call(['gzip', bench.abspath('data.csv')])
+    bench.log('Data compressed.')
 
     latency_ms = df['latency_nanos'] / 1e6
     throughput_1s = pd_util.throughput(df, 1000)

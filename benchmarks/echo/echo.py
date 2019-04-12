@@ -119,6 +119,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
         ],
         profile=input.profiled
     )
+    bench.log('Servers started.')
 
     # Launch Prometheus, and give it some time to start.
     if input.monitored:
@@ -136,7 +137,9 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
             ],
         )
+        bench.log('Prometheus started.')
         time.sleep(3)
+        bench.log('Prometheus wait ended.')
 
     # Launch clients.
     client_procs = []
@@ -158,6 +161,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
             ]
         )
         client_procs.append(client_proc)
+    bench.log('Clients started.')
 
     # Wait for experiment to finish.
     for client_proc in client_procs:
@@ -165,16 +169,21 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
     server_proc.terminate()
     if input.monitored:
         prometheus_server.terminate()
+    bench.log('Clients finished and processes terminated.')
 
     # Every client thread j on client i writes results to `client_i_j.csv`. We
     # concatenate these results into a single CSV file.
     client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
                    for i in range(input.num_clients)
                    for j in range(input.num_threads_per_client)]
-    df = (pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
-                 .set_index('start')
-                 .sort_index(0))
+    df = pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
+    bench.log('Data read.')
+    df = df.set_index('start')
+    bench.log('Data index set.')
+    df = df.sort_index(0)
+    bench.log('Data index sorted.')
     df.to_csv(bench.abspath('data.csv'))
+    bench.log('Data written to data.csv.')
 
     # Since we concatenate and save the file, we can throw away the originals.
     for client_csv in client_csvs:
@@ -182,6 +191,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
 
     # We also compress the output data since it can get big.
     subprocess.call(['gzip', bench.abspath('data.csv')])
+    bench.log('data.csv compressed.')
 
     latency_ms = df['latency_nanos'] / 1e6
     throughput_1s = pd_util.throughput(df, 1000)

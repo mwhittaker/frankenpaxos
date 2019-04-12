@@ -12,8 +12,12 @@ def _random_string(n: int) -> str:
     return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
 
 
-def _now_string():
+def _now_string() -> str:
     return str(datetime.datetime.now()).replace(' ', '_')
+
+
+def _pretty_now_string() -> str:
+    return datetime.datetime.now().strftime('%A %B %d, %H:%M:%S.%f')
 
 
 class _Reaped(object):
@@ -99,6 +103,9 @@ class BenchmarkDirectory(object):
         # A mapping from pid to command label.
         self.pids: Dict[int, str] = dict()
 
+        # A file for logging.
+        self.logfile = self.create_file('log.txt')
+
     def __str__(self) -> str:
         return f'BenchmarkDirectory({self.path})'
 
@@ -126,6 +133,10 @@ class BenchmarkDirectory(object):
     def write_dict(self, filename: str, d: Dict) -> str:
         self.write_string(filename, json.dumps(d, indent=4))
         return self.abspath(filename)
+
+    def log(self, s: str) -> None:
+        self.logfile.write(f'[{_pretty_now_string()}] {s}\n')
+        self.logfile.flush()
 
     def popen(self,
               label: str,
