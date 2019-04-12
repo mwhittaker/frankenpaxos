@@ -42,11 +42,6 @@
 .frankenpaxos-log-INFO { color: #27ae60; }
 .frankenpaxos-log-DEBUG { color: #2c3e50; }
 
-/* Timers *********************************************************************/
-.frankenpaxos-timers {}
-.frankenpaxos-timers-trigger {}
-.frankenpaxos-timers-name {}
-
 /* Messages *******************************************************************/
 .frankenpaxos-messages {}
 .frankenpaxos-messages-message {
@@ -60,6 +55,18 @@
 .frankenpaxos-messages-src {}
 .frankenpaxos-messages-dst {}
 .frankenpaxos-messages-text {}
+
+/* Timers *********************************************************************/
+.timer-bar-outer {
+  height: 10pt;
+  border: 1pt solid black;
+  display: inline-block;
+}
+
+.timer-bar-inner {
+  height: 10pt;
+  background: #3498db;
+}
 
 /* Maps ***********************************************************************/
 .frankenpaxos-map {

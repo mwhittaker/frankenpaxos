@@ -226,7 +226,7 @@ Vue.component('frankenpaxos-tweened-app', {
           // triggers an event for the starting. Thus, if we start a timer that
           // is already started, we should cancel it first.
           if (!(timer.address in this.timer_tweens)) {
-            this.timer_tweens[timer.address] = {};
+            Vue.set(this.timer_tweens, timer.address, {});
           }
 
           if (timer.name() in this.timer_tweens[timer.address]) {
@@ -237,7 +237,15 @@ Vue.component('frankenpaxos-tweened-app', {
           }
 
           let vm = this;
-          let tween = TweenMax.to({}, timer.delayMilliseconds() / 1000, {
+          let data = {
+            time_elapsed: 0,
+            progress: 0,
+            timer: timer,
+          }
+          let tween = TweenMax.to(data, timer.delayMilliseconds() / 1000, {
+            time_elapsed: timer.delayMilliseconds() / 1000,
+            progress: 1,
+            data: data,
             onComplete: function() {
               vm.timeline.remove(this);
               this.kill();
@@ -247,12 +255,12 @@ Vue.component('frankenpaxos-tweened-app', {
             ease: Linear.easeNone,
           });
           this.timeline.add(tween, this.timeline.time());
-          this.timer_tweens[timer.address][timer.name()] = tween;
+          Vue.set(this.timer_tweens[timer.address], timer.name(), tween);
         },
 
         timer_stopped: (timer) => {
           if (!(timer.address in this.timer_tweens)) {
-            this.timer_tweens[timer.address] = {};
+            Vue.set(this.timer_tweens, timer.address, {});
           }
 
           if (timer.name() in this.timer_tweens[timer.address]) {
@@ -312,6 +320,27 @@ Vue.component('frankenpaxos-log', {
   `
 });
 
+Vue.component('frankenpaxos-timer', {
+  // timer is a TweenMax with JsTransportTimer timer data.
+  props: ['timer'],
+  template: `
+    <div style="display: inline-block;">
+      <button class="frankenpaxos-button"
+         v-bind:disabled="!timer.data.timer.running"
+         v-on:click="timer.data.timer.run()">Trigger</button>
+      <span>{{timer.data.timer.name()}}</span>
+      <div class="timer-bar-outer"
+           :style="{width: '1.5in'}">
+        <div class="timer-bar-inner"
+             :style="{width: 1.5 * timer.data.progress + 'in'}"></div>
+      </div>
+      <span>
+        ({{timer.data.time_elapsed.toFixed(2)}}s /
+         {{timer.duration().toFixed(2)}}s)
+      </span>
+    </div>
+  `
+});
 
 Vue.component('frankenpaxos-timers', {
   // timers is a list of JsTransportTimer. See JsTransport.scala for more
