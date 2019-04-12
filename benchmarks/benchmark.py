@@ -1,4 +1,4 @@
-from typing import Any, Dict, IO, List, Union
+from typing import Any, Dict, IO, List, Optional, Union
 import contextlib
 import datetime
 import json
@@ -30,16 +30,27 @@ class _Reaped(object):
 
     If you run `python sleep.py` and then kill the process before it terminates,
     sometimes the subprocess lives on. The _Reaped context manager ensures that
-    the process is killed, even if an exception is thrown.
+    the process is killed, even if an exception is thrown. Moreover, the return
+    code of the process is written to a file.
     """
-    def __init__(self, p: subprocess.Popen) -> None:
+    def __init__(self, p: subprocess.Popen, returncode_file: str) -> None:
         self.p = p
+        self.returncode_file = returncode_file
 
     def __enter__(self) -> subprocess.Popen:
         return self.p
 
     def __exit__(self, cls, exn, traceback) -> None:
         self.p.terminate()
+
+        # Terminate the process and wait 1 second for its return code.
+        returncode: Optional[int] = None
+        try:
+            returncode = self.p.wait(1)
+        except subprocess.TimeoutExpired:
+            pass
+        with open(self.returncode_file, 'w') as f:
+            f.write(str(returncode) + '\n')
 
 
 class SuiteDirectory(object):
@@ -187,7 +198,8 @@ class BenchmarkDirectory(object):
             self.pids[proc.pid] = label
 
         # Make sure the process is eventually killed.
-        self.process_stack.enter_context(_Reaped(proc))
+        returncode_file = self.abspath(f'{label}_returncode.txt')
+        self.process_stack.enter_context(_Reaped(proc, returncode_file))
         return proc
 
 
