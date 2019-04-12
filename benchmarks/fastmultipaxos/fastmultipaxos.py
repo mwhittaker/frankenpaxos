@@ -25,6 +25,7 @@ class RoundSystemType(enum.Enum):
 
 class Input(NamedTuple):
     # System-wide parameters.
+    timeout_seconds: float
     net_name: str
     f: int
     num_clients: int
@@ -247,6 +248,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
             f=host.popen,
             label=f'client_{i}',
             cmd = [
+                'timeout', f'{input.timeout_seconds}s',
                 'java',
                 '-cp', os.path.abspath(args.jar),
                 'frankenpaxos.fastmultipaxos.BenchmarkClientMain',
@@ -354,6 +356,7 @@ def run_suite(args: argparse.Namespace,
 def _main(args) -> None:
     inputs = [
         Input(
+            timeout_seconds=120,
             net_name='SingleSwitchNet',
             f=1,
             num_clients=num_clients,

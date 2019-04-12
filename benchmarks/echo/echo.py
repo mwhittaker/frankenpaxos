@@ -17,6 +17,7 @@ import yaml
 
 
 class Input(NamedTuple):
+    timeout_seconds: float
     net_name: str
     num_clients: int
     num_threads_per_client: int
@@ -148,6 +149,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
             f=net.server().popen,
             label=f'client_{i}',
             cmd = [
+                'timeout', f'{input.timeout_seconds}s',
                 'java',
                 '-cp', os.path.abspath(args.jar),
                 'frankenpaxos.echo.BenchmarkClientMain',
@@ -250,6 +252,7 @@ def run_suite(args: argparse.Namespace,
 def _main(args) -> None:
     inputs = [
         Input(
+            timeout_seconds=120,
             net_name='SingleSwitchNet',
             num_clients=num_clients,
             num_threads_per_client=1,

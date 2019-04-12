@@ -3,6 +3,7 @@ from .echo import *
 def _main(args) -> None:
     inputs = [
         Input(
+            timeout_seconds=120,
             net_name='SingleSwitchNet',
             num_clients=num_clients,
             num_threads_per_client=num_threads_per_client,

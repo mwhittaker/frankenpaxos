@@ -3,6 +3,7 @@ from .fastmultipaxos import *
 def _main(args) -> None:
     inputs = [
         Input(
+            timeout_seconds=120,
             net_name='SingleSwitchNet',
             f=1,
             num_clients=num_clients,
