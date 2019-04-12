@@ -186,6 +186,113 @@ Vue.component('frankenpaxos-clickthrough-app', {
   }
 });
 
+Vue.component('frankenpaxos-tweened-app', {
+  props: [
+    // A JsTransport.
+    'transport',
+
+    // A function of type JsTransportMessage -> TweenMax. Typically,
+    // send_message would animate the sending of a message.
+    'send_message',
+
+    // The time scale, or play rate, of the timeline. 2 is 2x real-time, and
+    // 0.5 is half real-time for example.
+    'time_scale',
+  ],
+
+  template: `
+    <div>
+      <frankenpaxos-transport
+        :transport="transport"
+        :callbacks="callbacks">
+      </frankenpaxos-transport>
+      <slot :timer_tweens="timer_tweens"></slot>
+    </div>
+  `,
+
+  data: function() {
+    return {
+      // This timeline sequences all timers and messages.
+      timeline: new TimelineMax(),
+
+      // timer_tweens[address][timer_name] = tween
+      timer_tweens: {},
+
+      callbacks: {
+        timer_started: (timer) => {
+          // If we reset a timer, it toggles from not running to running very
+          // quickly. When this happens, Vue does not always trigger an event
+          // for the stopping and starting of the timer. It usually just
+          // triggers an event for the starting. Thus, if we start a timer that
+          // is already started, we should cancel it first.
+          if (!(timer.address in this.timer_tweens)) {
+            this.timer_tweens[timer.address] = {};
+          }
+
+          if (timer.name() in this.timer_tweens[timer.address]) {
+            let tween = this.timer_tweens[timer.address][timer.name()];
+            this.timeline.remove(tween);
+            tween.kill()
+            delete this.timer_tweens[timer.address][timer.name()];
+          }
+
+          let vm = this;
+          let tween = TweenMax.to({}, timer.delayMilliseconds() / 1000, {
+            onComplete: function() {
+              vm.timeline.remove(this);
+              this.kill();
+              delete vm.timer_tweens[timer.address][timer.name()];
+              timer.run();
+            },
+            ease: Linear.easeNone,
+          });
+          this.timeline.add(tween, this.timeline.time());
+          this.timer_tweens[timer.address][timer.name()] = tween;
+        },
+
+        timer_stopped: (timer) => {
+          if (!(timer.address in this.timer_tweens)) {
+            this.timer_tweens[timer.address] = {};
+          }
+
+          if (timer.name() in this.timer_tweens[timer.address]) {
+            let tween = this.timer_tweens[timer.address][timer.name()];
+            this.timeline.remove(tween);
+            tween.kill()
+            delete vm.timer_tweens[timer.address][timer.name()];
+          }
+        },
+
+        message_buffered: (message) => {
+          let tween = this.send_message(message);
+          this.timeline.add(tween, this.timeline.time());
+
+          let vm = this;
+          let onComplete = tween.eventCallback('onComplete');
+          tween.eventCallback('onComplete', function() {
+            if (onComplete != null) {
+              onComplete();
+            }
+            vm.timeline.remove(this);
+            this.kill();
+            vm.transport.stageMessage(message);
+          });
+        },
+
+        message_staged: (message) => {
+          this.transport.deliverMessage(message);
+        },
+      }
+    }
+  },
+
+  watch: {
+    time_scale: function() {
+      this.timeline.timeScale(this.time_scale);
+    }
+  }
+});
+
 Vue.component('frankenpaxos-log', {
   // log is a list of JsLogEntry. See JsLogger.scala for more information on
   // JsLogEntry.

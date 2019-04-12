@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Echo</title>
+  <meta name=viewport content="width=device-width, initial-scale=1">
+  <link href="../frankenpaxos.css" rel="stylesheet">
+  <style type="text/css">
+    html {
+      font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
+    }
+
+    #container {
+      font-size: 18px;
+      background: #FEFEFE;
+      padding-left: 1em;
+      padding-right: 1em;
+      max-width: 44em;
+      line-height: 27px;
+      padding-top: 20px;
+      padding-bottom: 20px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .app {
+      margin-top: 16pt;
+      margin-bottom: 16pt;
+    }
+
+    .animation {
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+      width: 300px;
+      height: 200px;
+    }
+
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1>Echo</h1>
+
+    <div class="app" id="tweened">
+      <h2>Tweened App</h2>
+
+      <svg id="tweened_animation" class="animation"></svg>
+
+      <div id="tweened_app">
+        <input type="range"
+                v-model="time_scale"
+                min="0.1" max="3" step=0.1>
+
+        <frankenpaxos-tweened-app
+          :transport="transport"
+          :time_scale="time_scale"
+          :send_message="send_message">
+        <template v-slot:default="slotProps">
+          YOOO
+          <!-- {{slotProps.timer_tweens}} -->
+          <div class="frankenpaxos-node">
+            <!-- Actor data. -->
+            <div class="frankenpaxos-box">
+              <h3 class="frankenpaxos-box-title">Data</h3>
+              <div>name: {{node.actor.address.address}}</div>
+              <keep-alive>
+                <component :is="current_component" :node="node"></component>
+              </keep-alive>
+            </div>
+
+            <hr class="frankenpaxos-hr"></hr>
+
+            <!-- Actor log. -->
+            <div class="frankenpaxos-box">
+              <h3 class="frankenpaxos-box-title">Log</h3>
+              <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)">
+              </frankenpaxos-log>
+            </div>
+          </div>
+        </template>
+        </frankenpaxos-tweened-app>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.5.1/snap.svg.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.1.2/TweenMax.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.1.2/TimelineMax.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.0.2/plugins/AttrPlugin.min.js"></script>
+  <script type="text/javascript" src="/js/target/scala-2.12/frankenpaxos-fastopt.js"></script>
+  <script type="text/javascript" src="/js/src/main/js/frankenpaxos.js"></script>
+  <script type="text/javascript" src="/js/src/main/js/echo/echo_tween2.js"></script>
+</body>
+</html>
