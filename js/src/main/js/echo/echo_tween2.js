@@ -73,6 +73,8 @@ function make_app(Echo, snap, app_id) {
       node: nodes[Echo.server.address],
       transport: Echo.transport,
       time_scale: 1,
+      auto_deliver_messages: true,
+      auto_start_timers: true,
       send_message: (message) => {
         let src = nodes[message.src];
         let dst = nodes[message.dst];

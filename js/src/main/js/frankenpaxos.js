@@ -34,6 +34,45 @@ frankenpaxosjs.frankenpaxos_transport_timer = {
   }
 };
 
+frankenpaxosjs.frankenpaxos_transport_timers = {
+  props: [
+    'timers',
+    'timer_started',
+    'timer_stopped',
+  ],
+
+  components: {
+    'frankenpaxos-transport-timer': frankenpaxosjs.frankenpaxos_transport_timer,
+  },
+
+  data: function() {
+    return {
+      js_timers: frankenpaxos.JsUtils.seqToJs(this.timers),
+    };
+  },
+
+  template: `
+    <div>
+      <div v-for="t in js_timers" :key="t.address + t.name()">
+        <frankenpaxos-transport-timer
+          :timer="t"
+          v-on:timer_started="timer_started"
+          v-on:timer_stopped="timer_stopped">
+        </frankenpaxos-transport-timer>
+      </div>
+    </div>
+  `,
+
+  watch: {
+    timers: {
+      handler: function(ts) {
+        this.js_timers = frankenpaxos.JsUtils.seqToJs(ts);
+      },
+      deep: true,
+    }
+  },
+};
+
 frankenpaxosjs.frankenpaxos_transport_buffered_message = {
   props: ['message'],
   template: "<div></div>",
@@ -42,11 +81,88 @@ frankenpaxosjs.frankenpaxos_transport_buffered_message = {
   },
 };
 
+frankenpaxosjs.frankenpaxos_transport_buffered_messages = {
+  props: [
+    'buffered_messages',
+    'message_buffered',
+  ],
+
+  components: {
+    'frankenpaxos-transport-buffered-message':
+      frankenpaxosjs.frankenpaxos_transport_buffered_message,
+  },
+
+  data: function() {
+    return {
+      js_buffered_messages:
+        frankenpaxos.JsUtils.seqToJs(this.buffered_messages),
+    };
+  },
+
+  template: `
+    <div>
+      <div v-for="m in js_buffered_messages" :key="m.id">
+        <frankenpaxos-transport-buffered-message
+          :message="m"
+          v-on:message_buffered="message_buffered">
+        </frankenpaxos-transport-buffered-message>
+      </div>
+    </div>
+  `,
+
+  watch: {
+    buffered_messages: {
+      handler: function(bm) {
+        this.js_buffered_messages = frankenpaxos.JsUtils.seqToJs(bm);
+      },
+      deep: true,
+    }
+  },
+};
+
 frankenpaxosjs.frankenpaxos_transport_staged_message = {
   props: ['message'],
   template: "<div></div>",
   created: function() {
     this.$emit('message_staged', this.message);
+  },
+};
+
+frankenpaxosjs.frankenpaxos_transport_staged_messages = {
+  props: [
+    'staged_messages',
+    'message_staged',
+  ],
+
+  components: {
+    'frankenpaxos-transport-staged-message':
+      frankenpaxosjs.frankenpaxos_transport_staged_message,
+  },
+
+  data: function() {
+    return {
+      js_staged_messages: frankenpaxos.JsUtils.seqToJs(this.staged_messages),
+    };
+  },
+
+  template: `
+    <div>
+      <div v-for="m in js_staged_messages" :key="m.id">
+        <frankenpaxos-transport-staged-message
+          :message="m"
+          v-on:message_staged="message_staged">
+        </frankenpaxos-transport-staged-message>
+      </div>
+    </div>
+  `,
+
+  watch: {
+    staged_messages: {
+      handler: function(bm) {
+        this.js_staged_messages = frankenpaxos.JsUtils.seqToJs(bm);
+      },
+      deep: true,
+    }
   },
 };
 
@@ -61,46 +177,33 @@ Vue.component('frankenpaxos-transport', {
   ],
 
   components: {
-    'frankenpaxos-transport-timer': frankenpaxosjs.frankenpaxos_transport_timer,
-    'frankenpaxos-transport-buffered-message': frankenpaxosjs.frankenpaxos_transport_buffered_message,
-    'frankenpaxos-transport-staged-message': frankenpaxosjs.frankenpaxos_transport_staged_message,
+    'frankenpaxos-transport-timers':
+      frankenpaxosjs.frankenpaxos_transport_timers,
+    'frankenpaxos-transport-buffered-messages':
+      frankenpaxosjs.frankenpaxos_transport_buffered_messages,
+    'frankenpaxos-transport-staged-messages':
+      frankenpaxosjs.frankenpaxos_transport_staged_messages,
   },
 
-  // TODO: Add keys.
   template: `
-    <div hidden=true>
-      <frankenpaxos-transport-timer
-        v-for="timer in timers"
-        :timer="timer"
-        v-on:timer_started="callbacks.timer_started"
-        v-on:timer_stopped="callbacks.timer_stopped">
-      </frankenpaxos-transport-timer>
-      <frankenpaxos-transport-buffered-message
-        v-for="message in buffered_messages"
-        :message="message"
-        v-on:message_buffered="callbacks.message_buffered">
-      </frankenpaxos-transport-buffered-message>
-      <frankenpaxos-transport-staged-message
-        v-for="message in staged_messages"
-        :message="message"
-        v-on:message_staged="callbacks.message_staged">
-      </frankenpaxos-transport-staged-message>
+    <div hidden="true">
+      <frankenpaxos-transport-timers
+        :timers="transport.timers"
+        :timer_started="callbacks.timer_started"
+        :timer_stopped="callbacks.timer_stopped">
+      </frankenpaxos-transport-timers>
+
+      <frankenpaxos-transport-buffered-messages
+        :buffered_messages="transport.bufferedMessages"
+        :message_buffered="callbacks.message_buffered">
+      </frankenpaxos-transport-buffered-messages>
+
+      <frankenpaxos-transport-staged-messages
+        :staged_messages="transport.stagedMessages"
+        :message_staged="callbacks.message_staged">
+      </frankenpaxos-transport-staged-messages>
     </div>
   `,
-
-  computed: {
-    timers: function() {
-      return this.JsUtils.seqToJs(this.transport.timers);
-    },
-
-    buffered_messages: function() {
-      return this.JsUtils.seqToJs(this.transport.bufferedMessages);
-    },
-
-    staged_messages: function() {
-      return this.JsUtils.seqToJs(this.transport.stagedMessages);
-    },
-  },
 });
 
 Vue.component('frankenpaxos-simulated-app', {
@@ -198,6 +301,10 @@ Vue.component('frankenpaxos-tweened-app', {
     // The time scale, or play rate, of the timeline. 2 is 2x real-time, and
     // 0.5 is half real-time for example.
     'time_scale',
+
+    // TODO(mwhittaker): Document.
+    'auto_deliver_messages',
+    'auto_start_timers',
   ],
 
   template: `
@@ -242,14 +349,18 @@ Vue.component('frankenpaxos-tweened-app', {
             progress: 0,
             timer: timer,
           }
+          // TODO(mwhittaker): If auto-start timer is not on, then don't start
+          // this guy. Figure out how to make that work.
           let tween = TweenMax.to(data, timer.delayMilliseconds() / 1000, {
             time_elapsed: timer.delayMilliseconds() / 1000,
             progress: 1,
+            paused: !vm.auto_start_timers,
             data: data,
             onComplete: function() {
               vm.timeline.remove(this);
               this.kill();
               delete vm.timer_tweens[timer.address][timer.name()];
+              console.log(timer.running);
               timer.run();
             },
             ease: Linear.easeNone,
@@ -272,6 +383,8 @@ Vue.component('frankenpaxos-tweened-app', {
         },
 
         message_buffered: (message) => {
+          console.log('message_buffered');
+
           let tween = this.send_message(message);
           this.timeline.add(tween, this.timeline.time());
 
@@ -288,7 +401,9 @@ Vue.component('frankenpaxos-tweened-app', {
         },
 
         message_staged: (message) => {
-          this.transport.deliverMessage(message);
+          if (this.auto_deliver_messages) {
+            this.transport.deliverMessage(message);
+          }
         },
       }
     }

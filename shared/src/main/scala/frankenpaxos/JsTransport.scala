@@ -58,7 +58,8 @@ class JsTransportTimer(
 case class JsTransportMessage(
     src: JsTransport#Address,
     dst: JsTransport#Address,
-    bytes: Array[Byte]
+    bytes: Array[Byte],
+    id: Int
 )
 
 @JSExportAll
@@ -78,6 +79,8 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   var bufferedMessages = mutable.Buffer[JsTransportMessage]()
   var stagedMessages = mutable.Buffer[JsTransportMessage]()
   val history = mutable.Buffer[Command]()
+
+  var messageId: Int = 0
 
   def timersForAddress(
       address: JsTransport#Address
@@ -110,8 +113,10 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       dst: JsTransport#Address,
       bytes: Array[Byte]
   ): Unit = {
+    println("Buffering message")
     if (!partitionedActors.contains(src) && !partitionedActors.contains(dst)) {
-      bufferedMessages += JsTransportMessage(src, dst, bytes)
+      bufferedMessages += JsTransportMessage(src, dst, bytes, messageId)
+      messageId += 1
     }
   }
 
@@ -226,7 +231,7 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       s"""FakeTransportAddress("${address.address}")"""
 
     command match {
-      case DeliverMessage(JsTransportMessage(src, dst, bytes)) =>
+      case DeliverMessage(JsTransportMessage(src, dst, bytes, _)) =>
         val proto = actors(dst).serializer
           .fromBytes(bytes)
           .asInstanceOf[scalapb.GeneratedMessage]
