@@ -408,7 +408,14 @@ Vue.component('frankenpaxos-tweened-app', {
 
   watch: {
     time_scale: function() {
-      this.timeline.timeScale(this.time_scale);
+      if (this.time_scale <= 0) {
+        this.timeline.pause();
+      } else {
+        this.timeline.timeScale(this.time_scale);
+        if (this.timeline.paused()) {
+          this.timeline.play();
+        }
+      }
     }
   }
 });
