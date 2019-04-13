@@ -113,7 +113,6 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       dst: JsTransport#Address,
       bytes: Array[Byte]
   ): Unit = {
-    println("Buffering message")
     if (!partitionedActors.contains(src) && !partitionedActors.contains(dst)) {
       bufferedMessages += JsTransportMessage(src, dst, bytes, messageId)
       messageId += 1

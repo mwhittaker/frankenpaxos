@@ -360,7 +360,6 @@ Vue.component('frankenpaxos-tweened-app', {
               vm.timeline.remove(this);
               this.kill();
               delete vm.timer_tweens[timer.address][timer.name()];
-              console.log(timer.running);
               timer.run();
             },
             ease: Linear.easeNone,
@@ -383,8 +382,6 @@ Vue.component('frankenpaxos-tweened-app', {
         },
 
         message_buffered: (message) => {
-          console.log('message_buffered');
-
           let tween = this.send_message(message);
           this.timeline.add(tween, this.timeline.time());
 
