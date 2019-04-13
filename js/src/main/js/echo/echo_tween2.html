@@ -72,9 +72,9 @@
             <!-- Actor data. -->
             <div class="frankenpaxos-box">
               <h3 class="frankenpaxos-box-title">Data</h3>
-              <div>name: {{node.actor.address.address}}</div>
+              <!-- <div>name: {{node.actor.address.address}}</div> -->
               <keep-alive>
-                <component :is="current_component" :node="node"></component>
+                <component :is="node.component" :node="node"></component>
               </keep-alive>
             </div>
 

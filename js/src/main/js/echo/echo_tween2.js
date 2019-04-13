@@ -19,6 +19,7 @@ let client_info = {
 
   template: `
     <div>
+      <div>{{node.actor.address.address}}</div>
       <div>Number of messages received: {{node.actor.numMessagesReceived}}</div>
       <button v-on:click="echo">Echo</button>
       <input v-model="message" v-on:keyup.enter="echo"></input>
@@ -31,6 +32,7 @@ let server_info = {
 
   template: `
     <div>
+      <div>{{node.actor.address.address}}</div>
       <div>Number of messages received: {{node.actor.numMessagesReceived}}</div>
     </div>
   `,
@@ -43,16 +45,19 @@ function make_nodes(Echo, snap) {
     actor: Echo.server,
     svg: snap.circle(150, 50, 20).attr(
         {fill: '#e74c3c', stroke: 'black', 'stroke-width': '3pt'}),
+    component: server_info,
   };
   nodes[Echo.clientA.address] = {
     actor: Echo.clientA,
     svg: snap.circle(75, 150, 20).attr(
         {fill: '#3498db', stroke: 'black', 'stroke-width': '3pt'}),
+    component: client_info,
   };
   nodes[Echo.clientB.address] = {
     actor: Echo.clientB,
     svg: snap.circle(225, 150, 20).attr(
         {fill: '#2ecc71', stroke: 'black', 'stroke-width': '3pt'}),
+    component: client_info,
   };
 
   // Add node titles.
@@ -93,18 +98,6 @@ function make_app(Echo, snap, app_id) {
           },
         });
       }
-    },
-
-    computed: {
-      current_component: function() {
-        if (this.node.actor.address.address.includes("Server")) {
-          return server_info;
-        } else if (this.node.actor.address.address.includes("Client")) {
-          return client_info;
-        } else {
-          // Impossible!
-        }
-      },
     },
   });
 
