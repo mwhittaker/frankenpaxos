@@ -54,38 +54,28 @@
           :auto_start_timers="auto_start_timers"
           :send_message="send_message">
         <template v-slot:default="slotProps">
-
-        <div class="frankenpaxos-box">
-          <input type="range"
-          v-model="time_scale"
-          min="0" max="3" step=0.1>
-          <div>
-            auto_deliver_messages: <input type="checkbox" v-model="auto_deliver_messages">
-          </div>
-          <div>
-            auto_start_timers: <input type="checkbox" v-model="auto_start_timers">
-          </div>
-        </div>
-          <!-- {{slotProps.timer_tweens}} -->
-
-          <!-- <div class="frankenpaxos-node"> -->
-            <!-- Actor data. -->
-            <div class="frankenpaxos-box">
-              <h3 class="frankenpaxos-box-title">Data</h3>
-              <!-- <div>name: {{node.actor.address.address}}</div> -->
-              <keep-alive>
-                <component :is="node.component" :node="node"></component>
-              </keep-alive>
+          <div class="frankenpaxos-box">
+            <div>
+              Time scale:
+              <input type="range" v-model="time_scale" min="0" max="2" step=0.1>
+              {{time_scale}}x
             </div>
-
-            <!-- <hr class="frankenpaxos-hr"></hr> -->
-
-            <!-- Actor log. -->
-            <div class="frankenpaxos-box">
-              <h3 class="frankenpaxos-box-title">Log</h3>
-              <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)">
-              </frankenpaxos-log>
+            <div>
+              Automatically deliver messages:
+              <input type="checkbox" v-model="auto_deliver_messages">
             </div>
+            <div>
+              Automatically start timers:
+              <input type="checkbox" v-model="auto_start_timers">
+            </div>
+          </div>
+
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Data</h3>
+            <keep-alive>
+              <component :is="node.component" :node="node"></component>
+            </keep-alive>
+          </div>
 
           <div class="frankenpaxos-box">
             <h3 class="frankenpaxos-box-title">Timers</h3>
@@ -93,15 +83,8 @@
               <frankenpaxos-timer :timer="timer">
               </frankenpaxos-timer>
             </div>
-            <!-- <frankenpaxos-timers -->
-            <!--   :timers="JsUtils.seqToJs( -->
-            <!--     transport.timersForAddress(node.actor.address))"> -->
-            <!-- </frankenpaxos-timers> -->
           </div>
 
-          <hr class="frankenpaxos-hr"></hr>
-
-          <!-- Actor messages. -->
           <div class="frankenpaxos-box">
             <h3 class="frankenpaxos-box-title">Messages</h3>
             <frankenpaxos-staged-messages
@@ -111,9 +94,14 @@
                 transport.stagedMessagesForAddress(node.actor.address))">
             </frankenpaxos-staged-messages>
           </div>
-          <!-- </div> -->
+
+          <div class="frankenpaxos-box">
+            <h3 class="frankenpaxos-box-title">Log</h3>
+            <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)">
+            </frankenpaxos-log>
+          </div>
         </template>
-        </frankenpaxos-tweened-app>
+      </frankenpaxos-tweened-app>
     </div>
   </div>
 
