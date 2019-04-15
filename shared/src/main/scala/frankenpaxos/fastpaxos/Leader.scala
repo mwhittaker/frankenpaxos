@@ -58,9 +58,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // The set of phase 1b and phase 2b responses in the current round.
   @JSExport
-  protected var phase1bResponses: mutable.HashSet[Phase1b] = mutable.HashSet()
+  protected var phase1bResponses = mutable.Set[Phase1b]()
   @JSExport
-  protected var phase2bResponses: mutable.HashSet[Phase2b] = mutable.HashSet()
+  protected var phase2bResponses = mutable.Set[Phase2b]()
 
   // The chosen value. Public for testing.
   var chosenValue: Option[String] = None
@@ -152,8 +152,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    // TODO(mwhittaker): Fix bad phase 2. This is classic paxos phase 2.
-
     // Select the largest vote round k, and the corresponding vote value v. If
     // we decide not to go with our initially proposed value, make sure not to
     // forget to update the proposed value.
@@ -170,10 +168,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         proposedValue
       } else {
         // Fast round.
-        val vs = frankenpaxos.Util.popularItems(
-          phase1bResponses.filter(_.voteRound == k).map(_.voteValue.get),
-          config.quorumMajoritySize
-        )
+        val voteValues =
+          phase1bResponses.to[Seq].filter(_.voteRound == k).map(_.voteValue.get)
+        val vs =
+          frankenpaxos.Util.popularItems(voteValues, config.quorumMajoritySize)
         if (vs.size == 0) {
           None
         } else {
