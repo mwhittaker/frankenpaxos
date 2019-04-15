@@ -31,8 +31,8 @@
       display: block;
       margin-left: auto;
       margin-right: auto;
-      width: 400px;
-      height: 300px;
+      max-width: 400px;
+      max-height: 300px;
     }
   </style>
 </head>
@@ -40,7 +40,7 @@
   <div id="container">
     <h1>Leader Election</h1>
 
-    <svg id="tweened_animation" class="animation"></svg>
+    <svg id="tweened_animation" class="animation" viewBox="0 0 400 300"></svg>
 
     <div id="tweened_app">
       <frankenpaxos-tweened-app
