@@ -9,6 +9,8 @@ Vue.mixin({
   }
 });
 
+
+// Low-level transport wrapper. ////////////////////////////////////////////////
 frankenpaxosjs.frankenpaxos_transport_timer = {
   props: ['timer'],
 
@@ -206,89 +208,8 @@ Vue.component('frankenpaxos-transport', {
   `,
 });
 
-Vue.component('frankenpaxos-simulated-app', {
-  props: [
-    'transport',
-    // (message, callback) -> ().
-    'send_message',
-  ],
 
-  template: `
-    <frankenpaxos-transport
-      :transport="transport"
-      :callbacks="callbacks">
-    </frankenpaxos-transport>
-  `,
-
-  data: function() {
-    return {
-      timers: {},
-      callbacks: {
-        timer_started: (timer) => {
-          // If we reset a timer, it toggles from not running to running very
-          // quickly. When this happens, Vue does not always trigger an event
-          // for the stopping and starting of the timer. It usually just
-          // triggers an event for the starting. Thus, if we start a timer that
-          // is already started, we should cancel it first.
-          if ([timer.address, timer.name()] in this.timers) {
-            clearTimeout(this.timers[[timer.address, timer.name()]]);
-            delete this.timers[[timer.address, timer.name()]];
-          }
-
-          this.timers[[timer.address, timer.name()]] = setTimeout(() => {
-            timer.run();
-          }, timer.delayMilliseconds());
-        },
-        timer_stopped: (timer) => {
-          if ([timer.address, timer.name()] in this.timers) {
-            clearTimeout(this.timers[[timer.address, timer.name()]]);
-            delete this.timers[[timer.address, timer.name()]];
-          }
-        },
-        message_buffered: (message) => {
-          this.send_message(message, () => {
-            this.transport.stageMessage(message);
-          });
-        },
-        message_staged: (message) => {
-          this.transport.deliverMessage(message);
-        },
-      }
-    }
-  }
-});
-
-Vue.component('frankenpaxos-clickthrough-app', {
-  props: [
-    'transport',
-    // (message, callback) -> ().
-    'send_message',
-  ],
-
-  template: `
-    <frankenpaxos-transport
-      :transport="transport"
-      :callbacks="callbacks">
-    </frankenpaxos-transport>
-  `,
-
-  data: function() {
-    return {
-      timers: {},
-      callbacks: {
-        timer_started: (timer) => {},
-        timer_stopped: (timer) => {},
-        message_buffered: (message) => {
-          this.send_message(message, () => {
-            this.transport.stageMessage(message);
-          });
-        },
-        message_staged: (message) => {},
-      }
-    }
-  }
-});
-
+// Applications. ///////////////////////////////////////////////////////////////
 Vue.component('frankenpaxos-tweened-app', {
   props: [
     // A JsTransport.
@@ -420,6 +341,8 @@ Vue.component('frankenpaxos-tweened-app', {
   }
 });
 
+
+// Visualizations. /////////////////////////////////////////////////////////////
 Vue.component('frankenpaxos-log', {
   // log is a list of JsLogEntry. See JsLogger.scala for more information on
   // JsLogEntry.

@@ -1,10 +1,13 @@
 /* Generic ********************************************************************/
 .frankenpaxos-node {
   border: 1pt solid black;
+  padding-left: 12pt;
+  padding-right: 12pt;
+  margin-bottom: 12pt;
 }
 
 .frankenpaxos-box {
-  padding: 12pt;
+  margin-bottom: 12pt;
 }
 
 .frankenpaxos-box-title {

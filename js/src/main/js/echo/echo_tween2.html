@@ -41,33 +41,46 @@
   <div id="container">
     <h1>Echo</h1>
 
-    <div class="app" id="tweened">
-      <h2>Tweened App</h2>
+    <svg id="tweened_animation" class="animation"></svg>
 
-      <svg id="tweened_animation" class="animation"></svg>
+    <div id="tweened_app">
+      <frankenpaxos-tweened-app
+        :transport="transport"
+        :time_scale="time_scale"
+        :auto_deliver_messages="auto_deliver_messages"
+        :auto_start_timers="auto_start_timers"
+        :send_message="send_message">
+      <template v-slot:default="slotProps">
+        <div class="frankenpaxos-box">
+          <div>
+            Time scale:
+            <input type="range" v-model="time_scale" min="0" max="2" step=0.1>
+            {{time_scale}}x
+          </div>
+          <div>
+            Automatically deliver messages:
+            <input type="checkbox" v-model="auto_deliver_messages">
+          </div>
+          <div>
+            Automatically start timers:
+            <input type="checkbox" v-model="auto_start_timers">
+          </div>
+        </div>
 
-      <div id="tweened_app">
-        <frankenpaxos-tweened-app
-          :transport="transport"
-          :time_scale="time_scale"
-          :auto_deliver_messages="auto_deliver_messages"
-          :auto_start_timers="auto_start_timers"
-          :send_message="send_message">
-        <template v-slot:default="slotProps">
+        <div class="frankenpaxos-node">
+          <h2>{{node.actor.address.address}}</h2>
+
           <div class="frankenpaxos-box">
-            <div>
-              Time scale:
-              <input type="range" v-model="time_scale" min="0" max="2" step=0.1>
-              {{time_scale}}x
-            </div>
-            <div>
-              Automatically deliver messages:
-              <input type="checkbox" v-model="auto_deliver_messages">
-            </div>
-            <div>
-              Automatically start timers:
-              <input type="checkbox" v-model="auto_start_timers">
-            </div>
+            <frankenpaxos-partition :transport=transport
+                                    :address=node.actor.address
+                                    v-on:partition=partition>
+            partition
+            </frankenpaxos-partition>
+            <frankenpaxos-unpartition :transport=transport
+                                    :address=node.actor.address
+                                    v-on:unpartition=unpartition>
+            unpartition
+            </frankenpaxos-unpartition>
           </div>
 
           <div class="frankenpaxos-box">
@@ -80,8 +93,7 @@
           <div class="frankenpaxos-box">
             <h3 class="frankenpaxos-box-title">Timers</h3>
             <div v-for="timer in slotProps.timer_tweens[node.actor.address]">
-              <frankenpaxos-timer :timer="timer">
-              </frankenpaxos-timer>
+              <frankenpaxos-timer :timer="timer"></frankenpaxos-timer>
             </div>
           </div>
 
@@ -100,9 +112,15 @@
             <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)">
             </frankenpaxos-log>
           </div>
-        </template>
-      </frankenpaxos-tweened-app>
-    </div>
+        </div>
+
+        <div class="frankenpaxos-box">
+          <h3 class="frankenpaxos-box-title">Unit Test</h3>
+          <frankenpaxos-unittest :transport="transport">
+          </frankenpaxos-unittest>
+        </div>
+      </template>
+    </frankenpaxos-tweened-app>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
