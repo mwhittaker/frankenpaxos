@@ -71,13 +71,7 @@ class MultiPaxos {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.multipaxos.SimulatedMultiPaxos")
-object SimulatedMultiPaxos {
-  val MultiPaxos = new MultiPaxos();
-}
-
-@JSExportAll
-@JSExportTopLevel("frankenpaxos.multipaxos.ClickthroughMultiPaxos")
-object ClickthroughMultiPaxos {
+@JSExportTopLevel("frankenpaxos.multipaxos.TweenedMultiPaxos")
+object TweenedMultiPaxos {
   val MultiPaxos = new MultiPaxos();
 }

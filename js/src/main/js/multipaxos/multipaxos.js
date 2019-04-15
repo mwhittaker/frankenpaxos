@@ -19,8 +19,8 @@ let client_info = {
 
   template: `
     <div>
-      <div>proposed value: {{node.actor.proposedValue}}</div>
-      <div>state: {{node.actor.state}}</div>
+      <div><strong>proposed value</strong>: {{node.actor.proposedValue}}</div>
+      <div><strong>state</strong>: {{node.actor.state}}</div>
       <button v-on:click="propose">Propose</button>
       <input v-model="proposal" v-on:keyup.enter="propose"></input>
     </div>
@@ -32,12 +32,12 @@ let replica_info = {
 
   template: `
     <div>
-      <div>state: {{node.actor.state}}</div>
-      <div>slotIn: {{node.actor.slotIn}}</div>
-      <div>slotOut: {{node.actor.slotOut}}</div>
-      <div>requests: {{node.actor.requests}}</div>
-      <div>proposals: {{node.actor.proposals}}</div>
-      <div>decisions: {{node.actor.decisions}}</div>
+      <div><strong>state</strong>: {{node.actor.state}}</div>
+      <div><strong>slotIn</strong>: {{node.actor.slotIn}}</div>
+      <div><strong>slotOut</strong>: {{node.actor.slotOut}}</div>
+      <div><strong>requests</strong>: {{node.actor.requests}}</div>
+      <div><strong>proposals</strong>: {{node.actor.proposals}}</div>
+      <div><strong>decisions</strong>: {{node.actor.decisions}}</div>
     </div>
   `,
 };
@@ -47,13 +47,13 @@ let leader_info = {
 
   template: `
     <div>
-      <div>ballotNumber: {{node.actor.ballotNumber}}</div>
-      <div>active: {{node.actor.active}}</div>
-      <div>proposals: {{node.actor.proposals}}</div>
-      <div>waitForCommander: {{node.actor.waitForCommander}}</div>
-      <div>waitForScout: {{node.actor.waitForScout}}</div>
-      <div>scoutProposalValues: {{node.actor.scoutProposalValues}}</div>
-      <div>activateScout: {{node.actor.activateScout}}</div>
+      <div><strong>ballotNumber</strong>: {{node.actor.ballotNumber}}</div>
+      <div><strong>active</strong>: {{node.actor.active}}</div>
+      <div><strong>proposals</strong>: {{node.actor.proposals}}</div>
+      <div><strong>waitForCommander</strong>: {{node.actor.waitForCommander}}</div>
+      <div><strong>waitForScout</strong>: {{node.actor.waitForScout}}</div>
+      <div><strong>scoutProposalValues</strong>: {{node.actor.scoutProposalValues}}</div>
+      <div><strong>activateScout</strong>: {{node.actor.activateScout}}</div>
     </div>
   `,
 };
@@ -64,8 +64,8 @@ let acceptor_info = {
 
   template: `
     <div>
-      <div>ballotNumber: {{node.actor.ballotNumber}}</div>
-      <div>accepted: {{node.actor.accepted}}</div>
+      <div><strong>ballotNumber</strong>: {{node.actor.ballotNumber}}</div>
+      <div><strong>accepted</strong>: {{node.actor.accepted}}</div>
     </div>
   `,
 };
@@ -107,6 +107,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(client_x, 50, 20).attr(colored(flat_red)),
       snap.text(client_x, 52, '1').attr(number_style),
     ],
+    color: flat_red,
+    component: client_info,
   };
   nodes[MultiPaxos.client2.address] = {
     actor: MultiPaxos.client2,
@@ -114,6 +116,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(client_x, 150, 20).attr(colored(flat_red)),
       snap.text(client_x, 152, '2').attr(number_style),
     ],
+    color: flat_red,
+    component: client_info,
   };
   nodes[MultiPaxos.client3.address] = {
     actor: MultiPaxos.client3,
@@ -121,6 +125,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(client_x, 250, 20).attr(colored(flat_red)),
       snap.text(client_x, 252, '3').attr(number_style),
     ],
+    color: flat_red,
+    component: client_info,
   };
 
   // Replicas.
@@ -130,6 +136,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(replica_x, 100, 20).attr(colored(flat_blue)),
       snap.text(replica_x, 102, '1').attr(number_style),
     ],
+    color: flat_blue,
+    component: replica_info,
   };
   nodes[MultiPaxos.replica2.address] = {
     actor: MultiPaxos.replica2,
@@ -137,6 +145,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(replica_x, 200, 20).attr(colored(flat_blue)),
       snap.text(replica_x, 202, '2').attr(number_style),
     ],
+    color: flat_blue,
+    component: replica_info,
   };
 
   // Leaders.
@@ -146,6 +156,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(leader_x, 100, 20).attr(colored(flat_orange)),
       snap.text(leader_x, 102, '1').attr(number_style),
     ],
+    color: flat_orange,
+    component: leader_info,
   };
   nodes[MultiPaxos.leader2.address] = {
     actor: MultiPaxos.leader2,
@@ -153,6 +165,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(leader_x, 200, 20).attr(colored(flat_orange)),
       snap.text(leader_x, 202, '2').attr(number_style),
     ],
+    color: flat_orange,
+    component: leader_info,
   };
 
   // Acceptors.
@@ -162,6 +176,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(acceptor_x, 50, 20).attr(colored(flat_green)),
       snap.text(acceptor_x, 52, '1').attr(number_style),
     ],
+    color: flat_green,
+    component: acceptor_info,
   };
   nodes[MultiPaxos.acceptor2.address] = {
     actor: MultiPaxos.acceptor2,
@@ -169,6 +185,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(acceptor_x, 150, 20).attr(colored(flat_green)),
       snap.text(acceptor_x, 152, '2').attr(number_style),
     ],
+    color: flat_green,
+    component: acceptor_info,
   };
   nodes[MultiPaxos.acceptor3.address] = {
     actor: MultiPaxos.acceptor3,
@@ -176,6 +194,8 @@ function make_nodes(MultiPaxos, snap) {
       snap.circle(acceptor_x, 250, 20).attr(colored(flat_green)),
       snap.text(acceptor_x, 252, '3').attr(number_style),
     ],
+    color: flat_green,
+    component: acceptor_info,
   };
 
   // Node titles.
@@ -187,52 +207,49 @@ function make_nodes(MultiPaxos, snap) {
   return nodes;
 }
 
-function make_app(MultiPaxos, snap, app_id) {
+function main() {
+  let MultiPaxos = frankenpaxos.multipaxos.TweenedMultiPaxos.MultiPaxos;
+  let snap = Snap('#tweened_animation');
   let nodes = make_nodes(MultiPaxos, snap);
 
   // Create the vue app.
   let vue_app = new Vue({
-    el: app_id,
-
-    // components: {
-    //   'abbreviated-acceptor-info': abbreviated_acceptor_info,
-    // },
+    el: '#tweened_app',
 
     data: {
-      // JsUtils: frankenpaxos.JsUtils,
-      // acceptor1: nodes[Paxos.acceptor1.address],
-      // acceptor2: nodes[Paxos.acceptor2.address],
-      // acceptor3: nodes[Paxos.acceptor3.address],
+      nodes: nodes,
       node: nodes[MultiPaxos.client1.address],
       transport: MultiPaxos.transport,
+      time_scale: 1,
+      auto_deliver_messages: true,
+      auto_start_timers: true,
+    },
+
+    methods: {
       send_message: (message, callback) => {
         let src = nodes[message.src];
         let dst = nodes[message.dst];
-        let svg_message =
-          snap.circle(src.svgs[0].attr("cx"), src.svgs[0].attr("cy"), 9)
-              .attr({fill: '#2c3e50'});
-        snap.prepend(svg_message);
-        svg_message.animate(
-          {cx: dst.svgs[0].attr("cx"), cy: dst.svgs[0].attr("cy")},
-          250 + Math.random() * 200,
-          callback);
-      }
-    },
+        let src_x = src.svgs[0].attr("cx");
+        let src_y = src.svgs[0].attr("cy");
+        let dst_x = dst.svgs[0].attr("cx");
+        let dst_y = dst.svgs[0].attr("cy");
 
-    computed: {
-      current_component: function() {
-        if (this.node.actor.address.address.includes('Client')) {
-          return client_info;
-        } else if (this.node.actor.address.address.includes('Replica')) {
-          return replica_info;
-        } else if (this.node.actor.address.address.includes('Leader')) {
-          return leader_info;
-        } else if (this.node.actor.address.address.includes('Acceptor')) {
-          return acceptor_info;
-        } else {
-          // Impossible!
-          console.assert(false);
-        }
+        let svg_message = snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
+        snap.prepend(svg_message);
+        let duration = (250 + Math.random() * 200) / 1000;
+        return TweenMax.to(svg_message.node, duration, {
+          attr: { cx: dst_x, cy: dst_y },
+          ease: Linear.easeNone,
+          onComplete: () => { svg_message.remove(); },
+        });
+      },
+
+      partition: function(address) {
+        this.nodes[address].svgs[0].attr({fill: "#7f8c8d"});
+      },
+
+      unpartition: function(address) {
+        this.nodes[address].svgs[0].attr({fill: this.nodes[address].color});
       },
     },
   });
@@ -245,16 +262,6 @@ function make_app(MultiPaxos, snap, app_id) {
       }
     }
   }
-}
-
-function main() {
-  let multipaxos = frankenpaxos.multipaxos;
-  make_app(multipaxos.SimulatedMultiPaxos.MultiPaxos,
-           Snap('#simulated_animation'),
-           '#simulated_app');
-  make_app(multipaxos.ClickthroughMultiPaxos.MultiPaxos,
-           Snap('#clickthrough_animation'),
-           '#clickthrough_app');
 }
 
 window.onload = main
