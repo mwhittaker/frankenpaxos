@@ -61,13 +61,7 @@ class FastPaxos {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.fastpaxos.SimulatedFastPaxos")
-object SimulatedFastPaxos {
-  val FastPaxos = new FastPaxos();
-}
-
-@JSExportAll
-@JSExportTopLevel("frankenpaxos.fastpaxos.ClickthroughFastPaxos")
-object ClickthroughFastPaxos {
+@JSExportTopLevel("frankenpaxos.fastpaxos.TweenedFastPaxos")
+object TweenedFastPaxos {
   val FastPaxos = new FastPaxos();
 }
