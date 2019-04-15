@@ -150,21 +150,18 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     }
   }
 
-  def stageMessage(
-      msg: JsTransportMessage,
-      check_exists: Boolean = true
-  ): Unit = {
-    if (check_exists && !bufferedMessages.contains(msg)) {
+  def stageMessage(msg: JsTransportMessage): Unit = {
+    if (!bufferedMessages.contains(msg)) {
       logger.fatal(
         s"Attempted to stage $msg, but that message was not buffered."
       )
       return
     }
 
-    if (check_exists) {
-      bufferedMessages -= msg
+    bufferedMessages -= msg
+    if (!partitionedActors.contains(msg.dst)) {
+      stagedMessages += msg
     }
-    stagedMessages += msg
   }
 
   def deliverMessage(
