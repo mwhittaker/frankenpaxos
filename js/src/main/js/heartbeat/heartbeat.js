@@ -8,7 +8,8 @@ function make_nodes(Heartbeat, snap) {
   let colored = (color) => {
     return {
       'fill': color,
-      'stroke': 'black', 'stroke-width': '3pt',
+      'stroke': 'black',
+      'stroke-width': '3pt',
     }
   };
 
@@ -39,6 +40,7 @@ function make_nodes(Heartbeat, snap) {
       snap.circle(ax, ay, 20).attr(colored(flat_red)),
       snap.text(ax, ay, 'a').attr(title_attr),
     ],
+    color: flat_red,
   };
   nodes[Heartbeat.b.address] = {
     actor: Heartbeat.b,
@@ -46,6 +48,7 @@ function make_nodes(Heartbeat, snap) {
       snap.circle(bx, by, 20).attr(colored(flat_red)),
       snap.text(bx, by, 'b').attr(title_attr),
     ],
+    color: flat_red,
   };
   nodes[Heartbeat.c.address] = {
     actor: Heartbeat.c,
@@ -53,6 +56,7 @@ function make_nodes(Heartbeat, snap) {
       snap.circle(cx, cy, 20).attr(colored(flat_red)),
       snap.text(cx, cy, 'c').attr(title_attr),
     ],
+    color: flat_red,
   };
   nodes[Heartbeat.d.address] = {
     actor: Heartbeat.d,
@@ -60,6 +64,7 @@ function make_nodes(Heartbeat, snap) {
       snap.circle(dx, dy, 20).attr(colored(flat_red)),
       snap.text(dx, dy, 'd').attr(title_attr),
     ],
+    color: flat_red,
   };
   nodes[Heartbeat.e.address] = {
     actor: Heartbeat.e,
@@ -67,37 +72,59 @@ function make_nodes(Heartbeat, snap) {
       snap.circle(ex, ey, 20).attr(colored(flat_red)),
       snap.text(ex, ey, 'e').attr(title_attr),
     ],
+    color: flat_red,
   };
 
   return nodes
 }
 
-function make_app(Heartbeat, snap, app_id) {
+function main() {
+  let Heartbeat = frankenpaxos.heartbeat.TweenedHeartbeat.Heartbeat;
+  let snap = Snap('#tweened_animation');
   let nodes = make_nodes(Heartbeat, snap);
   let serializer = nodes[Heartbeat.a.address].actor.serializer;
 
   // Create the vue app.
   let vue_app = new Vue({
-    el: app_id,
+    el: '#tweened_app',
 
     data: {
-      transport: Heartbeat.transport,
+      nodes: nodes,
       node: nodes[Heartbeat.a.address],
-      send_message: (message, callback) => {
+      transport: Heartbeat.transport,
+      time_scale: 1,
+      auto_deliver_messages: true,
+      auto_start_timers: true,
+    },
+
+    methods: {
+      send_message: function(message) {
         let from_bytes = serializer.fromBytes(message.bytes);
         let string_message = serializer.toPrettyString(from_bytes);
         let color = string_message.includes("ping") ? '#3498db' : '#2ecc71';
         let src = nodes[message.src];
         let dst = nodes[message.dst];
-        let svg_message =
-          snap.circle(src.svgs[0].attr("cx"), src.svgs[0].attr("cy"), 7)
-              .attr({fill: color});
+        let src_x = src.svgs[0].attr("cx");
+        let src_y = src.svgs[0].attr("cy");
+        let dst_x = dst.svgs[0].attr("cx");
+        let dst_y = dst.svgs[0].attr("cy");
+
+        let svg_message = snap.circle(src_x, src_y, 7).attr({fill: color});
         snap.prepend(svg_message);
-        svg_message.animate(
-          {cx: dst.svgs[0].attr("cx"), cy: dst.svgs[0].attr("cy")},
-          300 + exponential(200),
-          callback);
-      }
+        return TweenMax.to(svg_message.node, (300 + exponential(200)) / 1000, {
+          attr: { cx: dst_x, cy: dst_y },
+          ease: Linear.easeNone,
+          onComplete: () => { svg_message.remove(); },
+        });
+      },
+
+      partition: function(address) {
+        this.nodes[address].svgs[0].attr({fill: "#7f8c8d"});
+      },
+
+      unpartition: function(address) {
+        this.nodes[address].svgs[0].attr({fill: this.nodes[address].color});
+      },
     },
   });
 
@@ -109,16 +136,6 @@ function make_app(Heartbeat, snap, app_id) {
       }
     }
   }
-}
-
-function main() {
-  make_app(frankenpaxos.heartbeat.SimulatedHeartbeat.Heartbeat,
-           Snap('#simulated_animation'),
-           '#simulated_app');
-
-  make_app(frankenpaxos.heartbeat.ClickthroughHeartbeat.Heartbeat,
-           Snap('#clickthrough_animation'),
-           '#clickthrough_app');
 }
 
 window.onload = main

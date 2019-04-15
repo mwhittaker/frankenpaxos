@@ -39,13 +39,7 @@ class Echo {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.echo.SimulatedEcho")
-object SimulatedEcho {
-  val Echo = new Echo()
-}
-
-@JSExportAll
-@JSExportTopLevel("frankenpaxos.echo.ClickthroughEcho")
-object ClickthroughEcho {
+@JSExportTopLevel("frankenpaxos.echo.TweenedEcho")
+object TweenedEcho {
   val Echo = new Echo()
 }

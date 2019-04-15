@@ -81,7 +81,7 @@ function make_nodes(Echo, snap) {
 }
 
 function main() {
-  let Echo = frankenpaxos.echo.SimulatedEcho.Echo;
+  let Echo = frankenpaxos.echo.TweenedEcho.Echo;
   let snap = Snap('#tweened_animation');
   let nodes = make_nodes(Echo, snap)
 

@@ -61,13 +61,7 @@ class Heartbeat {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.heartbeat.SimulatedHeartbeat")
-object SimulatedHeartbeat {
-  val Heartbeat = new Heartbeat();
-}
-
-@JSExportAll
-@JSExportTopLevel("frankenpaxos.heartbeat.ClickthroughHeartbeat")
-object ClickthroughHeartbeat {
+@JSExportTopLevel("frankenpaxos.heartbeat.TweenedHeartbeat")
+object TweenedHeartbeat {
   val Heartbeat = new Heartbeat();
 }

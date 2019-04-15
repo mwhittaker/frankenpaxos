@@ -93,7 +93,7 @@ function make_nodes(LeaderElection, snap) {
 
 function main() {
   let LeaderElection =
-    frankenpaxos.election.SimulatedLeaderElection.LeaderElection;
+    frankenpaxos.election.TweenedLeaderElection.LeaderElection;
   let snap = Snap('#tweened_animation');
   let nodes = make_nodes(LeaderElection, snap);
 

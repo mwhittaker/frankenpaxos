@@ -63,13 +63,7 @@ class LeaderElection {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.election.SimulatedLeaderElection")
-object SimulatedLeaderElection {
-  val LeaderElection = new LeaderElection();
-}
-
-@JSExportAll
-@JSExportTopLevel("frankenpaxos.election.ClickthroughLeaderElection")
-object ClickthroughLeaderElection {
+@JSExportTopLevel("frankenpaxos.election.TweenedLeaderElection")
+object TweenedLeaderElection {
   val LeaderElection = new LeaderElection();
 }
