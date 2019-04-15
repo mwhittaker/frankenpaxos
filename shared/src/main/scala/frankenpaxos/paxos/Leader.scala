@@ -20,6 +20,7 @@ object Leader {
   val serializer = LeaderInboundSerializer
 }
 
+@JSExportAll
 class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
@@ -49,7 +50,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // The leader's round number. With n leaders, leader i uses round
   // numbers i, i + n, i + 2n, i + 3n, etc.
-  private var round: Int = index
+  @JSExport
+  protected var round: Int = index
 
   // The current status of the leader. A leader is either idle, running
   // phase 1, running phase 2, or has learned that a value is chosen.
@@ -58,14 +60,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     val Idle, Phase1, Phase2, Chosen = Value
   }
   import Status._
-  private var status: Status = Idle
+  @JSExport
+  protected var status: Status = Idle
 
   // The value currently being proposed in round `round`.
-  private var proposedValue: Option[String] = None
+  @JSExport
+  protected var proposedValue: Option[String] = None
 
   // The set of phase 1b and phase 2b responses from the current round.
-  private var phase1bResponses: mutable.HashSet[Phase1b] = mutable.HashSet()
-  private var phase2bResponses: mutable.HashSet[Phase2b] = mutable.HashSet()
+  @JSExport
+  protected var phase1bResponses = mutable.Set[Phase1b]()
+  @JSExport
+  protected var phase2bResponses = mutable.Set[Phase2b]()
 
   // The chosen value.
   var chosenValue: Option[String] = None

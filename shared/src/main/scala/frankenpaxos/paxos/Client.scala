@@ -43,7 +43,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   // proposedValue holds a proposed value, if one has been proposed. Once a
   // Paxos client has proposed a value, it will not propose any other value.
-  private var proposedValue: Option[String] = None
+  @JSExport
+  protected var proposedValue: Option[String] = None
 
   // The value chosen by Paxos.
   var chosenValue: Option[String] = None

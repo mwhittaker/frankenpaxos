@@ -53,19 +53,19 @@ class Paxos {
   )
 
   // Leaders.
-  val proposer1Logger = new JsLogger()
-  val proposer1 = new Leader[JsTransport](
+  val leader1Logger = new JsLogger()
+  val leader1 = new Leader[JsTransport](
     JsTransportAddress("Leader 1"),
     transport,
-    proposer1Logger,
+    leader1Logger,
     config
   )
 
-  val proposer2Logger = new JsLogger()
-  val proposer2 = new Leader[JsTransport](
+  val leader2Logger = new JsLogger()
+  val leader2 = new Leader[JsTransport](
     JsTransportAddress("Leader 2"),
     transport,
-    proposer2Logger,
+    leader2Logger,
     config
   )
 
@@ -96,13 +96,7 @@ class Paxos {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.paxos.SimulatedPaxos")
-object SimulatedPaxos {
-  val Paxos = new Paxos();
-}
-
-@JSExportAll
-@JSExportTopLevel("frankenpaxos.paxos.ClickthroughPaxos")
-object ClickthroughPaxos {
+@JSExportTopLevel("frankenpaxos.paxos.TweenedPaxos")
+object TweenedPaxos {
   val Paxos = new Paxos();
 }

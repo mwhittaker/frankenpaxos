@@ -298,7 +298,7 @@ Vue.component('frankenpaxos-tweened-app', {
             let tween = this.timer_tweens[timer.address][timer.name()];
             this.timeline.remove(tween);
             tween.kill()
-            delete this.timer_tweens[timer.address][timer.name()];
+            Vue.delete(this.timer_tweens[timer.address], timer.name());
           }
         },
 
