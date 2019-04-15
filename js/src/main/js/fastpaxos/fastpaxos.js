@@ -186,7 +186,7 @@ function make_nodes(FastPaxos, snap) {
 }
 
 function main() {
-  let FastPaxos = frankenpaxos.fastpaxos.SimulatedFastPaxos.FastPaxos;
+  let FastPaxos = frankenpaxos.fastpaxos.TweenedFastPaxos.FastPaxos;
   let snap = Snap('#tweened_animation');
   let nodes = make_nodes(FastPaxos, snap);
 
