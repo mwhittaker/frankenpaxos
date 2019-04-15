@@ -37,22 +37,39 @@ let server_info = {
 };
 
 function make_nodes(Echo, snap) {
+  let colored = (color) => {
+    return {
+      fill: color,
+      stroke: 'black',
+      'stroke-width': '3pt',
+    }
+  };
+
   // Create the nodes.
   let nodes = {};
   nodes[Echo.server.address] = {
     actor: Echo.server,
-    svg: snap.circle(150, 50, 20).attr(
-        {fill: '#e74c3c', stroke: 'black', 'stroke-width': '3pt'}),
+    svgs: [
+      snap.circle(150, 50, 20).attr(colored('#e74c3c')),
+    ],
+    color: '#e74c3c',
+    component: server_info,
   };
   nodes[Echo.clientA.address] = {
     actor: Echo.clientA,
-    svg: snap.circle(75, 150, 20).attr(
-        {fill: '#3498db', stroke: 'black', 'stroke-width': '3pt'}),
+    svgs: [
+      snap.circle(75, 150, 20).attr(colored('#3498db')),
+    ],
+    color: '#3498db',
+    component: client_info,
   };
   nodes[Echo.clientB.address] = {
     actor: Echo.clientB,
-    svg: snap.circle(225, 150, 20).attr(
-        {fill: '#2ecc71', stroke: 'black', 'stroke-width': '3pt'}),
+    svgs: [
+      snap.circle(225, 150, 20).attr(colored('#2ecc71')),
+    ],
+    color: '#2ecc71',
+    component: client_info,
   };
 
   // Add node titles.
@@ -63,59 +80,59 @@ function make_nodes(Echo, snap) {
   return nodes;
 }
 
-function make_app(Echo, snap, app_id) {
+function main() {
+  let Echo = frankenpaxos.echo.SimulatedEcho.Echo;
+  let snap = Snap('#tweened_animation');
   let nodes = make_nodes(Echo, snap)
 
-  // Create the vue app.
   let vue_app = new Vue({
-    el: app_id,
+    el: '#tweened_app',
 
     data: {
+      nodes: nodes,
       node: nodes[Echo.server.address],
       transport: Echo.transport,
-      send_message: (message, callback) => {
-        let src = nodes[message.src];
-        let dst = nodes[message.dst];
-        let svg_message =
-          snap.circle(src.svg.attr("cx"), src.svg.attr("cy"), 9)
-              .attr({fill: '#2c3e50'});
-        snap.prepend(svg_message);
-        svg_message.animate(
-          {cx: dst.svg.attr("cx"), cy: dst.svg.attr("cy")},
-          250 + Math.random() * 200,
-          callback);
-      }
+      time_scale: 1,
+      auto_deliver_messages: true,
+      auto_start_timers: true,
     },
 
-    computed: {
-      current_component: function() {
-        if (this.node.actor.address.address.includes("Server")) {
-          return server_info;
-        } else if (this.node.actor.address.address.includes("Client")) {
-          return client_info;
-        } else {
-          // Impossible!
-        }
+    methods: {
+      send_message: function(message) {
+        let src = this.nodes[message.src];
+        let dst = this.nodes[message.dst];
+        let src_x = src.svgs[0].attr("cx");
+        let src_y = src.svgs[0].attr("cy");
+        let dst_x = dst.svgs[0].attr("cx");
+        let dst_y = dst.svgs[0].attr("cy");
+
+        let svg_message = snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
+        snap.prepend(svg_message);
+        return TweenMax.to(svg_message.node, 0.5, {
+          attr: { cx: dst_x, cy: dst_y },
+          ease: Linear.easeNone,
+          onComplete: () => { svg_message.remove(); },
+        });
+      },
+
+      partition: function(address) {
+        this.nodes[address].svgs[0].attr({fill: "#7f8c8d"});
+      },
+
+      unpartition: function(address) {
+        this.nodes[address].svgs[0].attr({fill: this.nodes[address].color});
       },
     },
   });
 
   // Select a node by clicking it.
   for (let node of Object.values(nodes)) {
-    node.svg.node.onclick = () => {
-      vue_app.node = node;
+    for (let svg of node.svgs) {
+      svg.node.onclick = () => {
+        vue_app.node = node;
+      }
     }
   }
-}
-
-function main() {
-  make_app(frankenpaxos.echo.SimulatedEcho.Echo,
-           Snap('#simulated_animation'),
-           '#simulated_app');
-
-  make_app(frankenpaxos.echo.ClickthroughEcho.Echo,
-           Snap('#clickthrough_animation'),
-           '#clickthrough_app');
 }
 
 window.onload = main
