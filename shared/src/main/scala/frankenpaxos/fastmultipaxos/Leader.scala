@@ -108,7 +108,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
-    stateMachine: StateMachine,
+    // Public for Javascript.
+    val stateMachine: StateMachine,
     metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   // Types /////////////////////////////////////////////////////////////////////

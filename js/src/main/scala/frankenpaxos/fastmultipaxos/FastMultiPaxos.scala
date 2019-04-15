@@ -85,13 +85,7 @@ class FastMultiPaxos {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.fastmultipaxos.SimulatedFastMultiPaxos")
-object SimulatedFastMultiPaxos {
-  val FastMultiPaxos = new FastMultiPaxos();
-}
-
-@JSExportAll
-@JSExportTopLevel("frankenpaxos.fastmultipaxos.ClickthroughFastMultiPaxos")
-object ClickthroughFastMultiPaxos {
+@JSExportTopLevel("frankenpaxos.fastmultipaxos.TweenedFastMultiPaxos")
+object TweenedFastMultiPaxos {
   val FastMultiPaxos = new FastMultiPaxos();
 }

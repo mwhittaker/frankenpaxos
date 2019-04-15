@@ -22,11 +22,6 @@
       margin-right: auto;
     }
 
-    .app {
-      margin-top: 16pt;
-      margin-bottom: 16pt;
-    }
-
     .animation {
       display: block;
       margin-left: auto;
@@ -40,86 +35,62 @@
   <div id="container">
     <h1>Fast MultiPaxos</h1>
 
-    <!-- Simulated app. -->
-    <div class="app" id="simulated">
-      <h2>Simulated App</h2>
+    <svg id="tweened_animation" class="animation"></svg>
 
-      <svg id="simulated_animation" class="animation"></svg>
-
-      <div id="simulated_app">
-        <frankenpaxos-simulated-app
-          :transport="transport"
-          :send_message="send_message">
-        </frankenpaxos-simulated-app>
-
-        <div class="frankenpaxos-node">
-          <!-- Actor data. -->
-          <div class="frankenpaxos-box">
-            <h3 class="frankenpaxos-box-title">Data</h3>
-            <div>
-              <span>{{node.actor.address.address}}</span>
-              <frankenpaxos-partition :transport=transport
-                                      :address=node.actor.address
-                                      v-on:partition=partition>
-              </frankenpaxos-partition>
-              <frankenpaxos-unpartition :transport=transport
-                                        :address=node.actor.address
-                                        v-on:unpartition=unpartition>
-              </frankenpaxos-unpartition>
-            </div>
-            <keep-alive>
-              <component :is="current_component" :node="node"></component>
-            </keep-alive>
+    <div id="tweened_app">
+      <frankenpaxos-tweened-app
+        :transport="transport"
+        :time_scale="time_scale"
+        :auto_deliver_messages="auto_deliver_messages"
+        :auto_start_timers="auto_start_timers"
+        :send_message="send_message">
+      <template v-slot:default="slotProps">
+        <div class="frankenpaxos-box">
+          <div>
+            Time scale:
+            <input type="range" v-model="time_scale" min="0" max="2" step=0.1>
+            {{time_scale}}x
           </div>
-
-          <hr class="frankenpaxos-hr"></hr>
-
-          <!-- Actor log. -->
-          <div class="frankenpaxos-box">
-            <h3 class="frankenpaxos-box-title">Log</h3>
-            <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)">
-            </frankenpaxos-log>
+          <div>
+            Automatically deliver messages:
+            <input type="checkbox" v-model="auto_deliver_messages">
+          </div>
+          <div>
+            Automatically start timers:
+            <input type="checkbox" v-model="auto_start_timers">
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Clickthrough app. -->
-    <div class="app" id="clickthrough">
-      <h2>Clickthrough App</h2>
-
-      <svg id="clickthrough_animation" class="animation"></svg>
-
-      <div id="clickthrough_app">
-        <frankenpaxos-clickthrough-app
-          :transport="transport"
-          :send_message="send_message">
-        </frankenpaxos-clickthrough-app>
 
         <div class="frankenpaxos-node">
-          <!-- Actor data. -->
+          <h2>{{node.actor.address.address}}</h2>
+
+          <div class="frankenpaxos-box">
+            <frankenpaxos-partition :transport=transport
+                                    :address=node.actor.address
+                                    v-on:partition=partition>
+            partition
+            </frankenpaxos-partition>
+            <frankenpaxos-unpartition :transport=transport
+                                    :address=node.actor.address
+                                    v-on:unpartition=unpartition>
+            unpartition
+            </frankenpaxos-unpartition>
+          </div>
+
           <div class="frankenpaxos-box">
             <h3 class="frankenpaxos-box-title">Data</h3>
-            <span>{{node.actor.address.address}}</span>
             <keep-alive>
-              <component :is="current_component" :node="node"></component>
+              <component :is="node.component" :node="node"></component>
             </keep-alive>
           </div>
 
-          <hr class="frankenpaxos-hr"></hr>
-
-          <!-- Actor timers. -->
           <div class="frankenpaxos-box">
             <h3 class="frankenpaxos-box-title">Timers</h3>
-            <frankenpaxos-timers
-              :timers="JsUtils.seqToJs(
-                transport.timersForAddress(node.actor.address))">
-            </frankenpaxos-timers>
+            <div v-for="timer in slotProps.timer_tweens[node.actor.address]">
+              <frankenpaxos-timer :timer="timer"></frankenpaxos-timer>
+            </div>
           </div>
 
-          <hr class="frankenpaxos-hr"></hr>
-
-          <!-- Actor messages. -->
           <div class="frankenpaxos-box">
             <h3 class="frankenpaxos-box-title">Messages</h3>
             <frankenpaxos-staged-messages
@@ -130,22 +101,28 @@
             </frankenpaxos-staged-messages>
           </div>
 
-          <hr class="frankenpaxos-hr"></hr>
-
-          <!-- Actor log. -->
           <div class="frankenpaxos-box">
             <h3 class="frankenpaxos-box-title">Log</h3>
             <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)">
             </frankenpaxos-log>
           </div>
         </div>
-      </div>
-    </div>
+
+        <div class="frankenpaxos-box">
+          <h3 class="frankenpaxos-box-title">Unit Test</h3>
+          <frankenpaxos-unittest :transport="transport">
+          </frankenpaxos-unittest>
+        </div>
+      </template>
+    </frankenpaxos-tweened-app>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.5.1/snap.svg.js"></script>
   <script type="text/javascript" src="/js/target/scala-2.12/frankenpaxos-fastopt.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.1.2/TweenMax.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.1.2/TimelineMax.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.0.2/plugins/AttrPlugin.min.js"></script>
   <script type="text/javascript" src="/js/src/main/js/frankenpaxos.js"></script>
   <script type="text/javascript" src="/js/src/main/js/fastmultipaxos/fastmultipaxos.js"></script>
 </body>
