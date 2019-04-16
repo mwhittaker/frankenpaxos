@@ -598,3 +598,34 @@ Vue.component('frankenpaxos-set', {
     </table>
   `
 });
+
+Vue.component('frankenpaxos-tuple', {
+  props: ['tuple'],
+
+  data: function() {
+    return {
+      js_tuple: typeof this.tuple !== 'undefined' ?
+                  frankenpaxos.JsUtils.tupleToJs(this.tuple):
+                  {},
+    };
+  },
+
+  watch: {
+    tuple: {
+      handler: function(tuple) {
+        this.js_tuple = typeof tuple !== 'undefined' ?
+                          frankenpaxos.JsUtils.tupleToJs(tuple) :
+                          {};
+      },
+      deep: true,
+    }
+  },
+
+  template: `
+    <table class="frankenpaxos-tuple">
+      <tr v-for="x in js_tuple">
+        <td><slot :value="x">{{x}}</slot></td>
+      </tr>
+    </table>
+  `
+});

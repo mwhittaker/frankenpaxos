@@ -104,8 +104,16 @@ let acceptor_info = {
       <div><strong>round</strong>: {{node.actor.round}}</div>
       <div><strong>nextSlot</strong>: {{node.actor.nextSlot}}</div>
       <div>
+        <strong>bufferedProposeRequests</strong>:
+        <frankenpaxos-seq :seq="node.actor.bufferedProposeRequests"
+                          v-slot="slotProps">
+          <frankenpaxos-tuple :tuple="slotProps.value">
+          </frankenpaxos-tuple>
+        </frankenpaxos-seq>
+      </div>
+      <div>
         <strong>log prefix</strong>:
-        <frankenpaxos-map :map=node.actor.log.prefix()></frankenpaxos-map>
+        <frankenpaxos-map :map="node.actor.log.prefix()"></frankenpaxos-map>
       </div>
       <div><strong>log tail</strong>: {{node.actor.log.tail}}</div>
     </div>

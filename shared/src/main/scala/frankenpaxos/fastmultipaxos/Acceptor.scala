@@ -22,11 +22,42 @@ object Acceptor {
 }
 
 @JSExportAll
+case class AcceptorOptions(
+    // With Fast MultiPaxos, it's possible that two clients concurrently
+    // propose two conflicting commands and that those commands arrive at
+    // acceptors in different orders preventing either from being chosen. This
+    // is called a conflict, and the performance of Fast MultiPaxos degrades
+    // as the number of conflicts increases.
+    //
+    // As a heuristic to avoid conflicts, we have acceptors buffer messages and
+    // process them in batches in a deterministic order. Every `waitPeriod`
+    // seconds, an acceptor forms a batch of all propose requests that are
+    // older than `waitStagger`, sorts them deterministically, and process
+    // them.
+    //
+    // TODO(mwhittaker): I don't think waitStagger is actually useful. Verify
+    // that it's pointless and remove it.
+    // TODO(mwhittaker): Is there a smarter way to reduce the number of
+    // conflicts?
+    waitPeriod: java.time.Duration,
+    waitStagger: java.time.Duration
+)
+
+@JSExportAll
+object AcceptorOptions {
+  val default = AcceptorOptions(
+    waitPeriod = java.time.Duration.ofMillis(25),
+    waitStagger = java.time.Duration.ofMillis(25)
+  )
+}
+
+@JSExportAll
 class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: Config[Transport]
+    config: Config[Transport],
+    options: AcceptorOptions = AcceptorOptions.default
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = AcceptorInbound
   override val serializer = Acceptor.serializer
@@ -60,6 +91,32 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
                                                       logger,
                                                       Set())
 
+  // See the documentation for AcceptorOptions.waitPeriod and
+  // AcceptorOptions.waitStagger above.
+  @JSExport
+  protected var bufferedProposeRequests =
+    mutable.Buffer[(java.time.Instant, Transport#Address, ProposeRequest)]()
+
+  private val processBufferedProposeRequestsTimer: Option[Transport#Timer] =
+    // If the wait period and wait stagger are both 0, then we don't bother
+    // fiddling with a timer; we process propose requests immediately. Thus, we
+    // don't even create a timer.
+    if (options.waitPeriod.getSeconds() == 0 &&
+        options.waitStagger.getSeconds() == 0) {
+      None
+    } else {
+      val t = timer(
+        "processBufferedProposeRequests",
+        options.waitPeriod,
+        () => {
+          processBufferedProposeRequests()
+          processBufferedProposeRequestsTimer.get.start()
+        }
+      )
+      t.start()
+      Some(t)
+    }
+
   // In Fast Paxos, every acceptor has a single vote round and vote value. With
   // Fast MultiPaxos, we have one pair of vote round and vote value per slot.
   // We call such a pair a vote. The vote also includes the highest round in
@@ -81,7 +138,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val log: Log[Entry] = new Log()
 
-  // If this acceptor receives a propose request from a client, and
+  // If this acceptor receives a propose request from a client, it attempts to
+  // choose the command in `nextSlot`.
   @JSExport
   protected var nextSlot = 0;
 
@@ -101,6 +159,36 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       proposeRequest: ProposeRequest
   ): Unit = {
+    // If the wait period and wait stagger are both 0, then we don't bother
+    // fiddling with a timer. We process the propose request immediately.
+    if (options.waitPeriod.getSeconds() == 0 &&
+        options.waitStagger.getSeconds() == 0) {
+      processProposeRequest(src, proposeRequest)
+    } else {
+      val t = (java.time.Instant.now(), src, proposeRequest)
+      bufferedProposeRequests += t
+    }
+  }
+
+  private def processBufferedProposeRequests(): Unit = {
+    val cutoff = java.time.Instant.now().minus(options.waitStagger)
+    val batch = bufferedProposeRequests.takeWhile({
+      case (timestamp, _, _) => timestamp.isBefore(cutoff)
+    })
+    bufferedProposeRequests = bufferedProposeRequests.drop(batch.size)
+
+    val sorted = batch.sortBy({
+      case (_, src, proposeRequest) => (src, proposeRequest).hashCode
+    })
+    for ((_, src, proposeRequest) <- sorted) {
+      processProposeRequest(src, proposeRequest)
+    }
+  }
+
+  private def processProposeRequest(
+      src: Transport#Address,
+      proposeRequest: ProposeRequest
+  ): Unit = {
     log.get(nextSlot) match {
       case Some(Entry(voteRound, _, Some(r))) if r == round && voteRound < r =>
         // If we previously received the distinguished "any" value in this
@@ -115,6 +203,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
         nextSlot += 1
+
       case Some(_) | None =>
       // If we have not received the distinguished "any" value, then we
       // simply ignore the client's request.
