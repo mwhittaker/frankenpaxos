@@ -68,11 +68,11 @@ PYTHONPATH="path/to/frankenpaxos:$PYTHONPATH" \
 TODO(mwhittaker): Document.
 
 - Update `grafana/dashboards/dashboards.yml` with correct path.
-- Run Prometheus on port 8004.
+- Run Prometheus on port 8003.
 - Run Grafana from within its installation directory.
 
 ```bash
-GF_SERVER_HTTP_PORT=8005 \
+GF_SERVER_HTTP_PORT=8004 \
 GF_PATHS_PROVISIONING=path/to/frankenpaxos/grafana \
 ./bin/grafana-server web
 ```
