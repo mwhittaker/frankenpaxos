@@ -8,11 +8,14 @@ import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
+import frankenpaxos.election.LeaderElectionOptions
+import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.statemachine.StateMachine
+import frankenpaxos.thrifty
 import scala.collection.breakOut
 import scala.scalajs.js.annotation._
 
@@ -27,6 +30,26 @@ object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
 @JSExportAll
 object Leader {
   val serializer = LeaderInboundSerializer
+}
+
+@JSExportAll
+case class LeaderOptions(
+    thriftySystem: thrifty.ThriftySystem,
+    resendPhase1asTimerPeriod: java.time.Duration,
+    resendPhase2asTimerPeriod: java.time.Duration,
+    leaderElectionOptions: LeaderElectionOptions,
+    heartbeatOptions: HeartbeatOptions
+)
+
+@JSExportAll
+object LeaderOptions {
+  val default = LeaderOptions(
+    thriftySystem = thrifty.ClosestThriftySystem,
+    resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(5),
+    resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
+    leaderElectionOptions = LeaderElectionOptions.default,
+    heartbeatOptions = HeartbeatOptions.default
+  )
 }
 
 @JSExportAll
@@ -110,6 +133,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     config: Config[Transport],
     // Public for Javascript.
     val stateMachine: StateMachine,
+    options: LeaderOptions = LeaderOptions.default,
     metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   // Types /////////////////////////////////////////////////////////////////////
@@ -194,8 +218,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   private val resendPhase1asTimer: Transport#Timer = timer(
     "resendPhase1as",
-    // TODO(mwhittaker): Pass in as parameter.
-    java.time.Duration.ofSeconds(3),
+    options.resendPhase1asTimerPeriod,
     () => {
       sendPhase1as()
       resendPhase1asTimer.start()
@@ -221,8 +244,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   private val resendPhase2asTimer: Transport#Timer = timer(
     "resendPhase2as",
-    // TODO(mwhittaker): Pass in as parameter.
-    java.time.Duration.ofSeconds(3),
+    options.resendPhase2asTimerPeriod,
     () => {
       resendPhase2as()
       resendPhase2asTimer.start()
@@ -242,8 +264,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // Leaders participate in a leader election protocol to maintain a
   // (hopefully) stable leader.
-  //
-  // TODO(mwhittaker): Pass in leader election options.
   @JSExport
   protected val electionAddress: Transport#Address =
     config.leaderElectionAddresses(leaderId)
@@ -256,8 +276,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       config.leaderElectionAddresses.to[Set],
       leader = Some(
         config.leaderElectionAddresses(config.roundSystem.leader(0))
-      )
+      ),
+      options.leaderElectionOptions
     )
+
   // TODO(mwhittaker): Is this thread safe? It's possible that the election
   // participant invokes the callback before this leader has finished
   // initializing?
@@ -270,8 +292,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   })
 
   // Leaders monitor acceptors to make sure they are still alive.
-  //
-  // TODO(mwhittaker): Pass in hearbeat options.
   @JSExport
   protected val heartbeatAddress: Transport#Address =
     config.leaderHeartbeatAddresses(leaderId)
@@ -281,7 +301,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       heartbeatAddress,
       transport,
       logger,
-      config.acceptorHeartbeatAddresses.to[Set]
+      config.acceptorHeartbeatAddresses.to[Set],
+      options.heartbeatOptions
     )
 
   // Custom logger.

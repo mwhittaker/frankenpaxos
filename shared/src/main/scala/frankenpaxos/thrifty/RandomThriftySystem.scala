@@ -1,6 +1,6 @@
 package frankenpaxos.thrifty
 
-object RandomThriftySystem {
+object RandomThriftySystem extends ThriftySystem {
   def choose[Transport <: frankenpaxos.Transport[Transport]](
       delays: Map[Transport#Address, java.time.Duration],
       min: Int

@@ -4,6 +4,7 @@ import frankenpaxos.Actor
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
+import frankenpaxos.election.LeaderElectionOptions
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.AppendLog
 import scala.collection.mutable
@@ -60,12 +61,22 @@ class FastMultiPaxos {
   val (client3logger, client3) = clients(2)
 
   // Leaders.
+  val leaderOptions = LeaderOptions.default.copy(
+    leaderElectionOptions = LeaderElectionOptions.default.copy(
+      pingPeriod = java.time.Duration.ofSeconds(10),
+      noPingTimeoutMin = java.time.Duration.ofSeconds(30),
+      noPingTimeoutMax = java.time.Duration.ofSeconds(35),
+      notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(10),
+      notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(12)
+    )
+  )
   val leaders = for (i <- 1 to 2) yield {
     val leader = new Leader[JsTransport](JsTransportAddress(s"Leader $i"),
                                          transport,
                                          new JsLogger(),
                                          config,
                                          new AppendLog(),
+                                         leaderOptions,
                                          new LeaderMetrics(FakeCollectors))
     (logger, leader)
   }
@@ -74,8 +85,8 @@ class FastMultiPaxos {
 
   // Acceptors.
   val acceptorOptions = AcceptorOptions(
-    waitPeriod = java.time.Duration.ofSeconds(1),
-    waitStagger = java.time.Duration.ofSeconds(1)
+    waitPeriod = java.time.Duration.ofMillis(500),
+    waitStagger = java.time.Duration.ofMillis(500)
   )
   val acceptors = for (i <- 1 to 3) yield {
     val logger = new JsLogger()

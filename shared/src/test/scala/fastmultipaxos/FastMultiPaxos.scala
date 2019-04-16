@@ -49,6 +49,7 @@ class FastMultiPaxos(val f: Int) {
                                 logger,
                                 config,
                                 new AppendLog(),
+                                LeaderOptions.default,
                                 new LeaderMetrics(FakeCollectors))
 
   // Acceptors.
