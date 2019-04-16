@@ -73,7 +73,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    addresses: Set[Transport#Address],
+    val addresses: Set[Transport#Address],
     options: HeartbeatOptions = HeartbeatOptions.default
 ) extends Actor(address, transport, logger) {
   // Sanity check options.
@@ -177,13 +177,24 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     failTimers(a).start()
   }
 
-  // Returns the set of addresses that this participant thinks are alive. Note
-  // that this method MUST only ever be called from an actor running on the
-  // same transport.
-  def unsafeNetworkDelay(): Map[Transport#Address, java.time.Duration] =
-    networkDelayNanos
-      .mapValues(_.toLong)
-      .mapValues(java.time.Duration.ofNanos(_))
+  // Returns the network delay to every node. If a node is not alive, the delay
+  // is set to infinity. Note that this method MUST only ever be called from an
+  // actor running on the same transport.
+  def unsafeNetworkDelay(): Map[Transport#Address, java.time.Duration] = {
+    // See https://stackoverflow.com/a/38228657/3187068.
+    val maxDuration = java.time.Duration.ofSeconds(Long.MaxValue, 999999999)
+
+    {
+      for (address <- addresses) yield {
+        val delay = networkDelayNanos
+          .get(address)
+          .map(_.toLong)
+          .map(java.time.Duration.ofNanos(_))
+          .getOrElse(maxDuration)
+        (address, delay)
+      }
+    }.toMap
+  }
 
   // Returns the set of addresses that this participant thinks are alive. Note
   // that this method MUST only ever be called from an actor running on the
