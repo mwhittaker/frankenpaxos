@@ -21,7 +21,7 @@ import scala.scalajs.js.annotation._
 
 // These options govern how the heartbeat protocol operates. These options
 // mimic the keepalive interval, keepalive time, and keepalive retry options
-// used to configureTCP keepalive.
+// used to configure TCP keepalive.
 case class HeartbeatOptions(
     // After a participant sends a ping, it waits `failPeriod` time for a pong.
     // If no pong comes, the participant sends another ping and again waits
@@ -34,7 +34,15 @@ case class HeartbeatOptions(
     // If a participant has sent `numRetries` consecutive pings to some
     // participant `a` and not received a pong, then the participant deems `a`
     // as dead.
-    numRetries: Int
+    numRetries: Int,
+    // Heartbeat participants maintain an exponential weighted average of the
+    // network delay to other nodes. `networkDelayAlpha` defines the decay
+    // factor of this average. More explicitly, letting delay_t be the
+    // estimated delay at time t:
+    //
+    //   delay_t = (networkDelayAlpha * new_delay) +
+    //             ((1 - networkDelayAlpha) * delay_{t-1})
+    networkDelayAlpha: Double
 )
 
 @JSExportAll
@@ -55,7 +63,8 @@ object HeartbeatOptions {
   val default = HeartbeatOptions(
     failPeriod = java.time.Duration.ofSeconds(5),
     successPeriod = java.time.Duration.ofSeconds(10),
-    numRetries = 3
+    numRetries = 3,
+    networkDelayAlpha = 0.9
   )
 }
 
@@ -67,11 +76,14 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     addresses: Set[Transport#Address],
     options: HeartbeatOptions = HeartbeatOptions.default
 ) extends Actor(address, transport, logger) {
+  // Sanity check options.
+  logger.check_le(0, options.networkDelayAlpha)
+  logger.check_le(options.networkDelayAlpha, 1)
+
   override type InboundMessage = ParticipantInbound
   override val serializer = ParticipantInboundSerializer
 
-  type ParticipantChan = Chan[Participant[Transport]]
-  private val chans: Map[Transport#Address, ParticipantChan] = {
+  private val chans: Map[Transport#Address, Chan[Participant[Transport]]] = {
     for (a <- addresses)
       yield a -> chan[Participant[Transport]](a, Participant.serializer)
   }.toMap
@@ -98,6 +110,10 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     numRetries(a) = 0
   }
 
+  // The estimated delay between this node and every other node.
+  @JSExport
+  protected var networkDelayNanos = Map[Transport#Address, Double]()
+
   // The addresses of participants that are alive.
   @JSExport
   protected val alive: mutable.Set[Transport#Address] =
@@ -105,7 +121,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
   // Send a ping to every participant and start the timers.
   for ((a, chan) <- chans) {
-    chan.send(ParticipantInbound().withPing(Ping()))
+    chan.send(ParticipantInbound().withPing(Ping(System.nanoTime)))
     failTimers(a).start()
   }
 
@@ -125,10 +141,22 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handlePing(src: Transport#Address, ping: Ping): Unit = {
     val participant = chan[Participant[Transport]](src, Participant.serializer)
-    participant.send(ParticipantInbound().withPong(Pong()))
+    participant.send(ParticipantInbound().withPong(Pong(ping.nanotime)))
   }
 
-  private def handlePong(src: Transport#Address, ping: Pong): Unit = {
+  private def handlePong(src: Transport#Address, pong: Pong): Unit = {
+    val delayNanos = (System.nanoTime - pong.nanotime) / 2
+    networkDelayNanos.get(src) match {
+      case Some(x) =>
+        val newAverage =
+          (options.networkDelayAlpha * delayNanos) +
+            ((1 - options.networkDelayAlpha) * x)
+        networkDelayNanos += (src -> newAverage)
+
+      case None =>
+        networkDelayNanos += (src -> delayNanos)
+    }
+
     alive += src
     numRetries(src) = 0
     failTimers(src).stop()
@@ -140,14 +168,22 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     if (numRetries(a) >= options.numRetries) {
       alive -= a
     }
-    chans(a).send(ParticipantInbound().withPing(Ping()))
+    chans(a).send(ParticipantInbound().withPing(Ping(System.nanoTime)))
     failTimers(a).start()
   }
 
   private def succeed(a: Transport#Address): Unit = {
-    chans(a).send(ParticipantInbound().withPing(Ping()))
+    chans(a).send(ParticipantInbound().withPing(Ping(System.nanoTime)))
     failTimers(a).start()
   }
+
+  // Returns the set of addresses that this participant thinks are alive. Note
+  // that this method MUST only ever be called from an actor running on the
+  // same transport.
+  def unsafeNetworkDelay(): Map[Transport#Address, java.time.Duration] =
+    networkDelayNanos
+      .mapValues(_.toLong)
+      .mapValues(java.time.Duration.ofNanos(_))
 
   // Returns the set of addresses that this participant thinks are alive. Note
   // that this method MUST only ever be called from an actor running on the

@@ -30,7 +30,8 @@ class Heartbeat {
   val options = HeartbeatOptions(
     failPeriod = java.time.Duration.ofMillis(1000),
     successPeriod = java.time.Duration.ofMillis(10000),
-    numRetries = 1
+    numRetries = 1,
+    networkDelayAlpha = 0.9
   )
 
   val a = new Participant[JsTransport](aAddress,

@@ -9,8 +9,16 @@ option (scalapb.options) = {
   flat_package: true
 };
 
-message Ping {}
-message Pong {}
+message Ping {
+  // The time (as recorded by the sender) at which this ping was sent.
+  required int64 nanotime = 1;
+}
+
+message Pong {
+  // The time (as recorded by the sender) at which the corresponding ping was
+  // sent.
+  required int64 nanotime = 1;
+}
 
 message ParticipantInbound {
   oneof request {

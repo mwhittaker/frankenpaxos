@@ -14,11 +14,20 @@ let heartbeat_info = {
 
   template: `
     <div>
-      <div><strong>numRetries</strong>:
-           <frankenpaxos-map :map="node.actor.numRetries"></frankenpaxos-map>
+      <div>
+        <strong>numRetries</strong>:
+        <frankenpaxos-map :map="node.actor.numRetries"></frankenpaxos-map>
       </div>
-      <div><strong>alive</strong>:
-           <frankenpaxos-set :set="node.actor.alive"></frankenpaxos-set>
+
+      <div>
+        <strong>networkDelayNanos</strong>:
+        <frankenpaxos-map :map="node.actor.networkDelayNanos">
+        </frankenpaxos-map>
+      </div>
+
+      <div>
+        <strong>alive</strong>:
+        <frankenpaxos-set :set="node.actor.alive"></frankenpaxos-set>
       </div>
     </div>
   `,
