@@ -155,9 +155,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       yield chan[Leader[Transport]](a, Leader.serializer)
 
   // Channels to all the acceptors.
-  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
+  private val acceptorsByAddress
+    : Map[Transport#Address, Chan[Acceptor[Transport]]] = {
     for (address <- config.acceptorAddresses)
-      yield chan[Acceptor[Transport]](address, Acceptor.serializer)
+      yield (address -> chan[Acceptor[Transport]](address, Acceptor.serializer))
+  }.toMap
+
+  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
+    acceptorsByAddress.values.toSeq
 
   // The current round. Initially, the leader that owns round 0 is the active
   // leader, and all other leaders are inactive.
@@ -195,72 +200,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var nextSlot: Slot = 0
   metrics.nextSlot.set(nextSlot)
-
-  // The state of the leader.
-  @JSExportAll
-  sealed trait State
-
-  // This leader is not the active leader.
-  @JSExportAll
-  case object Inactive extends State
-
-  // This leader is executing phase 1.
-  @JSExportAll
-  case class Phase1(
-      // Phase 1b responses.
-      phase1bs: mutable.Map[AcceptorId, Phase1b],
-      // Pending proposals. When a leader receives a proposal during phase 1,
-      // it buffers the proposal and replays it once it enters phase 2.
-      pendingProposals: mutable.Buffer[(Transport#Address, ProposeRequest)],
-      // A timer to resend phase 1as.
-      resendPhase1as: Transport#Timer
-  ) extends State
-
-  private val resendPhase1asTimer: Transport#Timer = timer(
-    "resendPhase1as",
-    options.resendPhase1asTimerPeriod,
-    () => {
-      sendPhase1as()
-      resendPhase1asTimer.start()
-      metrics.resendPhase1asTotal.inc()
-    }
-  )
-
-  // This leader has finished executing phase 1 and is now executing phase 2.
-  @JSExportAll
-  case class Phase2(
-      // In a classic round, leaders receive commands from clients and relay
-      // them on to acceptors. pendingEntries stores these commands that are
-      // pending votes. Note that during a fast round, a leader may not have a
-      // pending command for a slot, even though it does have phase 2bs for it.
-      pendingEntries: mutable.SortedMap[Slot, Entry],
-      // For each slot, the set of phase 2b messages for that slot. In a
-      // classic round, all the phase 2b messages will be for the same command.
-      // In a fast round, they do not necessarily have to be.
-      phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]],
-      // A timer to resend all pending phase 2a messages.
-      resendPhase2as: Transport#Timer
-  ) extends State
-
-  private val resendPhase2asTimer: Transport#Timer = timer(
-    "resendPhase2as",
-    options.resendPhase2asTimerPeriod,
-    () => {
-      resendPhase2as()
-      resendPhase2asTimer.start()
-      metrics.resendPhase2asTotal.inc()
-    }
-  )
-
-  @JSExport
-  protected var state: State =
-    if (round == 0) {
-      sendPhase1as()
-      resendPhase1asTimer.start()
-      Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
-    } else {
-      Inactive
-    }
 
   // Leaders participate in a leader election protocol to maintain a
   // (hopefully) stable leader.
@@ -305,6 +244,72 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       options.heartbeatOptions
     )
 
+  // The state of the leader.
+  @JSExportAll
+  sealed trait State
+
+  // This leader is not the active leader.
+  @JSExportAll
+  case object Inactive extends State
+
+  // This leader is executing phase 1.
+  @JSExportAll
+  case class Phase1(
+      // Phase 1b responses.
+      phase1bs: mutable.Map[AcceptorId, Phase1b],
+      // Pending proposals. When a leader receives a proposal during phase 1,
+      // it buffers the proposal and replays it once it enters phase 2.
+      pendingProposals: mutable.Buffer[(Transport#Address, ProposeRequest)],
+      // A timer to resend phase 1as.
+      resendPhase1as: Transport#Timer
+  ) extends State
+
+  private val resendPhase1asTimer: Transport#Timer = timer(
+    "resendPhase1as",
+    options.resendPhase1asTimerPeriod,
+    () => {
+      sendPhase1as(false)
+      resendPhase1asTimer.start()
+      metrics.resendPhase1asTotal.inc()
+    }
+  )
+
+  // This leader has finished executing phase 1 and is now executing phase 2.
+  @JSExportAll
+  case class Phase2(
+      // In a classic round, leaders receive commands from clients and relay
+      // them on to acceptors. pendingEntries stores these commands that are
+      // pending votes. Note that during a fast round, a leader may not have a
+      // pending command for a slot, even though it does have phase 2bs for it.
+      pendingEntries: mutable.SortedMap[Slot, Entry],
+      // For each slot, the set of phase 2b messages for that slot. In a
+      // classic round, all the phase 2b messages will be for the same command.
+      // In a fast round, they do not necessarily have to be.
+      phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]],
+      // A timer to resend all pending phase 2a messages.
+      resendPhase2as: Transport#Timer
+  ) extends State
+
+  private val resendPhase2asTimer: Transport#Timer = timer(
+    "resendPhase2as",
+    options.resendPhase2asTimerPeriod,
+    () => {
+      resendPhase2as()
+      resendPhase2asTimer.start()
+      metrics.resendPhase2asTotal.inc()
+    }
+  )
+
+  @JSExport
+  protected var state: State =
+    if (round == 0) {
+      sendPhase1as(true)
+      resendPhase1asTimer.start()
+      Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+    } else {
+      Inactive
+    }
+
   // Custom logger.
   val leaderLogger = new Logger {
     private def withInfo(s: String): String = {
@@ -334,7 +339,21 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Methods ///////////////////////////////////////////////////////////////////
-  private def sendPhase1as(): Unit = {
+  // Send Phase 1a messages to the acceptors. If thrifty is true, we send with
+  // thriftiness. Otherwise, we send to every acceptor.
+  private def sendPhase1as(thrifty: Boolean): Unit = {
+    val acceptors = if (thrifty) {
+      // The addresses returned by the heartbeat node are heartbeat addresses.
+      // We have to transform them into acceptor addresses.
+      options.thriftySystem
+        .choose(heartbeat.unsafeNetworkDelay, config.classicQuorumSize)
+        .map(config.acceptorHeartbeatAddresses.indexOf(_))
+        .map(config.acceptorAddresses(_))
+        .map(acceptorsByAddress(_))
+    } else {
+      this.acceptors
+    }
+
     for (acceptor <- acceptors) {
       acceptor.send(
         AcceptorInbound().withPhase1A(
@@ -942,7 +961,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           s"Leader $address was inactive, but is now the leader."
         )
         round = nextRound
-        sendPhase1as()
+        sendPhase1as(true)
         resendPhase1asTimer.start()
         state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
 
@@ -954,7 +973,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // We were and still are the leader, but in a higher round.
         leaderLogger.debug(s"Leader $address was the leader and still is.")
         round = nextRound
-        sendPhase1as()
+        sendPhase1as(true)
         resendPhase1asTimer.reset()
         state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
 
@@ -969,7 +988,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         leaderLogger.debug(s"Leader $address was the leader and still is.")
         resendPhase2asTimer.stop()
         round = nextRound
-        sendPhase1as()
+        sendPhase1as(true)
         resendPhase1asTimer.start()
         state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
 
