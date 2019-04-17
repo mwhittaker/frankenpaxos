@@ -339,17 +339,28 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Methods ///////////////////////////////////////////////////////////////////
+  def quorumSize(round: Round): Int = {
+    config.roundSystem.roundType(round) match {
+      case FastRound    => config.fastQuorumSize
+      case ClassicRound => config.classicQuorumSize
+    }
+  }
+
+  def thriftyAcceptors(min: Int): Set[Chan[Acceptor[Transport]]] = {
+    // The addresses returned by the heartbeat node are heartbeat addresses.
+    // We have to transform them into acceptor addresses.
+    options.thriftySystem
+      .choose(heartbeat.unsafeNetworkDelay, min)
+      .map(config.acceptorHeartbeatAddresses.indexOf(_))
+      .map(config.acceptorAddresses(_))
+      .map(acceptorsByAddress(_))
+  }
+
   // Send Phase 1a messages to the acceptors. If thrifty is true, we send with
   // thriftiness. Otherwise, we send to every acceptor.
   private def sendPhase1as(thrifty: Boolean): Unit = {
     val acceptors = if (thrifty) {
-      // The addresses returned by the heartbeat node are heartbeat addresses.
-      // We have to transform them into acceptor addresses.
-      options.thriftySystem
-        .choose(heartbeat.unsafeNetworkDelay, config.classicQuorumSize)
-        .map(config.acceptorHeartbeatAddresses.indexOf(_))
-        .map(config.acceptorAddresses(_))
-        .map(acceptorsByAddress(_))
+      thriftyAcceptors(config.classicQuorumSize)
     } else {
       this.acceptors
     }
@@ -444,9 +455,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
-            val phase2a = Phase2a(slot = nextSlot, round = round)
-              .withCommand(request.command)
-            acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+            thriftyAcceptors(config.classicQuorumSize).foreach(
+              _.send(
+                AcceptorInbound().withPhase2A(
+                  Phase2a(slot = nextSlot, round = round)
+                    .withCommand(request.command)
+                )
+              )
+            )
             pendingEntries(nextSlot) = ECommand(request.command)
             phase2bs(nextSlot) = mutable.Map()
             nextSlot += 1
@@ -643,7 +659,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             case ENoop =>
               AcceptorInbound().withPhase2A(phase2a.withNoop(Noop()))
           }
-          acceptors.foreach(_.send(msg))
+          thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
         }
 
         state = Phase2(pendingEntries, phase2bs, resendPhase2asTimer)
@@ -652,9 +668,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Replay the pending proposals.
         nextSlot = endSlot + 1
         for ((_, proposal) <- pendingProposals) {
-          val phase2a = Phase2a(slot = nextSlot, round = round)
-            .withCommand(proposal.command)
-          acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+          thriftyAcceptors(quorumSize(round)).foreach(
+            _.send(
+              AcceptorInbound().withPhase2A(
+                Phase2a(slot = nextSlot, round = round)
+                  .withCommand(proposal.command)
+              )
+            )
+          )
           pendingEntries(nextSlot) = ECommand(proposal.command)
           phase2bs(nextSlot) = mutable.Map()
           nextSlot += 1
@@ -662,9 +683,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Replay the safe to propose values that we haven't just proposed.
         for (command <- yetToProposeCommands.diff(proposedCommands)) {
-          val phase2a =
-            Phase2a(slot = nextSlot, round = round).withCommand(command)
-          acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+          thriftyAcceptors(quorumSize(round)).foreach(
+            _.send(
+              AcceptorInbound().withPhase2A(
+                Phase2a(slot = nextSlot, round = round).withCommand(command)
+              )
+            )
+          )
           pendingEntries(nextSlot) = ECommand(command)
           phase2bs(nextSlot) = mutable.Map()
           nextSlot += 1
@@ -889,6 +914,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
 
       case Phase2(pendingEntries, phase2bs, _) =>
+        // It's important that no slot goes forever unchosen. This prevents
+        // later slots from executing. Thus, we try and and choose a complete
+        // prefix of the log.
         val endSlot: Int = math.max(
           phase2bs.keys.lastOption.getOrElse(-1),
           log.keys.lastOption.getOrElse(-1)
@@ -909,7 +937,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           (log.contains(slot), pendingEntries.get(slot), phase2bs.get(slot)) match {
             case (true, _, _) =>
             // If `slot` is chosen, we don't resend anything.
-            //
+
             case (false, Some(entry), _) =>
               // If we have some pending entry, then we propose that.
               acceptors.foreach(_.send(entryToPhase2a(entry)))

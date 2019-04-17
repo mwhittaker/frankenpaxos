@@ -101,8 +101,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // If the wait period and wait stagger are both 0, then we don't bother
     // fiddling with a timer; we process propose requests immediately. Thus, we
     // don't even create a timer.
-    if (options.waitPeriod.getSeconds() == 0 &&
-        options.waitStagger.getSeconds() == 0) {
+    if (options.waitPeriod == java.time.Duration.ofSeconds(0) &&
+        options.waitStagger == java.time.Duration.ofSeconds(0)) {
       None
     } else {
       val t = timer(
@@ -161,8 +161,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     // If the wait period and wait stagger are both 0, then we don't bother
     // fiddling with a timer. We process the propose request immediately.
-    if (options.waitPeriod.getSeconds() == 0 &&
-        options.waitStagger.getSeconds() == 0) {
+    if (options.waitPeriod == java.time.Duration.ofSeconds(0) &&
+        options.waitStagger == java.time.Duration.ofSeconds(0)) {
       processProposeRequest(src, proposeRequest)
     } else {
       val t = (java.time.Instant.now(), src, proposeRequest)
