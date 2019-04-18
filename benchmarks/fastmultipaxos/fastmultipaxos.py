@@ -1,8 +1,9 @@
 from .. import benchmark
+from .. import parser_util
 from .. import pd_util
 from .. import prometheus
 from .. import proto_util
-from .. import parser_util
+from .. import util
 from mininet.net import Mininet
 from typing import Callable, Dict, List, NamedTuple
 import argparse
@@ -23,6 +24,28 @@ class RoundSystemType(enum.Enum):
   MIXED_ROUND_ROBIN = 2
 
 
+class ElectionOptions(NamedTuple):
+    ping_period_ms: float = 1 * 1000
+    no_ping_timeout_min_ms: float = 10 * 1000
+    no_ping_timeout_max_ms: float = 12 * 1000
+    not_enough_votes_timeout_min_ms: float = 10 * 1000
+    not_enough_votes_timeout_max_ms: float = 12 * 1000
+
+
+class HeartbeatOptions(NamedTuple):
+    fail_period_ms: float = 5 * 1000
+    success_period_ms: float = 10 * 1000
+    num_retries: int = 3
+    network_delay_alpha: float = 0.9
+
+
+class LeaderOptions(NamedTuple):
+    resend_phase1as_timer_period_ms: float = 5 * 1000
+    resend_phase2as_timer_period_ms: float = 5 * 1000
+    election: ElectionOptions = ElectionOptions()
+    heartbeat: HeartbeatOptions = HeartbeatOptions()
+
+
 class Input(NamedTuple):
     # System-wide parameters.
     timeout_seconds: float
@@ -41,6 +64,13 @@ class Input(NamedTuple):
 
     # Client parameters.
     client_repropose_period_seconds: float
+
+    # Acceptor options.
+
+    # Leader options.
+    leader: LeaderOptions = LeaderOptions()
+
+    # Client options.
 
 
 class Output(NamedTuple):
@@ -205,10 +235,35 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 'java',
                 '-cp', os.path.abspath(args.jar),
                 'frankenpaxos.fastmultipaxos.LeaderMain',
+                # Basic flags.
                 '--index', str(i),
                 '--config', config_filename,
+                # Monitoring.
                 '--prometheus_host', host.IP(),
                 '--prometheus_port', '12345',
+                # Options.
+                '--options.resendPhase1asTimerPeriod',
+                    f'{input.leader.resend_phase1as_timer_period_ms}ms',
+                '--options.resendPhase2asTimerPeriod',
+                    f'{input.leader.resend_phase2as_timer_period_ms}ms',
+                '--options.election.pingPeriod',
+                    f'{input.leader.election.ping_period_ms}ms',
+                '--options.election.noPingTimeoutMin',
+                    f'{input.leader.election.no_ping_timeout_min_ms}ms',
+                '--options.election.noPingTimeoutMax',
+                    f'{input.leader.election.no_ping_timeout_max_ms}ms',
+                '--options.election.notEnoughVotesTimeoutMin',
+                    f'{input.leader.election.not_enough_votes_timeout_min_ms}ms',
+                '--options.election.notEnoughVotesTimeoutMax',
+                    f'{input.leader.election.not_enough_votes_timeout_max_ms}ms',
+                '--options.heartbeat.failPeriod',
+                    f'{input.leader.heartbeat.fail_period_ms}ms',
+                '--options.heartbeat.successPeriod',
+                    f'{input.leader.heartbeat.success_period_ms}ms',
+                '--options.heartbeat.numRetries',
+                    str(input.leader.heartbeat.num_retries),
+                '--options.heartbeat.networkDelayAlpha',
+                    str(input.leader.heartbeat.network_delay_alpha),
             ],
             profile=args.profile,
         )
@@ -332,6 +387,8 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
 def run_suite(args: argparse.Namespace,
               inputs: List[Input],
               make_net: Callable[[Input], FastMultiPaxosNet]) -> None:
+    assert len(inputs) > 0, inputs
+
     with benchmark.SuiteDirectory(
             args.suite_directory, 'fast_multipaxos') as suite:
         print(f'Running benchmark suite in {suite.path}.')
@@ -340,7 +397,9 @@ def run_suite(args: argparse.Namespace,
 
         results_file = suite.create_file('results.csv')
         results_writer = csv.writer(results_file)
-        results_writer.writerow(Input._fields + Output._fields)
+        results_writer.writerow(util.flatten_tuple_fields(inputs[0]) +
+                                list(Output._fields))
+        results_file.flush()
 
         for input in tqdm.tqdm(inputs):
             with suite.benchmark_directory() as bench:
@@ -348,8 +407,8 @@ def run_suite(args: argparse.Namespace,
                     bench.write_string('input.txt', str(input))
                     bench.write_dict('input.json', input._asdict())
                     output = run_benchmark(bench, args, input, net)
-                    row = [str(x) for x in list(input) + list(output)]
-                    results_writer.writerow(row)
+                    row = util.flatten_tuple(input) + list(output)
+                    results_writer.writerow([str(x) for x in row])
                     results_file.flush()
 
 
