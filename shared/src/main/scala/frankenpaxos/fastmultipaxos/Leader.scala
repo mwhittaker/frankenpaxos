@@ -15,7 +15,6 @@ import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.statemachine.StateMachine
-import frankenpaxos.thrifty
 import scala.collection.breakOut
 import scala.scalajs.js.annotation._
 
@@ -34,7 +33,7 @@ object Leader {
 
 @JSExportAll
 case class LeaderOptions(
-    thriftySystem: thrifty.ThriftySystem,
+    thriftySystem: ThriftySystem,
     resendPhase1asTimerPeriod: java.time.Duration,
     resendPhase2asTimerPeriod: java.time.Duration,
     leaderElectionOptions: LeaderElectionOptions,
@@ -44,7 +43,7 @@ case class LeaderOptions(
 @JSExportAll
 object LeaderOptions {
   val default = LeaderOptions(
-    thriftySystem = thrifty.ClosestThriftySystem,
+    thriftySystem = ThriftySystem.Closest,
     resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(5),
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
     leaderElectionOptions = LeaderElectionOptions.default,

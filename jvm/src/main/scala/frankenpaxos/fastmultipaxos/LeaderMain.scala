@@ -1,5 +1,6 @@
 package frankenpaxos.fastmultipaxos
 
+import ThriftySystem.Flags.thriftySystemTypeRead
 import frankenpaxos.Actor
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
@@ -59,6 +60,16 @@ object LeaderMain extends App {
       )
 
     // Options.
+    opt[ThriftySystem.Flags.ThriftySystemType]("options.thriftySystem")
+      .action((x, f) => {
+        f.copy(
+          leaderOptions = f.leaderOptions.copy(
+            thriftySystem = ThriftySystem.Flags.make(x)
+          )
+        )
+      })
+      .valueName(ThriftySystem.Flags.valueName)
+
     opt[duration.Duration]("options.resendPhase1asTimerPeriod")
       .action((x, f) => {
         f.copy(

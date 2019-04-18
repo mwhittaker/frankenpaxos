@@ -24,6 +24,12 @@ class RoundSystemType(enum.Enum):
   MIXED_ROUND_ROBIN = 2
 
 
+class ThriftySystemType:
+  NOT_THRIFTY = "NotThrifty"
+  RANDOM = "Random"
+  CLOSEST = "Closest"
+
+
 class ElectionOptions(NamedTuple):
     ping_period_ms: float = 1 * 1000
     no_ping_timeout_min_ms: float = 10 * 1000
@@ -40,6 +46,7 @@ class HeartbeatOptions(NamedTuple):
 
 
 class LeaderOptions(NamedTuple):
+    thrifty_system: str = ThriftySystemType.NOT_THRIFTY
     resend_phase1as_timer_period_ms: float = 5 * 1000
     resend_phase2as_timer_period_ms: float = 5 * 1000
     election: ElectionOptions = ElectionOptions()
@@ -242,6 +249,8 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 '--prometheus_host', host.IP(),
                 '--prometheus_port', '12345',
                 # Options.
+                '--options.thriftySystem',
+                    input.leader.thrifty_system,
                 '--options.resendPhase1asTimerPeriod',
                     f'{input.leader.resend_phase1as_timer_period_ms}ms',
                 '--options.resendPhase2asTimerPeriod',
