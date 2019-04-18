@@ -20,33 +20,53 @@ import org.jgrapht.graph.{DefaultEdge, SimpleDirectedGraph}
 @JSExportAll
 class DependencyGraph {
 
-  val graph: scalax.collection.mutable.Graph[(Command, Int), DiEdge] = scalax.collection.mutable.Graph()
+  val graph: scalax.collection.mutable.Graph[(Command, Int), DiEdge] =
+    scalax.collection.mutable.Graph()
   var directedGraph: SimpleDirectedGraph[(Command, Int), DefaultEdge] =
     new SimpleDirectedGraph[(Command, Int), DefaultEdge](classOf[DefaultEdge])
   val verticesToRemove = mutable.Set[(Command, Int)]()
 
-  def addCommands(command: (Command, Int), edges: ListBuffer[(Command, Int)]): Unit = {
+  def addCommands(
+      command: (Command, Int),
+      edges: ListBuffer[(Command, Int)]
+  ): Unit = {
     directedGraph.addVertex(command)
     for (edge <- edges) {
       directedGraph.addVertex(edge)
       if (!(edge._1.equals(command._1) && edge._2.equals(command._2))) {
-       directedGraph.addEdge(command, edge)
+        directedGraph.addEdge(command, edge)
       }
     }
   }
 
-  def executeDependencyGraph(stateMachine: KeyValueStore, executedCommands: mutable.Set[Command]): Unit = {
+  def executeDependencyGraph(
+      stateMachine: KeyValueStore,
+      executedCommands: mutable.Set[Command]
+  ): Unit = {
     val sccAlg: StrongConnectivityAlgorithm[(Command, Int), DefaultEdge] =
-      new KosarajuStrongConnectivityInspector[(Command, Int), DefaultEdge](directedGraph)
-    val sccGraph: Graph[Graph[(Command, Int), DefaultEdge], DefaultEdge] = sccAlg.getCondensation
-    val reversedGraph: EdgeReversedGraph[Graph[(Command, Int), DefaultEdge], DefaultEdge] =
-      new EdgeReversedGraph[Graph[(Command, Int), DefaultEdge], DefaultEdge](sccGraph)
-    val topSorted: TopologicalOrderIterator[Graph[(Command, Int), DefaultEdge], DefaultEdge] =
-      new TopologicalOrderIterator[Graph[(Command, Int), DefaultEdge], DefaultEdge](reversedGraph)
+      new KosarajuStrongConnectivityInspector[(Command, Int), DefaultEdge](
+        directedGraph
+      )
+    val sccGraph: Graph[Graph[(Command, Int), DefaultEdge], DefaultEdge] =
+      sccAlg.getCondensation
+    val reversedGraph
+      : EdgeReversedGraph[Graph[(Command, Int), DefaultEdge], DefaultEdge] =
+      new EdgeReversedGraph[Graph[(Command, Int), DefaultEdge], DefaultEdge](
+        sccGraph
+      )
+    val topSorted: TopologicalOrderIterator[
+      Graph[(Command, Int), DefaultEdge],
+      DefaultEdge
+    ] =
+      new TopologicalOrderIterator[
+        Graph[(Command, Int), DefaultEdge],
+        DefaultEdge
+      ](reversedGraph)
 
     while (topSorted.hasNext) {
       val scc = topSorted.next()
-      val sortedVertices: java.util.stream.Stream[(Command, Int)]  = scc.vertexSet.stream().sorted(Comparator.comparingInt(_._2))
+      val sortedVertices: java.util.stream.Stream[(Command, Int)] =
+        scc.vertexSet.stream().sorted(Comparator.comparingInt(_._2))
       val iterator = sortedVertices.iterator()
       while (iterator.hasNext) {
         val vertex = iterator.next()
@@ -157,15 +177,26 @@ class DependencyGraph {
     }
   }*/
 
-  private def executeCommand(command: String, stateMachine: KeyValueStore): Unit = {
+  private def executeCommand(
+      command: String,
+      stateMachine: KeyValueStore
+  ): Unit = {
     val tokens = command.split(" ")
     if (tokens.nonEmpty) {
       tokens(0) match {
         case "GET" => {
-          stateMachine.typedRun(Input().withGetRequest(GetRequest(Seq(tokens(1)))))
+          stateMachine.typedRun(
+            Input().withGetRequest(GetRequest(Seq(tokens(1))))
+          )
         }
         case "SET" => {
-          stateMachine.typedRun(Input().withSetRequest(SetRequest(Seq(SetKeyValuePair(key = tokens(1), value = tokens(2))))))
+          stateMachine.typedRun(
+            Input().withSetRequest(
+              SetRequest(
+                Seq(SetKeyValuePair(key = tokens(1), value = tokens(2)))
+              )
+            )
+          )
         }
       }
     }

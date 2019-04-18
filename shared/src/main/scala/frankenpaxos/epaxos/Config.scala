@@ -2,7 +2,7 @@ package frankenpaxos.epaxos
 
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
-    replicaAddresses: Seq[Transport#Address],
+    replicaAddresses: Seq[Transport#Address]
 ) {
   def n: Int = (2 * f) + 1
 

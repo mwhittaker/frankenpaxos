@@ -17,11 +17,16 @@ class StateMachine {
     data
   }
 
-  val interferenceData: mutable.Map[(Array[Byte], Array[Byte]), Boolean] = init()
+  val interferenceData: mutable.Map[(Array[Byte], Array[Byte]), Boolean] =
+    init()
 
   def conflicts(commandOne: Array[Byte], commandTwo: Array[Byte]): Boolean = {
-    if (ByteString.copyFrom(commandOne).equals(ByteString.copyFromUtf8("Noop")) ||
-        ByteString.copyFrom(commandTwo).equals(ByteString.copyFromUtf8("Noop"))) {
+    if (ByteString
+          .copyFrom(commandOne)
+          .equals(ByteString.copyFromUtf8("Noop")) ||
+        ByteString
+          .copyFrom(commandTwo)
+          .equals(ByteString.copyFromUtf8("Noop"))) {
       return false
     }
     interferenceData.getOrElse((commandOne, commandTwo), false)

@@ -13,14 +13,14 @@ import scala.concurrent.duration.Duration
 
 object BenchmarkClientMain extends App {
   case class Flags(
-                    host: String = "localhost",
-                    port: Int = 9000,
-                    paxosConfigFile: File = new File("."),
-                    options: ClientOptions = ClientOptions.default,
-                    duration: Duration = 5 seconds,
-                    numThreads: Int = 1,
-                    outputFilePrefix: String = ""
-                  )
+      host: String = "localhost",
+      port: Int = 9000,
+      paxosConfigFile: File = new File("."),
+      options: ClientOptions = ClientOptions.default,
+      duration: Duration = 5 seconds,
+      numThreads: Int = 1,
+      outputFilePrefix: String = ""
+  )
 
   val parser = new scopt.OptionParser[Flags]("") {
     opt[String]('h', "host")

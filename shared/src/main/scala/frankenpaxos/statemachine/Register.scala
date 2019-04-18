@@ -13,6 +13,8 @@ class Register extends StateMachine {
     input
   }
 
-  override def conflicts(firstCommand: Array[Byte],
-                         secondCommand: Array[Byte]): Boolean = true
+  override def conflicts(
+      firstCommand: Array[Byte],
+      secondCommand: Array[Byte]
+  ): Boolean = true
 }

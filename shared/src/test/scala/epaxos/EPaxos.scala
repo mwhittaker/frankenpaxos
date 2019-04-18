@@ -17,7 +17,7 @@ class EPaxos(val f: Int) {
   val config = Config[FakeTransport](
     f = f,
     replicaAddresses = for (i <- 1 to numReplicas)
-      yield FakeTransportAddress(s"Replica $i"),
+      yield FakeTransportAddress(s"Replica $i")
   )
 
   // Clients.
@@ -43,11 +43,9 @@ class EPaxos(val f: Int) {
 
 sealed trait EPaxosCommand
 case class Propose(clientIndex: Int, value: String) extends EPaxosCommand
-case class TransportCommand(command: FakeTransportCommand)
-    extends EPaxosCommand
+case class TransportCommand(command: FakeTransportCommand) extends EPaxosCommand
 
-class SimulatedEPaxos(val f: Int)
-    extends SimulatedSystem[SimulatedEPaxos] {
+class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
   override type System = (EPaxos, Set[Unit])
   override type State = Set[Unit]
   override type Command = EPaxosCommand
@@ -81,7 +79,8 @@ class SimulatedEPaxos(val f: Int)
     commands.toSet*/
     var minStateMachine = Int.MaxValue
     for (replica <- ePaxos.replicas) {
-      minStateMachine = Math.min(minStateMachine, replica.stateMachine.executedCommands.size)
+      minStateMachine =
+        Math.min(minStateMachine, replica.stateMachine.executedCommands.size)
     }
     for (i <- 1 to minStateMachine) {
       var set = mutable.Set[String]()
