@@ -19,6 +19,20 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import scala.scalajs.js.annotation._
 
+@JSExportAll
+object ParticipantInboundSerializer
+    extends ProtoSerializer[ParticipantInbound] {
+  type A = ParticipantInbound
+  override def toBytes(x: A): Array[Byte] = super.toBytes(x)
+  override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
+  override def toPrettyString(x: A): String = super.toPrettyString(x)
+}
+
+@JSExportAll
+object Participant {
+  val serializer = ParticipantInboundSerializer
+}
+
 // These options govern how the heartbeat protocol operates. These options
 // mimic the keepalive interval, keepalive time, and keepalive retry options
 // used to configure TCP keepalive.
@@ -44,20 +58,6 @@ case class HeartbeatOptions(
     //             ((1 - networkDelayAlpha) * delay_{t-1})
     networkDelayAlpha: Double
 )
-
-@JSExportAll
-object ParticipantInboundSerializer
-    extends ProtoSerializer[ParticipantInbound] {
-  type A = ParticipantInbound
-  override def toBytes(x: A): Array[Byte] = super.toBytes(x)
-  override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
-  override def toPrettyString(x: A): String = super.toPrettyString(x)
-}
-
-@JSExportAll
-object Participant {
-  val serializer = ParticipantInboundSerializer
-}
 
 object HeartbeatOptions {
   val default = HeartbeatOptions(
