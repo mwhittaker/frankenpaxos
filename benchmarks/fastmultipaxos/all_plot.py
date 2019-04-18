@@ -2,46 +2,38 @@
 import matplotlib
 matplotlib.use('pdf')
 
-from textwrap import wrap
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
+import textwrap
 
 
 def wrapped(s: str, width: int = 60) -> str:
-    return '\n'.join(wrap(s, width))
+    return '\n'.join(textwrap.wrap(s, width))
 
 
 def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
-    def translate_paxos_variant(name: str) -> str:
-        if name == 'CLASSIC_ROUND_ROBIN':
-            return 'MultiPaxos'
-        elif name == 'MIXED_ROUND_ROBIN':
-            return 'Fast MultiPaxos'
-        else:
-            assert False, name
-
-    def translate_name(name):
-        return (translate_paxos_variant(name[0]), name[1])
-
-    grouped = df.groupby([
+    grouping_columns = [
         'round_system_type',
-        'client_repropose_period_seconds'
-    ])
+        'acceptor.wait_period_ms',
+        'acceptor.wait_stagger_ms',
+        'client.repropose_period_ms',
+    ]
+    grouped = df.groupby(grouping_columns)
 
     for (name, group) in grouped:
         stats = group.groupby('num_clients').agg([np.mean, np.std])
         mean = stats[column]['mean']
         std = stats[column]['std'].fillna(0)
-        line = ax.plot(mean, '.-', label=translate_name(name))[0]
+        line = ax.plot(mean, '.-', label=name)[0]
         color = line.get_color()
-        ax.fill_between(stats.index, mean - std, mean + std, color=color,
-                        alpha=0.25)
+        ax.fill_between(stats.index, mean - std, mean + std,
+                        color=color, alpha=0.25)
 
     ax.set_title(wrapped(
-        f'{pretty_column} for values of client_repropose_period_seconds'
+        f'{pretty_column} for values of {grouping_columns}'
     ))
     ax.set_xlabel('Number of clients')
     ax.set_ylabel(pretty_column)
@@ -81,7 +73,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '-o', '--output',
         type=str,
-        default='.',
+        default='fastmultipaxos_all.pdf',
         help='Output filename'
     )
     return parser
