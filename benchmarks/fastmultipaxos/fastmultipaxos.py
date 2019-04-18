@@ -45,6 +45,11 @@ class HeartbeatOptions(NamedTuple):
     network_delay_alpha: float = 0.9
 
 
+class AcceptorOptions(NamedTuple):
+    wait_period_ms: float = 25
+    wait_stagger_ms: float = 25
+
+
 class LeaderOptions(NamedTuple):
     thrifty_system: str = ThriftySystemType.NOT_THRIFTY
     resend_phase1as_timer_period_ms: float = 5 * 1000
@@ -73,6 +78,7 @@ class Input(NamedTuple):
     client_repropose_period_seconds: float
 
     # Acceptor options.
+    acceptor: AcceptorOptions = AcceptorOptions()
 
     # Leader options.
     leader: LeaderOptions = LeaderOptions()
@@ -224,8 +230,12 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 'java',
                 '-cp', os.path.abspath(args.jar),
                 'frankenpaxos.fastmultipaxos.AcceptorMain',
+                # Basic flags.
                 '--index', str(i),
                 '--config', config_filename,
+                # Options.
+                '--options.waitPeriod', f'{input.acceptor.wait_period_ms}ms',
+                '--options.waitStagger', f'{input.acceptor.wait_stagger_ms}ms',
             ],
             profile=args.profile,
         )

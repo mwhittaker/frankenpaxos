@@ -55,6 +55,8 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(paxosConfigFile = x))
       .text("Configuration file.")
 
+    // TODO(mwhittaker): Prefix options here to be more consistent with the
+    // acceptor and leader.
     opt[Duration]("repropose_period")
       .valueName("<repropose_period>")
       .action((x, f) => {
