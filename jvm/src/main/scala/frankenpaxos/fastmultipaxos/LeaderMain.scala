@@ -22,7 +22,7 @@ object LeaderMain extends App {
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
       // Options.
-      leaderOptions: LeaderOptions = LeaderOptions.default
+      options: LeaderOptions = LeaderOptions.default
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
@@ -63,7 +63,7 @@ object LeaderMain extends App {
     opt[ThriftySystem.Flags.ThriftySystemType]("options.thriftySystem")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
+          options = f.options.copy(
             thriftySystem = ThriftySystem.Flags.make(x)
           )
         )
@@ -73,7 +73,7 @@ object LeaderMain extends App {
     opt[duration.Duration]("options.resendPhase1asTimerPeriod")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
+          options = f.options.copy(
             resendPhase1asTimerPeriod = java.time.Duration.ofNanos(x.toNanos)
           )
         )
@@ -82,7 +82,7 @@ object LeaderMain extends App {
     opt[duration.Duration]("options.resendPhase2asTimerPeriod")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
+          options = f.options.copy(
             resendPhase2asTimerPeriod = java.time.Duration.ofNanos(x.toNanos)
           )
         )
@@ -91,8 +91,8 @@ object LeaderMain extends App {
     opt[duration.Duration]("options.election.pingPeriod")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
-            leaderElectionOptions = f.leaderOptions.leaderElectionOptions.copy(
+          options = f.options.copy(
+            leaderElectionOptions = f.options.leaderElectionOptions.copy(
               pingPeriod = java.time.Duration.ofNanos(x.toNanos)
             )
           )
@@ -102,8 +102,8 @@ object LeaderMain extends App {
     opt[duration.Duration]("options.election.noPingTimeoutMin")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
-            leaderElectionOptions = f.leaderOptions.leaderElectionOptions.copy(
+          options = f.options.copy(
+            leaderElectionOptions = f.options.leaderElectionOptions.copy(
               noPingTimeoutMin = java.time.Duration.ofNanos(x.toNanos)
             )
           )
@@ -113,8 +113,8 @@ object LeaderMain extends App {
     opt[duration.Duration]("options.election.noPingTimeoutMax")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
-            leaderElectionOptions = f.leaderOptions.leaderElectionOptions.copy(
+          options = f.options.copy(
+            leaderElectionOptions = f.options.leaderElectionOptions.copy(
               noPingTimeoutMax = java.time.Duration.ofNanos(x.toNanos)
             )
           )
@@ -124,8 +124,8 @@ object LeaderMain extends App {
     opt[duration.Duration]("options.election.notEnoughVotesTimeoutMin")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
-            leaderElectionOptions = f.leaderOptions.leaderElectionOptions.copy(
+          options = f.options.copy(
+            leaderElectionOptions = f.options.leaderElectionOptions.copy(
               notEnoughVotesTimeoutMin = java.time.Duration.ofNanos(x.toNanos)
             )
           )
@@ -135,8 +135,8 @@ object LeaderMain extends App {
     opt[duration.Duration]("options.election.notEnoughVotesTimeoutMax")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
-            leaderElectionOptions = f.leaderOptions.leaderElectionOptions.copy(
+          options = f.options.copy(
+            leaderElectionOptions = f.options.leaderElectionOptions.copy(
               notEnoughVotesTimeoutMax = java.time.Duration.ofNanos(x.toNanos)
             )
           )
@@ -146,8 +146,8 @@ object LeaderMain extends App {
     opt[duration.Duration]("options.heartbeat.failPeriod")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
-            heartbeatOptions = f.leaderOptions.heartbeatOptions.copy(
+          options = f.options.copy(
+            heartbeatOptions = f.options.heartbeatOptions.copy(
               failPeriod = java.time.Duration.ofNanos(x.toNanos)
             )
           )
@@ -157,8 +157,8 @@ object LeaderMain extends App {
     opt[duration.Duration]("options.heartbeat.successPeriod")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
-            heartbeatOptions = f.leaderOptions.heartbeatOptions.copy(
+          options = f.options.copy(
+            heartbeatOptions = f.options.heartbeatOptions.copy(
               successPeriod = java.time.Duration.ofNanos(x.toNanos)
             )
           )
@@ -168,8 +168,8 @@ object LeaderMain extends App {
     opt[Int]("options.heartbeat.numRetries")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
-            heartbeatOptions = f.leaderOptions.heartbeatOptions.copy(
+          options = f.options.copy(
+            heartbeatOptions = f.options.heartbeatOptions.copy(
               numRetries = x
             )
           )
@@ -179,8 +179,8 @@ object LeaderMain extends App {
     opt[Double]("options.heartbeat.networkDelayAlpha")
       .action((x, f) => {
         f.copy(
-          leaderOptions = f.leaderOptions.copy(
-            heartbeatOptions = f.leaderOptions.heartbeatOptions.copy(
+          options = f.options.copy(
+            heartbeatOptions = f.options.heartbeatOptions.copy(
               networkDelayAlpha = x
             )
           )
@@ -205,7 +205,7 @@ object LeaderMain extends App {
                                              logger,
                                              config,
                                              stateMachine,
-                                             flags.leaderOptions)
+                                             flags.options)
 
   if (flags.prometheusPort != -1) {
     DefaultExports.initialize()

@@ -57,25 +57,24 @@ class LeaderOptions(NamedTuple):
     election: ElectionOptions = ElectionOptions()
     heartbeat: HeartbeatOptions = HeartbeatOptions()
 
+class ClientOptions(NamedTuple):
+    repropose_period_ms: float = 10 * 1000
 
 class Input(NamedTuple):
     # System-wide parameters.
-    timeout_seconds: float
     net_name: str
     f: int
     num_clients: int
     num_threads_per_client: int
     round_system_type: str
-    profiled: bool
-    monitored: bool
-    prometheus_scrape_interval_ms: int
 
     # Benchmark parameters.
     duration_seconds: float
+    timeout_seconds: float
     client_lag_seconds: float
-
-    # Client parameters.
-    client_repropose_period_seconds: float
+    profiled: bool
+    monitored: bool
+    prometheus_scrape_interval_ms: int
 
     # Acceptor options.
     acceptor: AcceptorOptions = AcceptorOptions()
@@ -84,6 +83,7 @@ class Input(NamedTuple):
     leader: LeaderOptions = LeaderOptions()
 
     # Client options.
+    client: ClientOptions = ClientOptions()
 
 
 class Output(NamedTuple):
@@ -332,7 +332,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 '--prometheus_port', "12345",
                 '--config', config_filename,
                 '--repropose_period',
-                    f'{input.client_repropose_period_seconds}s',
+                    f'{input.client.repropose_period_ms}ms',
                 '--duration', f'{input.duration_seconds}s',
                 '--num_threads', str(input.num_threads_per_client),
                 '--output_file_prefix', bench.abspath(f'client_{i}'),
@@ -434,18 +434,19 @@ def run_suite(args: argparse.Namespace,
 def _main(args) -> None:
     inputs = [
         Input(
-            timeout_seconds=120,
             net_name='SingleSwitchNet',
             f=1,
             num_clients=num_clients,
             num_threads_per_client=1,
             round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+
+            duration_seconds=10,
+            timeout_seconds=120,
+            client_lag_seconds=3,
             profiled=args.profile,
             monitored=args.monitor,
             prometheus_scrape_interval_ms=200,
-            duration_seconds=10,
-            client_lag_seconds=3,
-            client_repropose_period_seconds=10,
+
         )
         for num_clients in [1, 2]
     ] * 2

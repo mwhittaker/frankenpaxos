@@ -13,10 +13,11 @@ object AcceptorMain extends App {
       index: Int = -1,
       paxosConfigFile: File = new File("."),
       // Options.
-      acceptorOptions: AcceptorOptions = AcceptorOptions.default
+      options: AcceptorOptions = AcceptorOptions.default
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
+    // Basic flags.
     opt[Int]('i', "index")
       .required()
       .valueName("<index>")
@@ -29,10 +30,11 @@ object AcceptorMain extends App {
       .action((x, f) => f.copy(paxosConfigFile = x))
       .text("Configuration file.")
 
+    // Options.
     opt[duration.Duration]("options.waitPeriod")
       .action((x, f) => {
         f.copy(
-          acceptorOptions = f.acceptorOptions
+          options = f.options
             .copy(waitPeriod = java.time.Duration.ofNanos(x.toNanos))
         )
       })
@@ -40,7 +42,7 @@ object AcceptorMain extends App {
     opt[duration.Duration]("options.waitStagger")
       .action((x, f) => {
         f.copy(
-          acceptorOptions = f.acceptorOptions
+          options = f.options
             .copy(waitStagger = java.time.Duration.ofNanos(x.toNanos))
         )
       })
@@ -60,5 +62,5 @@ object AcceptorMain extends App {
                                   transport,
                                   logger,
                                   config,
-                                  flags.acceptorOptions)
+                                  flags.options)
 }

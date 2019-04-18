@@ -15,18 +15,23 @@ import scala.concurrent.duration._
 
 object BenchmarkClientMain extends App {
   case class Flags(
+      // Basic flags.
       host: String = "localhost",
       port: Int = 9000,
+      paxosConfigFile: File = new File("."),
+      // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
-      paxosConfigFile: File = new File("."),
+      // Options.
       options: ClientOptions = ClientOptions.default,
+      // Benchmark flags.
       duration: Duration = 5 seconds,
       numThreads: Int = 1,
       outputFilePrefix: String = ""
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
+    // Basic flags.
     opt[String]('h', "host")
       .valueName("<host>")
       .action((x, f) => f.copy(host = x))
@@ -37,6 +42,13 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(port = x))
       .text("Client port")
 
+    opt[File]('c', "config")
+      .required()
+      .valueName("<file>")
+      .action((x, f) => f.copy(paxosConfigFile = x))
+      .text("Configuration file.")
+
+    // Monitoring.
     opt[String]("prometheus_host")
       .valueName("<host>")
       .action((x, f) => f.copy(prometheusHost = x))
@@ -49,23 +61,18 @@ object BenchmarkClientMain extends App {
         s"Prometheus port; -1 to disable (default: ${Flags().prometheusPort})"
       )
 
-    opt[File]('c', "config")
-      .required()
-      .valueName("<file>")
-      .action((x, f) => f.copy(paxosConfigFile = x))
-      .text("Configuration file.")
-
-    // TODO(mwhittaker): Prefix options here to be more consistent with the
-    // acceptor and leader.
-    opt[Duration]("repropose_period")
+    // Options.
+    opt[Duration]("options.reproposePeriod")
       .valueName("<repropose_period>")
       .action((x, f) => {
-        val d = java.time.Duration.ofNanos(x.toNanos)
-        val options = f.options.copy(reproposePeriod = d)
-        f.copy(options = options)
+        f.copy(
+          options = f.options.copy(
+            reproposePeriod = java.time.Duration.ofNanos(x.toNanos)
+          )
+        )
       })
-      .text("Repropose period")
 
+    // Benchmark flags.
     opt[Duration]('d', "duration")
       .valueName("<duration>")
       .action((x, f) => f.copy(duration = x))
@@ -123,7 +130,7 @@ object BenchmarkClientMain extends App {
         latency_writer.writeRow(
           Seq("host", "port", "start", "stop", "latency_nanos")
         )
-        val paxosClient =
+        val client =
           new Client[NettyTcpTransport](address,
                                         transport,
                                         logger,
@@ -137,7 +144,7 @@ object BenchmarkClientMain extends App {
           val cmdStart = java.time.Instant.now()
           val cmdStartNanos = System.nanoTime()
           concurrent.Await
-            .result(paxosClient.propose("."), concurrent.duration.Duration.Inf)
+            .result(client.propose("."), concurrent.duration.Duration.Inf)
           val cmdStopNanos = System.nanoTime()
           val cmdStop = java.time.Instant.now()
           latency_writer.writeRow(

@@ -3,18 +3,22 @@ from .fastmultipaxos import *
 def _main(args) -> None:
     inputs = [
         Input(
-            timeout_seconds=120,
             net_name='SingleSwitchNet',
             f=1,
             num_clients=num_clients,
             num_threads_per_client=1,
             round_system_type=round_system_type,
+
+            duration_seconds=20,
+            timeout_seconds=120,
+            client_lag_seconds=5,
             profiled=args.profile,
             monitored=args.monitor,
             prometheus_scrape_interval_ms=200,
-            duration_seconds=20,
-            client_lag_seconds=5,
-            client_repropose_period_seconds=1,
+
+            client = ClientOptions()._replace(
+                repropose_period_ms=1*1000,
+            )
         )
         for num_clients in range(1, 30)
         for round_system_type in [RoundSystemType.CLASSIC_ROUND_ROBIN.name,
