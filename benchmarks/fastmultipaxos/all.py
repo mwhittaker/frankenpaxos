@@ -36,9 +36,9 @@ def _main(args) -> None:
             RoundSystemType.MIXED_ROUND_ROBIN.name
         ]
         for (wait_period_ms, wait_stagger_ms) in (
-            [(0, 0)]
+            [(0., 0.)]
             if round_system_type == RoundSystemType.CLASSIC_ROUND_ROBIN.name
-            else [(0.01, 0), (0.1, 0), (1, 0), (10, 0)]
+            else [(0.01, 0.), (0.1, 0.), (1, 0.), (10, 0.)]
         )
         for repropose_period_ms in [max(50, wait_period_ms * 2)]
     ] * 3
