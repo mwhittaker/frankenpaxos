@@ -26,6 +26,7 @@ object BenchmarkClientMain extends App {
       options: ClientOptions = ClientOptions.default,
       // Benchmark flags.
       duration: Duration = 5 seconds,
+      timeout: Duration = 10 seconds,
       numThreads: Int = 1,
       outputFilePrefix: String = ""
   )
@@ -73,18 +74,19 @@ object BenchmarkClientMain extends App {
       })
 
     // Benchmark flags.
-    opt[Duration]('d', "duration")
-      .valueName("<duration>")
+    opt[Duration]("duration")
       .action((x, f) => f.copy(duration = x))
       .text("Benchmark duration")
 
-    opt[Int]('t', "num_threads")
-      .valueName("<num threads>")
+    opt[Duration]("timeout")
+      .action((x, f) => f.copy(timeout = x))
+      .text("Client timeout")
+
+    opt[Int]("num_threads")
       .action((x, f) => f.copy(numThreads = x))
       .text("Number of client threads")
 
-    opt[String]('o', "output_file_prefix")
-      .valueName("<output file prefix>")
+    opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
       .text("Output file prefix")
   }
@@ -143,8 +145,15 @@ object BenchmarkClientMain extends App {
           // KeyValueStore).
           val cmdStart = java.time.Instant.now()
           val cmdStartNanos = System.nanoTime()
-          concurrent.Await
-            .result(client.propose("."), concurrent.duration.Duration.Inf)
+          try {
+            concurrent.Await.result(client.propose("."), flags.timeout)
+          } catch {
+            case e: java.util.concurrent.TimeoutException =>
+              logger.warn("Timed out.")
+              logger.warn(e.getStackTrace.mkString("\n"))
+              transport.shutdown().await()
+              return
+          }
           val cmdStopNanos = System.nanoTime()
           val cmdStop = java.time.Instant.now()
           latency_writer.writeRow(
@@ -167,8 +176,12 @@ object BenchmarkClientMain extends App {
   }
 
   for (thread <- threads) {
+    logger.info("Joining client thread.")
     thread.join()
+    logger.info("Client thread joined.")
   }
 
+  logger.info("Stopping prometheus.")
   prometheusServer.foreach(_.stop())
+  logger.info("Prometheus stopped.")
 }
