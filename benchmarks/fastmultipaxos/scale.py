@@ -8,30 +8,33 @@ def _main(args) -> None:
             f=1,
             num_clients=num_clients,
             num_threads_per_client=1,
-            round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+            round_system_type=round_system_type,
+
             duration_seconds=20,
-            timeout_seconds=60,
-            client_timeout_seconds=60,
+            timeout_seconds=90,
+            client_timeout_seconds=10,
             client_lag_seconds=5,
             profiled=args.profile,
             monitored=args.monitor,
             prometheus_scrape_interval_ms=200,
+
             acceptor = AcceptorOptions()._replace(
                 wait_period_ms = 0,
                 wait_stagger_ms = 0,
             ),
+
             leader = LeaderOptions()._replace(
-                thrifty_system = thrifty_system,
+                thrifty_system = ThriftySystemType.NOT_THRIFTY,
             ),
+
             client = ClientOptions()._replace(
                 repropose_period_ms=50,
             ),
         )
-        for num_clients in range(1, 15)
-        for thrifty_system in [
-            ThriftySystemType.NOT_THRIFTY,
-            ThriftySystemType.RANDOM,
-            ThriftySystemType.CLOSEST
+        for num_clients in range(1, 30)
+        for round_system_type in [
+            RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+            RoundSystemType.MIXED_ROUND_ROBIN.name,
         ]
     ] * 3
 

@@ -8,10 +8,11 @@ def _main(args) -> None:
             f=1,
             num_clients=num_clients,
             num_threads_per_client=1,
-            round_system_type=round_system_type,
+            round_system_type=RoundSystemType.MIXED_ROUND_ROBIN.name,
 
             duration_seconds=20,
-            timeout_seconds=120,
+            timeout_seconds=90,
+            client_timeout_seconds=10,
             client_lag_seconds=5,
             profiled=args.profile,
             monitored=args.monitor,
@@ -30,16 +31,10 @@ def _main(args) -> None:
                 repropose_period_ms=repropose_period_ms,
             ),
         )
-        for num_clients in [1, 10, 20, 30]
-        for round_system_type in [
-            RoundSystemType.CLASSIC_ROUND_ROBIN.name,
-            RoundSystemType.MIXED_ROUND_ROBIN.name
+        for num_clients in range(1, 30)
+        for (wait_period_ms, wait_stagger_ms) in [
+            (0.01, 0.), (0.1, 0.), (1, 0.), (10, 0.)
         ]
-        for (wait_period_ms, wait_stagger_ms) in (
-            [(0., 0.)]
-            if round_system_type == RoundSystemType.CLASSIC_ROUND_ROBIN.name
-            else [(0.01, 0.), (0.1, 0.), (1, 0.), (10, 0.)]
-        )
         for repropose_period_ms in [max(50, wait_period_ms * 2)]
     ] * 3
 

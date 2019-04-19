@@ -69,10 +69,17 @@ class Input(NamedTuple):
     round_system_type: str
 
     # Benchmark parameters.
+    # The (rough) duration of the benchmark.
     duration_seconds: float
+    # Global timeout.
     timeout_seconds: float
+    # Client timeout to hear back from leader.
+    client_timeout_seconds: float
+    # Delay between starting leaders and clients.
     client_lag_seconds: float
+    # Profile the code with perf.
     profiled: bool
+    # Monitor the code with prometheus.
     monitored: bool
     prometheus_scrape_interval_ms: int
 
@@ -257,7 +264,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 '--config', config_filename,
                 # Monitoring.
                 '--prometheus_host', host.IP(),
-                '--prometheus_port', '12345',
+                '--prometheus_port', '12345' if input.profiled else '-1',
                 # Options.
                 '--options.thriftySystem',
                     input.leader.thrifty_system,
@@ -329,11 +336,12 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 '--host', host.IP(),
                 '--port', "11000",
                 '--prometheus_host', host.IP(),
-                '--prometheus_port', "12345",
+                '--prometheus_port', '12345' if input.profiled else '-1',
                 '--config', config_filename,
                 '--options.reproposePeriod',
                     f'{input.client.repropose_period_ms}ms',
                 '--duration', f'{input.duration_seconds}s',
+                '--timeout', f'{input.client_timeout_seconds}s',
                 '--num_threads', str(input.num_threads_per_client),
                 '--output_file_prefix', bench.abspath(f'client_{i}'),
             ]
@@ -442,6 +450,7 @@ def _main(args) -> None:
 
             duration_seconds=10,
             timeout_seconds=120,
+            client_timeout_seconds=10,
             client_lag_seconds=3,
             profiled=args.profile,
             monitored=args.monitor,
