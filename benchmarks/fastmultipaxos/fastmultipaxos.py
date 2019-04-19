@@ -424,7 +424,7 @@ def run_suite(args: argparse.Namespace,
             with suite.benchmark_directory() as bench:
                 with make_net(input) as net:
                     bench.write_string('input.txt', str(input))
-                    bench.write_dict('input.json', input._asdict())
+                    bench.write_dict('input.json', util.tuple_to_dict(input))
                     output = run_benchmark(bench, args, input, net)
                     row = util.flatten_tuple(input) + list(output)
                     results_writer.writerow([str(x) for x in row])

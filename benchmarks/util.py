@@ -1,4 +1,4 @@
-from typing import Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 def flatten_tuple_fields(t: Any, prefixes = None) -> List[str]:
@@ -37,6 +37,37 @@ def flatten_tuple(t: Tuple) -> List[Any]:
         else:
             values.append(x)
     return values
+
+
+def tuple_to_dict(t: Any) -> Dict[str, Any]:
+    """
+    tuple_to_dict recursively converts a nested named tuple to a dict. For
+    example, consider the following.
+
+        class A(NamedTuple):
+            x: int
+            y: int
+
+        class B(NamedTuple):
+            z: int
+            a1: A
+            a2: A
+
+        >>> t = B(0, A(1, 2), A(3, 4))
+        >>> tuple_to_dict(t)
+        {
+            'z': 0,
+            'a1': {'x': 1, 'y': 2},
+            'a2': {'x': 3, 'y': 4},
+        }
+    """
+    d: Dict[str, Any] = {}
+    for (field, x) in zip(t._fields, t):
+        if _is_namedtuple_instance(x):
+            d[field] = tuple_to_dict(x)
+        else:
+            d[field] = x
+    return d
 
 
 # See https://stackoverflow.com/a/2166841/3187068.
