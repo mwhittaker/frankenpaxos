@@ -6,12 +6,15 @@ import frankenpaxos.FileLogger
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
+import frankenpaxos.monitoring.PrometheusCollectors
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.Try
 
 object BenchmarkClientMain extends App {
   case class Flags(
@@ -27,44 +30,27 @@ object BenchmarkClientMain extends App {
       // Benchmark flags.
       duration: Duration = 5 seconds,
       timeout: Duration = 10 seconds,
-      numThreads: Int = 1,
+      numClients: Int = 1,
       outputFilePrefix: String = ""
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
     // Basic flags.
-    opt[String]('h', "host")
-      .valueName("<host>")
-      .action((x, f) => f.copy(host = x))
-      .text("Client hostname")
-
-    opt[Int]('p', "port")
-      .valueName("<port>")
-      .action((x, f) => f.copy(port = x))
-      .text("Client port")
-
+    opt[String]('h', "host").required().action((x, f) => f.copy(host = x))
+    opt[Int]('p', "port").required().action((x, f) => f.copy(port = x))
     opt[File]('c', "config")
       .required()
-      .valueName("<file>")
       .action((x, f) => f.copy(paxosConfigFile = x))
-      .text("Configuration file.")
 
     // Monitoring.
     opt[String]("prometheus_host")
-      .valueName("<host>")
       .action((x, f) => f.copy(prometheusHost = x))
-      .text(s"Prometheus hostname (default: ${Flags().prometheusHost})")
-
     opt[Int]("prometheus_port")
-      .valueName("<port>")
       .action((x, f) => f.copy(prometheusPort = x))
-      .text(
-        s"Prometheus port; -1 to disable (default: ${Flags().prometheusPort})"
-      )
+      .text(s"Prometheus port; -1 to disable")
 
     // Options.
     opt[Duration]("options.reproposePeriod")
-      .valueName("<repropose_period>")
       .action((x, f) => {
         f.copy(
           options = f.options.copy(
@@ -74,26 +60,18 @@ object BenchmarkClientMain extends App {
       })
 
     // Benchmark flags.
-    opt[Duration]("duration")
-      .action((x, f) => f.copy(duration = x))
-      .text("Benchmark duration")
-
-    opt[Duration]("timeout")
-      .action((x, f) => f.copy(timeout = x))
-      .text("Client timeout")
-
-    opt[Int]("num_threads")
-      .action((x, f) => f.copy(numThreads = x))
-      .text("Number of client threads")
-
+    opt[Duration]("duration").action((x, f) => f.copy(duration = x))
+    opt[Duration]("timeout").action((x, f) => f.copy(timeout = x))
+    opt[Int]("num_clients").action((x, f) => f.copy(numClients = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
-      .text("Output file prefix")
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
-    case Some(flags) => flags
-    case None        => ???
+    case Some(flags) =>
+      flags
+    case None =>
+      throw new IllegalArgumentException("Could not parse flags.")
   }
 
   // Start prometheus.
@@ -112,74 +90,97 @@ object BenchmarkClientMain extends App {
     None
   }
 
-  // Start clients.
-  val startTime = java.time.Instant.now()
+  // Construct clients.
+  val transport = new NettyTcpTransport(logger);
+  val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
+  val metrics = new ClientMetrics(PrometheusCollectors)
+  val clients = for (i <- 0 until flags.numClients) yield {
+    logger.debug(s"Client $i started.")
+    new Client[NettyTcpTransport](
+      NettyTcpAddress(new InetSocketAddress(flags.host, flags.port + i)),
+      transport,
+      new FileLogger(s"${flags.outputFilePrefix}_$i.txt"),
+      config,
+      flags.options,
+      metrics
+    )
+  }
+
+  // Run clients.
+  val latencyWriter =
+    CSVWriter.open(new File(s"${flags.outputFilePrefix}_data.csv"))
+  latencyWriter.writeRow(
+    Seq("start", "stop", "latency_nanos", "host", "port")
+  )
   val stopTime =
-    startTime.plus(java.time.Duration.ofNanos(flags.duration.toNanos))
-  val threads = for (i <- 0 until flags.numThreads) yield {
-    val thread = new Thread {
-      override def run() {
-        val logger = new FileLogger(s"${flags.outputFilePrefix}_$i.txt")
-        logger.debug(s"Client $i started.")
-        val transport = new NettyTcpTransport(logger);
-        val address = NettyTcpAddress(
-          new InetSocketAddress(flags.host, flags.port + i)
-        )
-        val config =
-          ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
-        val latency_writer =
-          CSVWriter.open(new File(s"${flags.outputFilePrefix}_$i.csv"))
-        latency_writer.writeRow(
-          Seq("host", "port", "start", "stop", "latency_nanos")
-        )
-        val client =
-          new Client[NettyTcpTransport](address,
-                                        transport,
-                                        logger,
-                                        config,
-                                        flags.options)
+    java.time.Instant
+      .now()
+      .plus(java.time.Duration.ofNanos(flags.duration.toNanos))
 
-        while (java.time.Instant.now().isBefore(stopTime)) {
-          // Note that this client will only work for some state machine (e.g.,
-          // Register and AppendLog) and won't work for others (e.g.,
-          // KeyValueStore).
-          val cmdStart = java.time.Instant.now()
-          val cmdStartNanos = System.nanoTime()
-          try {
-            concurrent.Await.result(client.propose("."), flags.timeout)
-          } catch {
-            case e: java.util.concurrent.TimeoutException =>
-              logger.warn("Timed out.")
-              logger.warn(e.getStackTrace.mkString("\n"))
-              transport.shutdown().await()
-              return
-          }
-          val cmdStopNanos = System.nanoTime()
-          val cmdStop = java.time.Instant.now()
-          latency_writer.writeRow(
-            Seq(
-              flags.host,
-              (flags.port + i).toString(),
-              cmdStart.toString(),
-              cmdStop.toString(),
-              (cmdStopNanos - cmdStartNanos).toString()
-            )
+  def f(
+      client: Client[NettyTcpTransport],
+      host: String,
+      port: Int,
+      startTime: java.time.Instant,
+      startTimeNanos: Long
+  )(
+      reply: Try[Array[Byte]]
+  ): Future[Unit] = {
+    reply match {
+      case scala.util.Failure(_) =>
+        logger.debug("Echo failed.")
+
+      case scala.util.Success(_) =>
+        val stopTimeNanos = System.nanoTime()
+        val stopTime = java.time.Instant.now()
+        latencyWriter.writeRow(
+          Seq(
+            startTime.toString(),
+            stopTime.toString(),
+            (stopTimeNanos - startTimeNanos).toString(),
+            host,
+            port
           )
-        }
-        transport.shutdown().await()
-      }
+        )
     }
-    thread.start()
-    // Sleep slightly to stagger clients.
-    Thread.sleep(100 /*ms*/ )
-    thread
+
+    if (java.time.Instant.now().isBefore(stopTime)) {
+      client
+        .propose(".".getBytes())
+        .transformWith(
+          f(client, host, port, java.time.Instant.now(), System.nanoTime())
+        )(
+          transport.executionContext
+        )
+    } else {
+      Future.successful(())
+    }
   }
 
-  for (thread <- threads) {
-    logger.info("Joining client thread.")
-    thread.join()
-    logger.info("Client thread joined.")
-  }
+  val futures = clients.zipWithIndex.map({
+    case (client, i) =>
+      client
+        .propose(".".getBytes())
+        .transformWith(
+          f(client,
+            flags.host,
+            flags.port + i,
+            java.time.Instant.now(),
+            System.nanoTime())
+        )(
+          transport.executionContext
+        )
+  })
+
+  // Wait for the benchmark to finish.
+  concurrent.Await.result(
+    Future.sequence(futures)(implicitly, transport.executionContext),
+    flags.timeout
+  )
+
+  logger.debug("Shutting down transport.")
+  transport.shutdown()
+  logger.debug("Transport shut down.")
 
   logger.info("Stopping prometheus.")
   prometheusServer.foreach(_.stop())

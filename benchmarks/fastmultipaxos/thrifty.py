@@ -6,12 +6,11 @@ def _main(args) -> None:
         Input(
             net_name='SingleSwitchNet',
             f=1,
-            num_clients=num_clients,
-            num_threads_per_client=1,
+            num_client_procs=num_client_procs,
+            num_clients_per_proc=1,
             round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
             duration_seconds=20,
             timeout_seconds=60,
-            client_timeout_seconds=60,
             client_lag_seconds=5,
             profiled=args.profile,
             monitored=args.monitor,
@@ -27,7 +26,7 @@ def _main(args) -> None:
                 repropose_period_ms=50,
             ),
         )
-        for num_clients in range(1, 15)
+        for num_client_procs in range(1, 15)
         for thrifty_system in [
             ThriftySystemType.NOT_THRIFTY,
             ThriftySystemType.RANDOM,
@@ -38,7 +37,7 @@ def _main(args) -> None:
     def make_net(input) -> FastMultiPaxosNet:
         return SingleSwitchNet(
             f=input.f,
-            num_clients=input.num_clients,
+            num_client_procs=input.num_client_procs,
             rs_type = RoundSystemType[input.round_system_type]
         )
 

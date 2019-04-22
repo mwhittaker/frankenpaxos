@@ -91,7 +91,7 @@ object BenchmarkClientMain extends App {
     }
   }
 
-  val futures = for (i <- 0 to flags.numClients) yield {
+  val futures = for (i <- 0 until flags.numClients) yield {
     client
       .echo()
       .transformWith(f(java.time.Instant.now(), System.nanoTime()))(

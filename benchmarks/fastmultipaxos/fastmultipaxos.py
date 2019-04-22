@@ -64,8 +64,8 @@ class Input(NamedTuple):
     # System-wide parameters.
     net_name: str
     f: int
-    num_clients: int
-    num_threads_per_client: int
+    num_client_procs: int
+    num_clients_per_proc: int
     round_system_type: str
 
     # Benchmark parameters.
@@ -73,8 +73,6 @@ class Input(NamedTuple):
     duration_seconds: float
     # Global timeout.
     timeout_seconds: float
-    # Client timeout to hear back from leader.
-    client_timeout_seconds: float
     # Delay between starting leaders and clients.
     client_lag_seconds: float
     # Profile the code with perf.
@@ -149,7 +147,7 @@ class FastMultiPaxosNet(object):
 class SingleSwitchNet(FastMultiPaxosNet):
     def __init__(self,
                  f: int,
-                 num_clients: int,
+                 num_client_procs: int,
                  rs_type: RoundSystemType) -> None:
         self.f = f
         self.rs_type = rs_type
@@ -161,7 +159,7 @@ class SingleSwitchNet(FastMultiPaxosNet):
         switch = self._net.addSwitch('s1')
         self._net.addController('c')
 
-        for i in range(num_clients):
+        for i in range(num_client_procs):
             client = self._net.addHost(f'c{i}')
             self._net.addLink(client, switch)
             self._clients.append(client)
@@ -341,8 +339,8 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 '--options.reproposePeriod',
                     f'{input.client.repropose_period_ms}ms',
                 '--duration', f'{input.duration_seconds}s',
-                '--timeout', f'{input.client_timeout_seconds}s',
-                '--num_threads', str(input.num_threads_per_client),
+                '--timeout', f'{input.timeout_seconds}s',
+                '--num_clients', str(input.num_clients_per_proc),
                 '--output_file_prefix', bench.abspath(f'client_{i}'),
             ]
         )
@@ -358,11 +356,10 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
         prometheus_server.terminate()
     bench.log('Clients finished and processes terminated.')
 
-    # Every client thread j on client i writes results to `client_i_j.csv`.
-    # We concatenate these results into a single CSV file.
-    client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
-                   for i in range(input.num_clients)
-                   for j in range(input.num_threads_per_client)]
+    # Client i writes results to `client_i_data.csv`. We concatenate these
+    # results into a single CSV file.
+    client_csvs = [bench.abspath(f'client_{i}_data.csv')
+                   for i in range(input.num_client_procs)]
     df = pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
     bench.log('Data read.')
     df = df.set_index('start')
@@ -444,26 +441,25 @@ def _main(args) -> None:
         Input(
             net_name='SingleSwitchNet',
             f=1,
-            num_clients=num_clients,
-            num_threads_per_client=1,
+            num_client_procs=num_client_procs,
+            num_clients_per_proc=1,
             round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
 
             duration_seconds=10,
             timeout_seconds=120,
-            client_timeout_seconds=10,
             client_lag_seconds=3,
             profiled=args.profile,
             monitored=args.monitor,
             prometheus_scrape_interval_ms=200,
 
         )
-        for num_clients in [1, 2]
+        for num_client_procs in [1, 2]
     ] * 2
 
     def make_net(input) -> FastMultiPaxosNet:
         return SingleSwitchNet(
             f=input.f,
-            num_clients=input.num_clients,
+            num_client_procs=input.num_client_procs,
             rs_type = RoundSystemType[input.round_system_type]
         )
 
