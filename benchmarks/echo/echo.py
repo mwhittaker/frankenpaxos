@@ -19,9 +19,9 @@ import yaml
 class Input(NamedTuple):
     timeout_seconds: float
     net_name: str
-    num_clients: int
-    num_threads_per_client: int
+    num_client_procs: int
     duration_seconds: float
+    num_clients_per_proc: int
     profiled: bool
     monitored: bool
     prometheus_scrape_interval_ms: int
@@ -75,7 +75,7 @@ class EchoNet(object):
 
 
 class SingleSwitchNet(EchoNet):
-    def __init__(self, num_clients: int) -> None:
+    def __init__(self, num_client_procs: int) -> None:
         self._clients: List[mininet.node.Node] = []
         self._server: mininet.node.Node = None
         self._net = Mininet()
@@ -83,7 +83,7 @@ class SingleSwitchNet(EchoNet):
         switch = self._net.addSwitch('s1')
         self._net.addController('c')
 
-        for i in range(num_clients):
+        for i in range(num_client_procs):
             client = self._net.addHost(f'c{i}')
             self._net.addLink(client, switch)
             self._clients.append(client)
@@ -138,9 +138,11 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
             ],
         )
-        bench.log('Prometheus started.')
-        time.sleep(3)
-        bench.log('Prometheus wait ended.')
+
+    # Wait for server and prometheus.
+    bench.log('Waiting.')
+    time.sleep(5)
+    bench.log('Waiting over.')
 
     # Launch clients.
     client_procs = []
@@ -158,8 +160,8 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 '--host', host.IP(),
                 '--port', '10000',
                 '--duration', f'{input.duration_seconds}s',
-                '--num_threads', str(input.num_threads_per_client),
-                '--output_file_prefix', bench.abspath(f'client_{i}'),
+                '--num_clients', f'{input.num_clients_per_proc}',
+                '--output_file', bench.abspath(f'client_{i}_data.csv'),
             ]
         )
         client_procs.append(client_proc)
@@ -173,11 +175,10 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
         prometheus_server.terminate()
     bench.log('Clients finished and processes terminated.')
 
-    # Every client thread j on client i writes results to `client_i_j.csv`. We
-    # concatenate these results into a single CSV file.
-    client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
-                   for i in range(input.num_clients)
-                   for j in range(input.num_threads_per_client)]
+    # Client i writes results to `client_i_data.csv`. We concatenate these
+    # results into a single CSV file.
+    client_csvs = [bench.abspath(f'client_{i}_data.csv')
+                   for i in range(input.num_client_procs)]
     df = pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
     bench.log('Data read.')
     df = df.set_index('start')
@@ -237,6 +238,7 @@ def run_suite(args: argparse.Namespace,
         results_file = suite.create_file('results.csv')
         results_writer = csv.writer(results_file)
         results_writer.writerow(Input._fields + Output._fields)
+        results_file.flush()
 
         for input in tqdm.tqdm(inputs):
             with suite.benchmark_directory() as bench:
@@ -254,18 +256,18 @@ def _main(args) -> None:
         Input(
             timeout_seconds=120,
             net_name='SingleSwitchNet',
-            num_clients=num_clients,
-            num_threads_per_client=1,
-            duration_seconds=10,
+            num_client_procs=num_client_procs,
+            duration_seconds=30,
+            num_clients_per_proc=1,
             profiled=args.profile,
             monitored=args.monitor,
             prometheus_scrape_interval_ms=200,
         )
-        for num_clients in [1, 2, 3]
+        for num_client_procs in [1, 2, 3]
     ] * 2
 
     def make_net(input) -> EchoNet:
-        return SingleSwitchNet(num_clients=input.num_clients)
+        return SingleSwitchNet(num_client_procs=input.num_client_procs)
 
     run_suite(args, inputs, make_net)
 

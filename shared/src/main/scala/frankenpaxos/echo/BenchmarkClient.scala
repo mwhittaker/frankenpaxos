@@ -30,8 +30,7 @@ class BenchmarkClient[Transport <: frankenpaxos.Transport[Transport]](
     srcAddress: Transport#Address,
     dstAddress: Transport#Address,
     transport: Transport,
-    logger: Logger,
-    outputFilename: String
+    logger: Logger
 ) extends Actor(srcAddress, transport, logger) {
   override type InboundMessage = BenchmarkClientInbound
   override def serializer = BenchmarkClient.serializer
@@ -39,33 +38,28 @@ class BenchmarkClient[Transport <: frankenpaxos.Transport[Transport]](
   private val server =
     chan[BenchmarkServer[Transport]](dstAddress, BenchmarkServer.serializer)
 
-  private val latencyWriter = CSVWriter.open(new File(outputFilename))
-  latencyWriter.writeRow(Seq("start", "stop", "latency_nanos", "address"))
-
-  private val startTimeNanos = mutable.Buffer[Long]()
-  private val startTimes = mutable.Buffer[java.time.Instant]()
-
-  startTimeNanos += System.nanoTime()
-  startTimes += java.time.Instant.now()
-  server.send(BenchmarkServerInbound(msg = "."))
+  private var id: Long = 0
+  private val promises = mutable.Map[Long, Promise[Unit]]()
 
   override def receive(src: Transport#Address, reply: InboundMessage): Unit = {
-    val stopTimeNano = System.nanoTime()
-    val stopTime = java.time.Instant.now()
-    val startTimeNano = startTimeNanos.remove(0)
-    val startTime = startTimes.remove(0)
+    promises.get(reply.id) match {
+      case Some(promise) =>
+        promise.success(())
+        promises -= reply.id
+      case None =>
+        logger.fatal(s"Received reply for unpending echo ${reply.id}.")
+    }
+  }
 
-    startTimeNanos += System.nanoTime()
-    startTimes += java.time.Instant.now()
-    server.send(BenchmarkServerInbound(msg = "."))
+  def _echo(promise: Promise[Unit]): Unit = {
+    server.send(BenchmarkServerInbound(id = id))
+    promises(id) = promise
+    id += 1
+  }
 
-    latencyWriter.writeRow(
-      Seq(
-        startTime.toString(),
-        stopTime.toString(),
-        (stopTimeNano - startTimeNano).toString(),
-        srcAddress.toString()
-      )
-    )
+  def echo(): Future[Unit] = {
+    val promise = Promise[Unit]()
+    transport.executionContext.execute(() => _echo(promise))
+    promise.future
   }
 }

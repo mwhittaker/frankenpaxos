@@ -18,9 +18,9 @@ message ClientInbound {
 }
 
 message BenchmarkServerInbound {
-  required string msg = 2;
+  required int64 id = 1;
 }
 
 message BenchmarkClientInbound {
-  required string msg = 2;
+  required int64 id = 1;
 }
