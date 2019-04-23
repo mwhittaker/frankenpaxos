@@ -72,6 +72,8 @@ TODO(mwhittaker): Document.
 - Run Grafana from within its installation directory.
 
 ```bash
+prometheus --config.file=empty.yaml --storage.tsdb.path=prometheus_data --web.listen-address=0.0.0.0:8003
+
 GF_SERVER_HTTP_PORT=8004 \
 GF_PATHS_PROVISIONING=path/to/frankenpaxos/grafana \
 ./bin/grafana-server web
