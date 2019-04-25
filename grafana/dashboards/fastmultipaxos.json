@@ -27,7 +27,7 @@
       "description": "",
       "fill": 1,
       "gridPos": {
-        "h": 8,
+        "h": 7,
         "w": 24,
         "x": 0,
         "y": 0
@@ -78,7 +78,105 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Request Throughput",
+      "title": "Leader Request Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 9,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fast_multipaxos_acceptor_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(fast_multipaxos_acceptor_requests_total[1s])) by (instance)",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Sum ({{instance}})",
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Acceptor Request Throughput",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -123,10 +221,117 @@
       "datasource": "Prometheus",
       "fill": 1,
       "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 6,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fast_multipaxos_client_responses_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Response {{instance}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(fast_multipaxos_client_responses_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Reponse Sum",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(fast_multipaxos_client_unpending_responses_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Unpending Response {{instance}}",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(fast_multipaxos_client_unpending_responses_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Unpending Reponse Sum",
+          "refId": "D"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Client Request Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 21
       },
       "id": 4,
       "legend": {
@@ -185,7 +390,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Command Throughput",
+      "title": "Leader Command Throughput",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -233,7 +438,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 29
       },
       "id": 5,
       "legend": {
@@ -318,20 +523,24 @@
     {
       "aliasColors": {},
       "bars": false,
+      "cacheTimeout": null,
       "dashLength": 10,
       "dashes": false,
       "datasource": "Prometheus",
+      "description": "",
       "fill": 1,
       "gridPos": {
-        "h": 8,
+        "h": 7,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 36
       },
-      "id": 6,
+      "id": 10,
       "legend": {
+        "alignAsTable": false,
         "avg": false,
         "current": false,
+        "hideZero": false,
         "max": false,
         "min": false,
         "rightSide": true,
@@ -344,6 +553,7 @@
       "links": [],
       "nullPointMode": "null",
       "percentage": false,
+      "pluginVersion": "6.1.3",
       "pointradius": 1,
       "points": true,
       "renderer": "flot",
@@ -353,17 +563,17 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "rate(fast_multipaxos_client_responses_total[1s])",
+          "expr": "rate(fast_multipaxos_acceptor_batches_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{instance}}",
+          "legendFormat": "Batches ({{instance}})",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(fast_multipaxos_client_responses_total[1s]))",
+          "expr": "sum(rate(fast_multipaxos_acceptor_propose_requests_in_batches_total[1s])) by (instance)",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Sum",
+          "legendFormat": "Batched ProposeRequest ({{instance}})",
           "refId": "B"
         }
       ],
@@ -371,7 +581,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Client Throughput",
+      "title": "Acceptor Batch Throughput",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -387,7 +597,7 @@
       },
       "yaxes": [
         {
-          "format": "short",
+          "format": "none",
           "label": null,
           "logBase": 1,
           "max": null,
@@ -419,7 +629,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 43
       },
       "id": 7,
       "legend": {
@@ -512,7 +722,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 51
       },
       "id": 8,
       "legend": {
@@ -596,8 +806,8 @@
     "list": []
   },
   "time": {
-    "from": "2019-04-11T23:30:08.427Z",
-    "to": "2019-04-11T23:30:53.333Z"
+    "from": "2019-04-25T23:23:01.540Z",
+    "to": "2019-04-25T23:23:29.334Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -627,5 +837,5 @@
   "timezone": "",
   "title": "Fast MultiPaxos",
   "uid": "EF92KDRZk",
-  "version": 3
+  "version": 4
 }
