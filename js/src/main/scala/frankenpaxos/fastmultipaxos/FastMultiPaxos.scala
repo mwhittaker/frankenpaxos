@@ -91,11 +91,14 @@ class FastMultiPaxos {
   val acceptors = for (i <- 1 to 3) yield {
     val logger = new JsLogger()
     val address = JsTransportAddress(s"Acceptor $i")
-    val acceptor = new Acceptor[JsTransport](address,
-                                             transport,
-                                             logger,
-                                             config,
-                                             acceptorOptions)
+    val acceptor = new Acceptor[JsTransport](
+      address,
+      transport,
+      logger,
+      config,
+      acceptorOptions,
+      new AcceptorMetrics(FakeCollectors)
+    )
     (logger, acceptor)
   }
   val (acceptor1logger, acceptor1) = acceptors(0)

@@ -6,6 +6,10 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.Gauge
+import frankenpaxos.monitoring.PrometheusCollectors
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -19,6 +23,28 @@ object AcceptorInboundSerializer extends ProtoSerializer[AcceptorInbound] {
 @JSExportAll
 object Acceptor {
   val serializer = AcceptorInboundSerializer
+}
+
+@JSExportAll
+class AcceptorMetrics(collectors: Collectors) {
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_acceptor_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val batchesTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_acceptor_batches_total")
+    .help("Total number of ProposeRequest batches processed.")
+    .register()
+
+  val proposeRequestsInBatchesTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_acceptor_propose_requests_in_batches_total")
+    .help("Total number of ProposeRequests processed in a batch.")
+    .register()
 }
 
 @JSExportAll
@@ -57,7 +83,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
-    options: AcceptorOptions = AcceptorOptions.default
+    options: AcceptorOptions = AcceptorOptions.default,
+    metrics: AcceptorMetrics = new AcceptorMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = AcceptorInbound
   override val serializer = Acceptor.serializer
@@ -159,6 +186,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       proposeRequest: ProposeRequest
   ): Unit = {
+    metrics.requestsTotal.labels("ProposeRequest").inc()
+
     // If the wait period and wait stagger are both 0, then we don't bother
     // fiddling with a timer. We process the propose request immediately.
     if (options.waitPeriod == java.time.Duration.ofSeconds(0) &&
@@ -183,6 +212,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     for ((_, src, proposeRequest) <- sorted) {
       processProposeRequest(src, proposeRequest)
     }
+
+    metrics.batchesTotal.inc()
+    metrics.proposeRequestsInBatchesTotal.inc(batch.size)
   }
 
   private def processProposeRequest(
@@ -214,6 +246,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase1a(src: Transport#Address, phase1a: Phase1a): Unit = {
+    metrics.requestsTotal.labels("Phase1a").inc()
+
     // Ignore messages from previous rounds.
     if (phase1a.round <= round) {
       logger.info(
@@ -255,6 +289,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase2a(src: Transport#Address, phase2a: Phase2a): Unit = {
+    metrics.requestsTotal.labels("Phase2a").inc()
+
     val Entry(voteRound, voteValue, anyRound) = log.get(phase2a.slot) match {
       case Some(vote) => vote
       case None       => Entry(-1, VVNothing, None)

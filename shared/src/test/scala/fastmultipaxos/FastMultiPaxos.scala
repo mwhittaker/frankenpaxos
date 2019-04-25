@@ -58,7 +58,9 @@ class FastMultiPaxos(val f: Int) {
       new Acceptor[FakeTransport](FakeTransportAddress(s"Acceptor $i"),
                                   transport,
                                   logger,
-                                  config)
+                                  config,
+                                  AcceptorOptions.default,
+                                  new AcceptorMetrics(FakeCollectors))
 }
 
 sealed trait FastMultiPaxosCommand

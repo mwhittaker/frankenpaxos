@@ -46,8 +46,8 @@ class HeartbeatOptions(NamedTuple):
 
 
 class AcceptorOptions(NamedTuple):
-    wait_period_ms: float = 25
-    wait_stagger_ms: float = 25
+    wait_period_ms: float = 0
+    wait_stagger_ms: float = 0
 
 
 class LeaderOptions(NamedTuple):
@@ -238,6 +238,9 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 # Basic flags.
                 '--index', str(i),
                 '--config', config_filename,
+                # Monitoring.
+                '--prometheus_host', host.IP(),
+                '--prometheus_port', '12345' if input.monitored else '-1',
                 # Options.
                 '--options.waitPeriod', f'{input.acceptor.wait_period_ms}ms',
                 '--options.waitStagger', f'{input.acceptor.wait_stagger_ms}ms',
@@ -299,8 +302,12 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
         prometheus_config = prometheus.prometheus_config(
             input.prometheus_scrape_interval_ms,
             {
-              'fast_multipaxos_leader': [f'{l.IP()}:12345' for l in net.leaders()],
-              'fast_multipaxos_client': [f'{c.IP()}:12345' for c in net.clients()],
+              'fast_multipaxos_acceptor':
+                [f'{a.IP()}:12345' for a in net.acceptors()],
+              'fast_multipaxos_leader':
+                [f'{l.IP()}:12345' for l in net.leaders()],
+              'fast_multipaxos_client':
+                [f'{c.IP()}:12345' for c in net.clients()],
             }
         )
         bench.write_string('prometheus.yml', yaml.dump(prometheus_config))

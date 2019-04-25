@@ -4,6 +4,8 @@ import frankenpaxos.Actor
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
+import io.prometheus.client.exporter.HTTPServer
+import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
 import scala.concurrent.duration
 
@@ -12,6 +14,9 @@ object AcceptorMain extends App {
       // Basic flags.
       index: Int = -1,
       paxosConfigFile: File = new File("."),
+      // Monitoring.
+      prometheusHost: String = "0.0.0.0",
+      prometheusPort: Int = 8009,
       // Options.
       options: AcceptorOptions = AcceptorOptions.default
   )
@@ -20,15 +25,19 @@ object AcceptorMain extends App {
     // Basic flags.
     opt[Int]('i', "index")
       .required()
-      .valueName("<index>")
       .action((x, f) => f.copy(index = x))
-      .text("Acceptor index")
 
     opt[File]('c', "config")
       .required()
-      .valueName("<file>")
       .action((x, f) => f.copy(paxosConfigFile = x))
-      .text("Configuration file.")
+
+    // Monitoring.
+    opt[String]("prometheus_host")
+      .action((x, f) => f.copy(prometheusHost = x))
+
+    opt[Int]("prometheus_port")
+      .action((x, f) => f.copy(prometheusPort = x))
+      .text(s"-1 to disable")
 
     // Options.
     opt[duration.Duration]("options.waitPeriod")
@@ -58,9 +67,23 @@ object AcceptorMain extends App {
   val transport = new NettyTcpTransport(logger);
   val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
   val address = config.acceptorAddresses(flags.index)
-  new Acceptor[NettyTcpTransport](address,
-                                  transport,
-                                  logger,
-                                  config,
-                                  flags.options)
+  val acceptor = new Acceptor[NettyTcpTransport](address,
+                                                 transport,
+                                                 logger,
+                                                 config,
+                                                 flags.options)
+
+  if (flags.prometheusPort != -1) {
+    DefaultExports.initialize()
+    val prometheusServer =
+      new HTTPServer(flags.prometheusHost, flags.prometheusPort)
+    logger.info(
+      s"Prometheus server running on ${flags.prometheusHost}:" +
+        s"${flags.prometheusPort}"
+    )
+  } else {
+    logger.info(
+      s"Prometheus server not running because a port of -1 was given."
+    )
+  }
 }
