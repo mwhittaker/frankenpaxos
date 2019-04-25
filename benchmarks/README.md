@@ -3,7 +3,7 @@ This directory contains FrankenPaxos benchmarks written in Python 3.
 
 ## Dependencies
 The FrankenPaxos benchmarks use [mininet](http://mininet.org/download/) for
-network emulation, so you'll have to install that.  The benchmarks also depend
+network emulation, so you'll have to install that. The benchmarks also depend
 on a couple of executables for profiling and monitoring, which you'll have to
 install. For profiling:
 
@@ -64,17 +64,34 @@ PYTHONPATH="path/to/frankenpaxos:$PYTHONPATH" \
     python -m benchmarks.plot_latency_and_throughput --help
 ```
 
-# Analyzing Benchmarks
-TODO(mwhittaker): Document.
+## Analyzing Benchmarks
+To dissect the performance of a particular benchmark, we can use Prometheus and
+Grafana. When you run a benchmark with monitoring enabled (typically by passing
+the `-m` flag), Prometheus metrics are recorded into the `prometheus_data`
+directory of the benchmark's directory. We run a Prometheus server to serve
+these metrics and a Grafana server (that reads from the Prometheus server) to
+graph the metrics.
 
-- Update `grafana/dashboards/dashboards.yml` with correct path.
-- Run Prometheus on port 8003.
-- Run Grafana from within its installation directory.
+First, open `grafana/dashboards/dashboards.yml`, and update the `path`
+setting at the bottom of the file. `path` should be the absolute path of the
+`grafana/dashboards/` directory. Next, head to the directory in which you
+installed Grafana and start a Grafana server like this:
 
 ```bash
-prometheus --config.file=empty.yaml --storage.tsdb.path=prometheus_data --web.listen-address=0.0.0.0:8003
-
 GF_SERVER_HTTP_PORT=8004 \
 GF_PATHS_PROVISIONING=path/to/frankenpaxos/grafana \
 ./bin/grafana-server web
+```
+
+where `path/to/frankenpaxos/grafana` is the absolute path to the
+`frankenpaxos/grafana` directory. The `frankenpaxos/grafana` directory contains
+all the configuration files that Grafana needs.
+
+Finally, head to a benchmark directory and start a Prometheus server like this:
+
+```bash
+prometheus \
+    --config.file=<(echo "") \
+    --storage.tsdb.path=prometheus_data \
+    --web.listen-address=0.0.0.0:8003
 ```
