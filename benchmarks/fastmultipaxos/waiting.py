@@ -7,11 +7,11 @@ def _main(args) -> None:
             net_name='SingleSwitchNet',
             f=1,
             num_client_procs=num_client_procs,
-            num_clients_per_proc=1,
+            num_clients_per_proc=num_clients_per_proc,
             round_system_type=RoundSystemType.MIXED_ROUND_ROBIN.name,
 
-            duration_seconds=20,
-            timeout_seconds=90,
+            duration_seconds=15,
+            timeout_seconds=60,
             client_lag_seconds=5,
             profiled=args.profile,
             monitored=args.monitor,
@@ -30,11 +30,12 @@ def _main(args) -> None:
                 repropose_period_ms=repropose_period_ms,
             ),
         )
-        for num_client_procs in range(1, 30)
+        for num_client_procs in range(1, 20, 3)
+        for num_clients_per_proc in [1, 10, 50]
         for (wait_period_ms, wait_stagger_ms) in [
-            (0.01, 0.), (0.1, 0.), (1, 0.), (10, 0.)
+            (0.001, 0.), (0.01, 0.), (0.1, 0.), (1, 0.),
         ]
-        for repropose_period_ms in [max(50, wait_period_ms * 2)]
+        for repropose_period_ms in [50]
     ] * 3
 
     def make_net(input) -> FastMultiPaxosNet:
