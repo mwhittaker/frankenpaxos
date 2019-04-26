@@ -119,10 +119,12 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
                                                       Set())
 
   // See the documentation for AcceptorOptions.waitPeriod and
-  // AcceptorOptions.waitStagger above.
+  // AcceptorOptions.waitStagger above. Long is the value reported by
+  // System.nanoTime. Using something like java.time.Instant does not work
+  // because the granularity is not fine enough.
   @JSExport
   protected var bufferedProposeRequests =
-    mutable.Buffer[(java.time.Instant, Transport#Address, ProposeRequest)]()
+    mutable.Buffer[(Long, Transport#Address, ProposeRequest)]()
 
   private val processBufferedProposeRequestsTimer: Option[Transport#Timer] =
     // If the wait period and wait stagger are both 0, then we don't bother
@@ -194,15 +196,15 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         options.waitStagger == java.time.Duration.ofSeconds(0)) {
       processProposeRequest(src, proposeRequest)
     } else {
-      val t = (java.time.Instant.now(), src, proposeRequest)
+      val t = (System.nanoTime(), src, proposeRequest)
       bufferedProposeRequests += t
     }
   }
 
   private def processBufferedProposeRequests(): Unit = {
-    val cutoff = java.time.Instant.now().minus(options.waitStagger)
+    val cutoff = System.nanoTime() - options.waitStagger.toNanos()
     val batch = bufferedProposeRequests.takeWhile({
-      case (timestamp, _, _) => timestamp.isBefore(cutoff)
+      case (timestamp, _, _) => timestamp <= cutoff
     })
     bufferedProposeRequests = bufferedProposeRequests.drop(batch.size)
 
