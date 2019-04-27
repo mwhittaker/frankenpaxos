@@ -241,7 +241,7 @@ Vue.component('frankenpaxos-tweened-app', {
   data: function() {
     return {
       // This timeline sequences all timers and messages.
-      timeline: new TimelineMax(),
+      timeline: new TimelineMax().timeScale(this.time_scale),
 
       // timer_tweens[address][timer_name] = tween
       timer_tweens: {},
