@@ -51,7 +51,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // The leader's round number. With n leaders, leader i uses round
   // numbers i, i + n, i + 2n, i + 3n, etc.
   @JSExport
-  protected var round: Int = index
+  protected var round: Int = -1
 
   // The current status of the leader. A leader is either idle, running
   // phase 1, running phase 2, or has learned that a value is chosen.
@@ -113,7 +113,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Begin a new round with the newly proposed value.
-    round += config.n
+    if (round == -1) {
+      round = index
+    } else {
+      round += config.leaderAddresses.size
+    }
     proposedValue = Some(request.v)
     status = Phase1
     phase1bResponses.clear()
