@@ -25,11 +25,11 @@ let client_info = {
   template: `
     <div>
       <div>
-        <strong>proposed value</strong>:
+        <strong class="field">proposed value</strong>:
         {{optionToJs(node.actor.proposedValue)}}
       </div>
       <div>
-        <strong>chosen value</strong>:
+        <strong class="field">chosen value</strong>:
         {{optionToJs(node.actor.chosenValue)}}
       </div>
       <button v-on:click="propose">Propose</button>
@@ -51,26 +51,26 @@ let leader_info = {
   template: `
     <div>
       <div>
-        <strong>round</strong>:
+        <strong class="field">round</strong>:
         {{node.actor.round}}
       </div>
       <div>
-        <strong>status</strong>:
+        <strong class="field">status</strong>:
         {{node.actor.status}}
       </div>
       <div>
-        <strong>proposedValue</strong>:
+        <strong class="field">proposedValue</strong>:
         {{optionToJs(node.actor.proposedValue)}}
       </div>
       <div>
-        <strong>chosenValue</strong>:
+        <strong class="field">chosenValue</strong>:
         {{optionToJs(node.actor.chosenValue)}}
       </div>
-      <!-- <div><strong>phase1bResponses</strong>: -->
+      <!-- <div><strong class="field">phase1bResponses</strong>: -->
       <!--      <frankenpaxos-set :set="node.actor.phase1bResponses"> -->
       <!--      </frankenpaxos-set> -->
       <!-- </div> -->
-      <!-- <div><strong>phase2bResponses</strong>: -->
+      <!-- <div><strong class="field">phase2bResponses</strong>: -->
       <!--      <frankenpaxos-set :set="node.actor.phase2bResponses"> -->
       <!--      </frankenpaxos-set> -->
       <!-- </div> -->
@@ -90,10 +90,10 @@ let acceptor_info = {
 
   template: `
     <div>
-      <div><strong>round</strong>: {{node.actor.round}}</div>
-      <div><strong>vote round</strong>: {{node.actor.voteRound}}</div>
+      <div><strong class="field">round</strong>: {{node.actor.round}}</div>
+      <div><strong class="field">vote round</strong>: {{node.actor.voteRound}}</div>
       <div>
-        <strong>vote value</strong>:
+        <strong class="field">vote value</strong>:
         {{optionToJs(node.actor.voteValue)}}
       </div>
     </div>
