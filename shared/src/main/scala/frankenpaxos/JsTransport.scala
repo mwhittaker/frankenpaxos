@@ -155,13 +155,24 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       logger.fatal(
         s"Attempted to stage $msg, but that message was not buffered."
       )
-      return
     }
 
     bufferedMessages -= msg
     if (!partitionedActors.contains(msg.dst)) {
       stagedMessages += msg
     }
+  }
+
+  def duplicateStagedMessage(msg: JsTransportMessage): Unit = {
+    if (!stagedMessages.contains(msg)) {
+      logger.fatal(
+        s"Attempted to duplciate stage $msg, but that message was not staged."
+      )
+    }
+
+    val newMsg = msg.copy(id = messageId)
+    messageId += 1
+    stagedMessages += newMsg
   }
 
   def deliverMessage(

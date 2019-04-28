@@ -417,7 +417,7 @@ Vue.component("frankenpaxos-staged-messages", {
              v-on:click="transport.dropMessage(message)">
             Drop</button>
           <button class="frankenpaxos-button frankenpaxos-messages-duplicate"
-             v-on:click="transport.stageMessage(message, false)">
+             v-on:click="transport.duplicateStagedMessage(message)">
             Duplicate</button>
           <span class="frankenpaxos-messages-src">from {{message.src.address}}</span>
           <div class="frankenpaxos-messages-text">
