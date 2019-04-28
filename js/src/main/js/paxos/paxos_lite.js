@@ -59,11 +59,11 @@ let leader_info = {
         {{node.actor.status}}
       </div>
       <div>
-        <strong class="field">proposedValue</strong>:
+        <strong class="field">proposed value</strong>:
         {{optionToJs(node.actor.proposedValue)}}
       </div>
       <div>
-        <strong class="field">chosenValue</strong>:
+        <strong class="field">chosen value</strong>:
         {{optionToJs(node.actor.chosenValue)}}
       </div>
       <!-- <div><strong class="field">phase1bResponses</strong>: -->
