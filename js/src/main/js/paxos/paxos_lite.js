@@ -106,7 +106,7 @@ let abbreviated_acceptor_info = {
   methods: {
     voteValue: function() {
       let v = this.JsUtils.optionToJs(this.node.actor.voteValue);
-      return v === undefined ? "Nothing" : '"' + v + '"';
+      return v === undefined ? "null" : '"' + v + '"';
     },
   },
 
