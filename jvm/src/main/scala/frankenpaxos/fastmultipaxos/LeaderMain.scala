@@ -18,6 +18,7 @@ object LeaderMain extends App {
       index: Int = -1,
       configFilename: File = new File("."),
       stateMachineType: statemachine.StateMachineType = statemachine.TRegister,
+      logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
@@ -29,35 +30,44 @@ object LeaderMain extends App {
     help("help")
 
     // Basic flags.
-    opt[Int]('i', "index")
+    opt[Int]("index")
       .required()
-      .valueName("<index>")
       .action((x, f) => f.copy(index = x))
-      .text("Leader index")
 
     opt[File]('c', "config")
       .required()
-      .valueName("<file>")
       .action((x, f) => f.copy(configFilename = x))
-      .text("Configuration file.")
 
     opt[statemachine.StateMachineType]('s', "state_machine")
-      .valueName(statemachine.Flags.valueName)
       .action((x, f) => f.copy(stateMachineType = x))
-      .text(s"State machine type (default: ${Flags().stateMachineType})")
+
+    opt[String]("log_level")
+      .valueName("<debug | info | warn | error | fatal>")
+      .validate(x => {
+        x match {
+          case "debug" | "info" | "warn" | "error" | "fatal" => success
+          case _ =>
+            failure(s"$x is not debug, info, warn, error, or fatal.")
+        }
+      })
+      .action((x, f) => {
+        x match {
+          case "debug" => f.copy(logLevel = frankenpaxos.LogDebug)
+          case "info"  => f.copy(logLevel = frankenpaxos.LogInfo)
+          case "warn"  => f.copy(logLevel = frankenpaxos.LogWarn)
+          case "error" => f.copy(logLevel = frankenpaxos.LogError)
+          case "fatal" => f.copy(logLevel = frankenpaxos.LogFatal)
+          case _       => ???
+        }
+      })
 
     // Monitoring.
     opt[String]("prometheus_host")
-      .valueName("<host>")
       .action((x, f) => f.copy(prometheusHost = x))
-      .text(s"Prometheus hostname (default: ${Flags().prometheusHost})")
 
     opt[Int]("prometheus_port")
-      .valueName("<port>")
       .action((x, f) => f.copy(prometheusPort = x))
-      .text(
-        s"Prometheus port; -1 to disable (default: ${Flags().prometheusPort})"
-      )
+      .text("-1 to disable")
 
     // Options.
     opt[ThriftySystem.Flags.ThriftySystemType]("options.thriftySystem")
@@ -195,7 +205,7 @@ object LeaderMain extends App {
       throw new IllegalArgumentException("Could not parse flags.")
   }
 
-  val logger = new PrintLogger()
+  val logger = new PrintLogger(flags.logLevel)
   val transport = new NettyTcpTransport(logger)
   val config = ConfigUtil.fromFile(flags.configFilename.getAbsolutePath())
   val address = config.leaderAddresses(flags.index)

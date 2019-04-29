@@ -1,6 +1,7 @@
 package frankenpaxos
 
-class FileLogger(filename: String) extends Logger {
+class FileLogger(filename: String, logLevel: LogLevel = LogDebug)
+    extends Logger(logLevel) {
   private val file = new java.io.File(filename)
   private val writer = new java.io.PrintWriter(file)
   private val formatter = java.time.format.DateTimeFormatter
@@ -13,7 +14,7 @@ class FileLogger(filename: String) extends Logger {
   private def threadId: String =
     s"[Thread ${Thread.currentThread().getId()}]"
 
-  override def fatal(message: String): Nothing = {
+  override def fatalImpl(message: String): Nothing = {
     writer.println(s"$time [FATAL] $threadId " + message)
     val stackTraceElements =
       for (e <- Thread.currentThread().getStackTrace())
@@ -24,22 +25,22 @@ class FileLogger(filename: String) extends Logger {
     ???
   }
 
-  override def error(message: String): Unit = {
+  override def errorImpl(message: String): Unit = {
     writer.println(s"$time [ERROR] $threadId $message")
     writer.flush()
   }
 
-  override def warn(message: String): Unit = {
+  override def warnImpl(message: String): Unit = {
     writer.println(s"$time [WARN] $threadId $message")
     writer.flush()
   }
 
-  override def info(message: String): Unit = {
+  override def infoImpl(message: String): Unit = {
     writer.println(s"$time [INFO] $threadId $message")
     writer.flush()
   }
 
-  override def debug(message: String): Unit = {
+  override def debugImpl(message: String): Unit = {
     writer.println(s"$time [DEBUG] $threadId $message")
     writer.flush()
   }

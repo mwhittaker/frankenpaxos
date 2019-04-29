@@ -310,7 +310,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
   // Custom logger.
-  val leaderLogger = new Logger {
+  val leaderLogger = new Logger(frankenpaxos.LogDebug) {
     private def withInfo(s: String): String = {
       val stateString = state match {
         case Phase1(_, _, _) => "Phase 1"
@@ -320,19 +320,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       s"[$stateString, round=$round] " + s
     }
 
-    override def fatal(message: String): Nothing =
+    override def fatalImpl(message: String): Nothing =
       logger.fatal(withInfo(message))
 
-    override def error(message: String): Unit =
+    override def errorImpl(message: String): Unit =
       logger.error(withInfo(message))
 
-    override def warn(message: String): Unit =
+    override def warnImpl(message: String): Unit =
       logger.warn(withInfo(message))
 
-    override def info(message: String): Unit =
+    override def infoImpl(message: String): Unit =
       logger.info(withInfo(message))
 
-    override def debug(message: String): Unit =
+    override def debugImpl(message: String): Unit =
       logger.debug(withInfo(message))
 
   }

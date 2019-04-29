@@ -1,6 +1,6 @@
 package frankenpaxos
 
-class PrintLogger extends Logger {
+class PrintLogger(logLevel: LogLevel = LogDebug) extends Logger(logLevel) {
   private val formatter = java.time.format.DateTimeFormatter
     .ofPattern("MMM dd HH:mm:ss.nnnnnnnnn")
     .withZone(java.time.ZoneId.systemDefault())
@@ -15,7 +15,7 @@ class PrintLogger extends Logger {
   private def threadId: String =
     s"[Thread ${Thread.currentThread().getId()}]"
 
-  override def fatal(message: String): Nothing = {
+  override def fatalImpl(message: String): Nothing = {
     def show(s: String): Unit = {
       println(
         colored(Console.WHITE + Console.RED_B, s"$time [FATAL] $threadId") + s
@@ -31,15 +31,15 @@ class PrintLogger extends Logger {
     ???
   }
 
-  override def error(message: String): Unit =
+  override def errorImpl(message: String): Unit =
     println(colored(Console.RED, s"$time [ERROR] $threadId ") + message)
 
-  override def warn(message: String): Unit =
+  override def warnImpl(message: String): Unit =
     println(colored(Console.YELLOW, s"$time [WARN] $threadId ") + message)
 
-  override def info(message: String): Unit =
+  override def infoImpl(message: String): Unit =
     println(colored(Console.BLUE, s"$time [INFO] $threadId ") + message)
 
-  override def debug(message: String): Unit =
+  override def debugImpl(message: String): Unit =
     println(colored(Console.CYAN, s"$time [DEBUG] $threadId ") + message)
 }

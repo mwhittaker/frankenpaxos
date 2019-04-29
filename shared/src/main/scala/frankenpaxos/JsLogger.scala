@@ -18,10 +18,10 @@ object JsLogEntryType extends Enumeration {
 case class JsLogEntry(typ: JsLogEntryType.Value, text: String)
 
 @JSExportAll
-class JsLogger extends Logger {
+class JsLogger(logLevel: LogLevel = LogDebug) extends Logger(logLevel) {
   val log = Buffer[JsLogEntry]()
 
-  override def fatal(message: String): Nothing = {
+  override def fatalImpl(message: String): Nothing = {
     // TODO(mwhittaker): Crash program.
     log += JsLogEntry(JsLogEntryType.Fatal, s"$message")
     val stackTraceElements =
@@ -32,19 +32,19 @@ class JsLogger extends Logger {
     ???
   }
 
-  override def error(message: String): Unit = {
+  override def errorImpl(message: String): Unit = {
     log += JsLogEntry(JsLogEntryType.Error, s"$message")
   }
 
-  override def warn(message: String): Unit = {
+  override def warnImpl(message: String): Unit = {
     log += JsLogEntry(JsLogEntryType.Warn, s"$message")
   }
 
-  override def info(message: String): Unit = {
+  override def infoImpl(message: String): Unit = {
     log += JsLogEntry(JsLogEntryType.Info, s"$message")
   }
 
-  override def debug(message: String): Unit = {
+  override def debugImpl(message: String): Unit = {
     log += JsLogEntry(JsLogEntryType.Debug, s"$message")
   }
 }

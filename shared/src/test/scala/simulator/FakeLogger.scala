@@ -1,29 +1,31 @@
 package frankenpaxos.simulator
 
+import frankenpaxos.LogDebug
+import frankenpaxos.LogLevel
 import frankenpaxos.Logger
 import scala.collection.mutable
 
-class FakeLogger extends Logger {
+class FakeLogger(logLevel: LogLevel = LogDebug) extends Logger(logLevel) {
   val logs = mutable.Buffer[String]()
 
-  override def fatal(message: String): Nothing = {
+  override def fatalImpl(message: String): Nothing = {
     logs += s"[FATAL] $message"
     throw new AssertionError(message)
   }
 
-  override def error(message: String): Unit = {
+  override def errorImpl(message: String): Unit = {
     logs += s"[ERROR] $message"
   }
 
-  override def warn(message: String): Unit = {
+  override def warnImpl(message: String): Unit = {
     logs += s"[WARN] $message"
   }
 
-  override def info(message: String): Unit = {
+  override def infoImpl(message: String): Unit = {
     logs += s"[INFO] $message"
   }
 
-  override def debug(message: String): Unit = {
+  override def debugImpl(message: String): Unit = {
     logs += s"[DEBUG] $message"
   }
 }

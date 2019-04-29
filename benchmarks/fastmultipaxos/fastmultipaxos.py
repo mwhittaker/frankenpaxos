@@ -86,6 +86,7 @@ class Input(NamedTuple):
 
     # Leader options.
     leader: LeaderOptions = LeaderOptions()
+    leader_log_level: str = "debug"
 
     # Client options.
     client: ClientOptions = ClientOptions()
@@ -263,6 +264,7 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 # Basic flags.
                 '--index', str(i),
                 '--config', config_filename,
+                '--log_level', input.leader_log_level,
                 # Monitoring.
                 '--prometheus_host', host.IP(),
                 '--prometheus_port', '12345' if input.monitored else '-1',
