@@ -39,16 +39,6 @@ message Prepare {
   required Instance instance = 2;
 }
 
-message Read {
-  required Instance instance = 1;
-  required Command command = 2;
-}
-
-message ReadReply {
-  required string state = 1;
-  required Command command = 2;
-}
-
 message NACK {
   required Ballot old_ballot = 1;
   required Instance instance = 2;

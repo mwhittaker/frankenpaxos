@@ -1,18 +1,16 @@
 package frankenpaxos.epaxos
 
+import com.google.protobuf.ByteString
+import frankenpaxos.Actor
+import frankenpaxos.Chan
+import frankenpaxos.Logger
+import frankenpaxos.ProtoSerializer
+import java.util.Random
+import scala.collection.mutable
 import scala.collection.mutable.Buffer
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.scalajs.js.annotation._
-import frankenpaxos.Actor
-import frankenpaxos.Logger
-import frankenpaxos.ProtoSerializer
-import frankenpaxos.Chan
-
-import scala.collection.mutable
-import java.util.Random
-
-import com.google.protobuf.ByteString
 
 @JSExportAll
 object ClientInboundSerializer extends ProtoSerializer[ClientInbound] {
@@ -42,7 +40,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: Config[Transport]
+    config: Config[Transport],
+    options: ClientOptions = ClientOptions.default
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = ClientInbound
   override val serializer = ClientInboundSerializer
@@ -81,12 +80,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   val executionMap: mutable.Map[Command, String] = mutable.Map()
 
   // Timers ////////////////////////////////////////////////////////////////////
-  // A timer to resend a proposed value. If a client doesn't hear back from
-  // quickly enough, it resends its proposal to all of the leaders.
+  // A timer to resend a proposed value. If a client doesn't hear back from a
+  // replica quickly enough, it resends its proposal to all of the replicas.
   private val reproposeTimer: Transport#Timer = timer(
     "reproposeTimer",
-    // TODO(mwhittaker): Make this a parameter.
-    java.time.Duration.ofSeconds(10),
+    options.reproposePeriod,
     () => {
       pendingCommand match {
         case None =>
@@ -102,19 +100,17 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     }
   )
 
-// Methods ///////////////////////////////////////////////////////////////////
+  // Methods ///////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
     inbound.request match {
-      case Request.RequestReply(r) => handleProposeReply(src, r)
+      case Request.RequestReply(r) => handleRequestReply(src, r)
       case Request.Empty =>
         logger.fatal("Empty ClientInbound encountered.")
     }
   }
 
-  private def toProposeRequest(
-      pendingCommand: PendingCommand
-  ): Request = {
+  private def toProposeRequest(pendingCommand: PendingCommand): Request = {
     val PendingCommand(id, command, _) = pendingCommand
     Request(
       Command(clientAddress = addressAsBytes,
@@ -132,23 +128,27 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     replica.send(ReplicaInbound().withClientRequest(request))
   }
 
-  private def handleProposeReply(
+  private def handleRequestReply(
       src: Transport#Address,
-      proposeReply: RequestReply
+      requestReply: RequestReply
   ): Unit = {
     pendingCommand match {
       case Some(PendingCommand(id, command, promise)) =>
-        if (proposeReply.command.clientId == id) {
+        if (requestReply.command.clientId == id) {
           pendingCommand = None
           reproposeTimer.stop()
-          promise.success(proposeReply.commandInstance)
+          promise.success(requestReply.commandInstance)
         } else {
-          logger.warn(s"""Received a reply for unpending command with id
-            |'${proposeReply.command.clientId}'.""".stripMargin)
+          logger.warn(
+            s"Received a reply for unpending command with id " +
+              s"'${requestReply.command.clientId}'."
+          )
         }
       case None =>
-        logger.warn(s"""Received a reply for unpending command with id
-          |'${proposeReply.command.clientId}'.""".stripMargin)
+        logger.warn(
+          s"Received a reply for unpending command with id " +
+            s"'${requestReply.command.clientId}'."
+        )
     }
   }
 
@@ -181,7 +181,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     transport.executionContext.execute(
       () => _propose(command.getBytes(), promise)
     )
-
     promise.future
   }
 }
