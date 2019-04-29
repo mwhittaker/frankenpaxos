@@ -1,14 +1,14 @@
 package frankenpaxos.epaxos
 
 import com.google.protobuf.ByteString
-
+import frankenpaxos.Actor
+import frankenpaxos.Chan
+import frankenpaxos.Logger
+import frankenpaxos.ProtoSerializer
+import frankenpaxos.Util
+import frankenpaxos.statemachine.KeyValueStore
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
-import frankenpaxos._
-import frankenpaxos.statemachine._
-import java.io._
-
-import scala.collection.mutable.ListBuffer
 
 @JSExportAll
 object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
@@ -39,26 +39,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   private val replicas: Seq[Chan[Replica[Transport]]] =
     for (replicaAddress <- config.replicaAddresses)
-      yield
-        chan[Replica[Transport]](
-          replicaAddress,
-          Replica.serializer
-        )
+      yield chan[Replica[Transport]](replicaAddress, Replica.serializer)
 
   var nextAvailableInstance: Int = 1
 
-  private val fastQuorumSize: Int = replicas.size - 1
-
-  private val slowQuorumSize: Int = (replicas.size / 2) + 1
-
-  object ReplicaStatus extends Enumeration {
-    type ReplicaStatus = Value
-    val PreAccepted = Value("PreAccepted")
-    val Accepted = Value("Accepted")
-    val Committed = Value("Committed")
-    val Executed = Value("Executed")
-  }
-  import ReplicaStatus._
+  sealed trait ReplicaStatus
+  object PreAccepted extends ReplicaStatus
+  object Accepted extends ReplicaStatus
+  object Committed extends ReplicaStatus
+  object Executed extends ReplicaStatus
 
   case class State(
       command: Command,
@@ -67,20 +56,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       status: ReplicaStatus
   )
 
-  // The preaccept responses
-  var preacceptResponses
-    : mutable.Map[Instance, mutable.ListBuffer[PreAcceptOk]] = mutable.Map()
-
-  // The accept ok responses
-  var acceptOkResponses: mutable.Map[Instance, mutable.ListBuffer[AcceptOk]] =
+  var preacceptResponses: mutable.Map[Instance, mutable.Buffer[PreAcceptOk]] =
     mutable.Map()
 
-  var prepareResponses: mutable.Map[Instance, mutable.ListBuffer[PrepareOk]] =
+  var acceptOkResponses: mutable.Map[Instance, mutable.Buffer[AcceptOk]] =
+    mutable.Map()
+
+  var prepareResponses: mutable.Map[Instance, mutable.Buffer[PrepareOk]] =
     mutable.Map()
 
   private val instanceClientMapping: mutable.Map[Instance, Transport#Address] =
     mutable.Map()
 
+  // TODO(mwhittaker): Use generic state machine.
   val stateMachine: KeyValueStore = new KeyValueStore()
 
   private val lowestBallot: Ballot = Ballot(0, index)
@@ -91,12 +79,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private val executedCommands: mutable.Set[Command] = mutable.Set()
 
   var commands: mutable.Map[Instance, State] = mutable.Map[Instance, State]()
-  var conflictsMap
-    : mutable.Map[String, (mutable.Set[Instance], mutable.Set[Instance])] =
+
+  var conflictsMap =
     mutable.Map[String, (mutable.Set[Instance], mutable.Set[Instance])]()
+
   val removeCommands: mutable.Set[Instance] = mutable.Set[Instance]()
+
   var graph: DependencyGraph = new DependencyGraph()
 
+  // Methods ///////////////////////////////////////////////////////////////////
   override def receive(
       src: Transport#Address,
       inbound: ReplicaInbound
@@ -106,11 +97,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Request.ClientRequest(r)  => handleClientRequest(src, r)
       case Request.PreAccept(r)      => handlePreAccept(src, r)
       case Request.PreAcceptOk(r)    => handlePreAcceptOk(src, r)
-      case Request.Accept(r)         => handlePaxosAccept(src, r)
-      case Request.AcceptOk(r)       => handlePaxosAcceptOk(src, r)
+      case Request.Accept(r)         => handleAccept(src, r)
+      case Request.AcceptOk(r)       => handleAcceptOk(src, r)
       case Request.Commit(r)         => handleCommit(src, r)
-      case Request.PrepareRequest(r) => handleExplicitPrepare(src, r)
-      case Request.PrepareOk(r)      => handleExplicitPrepareOk(src, r)
+      case Request.PrepareRequest(r) => handlePrepareRequest(src, r)
+      case Request.PrepareOk(r)      => handlePrepareOk(src, r)
       case Request.Nack(r)           => handleNack(src, r)
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
@@ -118,6 +109,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  // TODO(mwhittaker): This method has to add 1 to the maximum sequence number.
   private def findAttributes(
       command: Command,
       commandInstance: Instance
@@ -140,7 +132,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case "SET" => deps = deps.union(tupleSet._1).union(tupleSet._2)
     }
 
-    if (deps.isEmpty) return (deps, 0)
+    if (deps.isEmpty) {
+      return (deps, 0)
+    }
+
+    // TODO(mwhittaker): This doesn't compute the maximum sequence number, I
+    // don't think.
     val state = commands.get(deps.head)
     if (state.nonEmpty) {
       maxSeqNum = Math.max(maxSeqNum, state.get.sequenceNumber)
@@ -171,34 +168,33 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handleClientRequest(
       address: Transport#Address,
-      value: Request
+      request: Request
   ): Unit = {
     val instance: Instance = Instance(index, nextAvailableInstance)
+    nextAvailableInstance += 1
 
     instanceClientMapping.put(instance, address)
     ballotMapping.put(instance, currentBallot)
-    updateConflictMap(value.command, instance)
+    updateConflictMap(request.command, instance)
 
-    nextAvailableInstance += 1
-
-    val attributes = findAttributes(value.command, instance)
+    val attributes = findAttributes(request.command, instance)
     val seqCommand: Int = attributes._2
     val seqDeps: mutable.Set[Instance] = attributes._1
 
     commands.put(
       instance,
-      State(value.command, seqCommand, seqDeps, ReplicaStatus.PreAccepted)
+      State(request.command, seqCommand, seqDeps, PreAccepted)
     )
 
     var count: Int = 0
     var setIndex: Int = 0
 
-    while (setIndex < replicas.size && count != fastQuorumSize - 1) {
+    while (setIndex < replicas.size && count != config.fastQuorumSize - 1) {
       if (setIndex != index) {
         replicas(setIndex).send(
           ReplicaInbound().withPreAccept(
             PreAccept(
-              command = value.command,
+              command = request.command,
               sequenceNumber = seqCommand,
               dependencies = seqDeps.toSeq,
               commandInstance = instance,
@@ -213,8 +209,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     val buffer =
-      preacceptResponses.getOrElse(instance, ListBuffer[PreAcceptOk]())
-    val message = PreAcceptOk(value.command,
+      preacceptResponses.getOrElse(instance, mutable.Buffer[PreAcceptOk]())
+    val message = PreAcceptOk(request.command,
                               seqCommand,
                               seqDeps.toSeq,
                               instance,
@@ -234,14 +230,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val seqDeps: mutable.Set[Instance] = attributes._1
     commands.put(
       instance,
-      State(newCommand, seqCommand, seqDeps, ReplicaStatus.PreAccepted)
+      State(newCommand, seqCommand, seqDeps, PreAccepted)
     )
     ballotMapping.put(instance, value.ballot)
 
     var count: Int = 0
     var setIndex: Int = 0
 
-    while (setIndex < replicas.size && count != fastQuorumSize - 1) {
+    while (setIndex < replicas.size && count != config.fastQuorumSize - 1) {
       if (setIndex != index) {
         replicas(setIndex).send(
           ReplicaInbound().withPreAccept(
@@ -261,7 +257,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     val buffer =
-      preacceptResponses.getOrElse(instance, ListBuffer[PreAcceptOk]())
+      preacceptResponses.getOrElse(instance, mutable.Buffer[PreAcceptOk]())
     val message = PreAcceptOk(value.command,
                               seqCommand,
                               seqDeps.toSeq,
@@ -303,7 +299,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     deps = deps.union(depsLocal)
 
     commands.put(value.commandInstance,
-                 State(value.command, seqNum, deps, ReplicaStatus.PreAccepted))
+                 State(value.command, seqNum, deps, PreAccepted))
     updateConflictMap(value.command, value.commandInstance)
     ballotMapping.put(value.commandInstance, value.ballot)
 
@@ -323,9 +319,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def checkSameSequenceNumbers(
-      preAcceptResponses: mutable.ListBuffer[PreAcceptOk],
-      numSameNeeded: Int,
-      total: Int
+      preAcceptResponses: mutable.Buffer[PreAcceptOk],
+      numSameNeeded: Int
   ): (Boolean, Option[Int]) = {
     val sequenceNumCount: mutable.Map[Int, Int] = mutable.Map()
     for (preacceptOk <- preAcceptResponses) {
@@ -345,9 +340,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def checkSameDependencies(
-      preAcceptResponses: mutable.ListBuffer[PreAcceptOk],
-      numSameNeeded: Int,
-      total: Int
+      preAcceptResponses: mutable.Buffer[PreAcceptOk],
+      numSameNeeded: Int
   ): (Boolean, Option[Seq[Instance]]) = {
     val dependenciesNumCount: mutable.Map[Seq[Instance], Int] = mutable.Map()
     for (preacceptOk <- preAcceptResponses) {
@@ -370,6 +364,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       address: Transport#Address,
       value: PreAcceptOk
   ): Unit = {
+    // TODO(mwhittaker): Understand when we NACK. NACKing a PreAccept makes
+    // sense to me, byt why NACK a PreAcceptOk?
     if (value.ballot.ordering < ballotMapping
           .getOrElse(value.commandInstance, lowestBallot)
           .ordering) {
@@ -387,76 +383,81 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
     ballotMapping.put(value.commandInstance, value.ballot)
 
+    // TODO(mwhittaker): Check that we're getting PreAcceptOks in our current
+    // round and not in a higher round.
+
     // Verify leader is receiving responses
-    if (value.commandInstance.leaderIndex == index) {
-      //preacceptResponses.put(value.commandInstance, preacceptResponses.getOrElse(value.commandInstance, 0) + 1)
-      val preAcceptOkSet: mutable.ListBuffer[PreAcceptOk] = preacceptResponses
-        .getOrElse(value.commandInstance, mutable.ListBuffer.empty)
-      preAcceptOkSet.append(value)
-      preacceptResponses.put(value.commandInstance, preAcceptOkSet)
-      val quorumSize: Int = (config.replicaAddresses.size / 2) + 1
-      //println(value + " " + preacceptResponses)
-      if (preacceptResponses
-            .getOrElse(value.commandInstance, mutable.ListBuffer.empty)
-            .size >= quorumSize) {
-        //println("Reached quorum size")
-        val N: Int = config.replicaAddresses.size
-        val seqTuple: (Boolean, Option[Int]) = checkSameSequenceNumbers(
-          preacceptResponses.getOrElse(value.commandInstance,
-                                       mutable.ListBuffer.empty),
-          N - 1,
-          N
-        )
-        val depsTuple: (Boolean, Option[Seq[Instance]]) = checkSameDependencies(
-          preacceptResponses.getOrElse(value.commandInstance,
-                                       mutable.ListBuffer.empty),
-          N - 1,
-          N
-        )
-        /*val sameSequenceNumber: Boolean = checkSameSequenceNumbers(preacceptResponses.getOrElse(value.commandInstance, mutable.Set.empty), N - 2, N)
-        val sameDeps: Boolean = checkSameDependencies(preacceptResponses.getOrElse(value.commandInstance, mutable.Set.empty), N - 2, N)*/
-        if (seqTuple._1 && depsTuple._1 && !value.avoid) {
-          // Send request reply to client
-          val clientAddress: Option[Transport#Address] =
-            instanceClientMapping.get(value.commandInstance)
-          if (clientAddress.nonEmpty) {
-            val client =
-              chan[Client[Transport]](clientAddress.get, Client.serializer)
-            client.send(
-              ClientInbound().withRequestReply(
-                RequestReply(
-                  value.command,
-                  value.commandInstance
-                )
-              )
+    if (value.commandInstance.leaderIndex != index) {
+      // TODO(mwhittaker): Add fatal message.
+      return
+    }
+
+    // TODO(mwhittaker): Handle fast path. Right now, I think this always goes
+    // to the slow path.
+    val preAcceptOkSet: mutable.Buffer[PreAcceptOk] = preacceptResponses
+      .getOrElse(value.commandInstance, mutable.Buffer.empty)
+    preAcceptOkSet.append(value)
+    preacceptResponses.put(value.commandInstance, preAcceptOkSet)
+
+    if (preacceptResponses
+          .getOrElse(value.commandInstance, mutable.Buffer.empty)
+          .size < config.slowQuorumSize) {
+      // TODO(mwhittaker): Add a debug log maybe?
+      return
+    }
+
+    val N: Int = config.replicaAddresses.size
+    val seqTuple: (Boolean, Option[Int]) = checkSameSequenceNumbers(
+      preacceptResponses.getOrElse(value.commandInstance, mutable.Buffer.empty),
+      N - 1
+    )
+    val depsTuple: (Boolean, Option[Seq[Instance]]) = checkSameDependencies(
+      preacceptResponses.getOrElse(value.commandInstance, mutable.Buffer.empty),
+      N - 1
+    )
+
+    if (seqTuple._1 && depsTuple._1 && !value.avoid) {
+      // Send request reply to client
+      val clientAddress: Option[Transport#Address] =
+        instanceClientMapping.get(value.commandInstance)
+      // TODO(mwhittaker): Double check that even backup replicas have the
+      // address of the client.
+      if (clientAddress.nonEmpty) {
+        val client =
+          chan[Client[Transport]](clientAddress.get, Client.serializer)
+        // TODO(mwhittaker): Double check that we're sending back the right
+        // command and instance.
+        client.send(
+          ClientInbound().withRequestReply(
+            RequestReply(
+              value.command,
+              value.commandInstance
             )
-          }
-          if (value.dependencies.nonEmpty) {
-            println(value.dependencies)
-          }
-          // Run commit phase
-          runCommitPhase(value.command,
-                         seqTuple._2.get,
-                         depsTuple._2.get,
-                         value.commandInstance)
-        } else {
-          var updatedDeps: mutable.Set[Instance] = mutable.Set()
-          var maxSequenceNumber: Int = value.sequenceNumber
-          for (preacceptResponse <- preacceptResponses.getOrElse(
-                 value.commandInstance,
-                 mutable.ListBuffer.empty
-               )) {
-            updatedDeps =
-              updatedDeps.union(mutable.Set(preacceptResponse.dependencies: _*))
-            maxSequenceNumber =
-              Math.max(maxSequenceNumber, preacceptResponse.sequenceNumber)
-          }
-          startPaxosAcceptPhase(value.command,
-                                maxSequenceNumber,
-                                updatedDeps,
-                                value.commandInstance)
-        }
+          )
+        )
       }
+
+      // Run commit phase
+      runCommitPhase(value.command,
+                     seqTuple._2.get,
+                     depsTuple._2.get,
+                     value.commandInstance)
+    } else {
+      var updatedDeps: mutable.Set[Instance] = mutable.Set()
+      var maxSequenceNumber: Int = value.sequenceNumber
+      for (preacceptResponse <- preacceptResponses.getOrElse(
+             value.commandInstance,
+             mutable.Buffer.empty
+           )) {
+        updatedDeps =
+          updatedDeps.union(mutable.Set(preacceptResponse.dependencies: _*))
+        maxSequenceNumber =
+          Math.max(maxSequenceNumber, preacceptResponse.sequenceNumber)
+      }
+      startPaxosAcceptPhase(value.command,
+                            maxSequenceNumber,
+                            updatedDeps,
+                            value.commandInstance)
     }
   }
 
@@ -466,12 +467,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       deps: mutable.Set[Instance],
       commandInstance: Instance
   ): Unit = {
-    commands.put(commandInstance,
-                 State(command, sequenceNum, deps, ReplicaStatus.Accepted))
+    commands.put(commandInstance, State(command, sequenceNum, deps, Accepted))
     var count: Int = 0
     var setIndex: Int = 0
 
-    while (setIndex < replicas.size && count != slowQuorumSize - 1) {
+    while (setIndex < replicas.size && count != config.slowQuorumSize - 1) {
       if (setIndex != index) {
         replicas(setIndex).send(
           ReplicaInbound().withAccept(
@@ -491,7 +491,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Add leader accept ok response
     val buffer =
-      acceptOkResponses.getOrElse(commandInstance, ListBuffer[AcceptOk]())
+      acceptOkResponses.getOrElse(commandInstance, mutable.Buffer[AcceptOk]())
     val message = AcceptOk(
       command,
       commandInstance,
@@ -501,7 +501,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     acceptOkResponses.put(commandInstance, buffer)
   }
 
-  private def handlePaxosAccept(src: Transport#Address, value: Accept): Unit = {
+  private def handleAccept(src: Transport#Address, value: Accept): Unit = {
     if (value.ballot.ordering < ballotMapping
           .getOrElse(value.commandInstance, lowestBallot)
           .ordering) {
@@ -522,7 +522,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                  State(value.command,
                        value.sequenceNumber,
                        mutable.Set(value.dependencies: _*),
-                       ReplicaStatus.Accepted))
+                       Accepted))
     ballotMapping.put(value.commandInstance, value.ballot)
     val leader = replicas(value.commandInstance.leaderIndex)
     leader.send(
@@ -536,11 +536,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     )
   }
 
-  private def handlePaxosAcceptOk(
+  private def handleAcceptOk(
       src: Transport#Address,
       value: AcceptOk
   ): Unit = {
-    val start_time = java.time.Instant.now()
+    // TODO(mwhittaker): Double check that NACKing here is appropriate.
     if (value.ballot.ordering < ballotMapping
           .getOrElse(value.commandInstance, lowestBallot)
           .ordering) {
@@ -557,19 +557,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    val responseSet: mutable.ListBuffer[AcceptOk] = acceptOkResponses.getOrElse(
+    val responseSet: mutable.Buffer[AcceptOk] = acceptOkResponses.getOrElse(
       value.commandInstance,
-      mutable.ListBuffer.empty
+      mutable.Buffer.empty
     )
     responseSet.append(value)
     acceptOkResponses.put(value.commandInstance, responseSet)
     ballotMapping.put(value.commandInstance, value.ballot)
 
-    val numResponsesNeeded: Int = replicas.size / 2
-    if (responseSet.size >= numResponsesNeeded + 1) {
+    if (responseSet.size >= config.slowQuorumSize) {
       // send request reply to client
       val clientAddress: Option[Transport#Address] =
         instanceClientMapping.get(value.commandInstance)
+      // TODO(mwhittaker): Make sure backup replicas have client address.
       if (clientAddress.nonEmpty) {
         val client =
           chan[Client[Transport]](clientAddress.get, Client.serializer)
@@ -593,6 +593,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  // TODO(mwhittaker): Is this correct? Can we remove instances this eagerly?
   private def removeInstance(command: Command, instance: Instance): Unit = {
     val commandString = command.command.toStringUtf8
     val tokens = commandString.split(" ")
@@ -620,9 +621,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     commands.put(
       instance,
-      State(command, seqNum, mutable.Set(deps: _*), ReplicaStatus.Committed)
+      State(command, seqNum, mutable.Set(deps: _*), Committed)
     )
 
+    // TODO(mwhittaker): I think this is adding committed commands before the
+    // command's dependencies are necessarily committed.
     recursiveAdd(instance)
     graph.executeDependencyGraph(stateMachine, executedCommands)
 
@@ -659,7 +662,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       val headInstance = instanceQueue.dequeue()
       val headState = commands.get(headInstance)
 
-      if (headState.nonEmpty && headState.get.status == ReplicaStatus.Committed) {
+      if (headState.nonEmpty && headState.get.status == Committed) {
         graph.directedGraph.addVertex(
           (headState.get.command, headState.get.sequenceNumber)
         )
@@ -667,7 +670,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
         for (dep <- headState.get.dependencies) {
           val depState = commands.get(dep)
-          if (depState.nonEmpty && depState.get.status == ReplicaStatus.Committed) {
+          if (depState.nonEmpty && depState.get.status == Committed) {
             removeCommands.add(dep)
             graph.directedGraph.addVertex(
               (depState.get.command, depState.get.sequenceNumber)
@@ -689,6 +692,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleCommit(src: Transport#Address, value: Commit): Unit = {
+    // TODO(mwhittaker): You can't NACK a commit can you?
     if (value.ballot.ordering < ballotMapping
           .getOrElse(value.commandInstance, lowestBallot)
           .ordering) {
@@ -705,11 +709,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
+    // TODO(mwhittaker): Call runCommitPhase here instead?
+
     commands.put(value.commandInstance,
                  State(value.command,
                        value.sequenceNumber,
                        mutable.Set(value.dependencies: _*),
-                       ReplicaStatus.Committed))
+                       Committed))
 
     recursiveAdd(value.commandInstance)
     graph.executeDependencyGraph(stateMachine, executedCommands)
@@ -746,7 +752,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def handleExplicitPrepare(
+  private def handlePrepareRequest(
       src: Transport#Address,
       value: Prepare
   ): Unit = {
@@ -771,6 +777,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
       }
+      // TODO(mwhittaker): What if the state is non-empty?
     } else {
       replica.send(
         ReplicaInbound().withNack(
@@ -786,7 +793,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private def checkPrepareOkSame(
       neededSize: Int,
       replicaIndex: Int,
-      responses: ListBuffer[PrepareOk]
+      responses: mutable.Buffer[PrepareOk]
   ): (Boolean, PrepareOk, Boolean, PrepareOk) = {
     val responseMap: mutable.Map[PrepareOk, Int] = mutable.Map()
     val responseMapExclude: mutable.Map[PrepareOk, Int] = mutable.Map()
@@ -814,31 +821,30 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     (false, null, false, null)
   }
 
-  private def handleExplicitPrepareOk(
+  private def handlePrepareOk(
       src: Transport#Address,
       value: PrepareOk
   ): Unit = {
-    val prepareValues: ListBuffer[PrepareOk] =
-      prepareResponses.getOrElse(value.instance, ListBuffer.empty)
+    val prepareValues: mutable.Buffer[PrepareOk] =
+      prepareResponses.getOrElse(value.instance, mutable.Buffer())
     prepareValues.append(value)
-    val quorumSize: Int = (config.n / 2) + 1
-    if (prepareValues.size >= quorumSize) {
+    if (prepareValues.size >= config.slowQuorumSize) {
       val maxBallot: Int =
         prepareValues.maxBy(_.ballot.ordering).ballot.ordering
-      val R: ListBuffer[PrepareOk] =
+      val R: mutable.Buffer[PrepareOk] =
         prepareValues.filter(_.ballot.ordering == maxBallot)
       val sameMessage: (Boolean, PrepareOk, Boolean, PrepareOk) =
         checkPrepareOkSame(config.n / 2, value.instance.leaderIndex, R)
-      if (R.exists(_.status.equals(ReplicaStatus.Committed.toString))) {
+      if (R.exists(_.status.equals(Committed.toString))) {
         val message: PrepareOk =
-          R.filter(_.status.eq(ReplicaStatus.Committed.toString)).head
+          R.filter(_.status.eq(Committed.toString)).head
         runCommitPhase(message.command,
                        message.sequenceNumber,
                        message.dependencies,
                        message.instance)
-      } else if (R.exists(_.status.equals(ReplicaStatus.Accepted.toString))) {
+      } else if (R.exists(_.status.equals(Accepted.toString))) {
         val message: PrepareOk =
-          R.filter(_.status.equals(ReplicaStatus.Accepted.toString)).head
+          R.filter(_.status.equals(Accepted.toString)).head
         startPaxosAcceptPhase(message.command,
                               message.sequenceNumber,
                               mutable.Set(message.dependencies: _*),

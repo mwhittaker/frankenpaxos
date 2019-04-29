@@ -11,7 +11,7 @@ class EPaxos(val f: Int) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = f + 1
-  val numReplicas = 2 * (f + 1)
+  val numReplicas = 2 * f + 1
 
   // Configuration.
   val config = Config[FakeTransport](

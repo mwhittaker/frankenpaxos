@@ -50,6 +50,7 @@ message PrepareOk {
   required Command command = 3;
   required int32 sequence_number = 4;
   repeated Instance dependencies = 5;
+  // TODO(mwhittaker): Don't make this a string.
   required string status = 6;
   required int32 replica_index = 7;
 }

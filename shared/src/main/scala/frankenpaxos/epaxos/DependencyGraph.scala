@@ -1,27 +1,28 @@
 package frankenpaxos.epaxos
 
-import java.util.{Collections, Comparator}
-
 import frankenpaxos.statemachine._
+import java.util.Collections
+import java.util.Comparator
 import org.jgrapht
+import org.jgrapht.Graph
+import org.jgrapht.alg.KosarajuStrongConnectivityInspector
+import org.jgrapht.alg.interfaces.StrongConnectivityAlgorithm
+import org.jgrapht.graph.DefaultEdge
 import org.jgrapht.graph.EdgeReversedGraph
+import org.jgrapht.graph.SimpleDirectedGraph
 import org.jgrapht.traverse.TopologicalOrderIterator
-import scalax.collection.GraphEdge._
-import scalax.collection.GraphPredef._
-
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.scalajs.js.annotation.JSExportAll
-import org.jgrapht._
-import org.jgrapht.alg.KosarajuStrongConnectivityInspector
-import org.jgrapht.alg.interfaces.StrongConnectivityAlgorithm
-import org.jgrapht.graph.{DefaultEdge, SimpleDirectedGraph}
+// import scalax.collection.GraphEdge._
+// import scalax.collection.GraphPredef._
 
 @JSExportAll
 class DependencyGraph {
 
-  val graph: scalax.collection.mutable.Graph[(Command, Int), DiEdge] =
-    scalax.collection.mutable.Graph()
+  // val graph: scalax.collection.mutable.Graph[(Command, Int), DiEdge] =
+  //   scalax.collection.mutable.Graph()
+
   var directedGraph: SimpleDirectedGraph[(Command, Int), DefaultEdge] =
     new SimpleDirectedGraph[(Command, Int), DefaultEdge](classOf[DefaultEdge])
   val verticesToRemove = mutable.Set[(Command, Int)]()
