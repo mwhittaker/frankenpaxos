@@ -5,6 +5,7 @@ import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
 import frankenpaxos.election.LeaderElectionOptions
+import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.AppendLog
 import scala.collection.mutable
@@ -62,12 +63,18 @@ class FastMultiPaxos {
 
   // Leaders.
   val leaderOptions = LeaderOptions.default.copy(
+    phase2aMaxBufferSize = 3,
+    phase2aBufferFlushPeriod = java.time.Duration.ofSeconds(5),
     leaderElectionOptions = LeaderElectionOptions.default.copy(
-      pingPeriod = java.time.Duration.ofSeconds(10),
-      noPingTimeoutMin = java.time.Duration.ofSeconds(30),
-      noPingTimeoutMax = java.time.Duration.ofSeconds(35),
-      notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(10),
-      notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(12)
+      pingPeriod = java.time.Duration.ofSeconds(30),
+      noPingTimeoutMin = java.time.Duration.ofSeconds(60),
+      noPingTimeoutMax = java.time.Duration.ofSeconds(65),
+      notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(30),
+      notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(32)
+    ),
+    heartbeatOptions = HeartbeatOptions.default.copy(
+      failPeriod = java.time.Duration.ofSeconds(30),
+      successPeriod = java.time.Duration.ofSeconds(60)
     )
   )
   val leaders = for (i <- 1 to 2) yield {
