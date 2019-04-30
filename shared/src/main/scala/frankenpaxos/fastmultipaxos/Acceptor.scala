@@ -89,6 +89,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = AcceptorInbound
   override val serializer = Acceptor.serializer
 
+  // Fields ////////////////////////////////////////////////////////////////////
   // Sanity check the Paxos configuration and compute the acceptor's id.
   logger.check(config.acceptorAddresses.contains(address))
   private val acceptorId = config.acceptorAddresses.indexOf(address)
@@ -172,12 +173,14 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var nextSlot = 0;
 
+  // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import AcceptorInbound.Request
     inbound.request match {
       case Request.ProposeRequest(r) => handleProposeRequest(src, r)
       case Request.Phase1A(r)        => handlePhase1a(src, r)
       case Request.Phase2A(r)        => handlePhase2a(src, r)
+      case Request.Phase2ABuffer(r)  => handlePhase2aBuffer(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -198,52 +201,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     } else {
       val t = (System.nanoTime(), src, proposeRequest)
       bufferedProposeRequests += t
-    }
-  }
-
-  private def processBufferedProposeRequests(): Unit = {
-    val cutoff = System.nanoTime() - options.waitStagger.toNanos()
-    val batch = bufferedProposeRequests.takeWhile({
-      case (timestamp, _, _) => timestamp <= cutoff
-    })
-    bufferedProposeRequests = bufferedProposeRequests.drop(batch.size)
-
-    val sorted = batch.sortBy({
-      case (_, src, proposeRequest) => (src, proposeRequest).hashCode
-    })
-    for ((_, src, proposeRequest) <- sorted) {
-      processProposeRequest(src, proposeRequest)
-    }
-
-    metrics.batchesTotal.inc()
-    metrics.proposeRequestsInBatchesTotal.inc(batch.size)
-  }
-
-  private def processProposeRequest(
-      src: Transport#Address,
-      proposeRequest: ProposeRequest
-  ): Unit = {
-    log.get(nextSlot) match {
-      case Some(Entry(voteRound, _, Some(r))) if r == round && voteRound < r =>
-        // If we previously received the distinguished "any" value in this
-        // round and we have not already voted in this round, then we are free
-        // to vote for the client's request.
-        log.put(nextSlot, Entry(r, VVCommand(proposeRequest.command), None))
-        val leader = leaders(config.roundSystem.leader(round))
-        leader.send(
-          LeaderInbound().withPhase2B(
-            Phase2b(acceptorId = acceptorId, slot = nextSlot, round = round)
-              .withCommand(proposeRequest.command)
-          )
-        )
-        nextSlot += 1
-
-      case Some(_) | None =>
-      // If we have not received the distinguished "any" value, then we
-      // simply ignore the client's request.
-      //
-      // TODO(mwhittaker): Inform the client of the round, so that they can
-      // send it to the leader.
     }
   }
 
@@ -381,6 +338,64 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         log.putTail(log.prefix.lastKey + 1, Entry(-1, VVNothing, Some(round)))
 
       case Phase2a.Value.Empty => logger.fatal("Empty Phase2a value.")
+    }
+  }
+
+  private def handlePhase2aBuffer(
+      src: Transport#Address,
+      phase2aBuffer: Phase2aBuffer
+  ): Unit = {
+    // DO_NOT_SUBMIT(mwhittaker): Buffer phase 2bs and return them in a phase2b
+    // buffer.
+    for (phase2a <- phase2aBuffer.phase2A) {
+      handlePhase2a(src, phase2a)
+    }
+  }
+
+  // Methods ///////////////////////////////////////////////////////////////////
+  private def processBufferedProposeRequests(): Unit = {
+    val cutoff = System.nanoTime() - options.waitStagger.toNanos()
+    val batch = bufferedProposeRequests.takeWhile({
+      case (timestamp, _, _) => timestamp <= cutoff
+    })
+    bufferedProposeRequests = bufferedProposeRequests.drop(batch.size)
+
+    val sorted = batch.sortBy({
+      case (_, src, proposeRequest) => (src, proposeRequest).hashCode
+    })
+    for ((_, src, proposeRequest) <- sorted) {
+      processProposeRequest(src, proposeRequest)
+    }
+
+    metrics.batchesTotal.inc()
+    metrics.proposeRequestsInBatchesTotal.inc(batch.size)
+  }
+
+  private def processProposeRequest(
+      src: Transport#Address,
+      proposeRequest: ProposeRequest
+  ): Unit = {
+    log.get(nextSlot) match {
+      case Some(Entry(voteRound, _, Some(r))) if r == round && voteRound < r =>
+        // If we previously received the distinguished "any" value in this
+        // round and we have not already voted in this round, then we are free
+        // to vote for the client's request.
+        log.put(nextSlot, Entry(r, VVCommand(proposeRequest.command), None))
+        val leader = leaders(config.roundSystem.leader(round))
+        leader.send(
+          LeaderInbound().withPhase2B(
+            Phase2b(acceptorId = acceptorId, slot = nextSlot, round = round)
+              .withCommand(proposeRequest.command)
+          )
+        )
+        nextSlot += 1
+
+      case Some(_) | None =>
+      // If we have not received the distinguished "any" value, then we
+      // simply ignore the client's request.
+      //
+      // TODO(mwhittaker): Inform the client of the round, so that they can
+      // send it to the leader.
     }
   }
 }
