@@ -267,7 +267,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     "resendPhase1as",
     options.resendPhase1asTimerPeriod,
     () => {
-      sendPhase1as(false)
+      sendPhase1as(thrifty = false)
       resendPhase1asTimer.start()
       metrics.resendPhase1asTotal.inc()
     }
@@ -302,7 +302,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var state: State =
     if (round == 0) {
-      sendPhase1as(true)
+      sendPhase1as(thrifty = true)
       resendPhase1asTimer.start()
       Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
     } else {
@@ -337,52 +337,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   }
 
-  // Methods ///////////////////////////////////////////////////////////////////
-  def quorumSize(round: Round): Int = {
-    config.roundSystem.roundType(round) match {
-      case FastRound    => config.fastQuorumSize
-      case ClassicRound => config.classicQuorumSize
-    }
-  }
-
-  def thriftyAcceptors(min: Int): Set[Chan[Acceptor[Transport]]] = {
-    // The addresses returned by the heartbeat node are heartbeat addresses.
-    // We have to transform them into acceptor addresses.
-    options.thriftySystem
-      .choose(heartbeat.unsafeNetworkDelay, min)
-      .map(config.acceptorHeartbeatAddresses.indexOf(_))
-      .map(config.acceptorAddresses(_))
-      .map(acceptorsByAddress(_))
-  }
-
-  // Send Phase 1a messages to the acceptors. If thrifty is true, we send with
-  // thriftiness. Otherwise, we send to every acceptor.
-  private def sendPhase1as(thrifty: Boolean): Unit = {
-    val acceptors = if (thrifty) {
-      thriftyAcceptors(config.classicQuorumSize)
-    } else {
-      this.acceptors
-    }
-
-    for (acceptor <- acceptors) {
-      acceptor.send(
-        AcceptorInbound().withPhase1A(
-          Phase1a(round = round,
-                  chosenWatermark = chosenWatermark,
-                  chosenSlot = log.keysIteratorFrom(chosenWatermark).to[Seq])
-        )
-      )
-    }
-  }
-
+  // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import LeaderInbound.Request
     inbound.request match {
-      case Request.ProposeRequest(r) => handleProposeRequest(src, r)
-      case Request.Phase1B(r)        => handlePhase1b(src, r)
-      case Request.Phase1BNack(r)    => handlePhase1bNack(src, r)
-      case Request.Phase2B(r)        => handlePhase2b(src, r)
-      case Request.ValueChosen(r)    => handleValueChosen(src, r)
+      case Request.ProposeRequest(r)    => handleProposeRequest(src, r)
+      case Request.Phase1B(r)           => handlePhase1b(src, r)
+      case Request.Phase1BNack(r)       => handlePhase1bNack(src, r)
+      case Request.Phase2B(r)           => handlePhase2b(src, r)
+      case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
+      case Request.ValueChosen(r)       => handleValueChosen(src, r)
+      case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
       case Request.Empty =>
         leaderLogger.fatal("Empty LeaderInbound encountered.")
     }
@@ -478,76 +443,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             leaderChange(address, round)
         }
     }
-  }
-
-  // Given a quorum of phase1b votes, determine a safe value to propose in slot
-  // `slot` and a set of other commands that could have been proposed in the
-  // slot.
-  def chooseProposal(
-      votes: collection.Map[AcceptorId, SortedMap[Slot, Phase1bVote]],
-      slot: Slot
-  ): (Entry, Set[Command]) = {
-    def phase1bVoteValueToEntry(voteValue: Phase1bVote.Value): Entry = {
-      import Phase1bVote.Value
-      voteValue match {
-        case Value.Command(command) => ECommand(command)
-        case Value.Noop(_)          => ENoop
-        case Value.Empty =>
-          leaderLogger.fatal("Empty Phase1bVote.Value.")
-          ???
-      }
-    }
-
-    val votesInSlot = votes.keys.map(
-      (a) =>
-        votes(a).get(slot) match {
-          case Some(vote) => (vote.voteRound, Some(vote.value))
-          case None       => (-1, None)
-        }
-    )
-    val k = votesInSlot.map({ case (voteRound, _) => voteRound }).max
-    val V = votesInSlot
-      .filter({ case (voteRound, _) => voteRound == k })
-      .map({ case (_, voteValue) => voteValue })
-
-    // If no acceptor has voted yet, we're free to propose anything. Here, we
-    // propose noop.
-    if (k == -1) {
-      return (ENoop, Set())
-    }
-
-    // If V = {v} is a singleton set, then we must propose v.
-    if (V.to[Set].size == 1) {
-      return (phase1bVoteValueToEntry(V.head.get), Set())
-    }
-
-    // If there exists a v in V such that O4(v), then we must propose it.
-    val o4vs = frankenpaxos.Util.popularItems(V, config.quorumMajoritySize)
-    if (o4vs.size > 0) {
-      leaderLogger.check_eq(o4vs.size, 1)
-      return (phase1bVoteValueToEntry(o4vs.head.get), Set())
-    }
-
-    // Otherwise, we can propose anything! Here, we propose one of the values
-    // in V, and return the rest in V as also potential proposals.
-    //
-    // TODO(mwhittaker): Think about whether it is smart to return all the
-    // commands seen and not just those in V. We may have to smartly track
-    // commands that have already been chosen or are already pending and not
-    // re-send them. If acceptors are lagging behind (e.g., because
-    // thriftiness), their votes may be very stale.
-    (phase1bVoteValueToEntry(V.head.get),
-     V.map({
-         case Some(Phase1bVote.Value.Command(command)) =>
-           command
-         case Some(Phase1bVote.Value.Noop(_)) =>
-           logger.fatal(s"Noop vote in round $k.")
-         case Some(Phase1bVote.Value.Empty) =>
-           logger.fatal(s"Empty vote in round $k.")
-         case None =>
-           logger.fatal(s"None vote in round $k.")
-       })
-       .to[Set])
   }
 
   private def handlePhase1b(
@@ -727,72 +622,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {
-    phase2bVote match {
-      case Phase2b.Vote.Command(command) => ECommand(command)
-      case Phase2b.Vote.Noop(_)          => ENoop
-      case Phase2b.Vote.Empty =>
-        leaderLogger.fatal("Empty Phase2b.Vote")
-        ???
-    }
-  }
-
-  sealed trait Phase2bVoteResult
-  case object NothingReadyYet extends Phase2bVoteResult
-  case class ClassicReady(entry: Entry) extends Phase2bVoteResult
-  case class FastReady(entry: Entry) extends Phase2bVoteResult
-  case object FastStuck extends Phase2bVoteResult
-
-  // TODO(mwhittaker): Document.
-  private def phase2bChosenInSlot(
-      phase2: Phase2,
-      slot: Slot
-  ): Phase2bVoteResult = {
-    val Phase2(pendingEntries, phase2bs, _) = phase2
-
-    config.roundSystem.roundType(round) match {
-      case ClassicRound =>
-        if (phase2bs
-              .getOrElse(slot, mutable.Map())
-              .size >= config.classicQuorumSize) {
-          ClassicReady(pendingEntries(slot))
-        } else {
-          NothingReadyYet
-        }
-
-      case FastRound =>
-        phase2bs.getOrElseUpdate(slot, mutable.Map())
-        if (phase2bs(slot).size < config.classicQuorumSize) {
-          return NothingReadyYet
-        }
-
-        val voteValueCounts = Util.histogram(phase2bs(slot).values.map(_.vote))
-
-        // We've heard from `phase2bs(slot).size` acceptors. This means there
-        // are `votesLeft = config.n - phase2bs(slot).size` acceptors left. In
-        // order for a value to be choosable, it must be able to reach a fast
-        // quorum of votes if all the `votesLeft` acceptors vote for it. If no
-        // such value exists, no value can be chosen.
-        val votesLeft = config.n - phase2bs(slot).size
-        if (!voteValueCounts.exists({
-              case (_, count) => count + votesLeft >= config.fastQuorumSize
-            })) {
-          leaderLogger.debug(
-            s"Slot $slot stuck with following histogram: $voteValueCounts."
-          )
-          return FastStuck
-        }
-
-        for ((voteValue, count) <- voteValueCounts) {
-          if (count >= config.fastQuorumSize) {
-            return FastReady(phase2bVoteToEntry(voteValue))
-          }
-        }
-
-        NothingReadyYet
-    }
-  }
-
   private def handlePhase2b(
       src: Transport#Address,
       phase2b: Phase2b
@@ -884,6 +713,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private def handlePhase2bBuffer(
+      src: Transport#Address,
+      phase2bBuffer: Phase2bBuffer
+  ): Unit = {
+    ???
+  }
+
   private def handleValueChosen(
       src: Transport#Address,
       valueChosen: ValueChosen
@@ -904,6 +740,189 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
         log(valueChosen.slot) = entry
         executeLog()
+    }
+  }
+
+  private def handleValueChosenBuffer(
+      src: Transport#Address,
+      valueChosenBuffer: ValueChosenBuffer
+  ): Unit = {
+    ???
+  }
+
+  // Methods ///////////////////////////////////////////////////////////////////
+  def quorumSize(round: Round): Int = {
+    config.roundSystem.roundType(round) match {
+      case FastRound    => config.fastQuorumSize
+      case ClassicRound => config.classicQuorumSize
+    }
+  }
+
+  // thriftyAcceptors(min) uses `options.thriftySystem` to thriftily select at
+  // least `min` acceptors.
+  def thriftyAcceptors(min: Int): Set[Chan[Acceptor[Transport]]] = {
+    // The addresses returned by the heartbeat node are heartbeat addresses.
+    // We have to transform them into acceptor addresses.
+    options.thriftySystem
+      .choose(heartbeat.unsafeNetworkDelay, min)
+      .map(config.acceptorHeartbeatAddresses.indexOf(_))
+      .map(config.acceptorAddresses(_))
+      .map(acceptorsByAddress(_))
+  }
+
+  // Send Phase 1a messages to the acceptors. If thrifty is true, we send with
+  // thriftiness. Otherwise, we send to every acceptor.
+  private def sendPhase1as(thrifty: Boolean): Unit = {
+    val acceptors = if (thrifty) {
+      thriftyAcceptors(config.classicQuorumSize)
+    } else {
+      this.acceptors
+    }
+
+    for (acceptor <- acceptors) {
+      acceptor.send(
+        AcceptorInbound().withPhase1A(
+          Phase1a(round = round,
+                  chosenWatermark = chosenWatermark,
+                  chosenSlot = log.keysIteratorFrom(chosenWatermark).to[Seq])
+        )
+      )
+    }
+  }
+
+  // Given a quorum of phase1b votes, determine a safe value to propose in slot
+  // `slot` and a set of other commands that could have been proposed in the
+  // slot.
+  def chooseProposal(
+      votes: collection.Map[AcceptorId, SortedMap[Slot, Phase1bVote]],
+      slot: Slot
+  ): (Entry, Set[Command]) = {
+    def phase1bVoteValueToEntry(voteValue: Phase1bVote.Value): Entry = {
+      import Phase1bVote.Value
+      voteValue match {
+        case Value.Command(command) => ECommand(command)
+        case Value.Noop(_)          => ENoop
+        case Value.Empty =>
+          leaderLogger.fatal("Empty Phase1bVote.Value.")
+          ???
+      }
+    }
+
+    val votesInSlot = votes.keys.map(
+      (a) =>
+        votes(a).get(slot) match {
+          case Some(vote) => (vote.voteRound, Some(vote.value))
+          case None       => (-1, None)
+        }
+    )
+    val k = votesInSlot.map({ case (voteRound, _) => voteRound }).max
+    val V = votesInSlot
+      .filter({ case (voteRound, _) => voteRound == k })
+      .map({ case (_, voteValue) => voteValue })
+
+    // If no acceptor has voted yet, we're free to propose anything. Here, we
+    // propose noop.
+    if (k == -1) {
+      return (ENoop, Set())
+    }
+
+    // If V = {v} is a singleton set, then we must propose v.
+    if (V.to[Set].size == 1) {
+      return (phase1bVoteValueToEntry(V.head.get), Set())
+    }
+
+    // If there exists a v in V such that O4(v), then we must propose it.
+    val o4vs = frankenpaxos.Util.popularItems(V, config.quorumMajoritySize)
+    if (o4vs.size > 0) {
+      leaderLogger.check_eq(o4vs.size, 1)
+      return (phase1bVoteValueToEntry(o4vs.head.get), Set())
+    }
+
+    // Otherwise, we can propose anything! Here, we propose one of the values
+    // in V, and return the rest in V as also potential proposals.
+    //
+    // TODO(mwhittaker): Think about whether it is smart to return all the
+    // commands seen and not just those in V. We may have to smartly track
+    // commands that have already been chosen or are already pending and not
+    // re-send them. If acceptors are lagging behind (e.g., because
+    // thriftiness), their votes may be very stale.
+    (phase1bVoteValueToEntry(V.head.get),
+     V.map({
+         case Some(Phase1bVote.Value.Command(command)) =>
+           command
+         case Some(Phase1bVote.Value.Noop(_)) =>
+           logger.fatal(s"Noop vote in round $k.")
+         case Some(Phase1bVote.Value.Empty) =>
+           logger.fatal(s"Empty vote in round $k.")
+         case None =>
+           logger.fatal(s"None vote in round $k.")
+       })
+       .to[Set])
+  }
+
+  private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {
+    phase2bVote match {
+      case Phase2b.Vote.Command(command) => ECommand(command)
+      case Phase2b.Vote.Noop(_)          => ENoop
+      case Phase2b.Vote.Empty =>
+        leaderLogger.fatal("Empty Phase2b.Vote")
+        ???
+    }
+  }
+
+  sealed trait Phase2bVoteResult
+  case object NothingReadyYet extends Phase2bVoteResult
+  case class ClassicReady(entry: Entry) extends Phase2bVoteResult
+  case class FastReady(entry: Entry) extends Phase2bVoteResult
+  case object FastStuck extends Phase2bVoteResult
+
+  // TODO(mwhittaker): Document.
+  private def phase2bChosenInSlot(
+      phase2: Phase2,
+      slot: Slot
+  ): Phase2bVoteResult = {
+    val Phase2(pendingEntries, phase2bs, _) = phase2
+
+    config.roundSystem.roundType(round) match {
+      case ClassicRound =>
+        if (phase2bs
+              .getOrElse(slot, mutable.Map())
+              .size >= config.classicQuorumSize) {
+          ClassicReady(pendingEntries(slot))
+        } else {
+          NothingReadyYet
+        }
+
+      case FastRound =>
+        phase2bs.getOrElseUpdate(slot, mutable.Map())
+        if (phase2bs(slot).size < config.classicQuorumSize) {
+          return NothingReadyYet
+        }
+
+        val voteValueCounts = Util.histogram(phase2bs(slot).values.map(_.vote))
+
+        // We've heard from `phase2bs(slot).size` acceptors. This means there
+        // are `votesLeft = config.n - phase2bs(slot).size` acceptors left. In
+        // order for a value to be choosable, it must be able to reach a fast
+        // quorum of votes if all the `votesLeft` acceptors vote for it. If no
+        // such value exists, no value can be chosen.
+        val votesLeft = config.n - phase2bs(slot).size
+        if (!voteValueCounts.exists({
+              case (_, count) => count + votesLeft >= config.fastQuorumSize
+            })) {
+          leaderLogger.debug(
+            s"Slot $slot stuck with following histogram: $voteValueCounts."
+          )
+          return FastStuck
+        }
+
+        for ((voteValue, count) <- voteValueCounts) {
+          if (count >= config.fastQuorumSize) {
+            return FastReady(phase2bVoteToEntry(voteValue))
+          }
+        }
+
+        NothingReadyYet
     }
   }
 

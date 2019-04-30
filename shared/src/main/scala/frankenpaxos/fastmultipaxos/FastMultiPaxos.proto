@@ -120,6 +120,10 @@ message Phase2a {
   }
 }
 
+message Phase2aBuffer {
+  repeated Phase2a phase2a = 1;
+}
+
 message Phase2b {
   required int32 acceptor_id = 1;
   required int32 slot = 2;
@@ -130,12 +134,20 @@ message Phase2b {
   }
 }
 
+message Phase2bBuffer {
+  repeated Phase2b phase2b = 1;
+}
+
 message ValueChosen {
   required int32 slot = 1;
   oneof value {
     Command command = 2;
     Noop noop = 3;
   }
+}
+
+message ValueChosenBuffer {
+  repeated ValueChosen value_chosen = 1;
 }
 
 message ClientInbound {
@@ -151,7 +163,9 @@ message LeaderInbound {
     Phase1b phase1b = 2;
     Phase1bNack phase1b_nack = 3;
     Phase2b phase2b = 4;
-    ValueChosen value_chosen = 5;
+    Phase2bBuffer phase2b_buffer = 5;
+    ValueChosen value_chosen = 6;
+    ValueChosenBuffer value_chosen_buffer = 7;
   }
 }
 
@@ -160,5 +174,6 @@ message AcceptorInbound {
     ProposeRequest propose_request = 1;
     Phase1a phase1a = 2;
     Phase2a phase2a = 3;
+    Phase2aBuffer phase2a_buffer = 4;
   }
 }
