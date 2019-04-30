@@ -287,6 +287,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]],
       // A timer to resend all pending phase 2a messages.
       resendPhase2as: Transport#Timer
+      // DO_NOT_SUBMIT(mwhittaker): Add a batch of pending propose requests and
+      // a timer that sends out messages for the batch.
   ) extends State
 
   private val resendPhase2asTimer: Transport#Timer = timer(
@@ -419,6 +421,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
+            // DO_NOT_SUBMIT(mwhittaker): Add batching here. Propose requests
+            // in a classic round should be batched together.
             thriftyAcceptors(config.classicQuorumSize).foreach(
               _.send(
                 AcceptorInbound().withPhase2A(
@@ -465,7 +469,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Phase1(phase1bs, pendingProposals, resendPhase1as) =>
         if (request.round != round) {
           leaderLogger.debug(
-            s"eader received phase 1b from $src in round ${request.round}, " +
+            s"Leader received phase 1b from $src in round ${request.round}, " +
               s"but is in round $round."
           )
           return
@@ -558,6 +562,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         state = Phase2(pendingEntries, phase2bs, resendPhase2asTimer)
         resendPhase2asTimer.start()
+
+        // DO_NOT_SUBMIT(mwhittaker): Add batching here to send all Phase2as in
+        // a single batch.
 
         // Replay the pending proposals.
         nextSlot = endSlot + 1
@@ -717,6 +724,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2bBuffer: Phase2bBuffer
   ): Unit = {
+    // DO_NOT_SUBMIT(mwhittaker): Implement.
     ???
   }
 
@@ -731,7 +739,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case ValueChosen.Value.Noop(_)          => ENoop
       case ValueChosen.Value.Empty =>
         leaderLogger.fatal("Empty ValueChosen.Vote")
-        ???
     }
 
     log.get(valueChosen.slot) match {
@@ -747,6 +754,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       valueChosenBuffer: ValueChosenBuffer
   ): Unit = {
+    // DO_NOT_SUBMIT(mwhittaker): Implement.
     ???
   }
 
@@ -927,6 +935,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   def resendPhase2as(): Unit = {
+    // DO_NOT_SUBMIT(mwhittaker): Implement batching here.
+
     state match {
       case Inactive | Phase1(_, _, _) =>
         leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
