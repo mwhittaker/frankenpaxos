@@ -15,12 +15,7 @@ def wrapped(s: str, width: int = 60) -> str:
 
 
 def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
-    grouping_columns = [
-        'round_system_type',
-        'acceptor.wait_period_ms',
-        'acceptor.wait_stagger_ms',
-        'client.repropose_period_ms',
-    ]
+    grouping_columns = ['acceptor.wait_period_ms']
     grouped = df.groupby(grouping_columns)
 
     for (name, group) in grouped:
@@ -35,7 +30,7 @@ def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
     ax.set_title(wrapped(
         f'{pretty_column} for values of {grouping_columns}'
     ))
-    ax.set_xlabel('Number of clients')
+    ax.set_xlabel('Number of Clients')
     ax.set_ylabel(pretty_column)
     ax.grid()
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
@@ -43,6 +38,8 @@ def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
 
 def main(args) -> None:
     df = pd.read_csv(args.results)
+    df = df[df['num_clients_per_proc'] == 1]
+    df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
 
     # See [1] for figure size defaults. We add an extra plot at the bottom for
     # a textual note.
@@ -73,7 +70,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '-o', '--output',
         type=str,
-        default='fastmultipaxos_all.pdf',
+        default='fastmultipaxos_waiting.pdf',
         help='Output filename'
     )
     return parser
