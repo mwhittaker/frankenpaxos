@@ -36,6 +36,11 @@ case class LeaderOptions(
     thriftySystem: ThriftySystem,
     resendPhase1asTimerPeriod: java.time.Duration,
     resendPhase2asTimerPeriod: java.time.Duration,
+    // The leader buffers phase 2a messages. This buffer can grow to at most
+    // size `phase2aMaxBufferSize`. If the buffer does not fill up, then it is
+    // flushed after `phase2aBufferFlushPeriod`.
+    phase2aMaxBufferSize: Int,
+    phase2aBufferFlushPeriod: java.time.Duration,
     leaderElectionOptions: LeaderElectionOptions,
     heartbeatOptions: HeartbeatOptions
 )
@@ -46,6 +51,8 @@ object LeaderOptions {
     thriftySystem = ThriftySystem.Closest,
     resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(5),
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
+    phase2aMaxBufferSize = 25,
+    phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
     leaderElectionOptions = LeaderElectionOptions.default,
     heartbeatOptions = HeartbeatOptions.default
   )
@@ -122,6 +129,18 @@ class LeaderMetrics(collectors: Collectors) {
     .name("fast_multipaxos_leader_resend_phase2as_total")
     .help("Total number of times the leader resent phase 2a messages.")
     .register()
+
+  val phase2aBufferFullTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_phase2a_buffer_full_total")
+    .help("Total number of times the phase 2a buffer filled up.")
+    .register()
+
+  val phase2aBufferFlushTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_phase2a_buffer_flush_total")
+    .help("Total number of times the phase 2a buffer was flushed by a timer.")
+    .register()
 }
 
 @JSExportAll
@@ -177,10 +196,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
 
-  // The client table records the response to the latest request from each
-  // client. For example, if command c1 sends command x with id 2 to a leader
-  // and the leader later executes x yielding response y, then c1 maps to (2,
-  // y) in the client table.
+// The client table records the response to the latest request from each
+// client. For example, if command c1 sends command x with id 2 to a leader
+// and the leader later executes x yielding response y, then c1 maps to (2,
+// y) in the client table.
   @JSExport
   protected var clientTable =
     mutable.Map[Transport#Address, (Int, Array[Byte])]()
@@ -251,7 +270,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case object Inactive extends State
 
-  // This leader is executing phase 1.
+// This leader is executing phase 1.
   @JSExportAll
   case class Phase1(
       // Phase 1b responses.
@@ -273,7 +292,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   )
 
-  // This leader has finished executing phase 1 and is now executing phase 2.
+// This leader has finished executing phase 1 and is now executing phase 2.
   @JSExportAll
   case class Phase2(
       // In a classic round, leaders receive commands from clients and relay
@@ -286,9 +305,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // In a fast round, they do not necessarily have to be.
       phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]],
       // A timer to resend all pending phase 2a messages.
-      resendPhase2as: Transport#Timer
-      // DO_NOT_SUBMIT(mwhittaker): Add a batch of pending propose requests and
-      // a timer that sends out messages for the batch.
+      resendPhase2as: Transport#Timer,
+      // A set of buffered phase 2a messages.
+      phase2aBuffer: mutable.Buffer[Phase2a],
+      // A timer to flush the buffer of phase 2a messages.
+      phase2aBufferFlushTimer: Transport#Timer
   ) extends State
 
   private val resendPhase2asTimer: Transport#Timer = timer(
@@ -298,6 +319,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       resendPhase2as()
       resendPhase2asTimer.start()
       metrics.resendPhase2asTotal.inc()
+    }
+  )
+
+  private val phase2aBufferFlushTimer: Transport#Timer = timer(
+    "phase2aBufferFlush",
+    options.phase2aBufferFlushPeriod,
+    () => {
+      flushPhase2aBuffer(thrifty = true)
+      metrics.phase2aBufferFlushTotal.inc()
     }
   )
 
@@ -315,9 +345,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   val leaderLogger = new Logger(frankenpaxos.LogDebug) {
     private def withInfo(s: String): String = {
       val stateString = state match {
-        case Phase1(_, _, _) => "Phase 1"
-        case Phase2(_, _, _) => "Phase 2"
-        case Inactive        => "Inactive"
+        case Phase1(_, _, _)       => "Phase 1"
+        case Phase2(_, _, _, _, _) => "Phase 2"
+        case Inactive              => "Inactive"
       }
       s"[$stateString, round=$round] " + s
     }
@@ -408,7 +438,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           pendingProposals += ((src, request))
         }
 
-      case Phase2(pendingEntries, phase2bs, _) =>
+      case Phase2(pendingEntries,
+                  phase2bs,
+                  _,
+                  phase2aBuffer,
+                  phase2aBufferFlushTimer) =>
         if (request.round != round) {
           // We don't want to process requests from out of date clients.
           leaderLogger.debug(
@@ -421,19 +455,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
-            // DO_NOT_SUBMIT(mwhittaker): Add batching here. Propose requests
-            // in a classic round should be batched together.
-            thriftyAcceptors(config.classicQuorumSize).foreach(
-              _.send(
-                AcceptorInbound().withPhase2A(
-                  Phase2a(slot = nextSlot, round = round)
-                    .withCommand(request.command)
-                )
-              )
+            phase2aBuffer.append(
+              Phase2a(slot = nextSlot, round = round)
+                .withCommand(request.command)
             )
             pendingEntries(nextSlot) = ECommand(request.command)
             phase2bs(nextSlot) = mutable.Map()
             nextSlot += 1
+            if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
+              flushPhase2aBuffer(thrifty = true)
+            }
 
           case FastRound =>
             // If we're in a fast round, and the client knows we're in a fast
@@ -460,7 +491,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           s"Leader received phase 1b from $src, but is inactive."
         )
 
-      case Phase2(_, _, _) =>
+      case Phase2(_, _, _, _, _) =>
         leaderLogger.debug(
           s"Leader received phase 1b from $src, but is in phase 2b in " +
             s"round $round."
@@ -537,6 +568,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         val pendingEntries = mutable.SortedMap[Slot, Entry]()
         val phase2bs =
           mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]]()
+        val phase2aBuffer = mutable.Buffer[Phase2a]()
 
         // For every unchosen slot between the chosenWatermark and endSlot,
         // choose a value to propose and propose it. We also collect a set of
@@ -546,37 +578,32 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         for (slot <- chosenWatermark to endSlot) {
           val (proposal, commands) = chooseProposal(votes, slot)
           yetToProposeCommands ++= commands
-          pendingEntries(slot) = proposal
-          phase2bs(slot) = mutable.Map[AcceptorId, Phase2b]()
 
-          val phase2a = Phase2a(slot = slot, round = round)
-          val msg = proposal match {
+          val phase2a = proposal match {
             case ECommand(command) =>
               proposedCommands += command
-              AcceptorInbound().withPhase2A(phase2a.withCommand(command))
+              Phase2a(slot = slot, round = round).withCommand(command)
             case ENoop =>
-              AcceptorInbound().withPhase2A(phase2a.withNoop(Noop()))
+              Phase2a(slot = slot, round = round).withNoop(Noop())
           }
-          thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
+          phase2aBuffer += phase2a
+          pendingEntries(slot) = proposal
+          phase2bs(slot) = mutable.Map[AcceptorId, Phase2b]()
         }
 
-        state = Phase2(pendingEntries, phase2bs, resendPhase2asTimer)
+        state = Phase2(pendingEntries,
+                       phase2bs,
+                       resendPhase2asTimer,
+                       phase2aBuffer,
+                       phase2aBufferFlushTimer)
         resendPhase2asTimer.start()
-
-        // DO_NOT_SUBMIT(mwhittaker): Add batching here to send all Phase2as in
-        // a single batch.
+        phase2aBufferFlushTimer.start()
 
         // Replay the pending proposals.
         nextSlot = endSlot + 1
         for ((_, proposal) <- pendingProposals) {
-          thriftyAcceptors(quorumSize(round)).foreach(
-            _.send(
-              AcceptorInbound().withPhase2A(
-                Phase2a(slot = nextSlot, round = round)
-                  .withCommand(proposal.command)
-              )
-            )
-          )
+          phase2aBuffer += Phase2a(slot = nextSlot, round = round)
+            .withCommand(proposal.command)
           pendingEntries(nextSlot) = ECommand(proposal.command)
           phase2bs(nextSlot) = mutable.Map()
           nextSlot += 1
@@ -584,13 +611,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Replay the safe to propose values that we haven't just proposed.
         for (command <- yetToProposeCommands.diff(proposedCommands)) {
-          thriftyAcceptors(quorumSize(round)).foreach(
-            _.send(
-              AcceptorInbound().withPhase2A(
-                Phase2a(slot = nextSlot, round = round).withCommand(command)
-              )
-            )
-          )
+          phase2aBuffer += Phase2a(slot = nextSlot, round = round)
+            .withCommand(command)
           pendingEntries(nextSlot) = ECommand(command)
           phase2bs(nextSlot) = mutable.Map()
           nextSlot += 1
@@ -598,12 +620,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // If this is a fast round, send a suffix of anys.
         if (config.roundSystem.roundType(round) == FastRound) {
-          val msg = AcceptorInbound().withPhase2A(
+          phase2aBuffer +=
             Phase2a(slot = nextSlot, round = round)
               .withAnySuffix(AnyValSuffix())
-          )
-          acceptors.foreach(_.send(msg))
         }
+
+        flushPhase2aBuffer(thrifty = true)
     }
   }
 
@@ -613,7 +635,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     metrics.requestsTotal.labels("Phase1bNack").inc()
     state match {
-      case Inactive | Phase2(_, _, _) =>
+      case Inactive | Phase2(_, _, _, _, _) =>
         leaderLogger.debug(
           s"Leader received phase 1b nack from $src, but is not in phase 1."
         )
@@ -656,7 +678,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             s"from $src but is in phase 1 of round $round."
         )
 
-      case phase2 @ Phase2(pendingEntries, phase2bs, _) =>
+      case phase2 @ Phase2(pendingEntries, phase2bs, _, _, _) =>
         def choose(entry: Entry): Unit = {
           log(phase2b.slot) = entry
           pendingEntries -= phase2b.slot
@@ -754,8 +776,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       valueChosenBuffer: ValueChosenBuffer
   ): Unit = {
-    // DO_NOT_SUBMIT(mwhittaker): Implement.
-    ???
+    for (valueChosen <- valueChosenBuffer.valueChosen) {
+      handleValueChosen(src, valueChosen)
+    }
   }
 
   // Methods ///////////////////////////////////////////////////////////////////
@@ -889,7 +912,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase2: Phase2,
       slot: Slot
   ): Phase2bVoteResult = {
-    val Phase2(pendingEntries, phase2bs, _) = phase2
+    val Phase2(pendingEntries, phase2bs, _, _, _) = phase2
 
     config.roundSystem.roundType(round) match {
       case ClassicRound =>
@@ -934,14 +957,33 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  def resendPhase2as(): Unit = {
-    // DO_NOT_SUBMIT(mwhittaker): Implement batching here.
+  def flushPhase2aBuffer(thrifty: Boolean): Unit = {
+    state match {
+      case Inactive =>
+        logger.fatal("Flushing phase2aBuffer while inactive.")
 
+      case Phase1(_, _, _) =>
+        logger.fatal("Flushing phase2aBuffer while in phase 1.")
+
+      case Phase2(_, _, _, phase2aBuffer, phase2aBufferFlushTimer) =>
+        val msg =
+          AcceptorInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
+        if (thrifty) {
+          thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
+        } else {
+          acceptors.foreach(_.send(msg))
+        }
+        phase2aBuffer.clear()
+        phase2aBufferFlushTimer.reset()
+    }
+  }
+
+  def resendPhase2as(): Unit = {
     state match {
       case Inactive | Phase1(_, _, _) =>
         leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
 
-      case Phase2(pendingEntries, phase2bs, _) =>
+      case Phase2(pendingEntries, phase2bs, _, phase2aBuffer, _) =>
         // It's important that no slot goes forever unchosen. This prevents
         // later slots from executing. Thus, we try and and choose a complete
         // prefix of the log.
@@ -951,15 +993,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
         for (slot <- chosenWatermark to endSlot) {
-          val entryToPhase2a: Entry => AcceptorInbound = {
+          val entryToPhase2a: Entry => Phase2a = {
             case ECommand(command) =>
-              AcceptorInbound().withPhase2A(
-                Phase2a(slot = slot, round = round).withCommand(command)
-              )
+              Phase2a(slot = slot, round = round).withCommand(command)
             case ENoop =>
-              AcceptorInbound().withPhase2A(
-                Phase2a(slot = slot, round = round).withNoop(Noop())
-              )
+              Phase2a(slot = slot, round = round).withNoop(Noop())
           }
 
           (log.contains(slot), pendingEntries.get(slot), phase2bs.get(slot)) match {
@@ -968,7 +1006,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
             case (false, Some(entry), _) =>
               // If we have some pending entry, then we propose that.
-              acceptors.foreach(_.send(entryToPhase2a(entry)))
+              phase2aBuffer.append(entryToPhase2a(entry))
 
             case (false, None, Some(phase2bsInSlot)) =>
               // If there is no pending entry, then we propose the value with
@@ -977,17 +1015,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               val voteValues = phase2bsInSlot.values.map(_.vote)
               val histogram = Util.histogram(voteValues)
               if (voteValues.size == 0) {
-                acceptors.foreach(_.send(entryToPhase2a(ENoop)))
+                phase2aBuffer += entryToPhase2a(ENoop)
               } else {
                 val mostVoted = histogram.maxBy(_._2)._1
-                val msg = entryToPhase2a(phase2bVoteToEntry(mostVoted))
-                acceptors.foreach(_.send(msg))
+                phase2aBuffer += entryToPhase2a(phase2bVoteToEntry(mostVoted))
               }
 
             case (false, None, None) =>
-              acceptors.foreach(_.send(entryToPhase2a(ENoop)))
+              // If there is no pending entry and no votes, we propose Noop.
+              phase2aBuffer += entryToPhase2a(ENoop)
           }
         }
+
+        flushPhase2aBuffer(thrifty = false)
     }
   }
 
@@ -1039,7 +1079,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         resendPhase1asTimer.stop()
         state = Inactive
 
-      case (Phase2(_, _, resendPhase2asTimer), true) =>
+      case (Phase2(_, _, resendPhase2asTimer, _, _), true) =>
         // We were and still are the leader, but in a higher round.
         leaderLogger.debug(s"Leader $address was the leader and still is.")
         resendPhase2asTimer.stop()
@@ -1048,7 +1088,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         resendPhase1asTimer.start()
         state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
 
-      case (Phase2(_, _, resendPhase2asTimer), false) =>
+      case (Phase2(_, _, resendPhase2asTimer, _, _), false) =>
         // We are no longer the leader!
         leaderLogger.debug(s"Leader $address was the leader, but no longer is.")
         resendPhase2asTimer.stop()
