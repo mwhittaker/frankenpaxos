@@ -186,11 +186,17 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
     {
       for (address <- addresses) yield {
-        val delay = networkDelayNanos
-          .get(address)
-          .map(_.toLong)
-          .map(java.time.Duration.ofNanos(_))
-          .getOrElse(maxDuration)
+        val delay =
+          networkDelayNanos
+            .get(address)
+            .flatMap(
+              delay =>
+                if (alive.contains(address)) Some(delay)
+                else None
+            )
+            .map(_.toLong)
+            .map(java.time.Duration.ofNanos(_))
+            .getOrElse(maxDuration)
         (address, delay)
       }
     }.toMap
