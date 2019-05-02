@@ -98,6 +98,35 @@ object LeaderMain extends App {
         )
       })
 
+    opt[Int]("options.phase2aMaxBufferSize")
+      .action((x, f) => {
+        f.copy(options = f.options.copy(phase2aMaxBufferSize = x))
+      })
+
+    opt[duration.Duration]("options.phase2aBufferFlushPeriod")
+      .action((x, f) => {
+        f.copy(
+          options = f.options
+            .copy(
+              phase2aBufferFlushPeriod = java.time.Duration.ofNanos(x.toNanos)
+            )
+        )
+      })
+
+    opt[Int]("options.valueChosenMaxBufferSize")
+      .action((x, f) => {
+        f.copy(options = f.options.copy(valueChosenMaxBufferSize = x))
+      })
+
+    opt[duration.Duration]("options.valueChosenBufferFlushPeriod")
+      .action((x, f) => {
+        f.copy(
+          options = f.options.copy(
+            valueChosenBufferFlushPeriod = java.time.Duration.ofNanos(x.toNanos)
+          )
+        )
+      })
+
     opt[duration.Duration]("options.election.pingPeriod")
       .action((x, f) => {
         f.copy(

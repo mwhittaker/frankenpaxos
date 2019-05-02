@@ -54,6 +54,10 @@ class LeaderOptions(NamedTuple):
     thrifty_system: str = ThriftySystemType.NOT_THRIFTY
     resend_phase1as_timer_period_ms: float = 5 * 1000
     resend_phase2as_timer_period_ms: float = 5 * 1000
+    phase2a_max_buffer_size: int = 1
+    phase2a_buffer_flush_period_ms: float = 100
+    value_chosen_max_buffer_size: int = 1000
+    value_chosen_buffer_flush_period_ms: float = 1000
     election: ElectionOptions = ElectionOptions()
     heartbeat: HeartbeatOptions = HeartbeatOptions()
 
@@ -275,6 +279,14 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                     f'{input.leader.resend_phase1as_timer_period_ms}ms',
                 '--options.resendPhase2asTimerPeriod',
                     f'{input.leader.resend_phase2as_timer_period_ms}ms',
+                '--options.phase2aMaxBufferSize',
+                    f'{input.leader.phase2a_max_buffer_size}',
+                '--options.phase2aBufferFlushPeriod',
+                    f'{input.leader.phase2a_buffer_flush_period_ms}ms',
+                '--options.valueChosenMaxBufferSize',
+                    f'{input.leader.value_chosen_max_buffer_size}',
+                '--options.valueChosenBufferFlushPeriod',
+                    f'{input.leader.value_chosen_buffer_flush_period_ms}ms',
                 '--options.election.pingPeriod',
                     f'{input.leader.election.ping_period_ms}ms',
                 '--options.election.noPingTimeoutMin',
