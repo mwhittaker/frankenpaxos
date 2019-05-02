@@ -41,6 +41,9 @@ case class LeaderOptions(
     // flushed after `phase2aBufferFlushPeriod`.
     phase2aMaxBufferSize: Int,
     phase2aBufferFlushPeriod: java.time.Duration,
+    // As with phase 2a messages, leaders buffer value chosen messages.
+    valueChosenMaxBufferSize: Int,
+    valueChosenBufferFlushPeriod: java.time.Duration,
     leaderElectionOptions: LeaderElectionOptions,
     heartbeatOptions: HeartbeatOptions
 )
@@ -53,6 +56,8 @@ object LeaderOptions {
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
     phase2aMaxBufferSize = 25,
     phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
+    valueChosenMaxBufferSize = 100,
+    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5),
     leaderElectionOptions = LeaderElectionOptions.default,
     heartbeatOptions = HeartbeatOptions.default
   )
@@ -140,6 +145,20 @@ class LeaderMetrics(collectors: Collectors) {
     .build()
     .name("fast_multipaxos_leader_phase2a_buffer_flush_total")
     .help("Total number of times the phase 2a buffer was flushed by a timer.")
+    .register()
+
+  val valueChosenBufferFullTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_value_chosen_buffer_full_total")
+    .help("Total number of times the value chosen buffer filled up.")
+    .register()
+
+  val valueChosenBufferFlushTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_value_chosen_buffer_flush_total")
+    .help(
+      "Total number of times the value chosen buffer was flushed by a timer."
+    )
     .register()
 }
 
@@ -309,7 +328,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // A set of buffered phase 2a messages.
       phase2aBuffer: mutable.Buffer[Phase2a],
       // A timer to flush the buffer of phase 2a messages.
-      phase2aBufferFlushTimer: Transport#Timer
+      phase2aBufferFlushTimer: Transport#Timer,
+      // A set of buffered value chosen messages.
+      valueChosenBuffer: mutable.Buffer[ValueChosen],
+      // A timer to flush the buffer of value chosen messages.
+      valueChosenBufferFlushTimer: Transport#Timer
   ) extends State
 
   private val resendPhase2asTimer: Transport#Timer = timer(
@@ -331,6 +354,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   )
 
+  private val valueChosenBufferFlushTimer: Transport#Timer = timer(
+    "valueChosenBufferFlush",
+    options.valueChosenBufferFlushPeriod,
+    () => {
+      flushValueChosenBuffer()
+      metrics.valueChosenBufferFlushTotal.inc()
+    }
+  )
+
   @JSExport
   protected var state: State =
     if (round == 0) {
@@ -345,9 +377,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   val leaderLogger = new Logger(frankenpaxos.LogDebug) {
     private def withInfo(s: String): String = {
       val stateString = state match {
-        case Phase1(_, _, _)       => "Phase 1"
-        case Phase2(_, _, _, _, _) => "Phase 2"
-        case Inactive              => "Inactive"
+        case Phase1(_, _, _)             => "Phase 1"
+        case Phase2(_, _, _, _, _, _, _) => "Phase 2"
+        case Inactive                    => "Inactive"
       }
       s"[$stateString, round=$round] " + s
     }
@@ -442,7 +474,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                   phase2bs,
                   _,
                   phase2aBuffer,
-                  phase2aBufferFlushTimer) =>
+                  phase2aBufferFlushTimer,
+                  _,
+                  _) =>
         if (request.round != round) {
           // We don't want to process requests from out of date clients.
           leaderLogger.debug(
@@ -463,6 +497,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             phase2bs(nextSlot) = mutable.Map()
             nextSlot += 1
             if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
+              metrics.phase2aBufferFullTotal.inc()
               flushPhase2aBuffer(thrifty = true)
             }
 
@@ -491,7 +526,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           s"Leader received phase 1b from $src, but is inactive."
         )
 
-      case Phase2(_, _, _, _, _) =>
+      case Phase2(_, _, _, _, _, _, _) =>
         leaderLogger.debug(
           s"Leader received phase 1b from $src, but is in phase 2b in " +
             s"round $round."
@@ -595,9 +630,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                        phase2bs,
                        resendPhase2asTimer,
                        phase2aBuffer,
-                       phase2aBufferFlushTimer)
+                       phase2aBufferFlushTimer,
+                       mutable.Buffer[ValueChosen](),
+                       valueChosenBufferFlushTimer)
         resendPhase2asTimer.start()
         phase2aBufferFlushTimer.start()
+        valueChosenBufferFlushTimer.start()
 
         // Replay the pending proposals.
         nextSlot = endSlot + 1
@@ -635,7 +673,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     metrics.requestsTotal.labels("Phase1bNack").inc()
     state match {
-      case Inactive | Phase2(_, _, _, _, _) =>
+      case Inactive | Phase2(_, _, _, _, _, _, _) =>
         leaderLogger.debug(
           s"Leader received phase 1b nack from $src, but is not in phase 1."
         )
@@ -678,17 +716,23 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             s"from $src but is in phase 1 of round $round."
         )
 
-      case phase2 @ Phase2(pendingEntries, phase2bs, _, _, _) =>
+      case phase2 @ Phase2(pendingEntries,
+                           phase2bs,
+                           _,
+                           _,
+                           _,
+                           valueChosenBuffer,
+                           valueChosenBufferFlushTimer) =>
         def choose(entry: Entry): Unit = {
           log(phase2b.slot) = entry
           pendingEntries -= phase2b.slot
           phase2bs -= phase2b.slot
           executeLog()
-          for (leader <- otherLeaders) {
-            leader.send(
-              LeaderInbound()
-                .withValueChosen(toValueChosen(phase2b.slot, entry))
-            )
+
+          valueChosenBuffer += toValueChosen(phase2b.slot, entry)
+          if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
+            metrics.valueChosenBufferFullTotal.inc()
+            flushValueChosenBuffer()
           }
         }
 
@@ -912,7 +956,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase2: Phase2,
       slot: Slot
   ): Phase2bVoteResult = {
-    val Phase2(pendingEntries, phase2bs, _, _, _) = phase2
+    val Phase2(pendingEntries, phase2bs, _, _, _, _, _) = phase2
 
     config.roundSystem.roundType(round) match {
       case ClassicRound =>
@@ -965,16 +1009,43 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Phase1(_, _, _) =>
         logger.fatal("Flushing phase2aBuffer while in phase 1.")
 
-      case Phase2(_, _, _, phase2aBuffer, phase2aBufferFlushTimer) =>
-        val msg =
-          AcceptorInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
-        if (thrifty) {
-          thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
+      case Phase2(_, _, _, phase2aBuffer, phase2aBufferFlushTimer, _, _) =>
+        if (phase2aBuffer.size > 0) {
+          val msg =
+            AcceptorInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
+          if (thrifty) {
+            thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
+          } else {
+            acceptors.foreach(_.send(msg))
+          }
+          phase2aBuffer.clear()
+          phase2aBufferFlushTimer.reset()
         } else {
-          acceptors.foreach(_.send(msg))
+          phase2aBufferFlushTimer.reset()
         }
-        phase2aBuffer.clear()
-        phase2aBufferFlushTimer.reset()
+    }
+  }
+
+  def flushValueChosenBuffer(): Unit = {
+    state match {
+      case Inactive =>
+        logger.fatal("Flushing valueChosenBuffer while inactive.")
+
+      case Phase1(_, _, _) =>
+        logger.fatal("Flushing valueChosenBuffer while in phase 1.")
+
+      case Phase2(_, _, _, _, _, buffer, bufferFlushTimer) =>
+        if (buffer.size > 0) {
+          otherLeaders.foreach(
+            _.send(
+              LeaderInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))
+            )
+          )
+          buffer.clear()
+          bufferFlushTimer.reset()
+        } else {
+          bufferFlushTimer.reset()
+        }
     }
   }
 
@@ -983,7 +1054,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Inactive | Phase1(_, _, _) =>
         leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
 
-      case Phase2(pendingEntries, phase2bs, _, phase2aBuffer, _) =>
+      case Phase2(pendingEntries, phase2bs, _, phase2aBuffer, _, _, _) =>
         // It's important that no slot goes forever unchosen. This prevents
         // later slots from executing. Thus, we try and and choose a complete
         // prefix of the log.
@@ -1079,19 +1150,37 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         resendPhase1asTimer.stop()
         state = Inactive
 
-      case (Phase2(_, _, resendPhase2asTimer, _, _), true) =>
+      case (Phase2(_,
+                   _,
+                   resendPhase2asTimer,
+                   _,
+                   phase2aBufferFlushTimer,
+                   _,
+                   valueChosenBufferFlushTimer),
+            true) =>
         // We were and still are the leader, but in a higher round.
         leaderLogger.debug(s"Leader $address was the leader and still is.")
         resendPhase2asTimer.stop()
+        phase2aBufferFlushTimer.stop()
+        valueChosenBufferFlushTimer.stop()
         round = nextRound
         sendPhase1as(true)
         resendPhase1asTimer.start()
         state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
 
-      case (Phase2(_, _, resendPhase2asTimer, _, _), false) =>
+      case (Phase2(_,
+                   _,
+                   resendPhase2asTimer,
+                   _,
+                   phase2aBufferFlushTimer,
+                   _,
+                   valueChosenBufferFlushTimer),
+            false) =>
         // We are no longer the leader!
         leaderLogger.debug(s"Leader $address was the leader, but no longer is.")
         resendPhase2asTimer.stop()
+        phase2aBufferFlushTimer.stop()
+        valueChosenBufferFlushTimer.stop()
         state = Inactive
     }
   }
