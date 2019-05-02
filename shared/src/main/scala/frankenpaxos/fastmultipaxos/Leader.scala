@@ -408,9 +408,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Request.ProposeRequest(r)    => handleProposeRequest(src, r)
       case Request.Phase1B(r)           => handlePhase1b(src, r)
       case Request.Phase1BNack(r)       => handlePhase1bNack(src, r)
-      case Request.Phase2B(r)           => handlePhase2b(src, r)
       case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
-      case Request.ValueChosen(r)       => handleValueChosen(src, r)
       case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
       case Request.Empty =>
         leaderLogger.fatal("Empty LeaderInbound encountered.")
@@ -689,130 +687,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def handlePhase2b(
-      src: Transport#Address,
-      phase2b: Phase2b
-  ): Unit = {
-    metrics.requestsTotal.labels("Phase2b").inc()
-
-    def toValueChosen(slot: Slot, entry: Entry): ValueChosen = {
-      entry match {
-        case ECommand(command) =>
-          ValueChosen(slot = slot).withCommand(command)
-        case ENoop => ValueChosen(slot = slot).withNoop(Noop())
-      }
-    }
-
-    state match {
-      case Inactive =>
-        leaderLogger.debug(
-          s"A leader received a phase 2b response in round ${phase2b.round} " +
-            s"from $src but is inactive."
-        )
-
-      case Phase1(_, _, _) =>
-        leaderLogger.debug(
-          s"A leader received a phase 2b response in round ${phase2b.round} " +
-            s"from $src but is in phase 1 of round $round."
-        )
-
-      case phase2 @ Phase2(pendingEntries,
-                           phase2bs,
-                           _,
-                           _,
-                           _,
-                           valueChosenBuffer,
-                           valueChosenBufferFlushTimer) =>
-        def choose(entry: Entry): Unit = {
-          log(phase2b.slot) = entry
-          pendingEntries -= phase2b.slot
-          phase2bs -= phase2b.slot
-          executeLog()
-
-          valueChosenBuffer += toValueChosen(phase2b.slot, entry)
-          if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
-            metrics.valueChosenBufferFullTotal.inc()
-            flushValueChosenBuffer()
-          }
-        }
-
-        // Ignore responses that are not in our current round.
-        if (phase2b.round != round) {
-          leaderLogger.debug(
-            s"A leader received a phase 2b response for round " +
-              s"${phase2b.round} from $src but is in round ${round}."
-          )
-          return
-        }
-
-        // Ignore responses for entries that have already been chosen.
-        if (log.contains(phase2b.slot)) {
-          // Without thriftiness, this is the normal case, so it prints a LOT.
-          // So, we comment it out.
-          //
-          // leaderLogger.debug(
-          //   s"A leader received a phase 2b response for slot " +
-          //     s"${phase2b.slot} from $src but a value has already been " +
-          //     s"chosen in this slot."
-          // )
-          return
-        }
-
-        // Wait for sufficiently many phase2b replies.
-        phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
-        phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
-        phase2bChosenInSlot(phase2, phase2b.slot) match {
-          case NothingReadyYet =>
-          // Don't do anything.
-
-          case ClassicReady(entry) =>
-            choose(entry)
-            metrics.chosenCommandsTotal.labels("classic").inc()
-
-          case FastReady(entry) =>
-            choose(entry)
-            metrics.chosenCommandsTotal.labels("fast").inc()
-
-          case FastStuck =>
-            // The fast round is stuck, so we start again in a higher round.
-            // TODO(mwhittaker): We might want to have all stuck things pending
-            // for the next round.
-            leaderLogger.debug(
-              s"Slot ${phase2b.slot} is stuck. Changing to a higher round."
-            )
-            leaderChange(address, round)
-            metrics.stuckTotal.inc()
-        }
-    }
-  }
-
   private def handlePhase2bBuffer(
       src: Transport#Address,
       phase2bBuffer: Phase2bBuffer
   ): Unit = {
-    // DO_NOT_SUBMIT(mwhittaker): Implement.
-    ???
-  }
-
-  private def handleValueChosen(
-      src: Transport#Address,
-      valueChosen: ValueChosen
-  ): Unit = {
-    metrics.requestsTotal.labels("ValueChosen").inc()
-
-    val entry = valueChosen.value match {
-      case ValueChosen.Value.Command(command) => ECommand(command)
-      case ValueChosen.Value.Noop(_)          => ENoop
-      case ValueChosen.Value.Empty =>
-        leaderLogger.fatal("Empty ValueChosen.Vote")
-    }
-
-    log.get(valueChosen.slot) match {
-      case Some(existingEntry) =>
-        leaderLogger.check_eq(entry, existingEntry)
-      case None =>
-        log(valueChosen.slot) = entry
-        executeLog()
+    metrics.requestsTotal.labels("Phase2bBuffer").inc()
+    for (phase2b <- phase2bBuffer.phase2B) {
+      processPhase2b(src, phase2b)
     }
   }
 
@@ -820,9 +701,23 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       valueChosenBuffer: ValueChosenBuffer
   ): Unit = {
+    metrics.requestsTotal.labels("ValueChosenBuffer").inc()
     for (valueChosen <- valueChosenBuffer.valueChosen) {
-      handleValueChosen(src, valueChosen)
+      val entry = valueChosen.value match {
+        case ValueChosen.Value.Command(command) => ECommand(command)
+        case ValueChosen.Value.Noop(_)          => ENoop
+        case ValueChosen.Value.Empty =>
+          leaderLogger.fatal("Empty ValueChosen.Vote")
+      }
+
+      log.get(valueChosen.slot) match {
+        case Some(existingEntry) =>
+          leaderLogger.check_eq(entry, existingEntry)
+        case None =>
+          log(valueChosen.slot) = entry
+      }
     }
+    executeLog()
   }
 
   // Methods ///////////////////////////////////////////////////////////////////
@@ -933,6 +828,98 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
            logger.fatal(s"None vote in round $k.")
        })
        .to[Set])
+  }
+
+  private def processPhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
+    def toValueChosen(slot: Slot, entry: Entry): ValueChosen = {
+      entry match {
+        case ECommand(command) =>
+          ValueChosen(slot = slot).withCommand(command)
+        case ENoop => ValueChosen(slot = slot).withNoop(Noop())
+      }
+    }
+
+    state match {
+      case Inactive =>
+        leaderLogger.debug(
+          s"A leader received a phase 2b response in round ${phase2b.round} " +
+            s"from $src but is inactive."
+        )
+
+      case Phase1(_, _, _) =>
+        leaderLogger.debug(
+          s"A leader received a phase 2b response in round ${phase2b.round} " +
+            s"from $src but is in phase 1 of round $round."
+        )
+
+      case phase2 @ Phase2(pendingEntries,
+                           phase2bs,
+                           _,
+                           _,
+                           _,
+                           valueChosenBuffer,
+                           valueChosenBufferFlushTimer) =>
+        def choose(entry: Entry): Unit = {
+          log(phase2b.slot) = entry
+          pendingEntries -= phase2b.slot
+          phase2bs -= phase2b.slot
+          executeLog()
+
+          valueChosenBuffer += toValueChosen(phase2b.slot, entry)
+          if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
+            metrics.valueChosenBufferFullTotal.inc()
+            flushValueChosenBuffer()
+          }
+        }
+
+        // Ignore responses that are not in our current round.
+        if (phase2b.round != round) {
+          leaderLogger.debug(
+            s"A leader received a phase 2b response for round " +
+              s"${phase2b.round} from $src but is in round ${round}."
+          )
+          return
+        }
+
+        // Ignore responses for entries that have already been chosen.
+        if (log.contains(phase2b.slot)) {
+          // Without thriftiness, this is the normal case, so it prints a LOT.
+          // So, we comment it out.
+          //
+          // leaderLogger.debug(
+          //   s"A leader received a phase 2b response for slot " +
+          //     s"${phase2b.slot} from $src but a value has already been " +
+          //     s"chosen in this slot."
+          // )
+          return
+        }
+
+        // Wait for sufficiently many phase2b replies.
+        phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
+        phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
+        phase2bChosenInSlot(phase2, phase2b.slot) match {
+          case NothingReadyYet =>
+          // Don't do anything.
+
+          case ClassicReady(entry) =>
+            choose(entry)
+            metrics.chosenCommandsTotal.labels("classic").inc()
+
+          case FastReady(entry) =>
+            choose(entry)
+            metrics.chosenCommandsTotal.labels("fast").inc()
+
+          case FastStuck =>
+            // The fast round is stuck, so we start again in a higher round.
+            // TODO(mwhittaker): We might want to have all stuck things pending
+            // for the next round.
+            leaderLogger.debug(
+              s"Slot ${phase2b.slot} is stuck. Changing to a higher round."
+            )
+            leaderChange(address, round)
+            metrics.stuckTotal.inc()
+        }
+    }
   }
 
   private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {

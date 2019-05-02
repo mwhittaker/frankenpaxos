@@ -179,7 +179,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     inbound.request match {
       case Request.ProposeRequest(r) => handleProposeRequest(src, r)
       case Request.Phase1A(r)        => handlePhase1a(src, r)
-      case Request.Phase2A(r)        => handlePhase2a(src, r)
       case Request.Phase2ABuffer(r)  => handlePhase2aBuffer(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
@@ -247,9 +246,70 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     )
   }
 
-  private def handlePhase2a(src: Transport#Address, phase2a: Phase2a): Unit = {
-    metrics.requestsTotal.labels("Phase2a").inc()
+  private def handlePhase2aBuffer(
+      src: Transport#Address,
+      phase2aBuffer: Phase2aBuffer
+  ): Unit = {
+    metrics.requestsTotal.labels("Phase2aBuffer").inc()
+    val leader = leaders(config.roundSystem.leader(round))
+    leader.send(
+      LeaderInbound().withPhase2BBuffer(
+        Phase2bBuffer(phase2aBuffer.phase2A.flatMap(processPhase2a))
+      )
+    )
+  }
 
+  // Methods ///////////////////////////////////////////////////////////////////
+  private def processBufferedProposeRequests(): Unit = {
+    val cutoff = System.nanoTime() - options.waitStagger.toNanos()
+    val batch = bufferedProposeRequests.takeWhile({
+      case (timestamp, _, _) => timestamp <= cutoff
+    })
+    bufferedProposeRequests = bufferedProposeRequests.drop(batch.size)
+    metrics.batchesTotal.inc()
+    metrics.proposeRequestsInBatchesTotal.inc(batch.size)
+
+    val phase2bs = batch
+      .sortBy({
+        case (_, src, proposeRequest) => (src, proposeRequest).hashCode
+      })
+      .flatMap({
+        case (_, src, proposeRequest) =>
+          processProposeRequest(src, proposeRequest)
+      })
+    if (phase2bs.size > 0) {
+      val leader = leaders(config.roundSystem.leader(round))
+      leader.send(LeaderInbound().withPhase2BBuffer(Phase2bBuffer(phase2bs)))
+    }
+  }
+
+  private def processProposeRequest(
+      src: Transport#Address,
+      proposeRequest: ProposeRequest
+  ): Option[Phase2b] = {
+    log.get(nextSlot) match {
+      case Some(Entry(voteRound, _, Some(r))) if r == round && voteRound < r =>
+        // If we previously received the distinguished "any" value in this
+        // round and we have not already voted in this round, then we are free
+        // to vote for the client's request.
+        log.put(nextSlot, Entry(r, VVCommand(proposeRequest.command), None))
+        nextSlot += 1
+        Some(
+          Phase2b(acceptorId = acceptorId, slot = nextSlot, round = round)
+            .withCommand(proposeRequest.command)
+        )
+
+      case Some(_) | None =>
+        // If we have not received the distinguished "any" value, then we
+        // simply ignore the client's request.
+        //
+        // TODO(mwhittaker): Inform the client of the round, so that they can
+        // send it to the leader.
+        None
+    }
+  }
+
+  private def processPhase2a(phase2a: Phase2a): Option[Phase2b] = {
     val Entry(voteRound, voteValue, anyRound) = log.get(phase2a.slot) match {
       case Some(vote) => vote
       case None       => Entry(-1, VVNothing, None)
@@ -261,7 +321,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         s"An acceptor received a phase 2a message for round " +
           s"${phase2a.round} but is in round $round."
       )
-      return
+      return None
     }
 
     // Ignore messages from our current round if we've already voted. Though,
@@ -276,126 +336,64 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       val leader = leaders(config.roundSystem.leader(round))
       var phase2b =
         Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = voteRound)
-      phase2b = voteValue match {
-        case VVCommand(command: Command) => phase2b.withCommand(command)
-        case VVNoop                      => phase2b.withNoop(Noop())
+      return voteValue match {
+        case VVCommand(command: Command) =>
+          Some(phase2b.withCommand(command))
+        case VVNoop =>
+          Some(phase2b.withNoop(Noop()))
         case VVNothing =>
           logger.fatal("It's impossible for us to have voted for nothing.")
-          ???
       }
-      leader.send(LeaderInbound().withPhase2B(phase2b))
-      return
     }
 
     // Update our round, vote round, vote value, next slot, and respond to the
     // leader.
     round = phase2a.round
-    val leader = leaders(config.roundSystem.leader(round))
-    phase2a.value match {
+    return phase2a.value match {
       case Phase2a.Value.Command(command) =>
         log.put(phase2a.slot, Entry(round, VVCommand(command), None))
-        leader.send(
-          LeaderInbound().withPhase2B(
-            Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = round)
-              .withCommand(command)
-          )
-        )
         if (phase2a.slot >= nextSlot) {
           nextSlot = phase2a.slot + 1
         }
+        Some(
+          Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = round)
+            .withCommand(command)
+        )
 
       case Phase2a.Value.Noop(_) =>
         log.put(phase2a.slot, Entry(round, VVNoop, None))
-        leader.send(
-          LeaderInbound().withPhase2B(
-            Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = round)
-              .withNoop(Noop())
-          )
-        )
         if (phase2a.slot >= nextSlot) {
           nextSlot = phase2a.slot + 1
         }
+        Some(
+          Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = round)
+            .withNoop(Noop())
+        )
 
       case Phase2a.Value.Any(_) =>
         log.put(phase2a.slot, Entry(voteRound, voteValue, Some(round)))
+        None
 
       case Phase2a.Value.AnySuffix(_) =>
         if (log.prefix.size == 0) {
           log.putTail(phase2a.slot, Entry(-1, VVNothing, Some(round)))
-          return
+        } else {
+          val updatedVotes =
+            log
+              .prefix()
+              .iteratorFrom(phase2a.slot)
+              .map({
+                case (s, Entry(vr, vv, _)) => (s, Entry(vr, vv, Some(round)))
+              })
+          for ((slot, entry) <- updatedVotes) {
+            log.put(slot, entry)
+          }
+          log.putTail(log.prefix.lastKey + 1, Entry(-1, VVNothing, Some(round)))
         }
+        None
 
-        val updatedVotes =
-          log
-            .prefix()
-            .iteratorFrom(phase2a.slot)
-            .map({
-              case (s, Entry(vr, vv, _)) => (s, Entry(vr, vv, Some(round)))
-            })
-        for ((slot, entry) <- updatedVotes) {
-          log.put(slot, entry)
-        }
-        log.putTail(log.prefix.lastKey + 1, Entry(-1, VVNothing, Some(round)))
-
-      case Phase2a.Value.Empty => logger.fatal("Empty Phase2a value.")
-    }
-  }
-
-  private def handlePhase2aBuffer(
-      src: Transport#Address,
-      phase2aBuffer: Phase2aBuffer
-  ): Unit = {
-    // DO_NOT_SUBMIT(mwhittaker): Buffer phase 2bs and return them in a phase2b
-    // buffer.
-    for (phase2a <- phase2aBuffer.phase2A) {
-      handlePhase2a(src, phase2a)
-    }
-  }
-
-  // Methods ///////////////////////////////////////////////////////////////////
-  private def processBufferedProposeRequests(): Unit = {
-    val cutoff = System.nanoTime() - options.waitStagger.toNanos()
-    val batch = bufferedProposeRequests.takeWhile({
-      case (timestamp, _, _) => timestamp <= cutoff
-    })
-    bufferedProposeRequests = bufferedProposeRequests.drop(batch.size)
-
-    val sorted = batch.sortBy({
-      case (_, src, proposeRequest) => (src, proposeRequest).hashCode
-    })
-    for ((_, src, proposeRequest) <- sorted) {
-      processProposeRequest(src, proposeRequest)
-    }
-
-    metrics.batchesTotal.inc()
-    metrics.proposeRequestsInBatchesTotal.inc(batch.size)
-  }
-
-  private def processProposeRequest(
-      src: Transport#Address,
-      proposeRequest: ProposeRequest
-  ): Unit = {
-    log.get(nextSlot) match {
-      case Some(Entry(voteRound, _, Some(r))) if r == round && voteRound < r =>
-        // If we previously received the distinguished "any" value in this
-        // round and we have not already voted in this round, then we are free
-        // to vote for the client's request.
-        log.put(nextSlot, Entry(r, VVCommand(proposeRequest.command), None))
-        val leader = leaders(config.roundSystem.leader(round))
-        leader.send(
-          LeaderInbound().withPhase2B(
-            Phase2b(acceptorId = acceptorId, slot = nextSlot, round = round)
-              .withCommand(proposeRequest.command)
-          )
-        )
-        nextSlot += 1
-
-      case Some(_) | None =>
-      // If we have not received the distinguished "any" value, then we
-      // simply ignore the client's request.
-      //
-      // TODO(mwhittaker): Inform the client of the round, so that they can
-      // send it to the leader.
+      case Phase2a.Value.Empty =>
+        logger.fatal("Empty Phase2a value.")
     }
   }
 }

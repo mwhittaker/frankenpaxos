@@ -162,12 +162,8 @@ message LeaderInbound {
     ProposeRequest propose_request = 1;
     Phase1b phase1b = 2;
     Phase1bNack phase1b_nack = 3;
-    // TODO(mwhittaker): Remove once buffer fully implemented.
-    Phase2b phase2b = 4;
-    Phase2bBuffer phase2b_buffer = 5;
-    // TODO(mwhittaker): Remove once buffer fully implemented.
-    ValueChosen value_chosen = 6;
-    ValueChosenBuffer value_chosen_buffer = 7;
+    Phase2bBuffer phase2b_buffer = 4;
+    ValueChosenBuffer value_chosen_buffer = 5;
   }
 }
 
@@ -175,8 +171,6 @@ message AcceptorInbound {
   oneof request {
     ProposeRequest propose_request = 1;
     Phase1a phase1a = 2;
-    // TODO(mwhittaker): Remove once buffer fully implemented.
-    Phase2a phase2a = 3;
-    Phase2aBuffer phase2a_buffer = 4;
+    Phase2aBuffer phase2a_buffer = 3;
   }
 }
