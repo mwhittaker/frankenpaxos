@@ -98,6 +98,16 @@ let leader_info = {
         </frankenpaxos-map>
       </div>
       <div>
+        <strong>phase2aBuffer</strong>:
+        <frankenpaxos-seq :seq=node.actor.state.phase2aBuffer>
+        </frankenpaxos-seq>
+      </div>
+      <div>
+        <strong>valueChosenBuffer</strong>:
+        <frankenpaxos-seq :seq=node.actor.state.valueChosenBuffer>
+        </frankenpaxos-seq>
+      </div>
+      <div>
         <strong>log</strong>:
         <frankenpaxos-map :map=node.actor.log></frankenpaxos-map>
       </div>
