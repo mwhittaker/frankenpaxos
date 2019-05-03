@@ -90,37 +90,29 @@ object BenchmarkClientMain extends App {
     None
   }
 
-  // Construct clients.
+  // Construct client.
   val transport = new NettyTcpTransport(logger);
   val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
   val metrics = new ClientMetrics(PrometheusCollectors)
-  val clients = for (i <- 0 until flags.numClients) yield {
-    logger.debug(s"Client $i started.")
-    new Client[NettyTcpTransport](
-      NettyTcpAddress(new InetSocketAddress(flags.host, flags.port + i)),
-      transport,
-      new FileLogger(s"${flags.outputFilePrefix}_$i.txt"),
-      config,
-      flags.options,
-      metrics
-    )
-  }
+  val client = new Client[NettyTcpTransport](
+    NettyTcpAddress(new InetSocketAddress(flags.host, flags.port)),
+    transport,
+    new FileLogger(s"${flags.outputFilePrefix}.txt"),
+    config,
+    flags.options,
+    metrics
+  )
 
   // Run clients.
   val latencyWriter =
     CSVWriter.open(new File(s"${flags.outputFilePrefix}_data.csv"))
-  latencyWriter.writeRow(
-    Seq("start", "stop", "latency_nanos", "host", "port")
-  )
-  val stopTime =
-    java.time.Instant
-      .now()
-      .plus(java.time.Duration.ofNanos(flags.duration.toNanos))
+  latencyWriter.writeRow(Seq("start", "stop", "latency_nanos", "host", "port"))
+  val stopTime = java.time.Instant
+    .now()
+    .plus(java.time.Duration.ofNanos(flags.duration.toNanos))
 
   def f(
-      client: Client[NettyTcpTransport],
-      host: String,
-      port: Int,
+      pseudonym: Int,
       startTime: java.time.Instant,
       startTimeNanos: Long
   )(
@@ -128,7 +120,7 @@ object BenchmarkClientMain extends App {
   ): Future[Unit] = {
     reply match {
       case scala.util.Failure(_) =>
-        logger.debug("Echo failed.")
+        logger.debug("Fast Multipaxos request failed.")
 
       case scala.util.Success(_) =>
         val stopTimeNanos = System.nanoTime()
@@ -138,39 +130,30 @@ object BenchmarkClientMain extends App {
             startTime.toString(),
             stopTime.toString(),
             (stopTimeNanos - startTimeNanos).toString(),
-            host,
-            port
+            flags.host,
+            flags.port
           )
         )
     }
 
     if (java.time.Instant.now().isBefore(stopTime)) {
       client
-        .propose(pseudonym = 0, ".".getBytes())
+        .propose(pseudonym = pseudonym, ".".getBytes())
         .transformWith(
-          f(client, host, port, java.time.Instant.now(), System.nanoTime())
-        )(
-          transport.executionContext
-        )
+          f(pseudonym, java.time.Instant.now(), System.nanoTime())
+        )(transport.executionContext)
     } else {
       Future.successful(())
     }
   }
 
-  val futures = clients.zipWithIndex.map({
-    case (client, i) =>
-      client
-        .propose(pseudonym = 0, ".".getBytes())
-        .transformWith(
-          f(client,
-            flags.host,
-            flags.port + i,
-            java.time.Instant.now(),
-            System.nanoTime())
-        )(
-          transport.executionContext
-        )
-  })
+  val futures = for (pseudonym <- 0 to flags.numClients) yield {
+    client
+      .propose(pseudonym = pseudonym, ".".getBytes())
+      .transformWith(f(pseudonym, java.time.Instant.now(), System.nanoTime()))(
+        transport.executionContext
+      )
+  }
 
   // Wait for the benchmark to finish.
   concurrent.Await.result(
