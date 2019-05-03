@@ -64,7 +64,7 @@ class FastMultiPaxos(val f: Int) {
 }
 
 sealed trait FastMultiPaxosCommand
-case class Propose(clientIndex: Int, value: String)
+case class Propose(clientIndex: Int, clientPseudonym: Int, value: String)
     extends FastMultiPaxosCommand
 case class TransportCommand(command: FakeTransportCommand)
     extends FastMultiPaxosCommand
@@ -102,8 +102,9 @@ class SimulatedFastMultiPaxos(val f: Int)
       (
         fastMultiPaxos.numClients,
         for (clientId <- Gen.choose(0, fastMultiPaxos.numClients - 1);
+             clientPseudonym <- Gen.choose(0, 1);
              value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString("")))
-          yield Propose(clientId, value)
+          yield Propose(clientId, clientPseudonym, value)
       )
     )
 
@@ -130,8 +131,8 @@ class SimulatedFastMultiPaxos(val f: Int)
   ): SimulatedFastMultiPaxos#System = {
     val (fastMultiPaxos, allChosenValues) = system
     command match {
-      case Propose(clientId, value) =>
-        fastMultiPaxos.clients(clientId).propose(value)
+      case Propose(clientId, clientPseudonym, value) =>
+        fastMultiPaxos.clients(clientId).propose(clientPseudonym, value)
       case TransportCommand(command) =>
         FakeTransport.runCommand(fastMultiPaxos.transport, command)
     }
@@ -141,9 +142,9 @@ class SimulatedFastMultiPaxos(val f: Int)
   def commandToString(command: SimulatedFastMultiPaxos#Command): String = {
     val fastMultiPaxos = new FastMultiPaxos(f)
     command match {
-      case Propose(clientIndex, value) =>
+      case Propose(clientIndex, clientPseudonym, value) =>
         val clientAddress = fastMultiPaxos.clients(clientIndex).address.address
-        s"Propose($clientAddress, $value)"
+        s"Propose($clientAddress, $clientPseudonym, $value)"
 
       case TransportCommand(DeliverMessage(msg)) =>
         val dstActor = fastMultiPaxos.transport.actors(msg.dst)

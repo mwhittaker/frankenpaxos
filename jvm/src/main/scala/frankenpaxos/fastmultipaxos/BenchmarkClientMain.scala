@@ -146,7 +146,7 @@ object BenchmarkClientMain extends App {
 
     if (java.time.Instant.now().isBefore(stopTime)) {
       client
-        .propose(".".getBytes())
+        .propose(pseudonym = 0, ".".getBytes())
         .transformWith(
           f(client, host, port, java.time.Instant.now(), System.nanoTime())
         )(
@@ -160,7 +160,7 @@ object BenchmarkClientMain extends App {
   val futures = clients.zipWithIndex.map({
     case (client, i) =>
       client
-        .propose(".".getBytes())
+        .propose(pseudonym = 0, ".".getBytes())
         .transformWith(
           f(client,
             flags.host,

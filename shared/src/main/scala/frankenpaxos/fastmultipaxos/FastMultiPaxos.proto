@@ -40,11 +40,22 @@ message Command {
   // The client's address.
   required bytes client_address = 1;
 
+  // Logically, every Fast MultiPaxos client can have at most one pending
+  // request at a time. This assumption simplifies the protocol's handling of
+  // duplicate requests because leaders only have to remember the most recently
+  // executed command for every client.
+  //
+  // However, this assumption also makes it difficult to properly benchmark a
+  // consensus protocol because it is difficult to create enough client load.
+  // Thus, we let each Fast MultiPaxos client play the part of a number of
+  // clients, each taking on an integer pseudonym.
+  required int32 client_pseudonym = 2;
+
   // Clients annotate every command with a unique and monotonically increasing
   // id. The pair of (client address, client id) uniquely identify a command.
-  required int32 client_id = 2;
+  required int32 client_id = 3;
 
-  required bytes command = 3;
+  required bytes command = 4;
 }
 
 message ProposeRequest {
@@ -61,11 +72,12 @@ message ProposeReply {
   // requests to the leader (if it's a classic round).
   required int32 round = 1;
 
-  // The client id of the command.
-  required int32 client_id = 2;
+  // The client pseudonym and id of the command.
+  required int32 client_pseudonym = 2;
+  required int32 client_id = 3;
 
   // The result of executing the command.
-  required bytes result = 3;
+  required bytes result = 4;
 }
 
 // A leader sends a LeaderInfo message to a client to inform it of the current

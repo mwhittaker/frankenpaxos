@@ -180,6 +180,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   type AcceptorId = Int
   type Round = Int
   type Slot = Int
+  type ClientPseudonym = Int
+  type ClientId = Int
 
   // Fields ////////////////////////////////////////////////////////////////////
   // Sanity check the Paxos configuration and compute the leader's id.
@@ -221,7 +223,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 // y) in the client table.
   @JSExport
   protected var clientTable =
-    mutable.Map[Transport#Address, (Int, Array[Byte])]()
+    mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
 
   // At any point in time, the leader knows that all slots less than
   // chosenWatermark have been chosen. That is, for every `slot` <
@@ -289,7 +291,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case object Inactive extends State
 
-// This leader is executing phase 1.
+  // This leader is executing phase 1.
   @JSExportAll
   case class Phase1(
       // Phase 1b responses.
@@ -311,7 +313,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   )
 
-// This leader has finished executing phase 1 and is now executing phase 2.
+  // This leader has finished executing phase 1 and is now executing phase 2.
   @JSExportAll
   case class Phase2(
       // In a classic round, leaders receive commands from clients and relay
@@ -429,16 +431,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // then we can reply to the client directly. Note that only the leader
     // replies to the client since ProposeReplies include the round of the
     // leader, and only the leader knows this.
-    clientTable.get(src) match {
+    clientTable.get((src, request.command.clientPseudonym)) match {
       case Some((clientId, result)) =>
         if (request.command.clientId == clientId && state != Inactive) {
           leaderLogger.debug(
-            s"The latest command for client $src (i.e., command $clientId)" +
+            s"The latest command for client $src pseudonym " +
+              s"${request.command.clientPseudonym} (i.e., command $clientId)" +
               s"was found in the client table."
           )
           client.send(
             ClientInbound().withProposeReply(
               ProposeReply(round = round,
+                           clientPseudonym = request.command.clientPseudonym,
                            clientId = clientId,
                            result = ByteString.copyFrom(result))
             )
@@ -1175,20 +1179,23 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   def executeLog(): Unit = {
     while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
-        case ECommand(Command(clientAddressBytes, clientId, command)) =>
+        case ECommand(
+            Command(clientAddressBytes, clientPseudonym, clientId, command)
+            ) =>
           val clientAddress = transport.addressSerializer.fromBytes(
             clientAddressBytes.toByteArray()
           )
 
           // True if this command has already been executed.
-          val executed = clientTable.get(clientAddress) match {
-            case Some((highestClientId, _)) => clientId <= highestClientId
-            case None                       => false
-          }
+          val executed =
+            clientTable.get((clientAddress, clientPseudonym)) match {
+              case Some((highestClientId, _)) => clientId <= highestClientId
+              case None                       => false
+            }
 
           if (!executed) {
             val output = stateMachine.run(command.toByteArray())
-            clientTable(clientAddress) = (clientId, output)
+            clientTable((clientAddress, clientPseudonym)) = (clientId, output)
             metrics.executedCommandsTotal.inc()
 
             // Note that only the leader replies to the client since
@@ -1200,6 +1207,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               client.send(
                 ClientInbound().withProposeReply(
                   ProposeReply(round = round,
+                               clientPseudonym = clientPseudonym,
                                clientId = clientId,
                                result = ByteString.copyFrom(output))
                 )

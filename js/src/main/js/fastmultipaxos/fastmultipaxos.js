@@ -47,7 +47,7 @@ let client_info = {
       if (this.proposal === "") {
         return;
       }
-      this.node.actor.propose(this.proposal);
+      this.node.actor.propose(0, this.proposal);
       this.proposal = "";
     }
   },
