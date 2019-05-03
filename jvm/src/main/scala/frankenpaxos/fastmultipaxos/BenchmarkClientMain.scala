@@ -1,12 +1,15 @@
 package frankenpaxos.fastmultipaxos
 
 import com.github.tototoshi.csv.CSVWriter
+import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.FileLogger
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.statemachine.SleepRequest
+import frankenpaxos.statemachine.SleeperInput
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
@@ -14,6 +17,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.Random
 import scala.util.Try
 
 object BenchmarkClientMain extends App {
@@ -31,6 +35,10 @@ object BenchmarkClientMain extends App {
       duration: Duration = 5 seconds,
       timeout: Duration = 10 seconds,
       numClients: Int = 1,
+      commandSizeBytesMean: Int = 100,
+      commandSizeBytesStddev: Int = 0,
+      sleepTimeMsMean: Int = 1,
+      sleepTimeMsStddev: Int = 0,
       outputFilePrefix: String = ""
   )
 
@@ -63,6 +71,14 @@ object BenchmarkClientMain extends App {
     opt[Duration]("duration").action((x, f) => f.copy(duration = x))
     opt[Duration]("timeout").action((x, f) => f.copy(timeout = x))
     opt[Int]("num_clients").action((x, f) => f.copy(numClients = x))
+    opt[Int]("command_size_bytes_mean")
+      .action((x, f) => f.copy(commandSizeBytesMean = x))
+    opt[Int]("command_size_bytes_stddev")
+      .action((x, f) => f.copy(commandSizeBytesStddev = x))
+    opt[Int]("sleep_time_ms_mean")
+      .action((x, f) => f.copy(sleepTimeMsMean = x))
+    opt[Int]("sleep_time_ms_stddev")
+      .action((x, f) => f.copy(sleepTimeMsStddev = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
   }
@@ -72,6 +88,25 @@ object BenchmarkClientMain extends App {
       flags
     case None =>
       throw new IllegalArgumentException("Could not parse flags.")
+  }
+
+  // Helper function to generate command.
+  def randomProposal(): SleeperInput = {
+    var commandSizeBytes: Int =
+      (Random.nextGaussian() * flags.commandSizeBytesStddev).toInt
+    commandSizeBytes += flags.commandSizeBytesMean
+    commandSizeBytes = Math.max(0, commandSizeBytes)
+
+    var sleepTimeMs: Int =
+      (Random.nextGaussian() * flags.sleepTimeMsStddev).toInt
+    sleepTimeMs += flags.sleepTimeMsMean
+    sleepTimeMs = Math.max(0, sleepTimeMs)
+
+    SleeperInput().withSleepRequest(
+      SleepRequest(sleepMs = sleepTimeMs,
+                   padding =
+                     ByteString.copyFrom(Array.fill[Byte](commandSizeBytes)(0)))
+    )
   }
 
   // Start prometheus.
@@ -138,7 +173,7 @@ object BenchmarkClientMain extends App {
 
     if (java.time.Instant.now().isBefore(stopTime)) {
       client
-        .propose(pseudonym = pseudonym, ".".getBytes())
+        .propose(pseudonym = pseudonym, randomProposal().toByteArray)
         .transformWith(
           f(pseudonym, java.time.Instant.now(), System.nanoTime())
         )(transport.executionContext)
@@ -149,7 +184,7 @@ object BenchmarkClientMain extends App {
 
   val futures = for (pseudonym <- 0 to flags.numClients) yield {
     client
-      .propose(pseudonym = pseudonym, ".".getBytes())
+      .propose(pseudonym = pseudonym, randomProposal().toByteArray)
       .transformWith(f(pseudonym, java.time.Instant.now(), System.nanoTime()))(
         transport.executionContext
       )

@@ -33,14 +33,14 @@ message GetReply {
   repeated GetKeyValuePair key_value = 1;
 }
 
-message Input {
+message KeyValueStoreInput {
   oneof request {
     GetRequest get_request = 1;
     SetRequest set_request = 2;
   }
 }
 
-message Output {
+message KeyValueStoreOutput {
   oneof reply {
     GetReply get_reply = 1;
     SetReply set_reply = 2;

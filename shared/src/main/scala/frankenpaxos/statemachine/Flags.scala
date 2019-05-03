@@ -10,6 +10,7 @@ sealed trait StateMachineType
 case object TRegister extends StateMachineType
 case object TAppendLog extends StateMachineType
 case object TKeyValueStore extends StateMachineType
+case object TSleeper extends StateMachineType
 
 object Flags {
   // This implicit value allows us to write scopt code like this:
@@ -28,6 +29,7 @@ object Flags {
       case "Register"      => TRegister
       case "AppendLog"     => TAppendLog
       case "KeyValueStore" => TKeyValueStore
+      case "Sleeper"       => TSleeper
       case s =>
         throw new IllegalArgumentException(
           s"$s is not one of Register, AppendLog, or KeyValueStore."
@@ -43,6 +45,7 @@ object Flags {
       case TRegister      => new Register()
       case TAppendLog     => new AppendLog()
       case TKeyValueStore => new KeyValueStore()
+      case TSleeper       => new Sleeper()
     }
   }
 }

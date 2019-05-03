@@ -6,7 +6,7 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.statemachine
-import frankenpaxos.statemachine.Flags.stateMachineTypeRead
+import frankenpaxos.statemachine.Sleeper
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
@@ -17,7 +17,6 @@ object LeaderMain extends App {
       // Basic flags.
       index: Int = -1,
       configFilename: File = new File("."),
-      stateMachineType: statemachine.StateMachineType = statemachine.TRegister,
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
@@ -37,9 +36,6 @@ object LeaderMain extends App {
     opt[File]('c', "config")
       .required()
       .action((x, f) => f.copy(configFilename = x))
-
-    opt[statemachine.StateMachineType]('s', "state_machine")
-      .action((x, f) => f.copy(stateMachineType = x))
 
     opt[String]("log_level")
       .valueName("<debug | info | warn | error | fatal>")
@@ -238,7 +234,8 @@ object LeaderMain extends App {
   val transport = new NettyTcpTransport(logger)
   val config = ConfigUtil.fromFile(flags.configFilename.getAbsolutePath())
   val address = config.leaderAddresses(flags.index)
-  val stateMachine = statemachine.Flags.make(flags.stateMachineType)
+  // This benchmark hard codes the use of the sleeper state machine.
+  val stateMachine = new Sleeper()
   val server = new Leader[NettyTcpTransport](address,
                                              transport,
                                              logger,

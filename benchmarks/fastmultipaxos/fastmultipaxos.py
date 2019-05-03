@@ -18,6 +18,8 @@ import tqdm
 import yaml
 
 
+# TODO(mwhittaker): Don't use Enum. Do what ThriftySystemType is doing. It's
+# simpler.
 class RoundSystemType(enum.Enum):
   CLASSIC_ROUND_ROBIN = 0
   ROUND_ZERO_FAST = 1
@@ -65,34 +67,49 @@ class ClientOptions(NamedTuple):
     repropose_period_ms: float = 10 * 1000
 
 class Input(NamedTuple):
-    # System-wide parameters.
+    # System-wide parameters. ##################################################
+    # The name of the mininet network.
     net_name: str
+    # The maximum number of tolerated faults.
     f: int
+    # The number of benchmark client processes launched.
     num_client_procs: int
+    # The number of clients run on each benchmark client process.
     num_clients_per_proc: int
+    # The type of round system used by the protocol.
     round_system_type: str
 
-    # Benchmark parameters.
+    # Benchmark parameters. ####################################################
     # The (rough) duration of the benchmark.
     duration_seconds: float
     # Global timeout.
     timeout_seconds: float
     # Delay between starting leaders and clients.
     client_lag_seconds: float
+    # The mean command size (in bytes), drawn from a Gaussian.
+    command_size_bytes_mean: int
+    # The stddev command size (in bytes), drawn from a Gaussian.
+    command_size_bytes_stddev: int
+    # The mean command sleep time (in milliseconds), drawn from a Gaussian.
+    command_sleep_time_ms_mean: int
+    # The stddev command sleep time (in milliseconds), drawn from a Gaussian.
+    command_sleep_time_ms_stddev: int
     # Profile the code with perf.
     profiled: bool
     # Monitor the code with prometheus.
     monitored: bool
+    # The interval between Prometheus scrapes. This field is only relevant if
+    # monitoring is enabled.
     prometheus_scrape_interval_ms: int
 
-    # Acceptor options.
+    # Acceptor options. ########################################################
     acceptor: AcceptorOptions = AcceptorOptions()
 
-    # Leader options.
+    # Leader options. ##########################################################
     leader: LeaderOptions = LeaderOptions()
     leader_log_level: str = "debug"
 
-    # Client options.
+    # Client options. ##########################################################
     client: ClientOptions = ClientOptions()
 
 
@@ -359,10 +376,22 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 '--config', config_filename,
                 '--options.reproposePeriod',
                     f'{input.client.repropose_period_ms}ms',
-                '--duration', f'{input.duration_seconds}s',
-                '--timeout', f'{input.timeout_seconds}s',
-                '--num_clients', str(input.num_clients_per_proc),
-                '--output_file_prefix', bench.abspath(f'client_{i}'),
+                '--duration',
+                    f'{input.duration_seconds}s',
+                '--timeout',
+                    f'{input.timeout_seconds}s',
+                '--num_clients',
+                    f'{input.num_clients_per_proc}',
+                '--command_size_bytes_mean',
+                    f'{input.command_size_bytes_mean}',
+                '--command_size_bytes_stddev',
+                    f'{input.command_size_bytes_stddev}',
+                '--sleep_time_ms_mean',
+                    f'{input.command_sleep_time_ms_mean}',
+                '--sleep_time_ms_stddev',
+                    f'{input.command_sleep_time_ms_stddev}',
+                '--output_file_prefix',
+                    bench.abspath(f'client_{i}'),
             ]
         )
         client_procs.append(proc)

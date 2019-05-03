@@ -187,12 +187,12 @@ class DependencyGraph {
       tokens(0) match {
         case "GET" => {
           stateMachine.typedRun(
-            Input().withGetRequest(GetRequest(Seq(tokens(1))))
+            KeyValueStoreInput().withGetRequest(GetRequest(Seq(tokens(1))))
           )
         }
         case "SET" => {
           stateMachine.typedRun(
-            Input().withSetRequest(
+            KeyValueStoreInput().withSetRequest(
               SetRequest(
                 Seq(SetKeyValuePair(key = tokens(1), value = tokens(2)))
               )

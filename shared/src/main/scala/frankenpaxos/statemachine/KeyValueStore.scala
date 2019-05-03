@@ -1,47 +1,51 @@
 package frankenpaxos.statemachine
 
-import frankenpaxos.Logger
-
 import collection.mutable
+import frankenpaxos.Logger
 import scala.scalajs.js.annotation._
 
-object InputSerializer extends frankenpaxos.ProtoSerializer[Input]
+object KeyValueStoreInputSerializer
+    extends frankenpaxos.ProtoSerializer[KeyValueStoreInput]
 
-object OutputSerializer extends frankenpaxos.ProtoSerializer[Output]
+object KeyValueStoreOutputSerializer
+    extends frankenpaxos.ProtoSerializer[KeyValueStoreOutput]
 
 @JSExportAll
-class KeyValueStore extends TypedStateMachine[Input, Output] {
+class KeyValueStore
+    extends TypedStateMachine[KeyValueStoreInput, KeyValueStoreOutput] {
   private val kvs = mutable.Map[String, String]()
-  private var state = ""
-  var debug = ""
-  var executedCommands: mutable.ListBuffer[Input] = mutable.ListBuffer[Input]()
+
+  // TODO(mwhittaker): Remove.
+  var executedCommands: mutable.ListBuffer[KeyValueStoreInput] =
+    mutable.ListBuffer[KeyValueStoreInput]()
 
   override def toString(): String = kvs.toString()
 
-  override val inputSerializer = InputSerializer
-  override val outputSerializer = OutputSerializer
+  override val inputSerializer = KeyValueStoreInputSerializer
+  override val outputSerializer = KeyValueStoreOutputSerializer
 
-  override def typedRun(input: Input): Output = {
-    state = state + input.request.toString + "\n"
+  override def typedRun(input: KeyValueStoreInput): KeyValueStoreOutput = {
+    // TODO(mwhittaker): Remove.
     executedCommands.append(input)
-    import Input.Request
+
+    import KeyValueStoreInput.Request
     input.request match {
       case Request.GetRequest(GetRequest(keys)) =>
-        Output().withGetReply(
+        KeyValueStoreOutput().withGetReply(
           GetReply(keys.map(k => GetKeyValuePair(k, kvs.get(k))))
         )
 
       case Request.SetRequest(SetRequest(keyValues)) =>
         keyValues.foreach({ case SetKeyValuePair(k, v) => kvs(k) = v })
-        Output().withSetReply(SetReply())
+        KeyValueStoreOutput().withSetReply(SetReply())
 
       case Request.Empty =>
         throw new IllegalStateException()
     }
   }
 
-  private def keys(input: Input): Set[String] = {
-    import Input.Request
+  private def keys(input: KeyValueStoreInput): Set[String] = {
+    import KeyValueStoreInput.Request
     input.request match {
       case Request.GetRequest(GetRequest(keys)) =>
         keys.to[Set]
@@ -53,10 +57,10 @@ class KeyValueStore extends TypedStateMachine[Input, Output] {
   }
 
   override def typedConflicts(
-      firstCommand: Input,
-      secondCommand: Input
+      firstCommand: KeyValueStoreInput,
+      secondCommand: KeyValueStoreInput
   ): Boolean = {
-    import Input.Request
+    import KeyValueStoreInput.Request
 
     (firstCommand.request, secondCommand.request) match {
       case (Request.GetRequest(_), Request.GetRequest(_)) =>

@@ -1,0 +1,29 @@
+syntax = "proto2";
+
+package frankenpaxos.statemachine;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.statemachine"
+  flat_package: true
+};
+
+message SleepRequest {
+  required int32 sleep_ms = 1;
+  required bytes padding = 2;
+}
+
+message SleepReply {}
+
+message SleeperInput {
+  oneof request {
+    SleepRequest sleep_request = 1;
+  }
+}
+
+message SleeperOutput {
+  oneof reply {
+    SleepReply sleep_reply = 1;
+  }
+}

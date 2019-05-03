@@ -1,5 +1,6 @@
 package frankenpaxos.fastmultipaxos
 
+import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
@@ -47,10 +48,14 @@ object ClientMain extends App {
     new Client[NettyTcpTransport](address, transport, logger, config)
 
   while (true) {
-    // Note that this client will only work for some state machine (e.g.,
-    // Register and AppendLog) and won't work for others (e.g., KeyValueStore).
-    val value = scala.io.StdIn.readLine()
-    val future = paxosClient.propose(pseudonym = 0, value)
+    val sleepMs = scala.io.StdIn.readLine().toInt
+    val proposal = frankenpaxos.statemachine
+      .SleeperInput()
+      .withSleepRequest(
+        new frankenpaxos.statemachine.SleepRequest(sleepMs = sleepMs,
+                                                   padding = ByteString.EMPTY)
+      )
+    val future = paxosClient.propose(pseudonym = 0, proposal.toByteArray)
     println(concurrent.Await.result(future, concurrent.duration.Duration.Inf))
   }
 }
