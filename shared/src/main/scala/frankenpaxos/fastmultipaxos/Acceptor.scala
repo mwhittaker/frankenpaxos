@@ -260,12 +260,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       phase2aBuffer: Phase2aBuffer
   ): Unit = {
     metrics.requestsTotal.labels("Phase2aBuffer").inc()
+    val buffer = Phase2bBuffer(phase2aBuffer.phase2A.flatMap(processPhase2a))
     val leader = leaders(config.roundSystem.leader(round))
-    leader.send(
-      LeaderInbound().withPhase2BBuffer(
-        Phase2bBuffer(phase2aBuffer.phase2A.flatMap(processPhase2a))
-      )
-    )
+    leader.send(LeaderInbound().withPhase2BBuffer(buffer))
   }
 
   // Methods ///////////////////////////////////////////////////////////////////

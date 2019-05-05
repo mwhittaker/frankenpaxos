@@ -491,10 +491,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
-            phase2aBuffer.append(
-              Phase2a(slot = nextSlot, round = round)
-                .withCommand(request.command)
-            )
+            phase2aBuffer += Phase2a(slot = nextSlot, round = round)
+              .withCommand(request.command)
             pendingEntries(nextSlot) = ECommand(request.command)
             phase2bs(nextSlot) = mutable.Map()
             nextSlot += 1
