@@ -57,9 +57,9 @@ class LeaderOptions(NamedTuple):
     resend_phase1as_timer_period_ms: float = 5 * 1000
     resend_phase2as_timer_period_ms: float = 5 * 1000
     phase2a_max_buffer_size: int = 1
-    phase2a_buffer_flush_period_ms: float = 100
-    value_chosen_max_buffer_size: int = 1000
-    value_chosen_buffer_flush_period_ms: float = 1000
+    phase2a_buffer_flush_period_ms: float = 1000000000
+    value_chosen_max_buffer_size: int = 1
+    value_chosen_buffer_flush_period_ms: float = 1000000000
     election: ElectionOptions = ElectionOptions()
     heartbeat: HeartbeatOptions = HeartbeatOptions()
 
@@ -460,11 +460,13 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
 
 def run_suite(args: argparse.Namespace,
               inputs: List[Input],
-              make_net: Callable[[Input], FastMultiPaxosNet]) -> None:
+              make_net: Callable[[Input], FastMultiPaxosNet],
+              name: str = None) -> None:
     assert len(inputs) > 0, inputs
 
-    with benchmark.SuiteDirectory(
-            args.suite_directory, 'fast_multipaxos') as suite:
+
+    suite_name = 'fast_multipaxos' + (f'_{name}' if name else '')
+    with benchmark.SuiteDirectory(args.suite_directory, suite_name) as suite:
         print(f'Running benchmark suite in {suite.path}.')
         suite.write_dict('args.json', vars(args))
         suite.write_string('inputs.txt', '\n'.join(str(i) for i in inputs))
@@ -495,13 +497,16 @@ def _main(args) -> None:
             num_clients_per_proc=1,
             round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
 
-            duration_seconds=10,
-            timeout_seconds=120,
-            client_lag_seconds=3,
-            profiled=args.profile,
-            monitored=args.monitor,
-            prometheus_scrape_interval_ms=200,
-
+            duration_seconds = 20,
+            timeout_seconds = 60,
+            client_lag_seconds = 5,
+            command_size_bytes_mean = 0,
+            command_size_bytes_stddev = 0,
+            command_sleep_time_nanos_mean = 0,
+            command_sleep_time_nanos_stddev = 0,
+            profiled = args.profile,
+            monitored = args.monitor,
+            prometheus_scrape_interval_ms = 200,
         )
         for num_client_procs in [1, 2]
     ] * 2

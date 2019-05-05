@@ -7,9 +7,9 @@ def _main(args) -> None:
             # System-wide parameters.
             net_name = 'SingleSwitchNet',
             f = 1,
-            num_client_procs = 1,
-            num_clients_per_proc = 9,
-            round_system_type = RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+            num_client_procs = num_client_procs,
+            num_clients_per_proc = num_clients_per_proc,
+            round_system_type = round_system_type,
 
             # Benchmark parameters.
             duration_seconds = 20,
@@ -17,8 +17,8 @@ def _main(args) -> None:
             client_lag_seconds = 5,
             command_size_bytes_mean = command_size_bytes_mean,
             command_size_bytes_stddev = 0,
-            command_sleep_time_ms_mean = 0,
-            command_sleep_time_ms_stddev = 0,
+            command_sleep_time_nanos_mean = 0,
+            command_sleep_time_nanos_stddev = 0,
             profiled = args.profile,
             monitored = args.monitor,
             prometheus_scrape_interval_ms = 200,
@@ -35,18 +35,26 @@ def _main(args) -> None:
                 resend_phase1as_timer_period_ms = 1000,
                 resend_phase2as_timer_period_ms = 1000,
                 phase2a_max_buffer_size = 1,
-                phase2a_buffer_flush_period_ms = 1000,
+                phase2a_buffer_flush_period_ms = 1000000000,
                 value_chosen_max_buffer_size = 1,
-                value_chosen_buffer_flush_period_ms = 1000,
+                value_chosen_buffer_flush_period_ms = 1000000000,
             ),
 
             # Client options.
             client = ClientOptions()._replace(
-                repropose_period_ms = 20000,
+                repropose_period_ms = 100,
             ),
         )
+
+        for round_system_type in [
+            RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+            RoundSystemType.MIXED_ROUND_ROBIN.name,
+        ]
+        for (num_client_procs, num_clients_per_proc) in
+            [(1, 1)] +
+            [(n, 9) for n in range(1, 6)]
         for command_size_bytes_mean in [1, 10, 100, 1000, 10000]
-    ] * 3
+    ] * 2
 
     def make_net(input) -> FastMultiPaxosNet:
         return SingleSwitchNet(
