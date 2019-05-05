@@ -198,7 +198,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         options.waitStagger == java.time.Duration.ofSeconds(0)) {
       processProposeRequest(src, proposeRequest) match {
         case Some(phase2b) =>
-          val leader = chan[Leader[Transport]](src, Leader.serializer)
+          val leader = leaders(config.roundSystem.leader(round))
           leader.send(
             LeaderInbound().withPhase2BBuffer(Phase2bBuffer(Seq(phase2b)))
           )
