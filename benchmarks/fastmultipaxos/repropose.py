@@ -8,10 +8,10 @@ def _main(args) -> None:
             f = 1,
             num_client_procs = num_client_procs,
             num_clients_per_proc = num_clients_per_proc,
-            round_system_type = round_system_type,
+            round_system_type = RoundSystemType.MIXED_ROUND_ROBIN.name,
 
             duration_seconds = 20,
-            timeout_seconds = 60,
+            timeout_seconds = 30,
             client_lag_seconds = 5,
             command_size_bytes_mean = 0,
             command_size_bytes_stddev = 0,
@@ -35,21 +35,17 @@ def _main(args) -> None:
                 value_chosen_max_buffer_size = 1,
                 value_chosen_buffer_flush_period_ms = 1000000000,
             ),
+            leader_log_level = "warn",
 
             client = ClientOptions()._replace(
                 repropose_period_ms=repropose_period_ms,
             ),
         )
 
-        for round_system_type in [
-            RoundSystemType.CLASSIC_ROUND_ROBIN.name,
-            RoundSystemType.MIXED_ROUND_ROBIN.name,
-        ]
         for (num_client_procs, num_clients_per_proc) in
-            [(1, 1)] +
-            [(n, 9) for n in range(1, 6)]
-        for repropose_period_ms in [0.2, 0.3, 0.4, 0.5, 1, 10]
-    ] * 2
+            [(1, 1)] + [(n, 10) for n in [1, 3, 6, 10]]
+        for repropose_period_ms in [0.5, 2.5, 10, 25, 50]
+    ] * 3
 
     def make_net(input) -> FastMultiPaxosNet:
         return SingleSwitchNet(
@@ -58,7 +54,7 @@ def _main(args) -> None:
             rs_type = RoundSystemType[input.round_system_type]
         )
 
-    run_suite(args, inputs, make_net)
+    run_suite(args, inputs, make_net, 'repropose')
 
 
 if __name__ == '__main__':

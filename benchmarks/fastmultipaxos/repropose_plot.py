@@ -2,6 +2,7 @@
 import matplotlib
 matplotlib.use('pdf')
 
+from typing import List
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,12 +17,13 @@ def wrapped(s: str, width: int = 60) -> str:
 
 def plot(df: pd.DataFrame,
          ax: plt.Axes,
-         algorithm: str,
-         column: str,
-         pretty_column: str) -> None:
-    grouped = df.groupby('leader.thrifty_system')
-    for (name, group) in grouped:
-        stats = group.groupby('num_clients')[column].agg([np.mean, np.std])
+         grouping_columns: List[str],
+         x_column: str,
+         x_column_pretty: str,
+         y_column: str,
+         y_column_pretty: str) -> None:
+    for (name, group) in df.groupby(grouping_columns):
+        stats = group.groupby(x_column)[y_column].agg([np.mean, np.std])
         mean = stats['mean']
         std = stats['std'].fillna(0)
         line = ax.plot(mean, '.-', label=name)[0]
@@ -29,33 +31,31 @@ def plot(df: pd.DataFrame,
         ax.fill_between(stats.index, mean - std, mean + std,
                         color=color, alpha=0.25)
 
-    ax.set_title(pretty_column)
-    ax.set_xlabel('Number of clients')
-    ax.set_ylabel(pretty_column)
+    ax.set_title(wrapped(
+        f'{y_column_pretty} for values of {grouping_columns}', 100))
+    ax.set_xlabel(x_column_pretty)
+    ax.set_ylabel(y_column_pretty)
     ax.grid()
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-
 
 def main(args) -> None:
     df = pd.read_csv(args.results)
     df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
 
-    # See [1] for figure size defaults. We add an extra plot at the bottom for
-    # a textual note.
-    #
-    # [1]: https://matplotlib.org/api/_as_gen/matplotlib.pyplot.figure.html
-    num_plots = 4
-    fig, ax = plt.subplots(num_plots, 1, figsize=(1.5 * 6.4, num_plots * 4.8))
+    num_plots = 2
+    fig, ax = plt.subplots(num_plots, 1, figsize=(2 * 6.4, num_plots * 4.8))
 
-    plot(df[df['round_system_type'] == 'CLASSIC_ROUND_ROBIN'], ax[0],
-         'MultiPaxos', 'median_latency_ms', 'Median latency')
-    plot(df[df['round_system_type'] == 'MIXED_ROUND_ROBIN'], ax[1],
-         'Fast MultiPaxos', 'median_latency_ms', 'Median latency')
-    plot(df[df['round_system_type'] == 'CLASSIC_ROUND_ROBIN'], ax[2],
-         'MultiPaxos', 'p95_1_second_throughput',
-         'P95 throughput (1 second windows)')
-    plot(df[df['round_system_type'] == 'MIXED_ROUND_ROBIN'], ax[3],
-         'Fast MultiPaxos', 'p95_1_second_throughput',
+    plot(df, ax[0],
+         ['client.repropose_period_ms'],
+         'num_clients',
+         'Number of Clients',
+         'median_latency_ms',
+         'Median latency (ms)')
+    plot(df, ax[1],
+         ['client.repropose_period_ms'],
+         'num_clients',
+         'Number of Clients',
+         'p95_1_second_throughput',
          'P95 throughput (1 second windows)')
 
     fig.set_tight_layout(True)
@@ -73,7 +73,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '-o', '--output',
         type=str,
-        default='fastmultipaxos_thrifty.pdf',
+        default='fastmultipaxos_repropose.pdf',
         help='Output filename'
     )
     return parser

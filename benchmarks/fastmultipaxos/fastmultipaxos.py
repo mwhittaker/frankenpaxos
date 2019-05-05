@@ -41,8 +41,8 @@ class ElectionOptions(NamedTuple):
 
 
 class HeartbeatOptions(NamedTuple):
-    fail_period_ms: float = 5 * 1000
-    success_period_ms: float = 10 * 1000
+    fail_period_ms: float = 1 * 1000
+    success_period_ms: float = 2 * 1000
     num_retries: int = 3
     network_delay_alpha: float = 0.9
 

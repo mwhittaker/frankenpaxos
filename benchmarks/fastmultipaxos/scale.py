@@ -43,8 +43,7 @@ def _main(args) -> None:
         )
 
         for (num_client_procs, num_clients_per_proc) in
-            [(1, 1)] +
-            [(n, 10) for n in range(1, 15)]
+            [(1, 1)] + [(n, 10) for n in range(1, 6)]
     ] * 3
 
     def make_net(input) -> FastMultiPaxosNet:

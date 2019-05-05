@@ -8,7 +8,7 @@ def _main(args) -> None:
             f = 1,
             num_client_procs = num_client_procs,
             num_clients_per_proc = num_clients_per_proc,
-            round_system_type = RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+            round_system_type = round_system_type,
 
             duration_seconds = 20,
             timeout_seconds = 60,
@@ -28,24 +28,30 @@ def _main(args) -> None:
 
             leader = LeaderOptions()._replace(
                 thrifty_system = thrifty_system,
+                resend_phase1as_timer_period_ms = 1000,
+                resend_phase2as_timer_period_ms = 1000,
+                phase2a_max_buffer_size = 1,
+                phase2a_buffer_flush_period_ms = 1000000000,
+                value_chosen_max_buffer_size = 1,
+                value_chosen_buffer_flush_period_ms = 1000000000,
             ),
+            leader_log_level = "debug",
 
             client = ClientOptions()._replace(
-                repropose_period_ms=50,
+                repropose_period_ms = 25,
             ),
         )
 
-        for round_system_type in [
-            RoundSystemType.CLASSIC_ROUND_ROBIN.name,
-            RoundSystemType.MIXED_ROUND_ROBIN.name,
-        ]
         for (num_client_procs, num_clients_per_proc) in
-            [(1, 1)] +
-            [(n, 9) for n in range(1, 6)]
+            [(1, 1)] + [(n, 10) for n in [1, 2, 5, 7, 10]]
         for thrifty_system in [
             ThriftySystemType.NOT_THRIFTY,
             ThriftySystemType.RANDOM,
             ThriftySystemType.CLOSEST
+        ]
+        for round_system_type in [
+            RoundSystemType.CLASSIC_ROUND_ROBIN.name,
+            RoundSystemType.MIXED_ROUND_ROBIN.name,
         ]
     ] * 2
 
@@ -56,7 +62,7 @@ def _main(args) -> None:
             rs_type = RoundSystemType[input.round_system_type]
         )
 
-    run_suite(args, inputs, make_net)
+    run_suite(args, inputs, make_net, 'thrifty')
 
 
 if __name__ == '__main__':
