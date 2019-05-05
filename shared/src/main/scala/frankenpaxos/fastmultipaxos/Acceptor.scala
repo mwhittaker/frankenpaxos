@@ -196,7 +196,16 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // fiddling with a timer. We process the propose request immediately.
     if (options.waitPeriod == java.time.Duration.ofSeconds(0) &&
         options.waitStagger == java.time.Duration.ofSeconds(0)) {
-      processProposeRequest(src, proposeRequest)
+      processProposeRequest(src, proposeRequest) match {
+        case Some(phase2b) =>
+          val leader = chan[Leader[Transport]](src, Leader.serializer)
+          leader.send(
+            LeaderInbound().withPhase2BBuffer(Phase2bBuffer(Seq(phase2b)))
+          )
+
+        case None =>
+        // Do nothing.
+      }
     } else {
       val t = (System.nanoTime(), src, proposeRequest)
       bufferedProposeRequests += t
