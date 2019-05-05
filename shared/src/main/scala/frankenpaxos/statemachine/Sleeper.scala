@@ -18,7 +18,9 @@ class Sleeper extends TypedStateMachine[SleeperInput, SleeperOutput] {
     import SleeperInput.Request
     input.request match {
       case Request.SleepRequest(r) =>
-        Thread.sleep(r.sleepMs)
+        if (r.sleepNanos > 0) {
+          Thread.sleep(r.sleepNanos / 1000000, (r.sleepNanos % 1000000).toInt)
+        }
         SleeperOutput()
       case Request.Empty =>
         throw new IllegalStateException("Empty SleeperInput request.")

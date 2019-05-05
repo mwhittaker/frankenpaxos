@@ -37,8 +37,8 @@ object BenchmarkClientMain extends App {
       numClients: Int = 1,
       commandSizeBytesMean: Int = 100,
       commandSizeBytesStddev: Int = 0,
-      sleepTimeMsMean: Int = 1,
-      sleepTimeMsStddev: Int = 0,
+      sleepTimeNanosMean: Int = 1,
+      sleepTimeNanosStddev: Int = 0,
       outputFilePrefix: String = ""
   )
 
@@ -75,10 +75,10 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(commandSizeBytesMean = x))
     opt[Int]("command_size_bytes_stddev")
       .action((x, f) => f.copy(commandSizeBytesStddev = x))
-    opt[Int]("sleep_time_ms_mean")
-      .action((x, f) => f.copy(sleepTimeMsMean = x))
-    opt[Int]("sleep_time_ms_stddev")
-      .action((x, f) => f.copy(sleepTimeMsStddev = x))
+    opt[Int]("sleep_time_nanos_mean")
+      .action((x, f) => f.copy(sleepTimeNanosMean = x))
+    opt[Int]("sleep_time_nanos_stddev")
+      .action((x, f) => f.copy(sleepTimeNanosStddev = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
   }
@@ -97,13 +97,13 @@ object BenchmarkClientMain extends App {
     commandSizeBytes += flags.commandSizeBytesMean
     commandSizeBytes = Math.max(0, commandSizeBytes)
 
-    var sleepTimeMs: Int =
-      (Random.nextGaussian() * flags.sleepTimeMsStddev).toInt
-    sleepTimeMs += flags.sleepTimeMsMean
-    sleepTimeMs = Math.max(0, sleepTimeMs)
+    var sleepTimeNanos: Int =
+      (Random.nextGaussian() * flags.sleepTimeNanosStddev).toInt
+    sleepTimeNanos += flags.sleepTimeNanosMean
+    sleepTimeNanos = Math.max(0, sleepTimeNanos)
 
     SleeperInput().withSleepRequest(
-      SleepRequest(sleepMs = sleepTimeMs,
+      SleepRequest(sleepNanos = sleepTimeNanos,
                    padding =
                      ByteString.copyFrom(Array.fill[Byte](commandSizeBytes)(0)))
     )

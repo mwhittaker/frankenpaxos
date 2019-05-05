@@ -91,9 +91,9 @@ class Input(NamedTuple):
     # The stddev command size (in bytes), drawn from a Gaussian.
     command_size_bytes_stddev: int
     # The mean command sleep time (in milliseconds), drawn from a Gaussian.
-    command_sleep_time_ms_mean: int
+    command_sleep_time_nanos_mean: int
     # The stddev command sleep time (in milliseconds), drawn from a Gaussian.
-    command_sleep_time_ms_stddev: int
+    command_sleep_time_nanos_stddev: int
     # Profile the code with perf.
     profiled: bool
     # Monitor the code with prometheus.
@@ -386,10 +386,10 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                     f'{input.command_size_bytes_mean}',
                 '--command_size_bytes_stddev',
                     f'{input.command_size_bytes_stddev}',
-                '--sleep_time_ms_mean',
-                    f'{input.command_sleep_time_ms_mean}',
-                '--sleep_time_ms_stddev',
-                    f'{input.command_sleep_time_ms_stddev}',
+                '--sleep_time_nanos_mean',
+                    f'{input.command_sleep_time_nanos_mean}',
+                '--sleep_time_nanos_stddev',
+                    f'{input.command_sleep_time_nanos_stddev}',
                 '--output_file_prefix',
                     bench.abspath(f'client_{i}'),
             ]

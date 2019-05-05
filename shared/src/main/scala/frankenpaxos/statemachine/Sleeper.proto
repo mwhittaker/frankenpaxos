@@ -10,7 +10,11 @@ option (scalapb.options) = {
 };
 
 message SleepRequest {
-  required int32 sleep_ms = 1;
+  // TODO(mwhittaker): I don't think `java.Thread.sleep` has small enough
+  // granularity to sleep for a particular number of nanoseconds. We likely
+  // have to do some sort of spinning to ensure the thread waits for a very
+  // small amount of time.
+  required int64 sleep_nanos = 1;
   required bytes padding = 2;
 }
 

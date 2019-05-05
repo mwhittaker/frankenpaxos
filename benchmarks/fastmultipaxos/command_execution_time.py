@@ -17,8 +17,8 @@ def _main(args) -> None:
             client_lag_seconds = 5,
             command_size_bytes_mean = 100,
             command_size_bytes_stddev = 0,
-            command_sleep_time_ms_mean = command_sleep_time_ms_mean,
-            command_sleep_time_ms_stddev = 0,
+            command_sleep_time_nanos_mean = command_sleep_time_nanos_mean,
+            command_sleep_time_nanos_stddev = 0,
             profiled = args.profile,
             monitored = args.monitor,
             prometheus_scrape_interval_ms = 200,
@@ -45,7 +45,7 @@ def _main(args) -> None:
                 repropose_period_ms = 20000,
             ),
         )
-        for command_sleep_time_ms_mean in [0, 1, 2, 3, 4, 5]
+        for command_sleep_time_nanos_mean in [0, 1000, 2000, 3000, 4000, 5000]
     ] * 3
 
     def make_net(input) -> FastMultiPaxosNet:

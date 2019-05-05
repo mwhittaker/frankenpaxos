@@ -48,11 +48,11 @@ object ClientMain extends App {
     new Client[NettyTcpTransport](address, transport, logger, config)
 
   while (true) {
-    val sleepMs = scala.io.StdIn.readLine().toInt
+    val sleepNanos = scala.io.StdIn.readLine().toInt
     val proposal = frankenpaxos.statemachine
       .SleeperInput()
       .withSleepRequest(
-        new frankenpaxos.statemachine.SleepRequest(sleepMs = sleepMs,
+        new frankenpaxos.statemachine.SleepRequest(sleepNanos = sleepNanos,
                                                    padding = ByteString.EMPTY)
       )
     val future = paxosClient.propose(pseudonym = 0, proposal.toByteArray)
