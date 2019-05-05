@@ -302,11 +302,11 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         // round and we have not already voted in this round, then we are free
         // to vote for the client's request.
         log.put(nextSlot, Entry(r, VVCommand(proposeRequest.command), None))
-        nextSlot += 1
-        Some(
+        val phase2b =
           Phase2b(acceptorId = acceptorId, slot = nextSlot, round = round)
             .withCommand(proposeRequest.command)
-        )
+        nextSlot += 1
+        Some(phase2b)
 
       case Some(_) | None =>
         // If we have not received the distinguished "any" value, then we
