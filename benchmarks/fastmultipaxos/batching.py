@@ -10,8 +10,8 @@ def _main(args) -> None:
             num_clients_per_proc = num_clients_per_proc,
             round_system_type = RoundSystemType.CLASSIC_ROUND_ROBIN.name,
 
-            duration_seconds = 15,
-            timeout_seconds = 60,
+            duration_seconds = 20,
+            timeout_seconds = 30,
             client_lag_seconds = 5,
             command_size_bytes_mean = 0,
             command_size_bytes_stddev = 0,
@@ -35,18 +35,19 @@ def _main(args) -> None:
                 value_chosen_max_buffer_size = value_chosen_max_buffer_size,
                 value_chosen_buffer_flush_period_ms = 1000,
             ),
+            leader_log_level = "debug",
 
             client = ClientOptions()._replace(
-                repropose_period_ms = 25,
+                repropose_period_ms = 2000,
             ),
         )
         for (num_client_procs, num_clients_per_proc) in
-            [(1, 1)] +
-            [(n, 9) for n in range(1, 6)]
-        for n in [num_clients_per_proc * num_clients_per_proc]
-        for phase2a_max_buffer_size in range(1, n, int(n / 5))
-        for value_chosen_max_buffer_size in range(1, 1000, 20)
-    ] * 2
+            [(1, 1)] + [(n, 10) for n in [1, 2, 5, 7, 10]]
+        for n in [num_client_procs * num_clients_per_proc]
+        for phase2a_max_buffer_size in
+            [1 if x == 0 else x for x in range(0, n + 1, 10)]
+        for value_chosen_max_buffer_size in [1000]
+    ] * 3
 
     def make_net(input) -> FastMultiPaxosNet:
         return SingleSwitchNet(
@@ -55,7 +56,7 @@ def _main(args) -> None:
             rs_type = RoundSystemType[input.round_system_type]
         )
 
-    run_suite(args, inputs, make_net)
+    run_suite(args, inputs, make_net, 'batching')
 
 
 if __name__ == '__main__':

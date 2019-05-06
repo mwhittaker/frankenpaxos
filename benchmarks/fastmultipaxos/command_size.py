@@ -39,6 +39,7 @@ def _main(args) -> None:
                 value_chosen_max_buffer_size = 1,
                 value_chosen_buffer_flush_period_ms = 1000000000,
             ),
+            leader_log_level = "debug",
 
             # Client options.
             client = ClientOptions()._replace(
@@ -51,10 +52,9 @@ def _main(args) -> None:
             RoundSystemType.MIXED_ROUND_ROBIN.name,
         ]
         for (num_client_procs, num_clients_per_proc) in
-            [(1, 1)] +
-            [(n, 9) for n in range(1, 6)]
+            [(1, 1)] + [(n, 10) for n in [1, 2, 5, 7, 10]]
         for command_size_bytes_mean in [1, 10, 100, 1000, 10000]
-    ] * 2
+    ] * 3
 
     def make_net(input) -> FastMultiPaxosNet:
         return SingleSwitchNet(

@@ -11,7 +11,7 @@ def _main(args) -> None:
             round_system_type = round_system_type,
 
             duration_seconds = 20,
-            timeout_seconds = 60,
+            timeout_seconds = 30,
             client_lag_seconds = 5,
             command_size_bytes_mean = 0,
             command_size_bytes_stddev = 0,
@@ -38,7 +38,7 @@ def _main(args) -> None:
             leader_log_level = "debug",
 
             client = ClientOptions()._replace(
-                repropose_period_ms = 25,
+                repropose_period_ms = 50,
             ),
         )
 

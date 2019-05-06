@@ -10,16 +10,17 @@ import pandas as pd
 import textwrap
 
 
-def wrapped(s: str, width: int = 60) -> str:
+def wrapped(s: str, width: int = 100) -> str:
     return '\n'.join(textwrap.wrap(s, width))
 
 
 def plot(df: pd.DataFrame,
          ax: plt.Axes,
-         algorithm: str,
          column: str,
          pretty_column: str) -> None:
-    grouped = df.groupby('leader.thrifty_system')
+    grouping_columns = ['leader.phase2a_max_buffer_size',
+                        'leader.value_chosen_max_buffer_size']
+    grouped = df.groupby(grouping_columns)
     for (name, group) in grouped:
         stats = group.groupby('num_clients')[column].agg([np.mean, np.std])
         mean = stats['mean']
@@ -29,7 +30,8 @@ def plot(df: pd.DataFrame,
         ax.fill_between(stats.index, mean - std, mean + std,
                         color=color, alpha=0.25)
 
-    ax.set_title(pretty_column)
+    ax.set_title(
+        wrapped(f'{pretty_column} for various values of {grouping_columns}'))
     ax.set_xlabel('Number of clients')
     ax.set_ylabel(pretty_column)
     ax.grid()
@@ -44,19 +46,12 @@ def main(args) -> None:
     # a textual note.
     #
     # [1]: https://matplotlib.org/api/_as_gen/matplotlib.pyplot.figure.html
-    num_plots = 4
+    num_plots = 2
     fig, ax = plt.subplots(num_plots, 1, figsize=(1.5 * 6.4, num_plots * 4.8))
 
-    plot(df[df['round_system_type'] == 'CLASSIC_ROUND_ROBIN'], ax[0],
-         'MultiPaxos', 'median_latency_ms', 'Median latency')
-    plot(df[df['round_system_type'] == 'CLASSIC_ROUND_ROBIN'], ax[1],
-         'MultiPaxos', 'p95_1_second_throughput',
-         'P95 throughput (1 second windows)')
-    plot(df[df['round_system_type'] == 'MIXED_ROUND_ROBIN'], ax[2],
-         'Fast MultiPaxos', 'median_latency_ms', 'Median latency')
-    plot(df[df['round_system_type'] == 'MIXED_ROUND_ROBIN'], ax[3],
-         'Fast MultiPaxos', 'p95_1_second_throughput',
-         'P95 throughput (1 second windows)')
+    plot(df, ax[0], 'median_latency_ms', 'Median latency')
+    plot(df, ax[1], 'p95_1_second_throughput',
+                    'P95 throughput (1 second windows)')
 
     fig.set_tight_layout(True)
     fig.savefig(args.output)
