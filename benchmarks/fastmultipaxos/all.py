@@ -1,4 +1,5 @@
 from .fastmultipaxos import *
+import random
 
 
 def _main(args) -> None:
@@ -13,7 +14,7 @@ def _main(args) -> None:
 
             # Benchmark parameters.
             duration_seconds = 20,
-            timeout_seconds = 60,
+            timeout_seconds = 30,
             client_lag_seconds = 5,
             command_size_bytes_mean = command_size_bytes_mean,
             command_size_bytes_stddev = 0,
@@ -31,19 +32,19 @@ def _main(args) -> None:
 
             # Leader options.
             leader = LeaderOptions()._replace(
-                thrifty_system = ThriftySystemType.NOT_THRIFTY,
+                thrifty_system = thrifty_system,
                 resend_phase1as_timer_period_ms = 1000,
                 resend_phase2as_timer_period_ms = 1000,
-                phase2a_max_buffer_size = 1,
-                phase2a_buffer_flush_period_ms = 1000000000,
-                value_chosen_max_buffer_size = 1,
-                value_chosen_buffer_flush_period_ms = 1000000000,
+                phase2a_max_buffer_size = phase2a_max_buffer_size,
+                phase2a_buffer_flush_period_ms = 1000,
+                value_chosen_max_buffer_size = 1000,
+                value_chosen_buffer_flush_period_ms = 1000,
             ),
             leader_log_level = "debug",
 
             # Client options.
             client = ClientOptions()._replace(
-                repropose_period_ms = 100,
+                repropose_period_ms = repropose_period_ms,
             ),
         )
 
@@ -52,9 +53,21 @@ def _main(args) -> None:
             RoundSystemType.MIXED_ROUND_ROBIN.name,
         ]
         for (num_client_procs, num_clients_per_proc) in
+            [(1, 1)] + [(n, 10) for n in range(1, 15)]
+        for repropose_period_ms in [0.5, 2.5, 10, 25, 50, 100, 200]
+        for thrifty_system in [
+            ThriftySystemType.NOT_THRIFTY,
+            ThriftySystemType.RANDOM,
+            ThriftySystemType.CLOSEST
+        ]
+        for (num_client_procs, num_clients_per_proc) in
             [(1, 1)] + [(n, 10) for n in [1, 2, 5, 7, 10]]
-        for command_size_bytes_mean in [1, 10, 100, 1000, 10000]
-    ] * 3
+        for n in [num_client_procs * num_clients_per_proc]
+        for phase2a_max_buffer_size in
+            [1 if x == 0 else x for x in range(0, n + 1, 10)]
+        for command_size_bytes_mean in [1, 10, 100, 1000, 5000, 10000]
+    ] * 5
+    random.shuffle(inputs)
 
     def make_net(input) -> FastMultiPaxosNet:
         return SingleSwitchNet(
@@ -63,7 +76,7 @@ def _main(args) -> None:
             rs_type = RoundSystemType[input.round_system_type]
         )
 
-    run_suite(args, inputs, make_net, 'command_size')
+    run_suite(args, inputs, make_net, 'all')
 
 
 if __name__ == '__main__':
