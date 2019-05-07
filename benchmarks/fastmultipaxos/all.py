@@ -40,7 +40,7 @@ def _main(args) -> None:
                 value_chosen_max_buffer_size = 1000,
                 value_chosen_buffer_flush_period_ms = 1000,
             ),
-            leader_log_level = "debug",
+            leader_log_level = "warn",
 
             # Client options.
             client = ClientOptions()._replace(
