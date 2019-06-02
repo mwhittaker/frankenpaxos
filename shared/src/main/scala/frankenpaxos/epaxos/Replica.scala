@@ -41,19 +41,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     for (replicaAddress <- config.replicaAddresses)
       yield chan[Replica[Transport]](replicaAddress, Replica.serializer)
 
+  // TODO(mwhittaker): Start at 0?
   var nextAvailableInstance: Int = 1
-
-  sealed trait ReplicaStatus
-  object PreAccepted extends ReplicaStatus
-  object Accepted extends ReplicaStatus
-  object Committed extends ReplicaStatus
-  object Executed extends ReplicaStatus
 
   case class State(
       command: Command,
       sequenceNumber: Int,
       dependencies: mutable.Set[Instance],
-      status: ReplicaStatus
+      status: CommandStatus
   )
 
   var preacceptResponses: mutable.Map[Instance, mutable.Buffer[PreAcceptOk]] =
@@ -183,7 +178,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     commands.put(
       instance,
-      State(request.command, seqCommand, seqDeps, PreAccepted)
+      State(request.command, seqCommand, seqDeps, CommandStatus.PreAccepted)
     )
 
     var count: Int = 0
@@ -230,7 +225,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val seqDeps: mutable.Set[Instance] = attributes._1
     commands.put(
       instance,
-      State(newCommand, seqCommand, seqDeps, PreAccepted)
+      State(newCommand, seqCommand, seqDeps, CommandStatus.PreAccepted)
     )
     ballotMapping.put(instance, value.ballot)
 
@@ -278,7 +273,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       val replica = chan[Replica[Transport]](address, Replica.serializer)
       replica.send(
         ReplicaInbound().withNack(
-          NACK(
+          Nack(
             oldBallot =
               ballotMapping.getOrElse(value.commandInstance, lowestBallot),
             instance = value.commandInstance
@@ -299,7 +294,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     deps = deps.union(depsLocal)
 
     commands.put(value.commandInstance,
-                 State(value.command, seqNum, deps, PreAccepted))
+                 State(value.command, seqNum, deps, CommandStatus.PreAccepted))
     updateConflictMap(value.command, value.commandInstance)
     ballotMapping.put(value.commandInstance, value.ballot)
 
@@ -364,15 +359,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       address: Transport#Address,
       value: PreAcceptOk
   ): Unit = {
-    // TODO(mwhittaker): Understand when we NACK. NACKing a PreAccept makes
-    // sense to me, byt why NACK a PreAcceptOk?
+    // TODO(mwhittaker): Understand when we Nack. NACKing a PreAccept makes
+    // sense to me, byt why Nack a PreAcceptOk?
     if (value.ballot.ordering < ballotMapping
           .getOrElse(value.commandInstance, lowestBallot)
           .ordering) {
       val replica = chan[Replica[Transport]](address, Replica.serializer)
       replica.send(
         ReplicaInbound().withNack(
-          NACK(
+          Nack(
             oldBallot =
               ballotMapping.getOrElse(value.commandInstance, lowestBallot),
             instance = value.commandInstance
@@ -467,7 +462,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       deps: mutable.Set[Instance],
       commandInstance: Instance
   ): Unit = {
-    commands.put(commandInstance, State(command, sequenceNum, deps, Accepted))
+    commands.put(commandInstance,
+                 State(command, sequenceNum, deps, CommandStatus.Accepted))
     var count: Int = 0
     var setIndex: Int = 0
 
@@ -508,7 +504,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       val replica = chan[Replica[Transport]](address, Replica.serializer)
       replica.send(
         ReplicaInbound().withNack(
-          NACK(
+          Nack(
             oldBallot =
               ballotMapping.getOrElse(value.commandInstance, lowestBallot),
             instance = value.commandInstance
@@ -522,7 +518,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                  State(value.command,
                        value.sequenceNumber,
                        mutable.Set(value.dependencies: _*),
-                       Accepted))
+                       CommandStatus.Accepted))
     ballotMapping.put(value.commandInstance, value.ballot)
     val leader = replicas(value.commandInstance.leaderIndex)
     leader.send(
@@ -547,7 +543,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       val replica = chan[Replica[Transport]](address, Replica.serializer)
       replica.send(
         ReplicaInbound().withNack(
-          NACK(
+          Nack(
             oldBallot =
               ballotMapping.getOrElse(value.commandInstance, lowestBallot),
             instance = value.commandInstance
@@ -621,7 +617,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     commands.put(
       instance,
-      State(command, seqNum, mutable.Set(deps: _*), Committed)
+      State(command, seqNum, mutable.Set(deps: _*), CommandStatus.Committed)
     )
 
     // TODO(mwhittaker): I think this is adding committed commands before the
@@ -662,7 +658,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       val headInstance = instanceQueue.dequeue()
       val headState = commands.get(headInstance)
 
-      if (headState.nonEmpty && headState.get.status == Committed) {
+      if (headState.nonEmpty && headState.get.status == CommandStatus.Committed) {
         graph.directedGraph.addVertex(
           (headState.get.command, headState.get.sequenceNumber)
         )
@@ -670,7 +666,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
         for (dep <- headState.get.dependencies) {
           val depState = commands.get(dep)
-          if (depState.nonEmpty && depState.get.status == Committed) {
+          if (depState.nonEmpty && depState.get.status == CommandStatus.Committed) {
             removeCommands.add(dep)
             graph.directedGraph.addVertex(
               (depState.get.command, depState.get.sequenceNumber)
@@ -692,14 +688,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleCommit(src: Transport#Address, value: Commit): Unit = {
-    // TODO(mwhittaker): You can't NACK a commit can you?
+    // TODO(mwhittaker): You can't Nack a commit can you?
     if (value.ballot.ordering < ballotMapping
           .getOrElse(value.commandInstance, lowestBallot)
           .ordering) {
       val replica = chan[Replica[Transport]](address, Replica.serializer)
       replica.send(
         ReplicaInbound().withNack(
-          NACK(
+          Nack(
             oldBallot =
               ballotMapping.getOrElse(value.commandInstance, lowestBallot),
             instance = value.commandInstance
@@ -715,7 +711,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                  State(value.command,
                        value.sequenceNumber,
                        mutable.Set(value.dependencies: _*),
-                       Committed))
+                       CommandStatus.Committed))
 
     recursiveAdd(value.commandInstance)
     graph.executeDependencyGraph(stateMachine, executedCommands)
@@ -746,7 +742,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def handleNack(src: Transport#Address, value: NACK): Unit = {
+  private def handleNack(src: Transport#Address, value: Nack): Unit = {
     if (index == value.instance.leaderIndex) {
       explicitPrepare(value.instance, value.oldBallot)
     }
@@ -771,7 +767,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               command = state.get.command,
               sequenceNumber = state.get.sequenceNumber,
               dependencies = state.get.dependencies.toSeq,
-              status = state.get.status.toString,
+              status = state.get.status,
               replicaIndex = index
             )
           )
@@ -781,7 +777,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     } else {
       replica.send(
         ReplicaInbound().withNack(
-          NACK(
+          Nack(
             oldBallot = ballotMapping.getOrElse(value.instance, lowestBallot),
             instance = value.instance
           )
@@ -835,16 +831,16 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         prepareValues.filter(_.ballot.ordering == maxBallot)
       val sameMessage: (Boolean, PrepareOk, Boolean, PrepareOk) =
         checkPrepareOkSame(config.n / 2, value.instance.leaderIndex, R)
-      if (R.exists(_.status.equals(Committed.toString))) {
+      if (R.exists(_.status.equals(CommandStatus.Committed))) {
         val message: PrepareOk =
-          R.filter(_.status.eq(Committed.toString)).head
+          R.filter(_.status.eq(CommandStatus.Committed)).head
         runCommitPhase(message.command,
                        message.sequenceNumber,
                        message.dependencies,
                        message.instance)
-      } else if (R.exists(_.status.equals(Accepted.toString))) {
+      } else if (R.exists(_.status.equals(CommandStatus.Accepted))) {
         val message: PrepareOk =
-          R.filter(_.status.equals(Accepted.toString)).head
+          R.filter(_.status.equals(CommandStatus.Accepted)).head
         startPaxosAcceptPhase(message.command,
                               message.sequenceNumber,
                               mutable.Set(message.dependencies: _*),

@@ -71,13 +71,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   var pendingCommand: Option[PendingCommand] = None
 
-  // Leader and acceptor channels.
+  // Replica channels.
   private val replicas: Map[Int, Chan[Replica[Transport]]] = {
     for ((address, i) <- config.replicaAddresses.zipWithIndex)
       yield i -> chan[Replica[Transport]](address, Replica.serializer)
   }.toMap
-
-  val executionMap: mutable.Map[Command, String] = mutable.Map()
 
   // Timers ////////////////////////////////////////////////////////////////////
   // A timer to resend a proposed value. If a client doesn't hear back from a
@@ -120,11 +118,12 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
-    val request = toProposeRequest(pendingCommand)
+    // TODO(mwhittaker): Abstract out the policy of which replica to send to.
     val rand = new Random(System.currentTimeMillis())
     val random_index = rand.nextInt(replicas.size)
-
     val replica = replicas(random_index)
+
+    val request = toProposeRequest(pendingCommand)
     replica.send(ReplicaInbound().withClientRequest(request))
   }
 
@@ -144,6 +143,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
               s"'${requestReply.command.clientId}'."
           )
         }
+
       case None =>
         logger.warn(
           s"Received a reply for unpending command with id " +
@@ -158,8 +158,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     pendingCommand match {
       case Some(_) =>
-        val err = "You cannot propose a command while one is pending."
-        promise.failure(new IllegalStateException(err))
+        promise.failure(
+          new IllegalStateException(
+            "You cannot propose a command while one is pending."
+          )
+        )
 
       case None =>
         pendingCommand = Some(PendingCommand(id, command, promise))

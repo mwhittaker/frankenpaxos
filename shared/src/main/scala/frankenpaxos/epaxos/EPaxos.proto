@@ -1,3 +1,18 @@
+// A protocol cheatsheet, similar to [1].
+//
+//   Client          Leader Replica        Other Replica
+//      | ---------------> |                     |     Request
+//      |                  | ------------------> |     PreAccept
+//      |                  | <------------------ |     PreAcceptOk
+//      |                  | ------------------> |     Accept
+//      |                  | <------------------ |     AcceptOk
+//      |                  | ------------------> |     Commit
+//      | <--------------- |                     |     RequestReply
+//      |                  | ------------------> |     Prepare
+//      |                  | <------------------ |     PrepareOk
+//      |                  | <------------------ |     Nack
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+
 syntax = "proto2";
 
 package frankenpaxos.epaxos;
@@ -9,6 +24,8 @@ option (scalapb.options) = {
   flat_package: true
 };
 
+
+// Helper messages. ////////////////////////////////////////////////////////////
 message Command {
   // The client's address.
   required bytes client_address = 1;
@@ -20,47 +37,53 @@ message Command {
   required bytes command = 3;
 }
 
-message Request {
-  required Command command = 1;
-}
-
+// Every ballot has the form `ordering.replica_index` where `ordering` is a
+// monotonically increasing integer and `replica_index` is the unique index of
+// the replica.
 message Ballot {
   required int32 ordering = 1;
   required int32 replica_index = 2;
 }
 
+// Every instance is of the form `leader_index.instance_number` where
+// `leader_index` is the unique index of the leader and `instance_number` is a
+// monotonically increasing integer. In the EPaxos paper, for example, these
+// are written like R.1 or Q.2.
 message Instance {
+  // TODO(mwhittaker): Maybe rename to replica_index.
   required int32 leader_index = 1;
   required int32 instance_number = 2;
 }
 
-message Prepare {
-  required Ballot ballot = 1;
-  required Instance instance = 2;
+enum CommandStatus {
+  PreAccepted = 0;
+  Accepted = 1;
+  Committed = 2;
+  Executed = 3;
 }
 
-message NACK {
-  required Ballot old_ballot = 1;
-  required Instance instance = 2;
-}
-
-message PrepareOk {
-  required Ballot ballot = 1;
-  required Instance instance = 2;
-  required Command command = 3;
-  required int32 sequence_number = 4;
-  repeated Instance dependencies = 5;
-  // TODO(mwhittaker): Don't make this a string.
-  required string status = 6;
-  required int32 replica_index = 7;
+// Protocol messages. //////////////////////////////////////////////////////////
+message Request {
+  required Command command = 1;
 }
 
 message PreAccept {
+  // The command, sequence number, and dependencies. In the EPaxos paper, this
+  // is written as the triple (\gamma, seq_\gamma, deps_\gamma).
   required Command command = 1;
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
+
+  // The instance in which this command is being chosen.
   required Instance command_instance = 4;
+
+  // If true, this command should avoid taking the fast path and resort only to
+  // the slow path. In the normal case, avoid is false. During recovery, avoid
+  // may sometimes be true.
   required bool avoid = 5;
+
+  // The message's ballot. As with Paxos, every command is annotated with a
+  // ballot. Replicas ignore messages from smaller ballots.
   required Ballot ballot = 6;
 }
 
@@ -71,11 +94,7 @@ message PreAcceptOk {
   required Instance command_instance = 4;
   required bool avoid = 5;
   required Ballot ballot = 6;
-}
-
-message RequestReply {
-  required Command command = 1;
-  required Instance command_instance = 2;
+  // TODO(mwhittaker): Add replica index?
 }
 
 message Accept {
@@ -90,6 +109,7 @@ message AcceptOk {
   required Command command = 1;
   required Instance command_instance = 2;
   required Ballot ballot = 3;
+  // TODO(mwhittaker): Add replica index?
 }
 
 message Commit {
@@ -100,17 +120,47 @@ message Commit {
   required Ballot ballot = 5;
 }
 
+message RequestReply {
+  // TODO(mwhittaker): Add reply bytes.
+  required Command command = 1;
+  required Instance command_instance = 2;
+}
+
+message Prepare {
+  required Ballot ballot = 1;
+  required Instance instance = 2;
+}
+
+message PrepareOk {
+  required Ballot ballot = 1;
+  required Instance instance = 2;
+  required Command command = 3;
+  required int32 sequence_number = 4;
+  repeated Instance dependencies = 5;
+  required CommandStatus status = 6;
+  required int32 replica_index = 7;
+}
+
+message Nack {
+  // TODO(mwhittaker): Include the higher ballot in the Nack so that replicas
+  // can more quickly choose a larger ballot.
+  required Ballot old_ballot = 1;
+  required Instance instance = 2;
+}
+
+
+// Inbound messages. ///////////////////////////////////////////////////////////
 message ReplicaInbound {
   oneof request {
-    PreAccept preAccept = 1;
-    PreAcceptOk preAcceptOk = 2;
-    Accept accept = 3;
-    AcceptOk acceptOk = 4;
-    Commit commit = 5;
-    Request client_request = 6;
+    Request client_request = 1;
+    PreAccept pre_accept = 2;
+    PreAcceptOk pre_accept_ok = 3;
+    Accept accept = 4;
+    AcceptOk accept_ok = 5;
+    Commit commit = 6;
     Prepare prepare_request = 7;
     PrepareOk prepare_ok = 8;
-    NACK nack = 9;
+    Nack nack = 9;
   }
 }
 
