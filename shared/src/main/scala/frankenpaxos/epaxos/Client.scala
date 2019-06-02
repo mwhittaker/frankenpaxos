@@ -89,7 +89,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           logger.fatal("Attempting to repropose, but no value was proposed.")
 
         case Some(pendingCommand) =>
-          val request = toProposeRequest(pendingCommand)
+          val request = toClientRequest(pendingCommand)
           for ((_, replica) <- replicas) {
             replica.send(ReplicaInbound().withClientRequest(request))
           }
@@ -102,15 +102,15 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
     inbound.request match {
-      case Request.RequestReply(r) => handleRequestReply(src, r)
+      case Request.ClientReply(r) => handleClientReply(src, r)
       case Request.Empty =>
         logger.fatal("Empty ClientInbound encountered.")
     }
   }
 
-  private def toProposeRequest(pendingCommand: PendingCommand): Request = {
+  private def toClientRequest(pendingCommand: PendingCommand): ClientRequest = {
     val PendingCommand(id, command, _) = pendingCommand
-    Request(
+    ClientRequest(
       Command(clientAddress = addressAsBytes,
               clientId = id,
               command = ByteString.copyFrom(command))
@@ -123,13 +123,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     val random_index = rand.nextInt(replicas.size)
     val replica = replicas(random_index)
 
-    val request = toProposeRequest(pendingCommand)
+    val request = toClientRequest(pendingCommand)
     replica.send(ReplicaInbound().withClientRequest(request))
   }
 
-  private def handleRequestReply(
+  private def handleClientReply(
       src: Transport#Address,
-      requestReply: RequestReply
+      requestReply: ClientReply
   ): Unit = {
     pendingCommand match {
       case Some(PendingCommand(id, command, promise)) =>

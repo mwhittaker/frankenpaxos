@@ -1,16 +1,17 @@
 // A protocol cheatsheet, similar to [1].
 //
 //   Client          Leader Replica        Other Replica
-//      | ---------------> |                     |     Request
-//      |                  | ------------------> |     PreAccept
-//      |                  | <------------------ |     PreAcceptOk
-//      |                  | ------------------> |     Accept
-//      |                  | <------------------ |     AcceptOk
-//      |                  | ------------------> |     Commit
-//      | <--------------- |                     |     RequestReply
-//      |                  | ------------------> |     Prepare
-//      |                  | <------------------ |     PrepareOk
-//      |                  | <------------------ |     Nack
+//      | ---------------> |                     |        ClientRequest
+//      |                  | ------------------> |        PreAccept
+//      |                  | <------------------ |        PreAcceptOk
+//      |                  | ------------------> |        Accept
+//      |                  | <------------------ |        AcceptOk
+//      |                  | ------------------> |        Commit
+//      | <--------------- |                     |        ClientReply
+//      |                  | ------------------> |        Prepare
+//      |                  | <------------------ |        PrepareOk
+//      |                  | <------------------ |        Nack
+//
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
 syntax = "proto2";
@@ -63,7 +64,7 @@ enum CommandStatus {
 }
 
 // Protocol messages. //////////////////////////////////////////////////////////
-message Request {
+message ClientRequest {
   required Command command = 1;
 }
 
@@ -94,7 +95,7 @@ message PreAcceptOk {
   required Instance command_instance = 4;
   required bool avoid = 5;
   required Ballot ballot = 6;
-  // TODO(mwhittaker): Add replica index?
+  required int32 replica_index = 7;
 }
 
 message Accept {
@@ -109,7 +110,7 @@ message AcceptOk {
   required Command command = 1;
   required Instance command_instance = 2;
   required Ballot ballot = 3;
-  // TODO(mwhittaker): Add replica index?
+  required int32 replica_index = 7;
 }
 
 message Commit {
@@ -120,7 +121,7 @@ message Commit {
   required Ballot ballot = 5;
 }
 
-message RequestReply {
+message ClientReply {
   // TODO(mwhittaker): Add reply bytes.
   required Command command = 1;
   required Instance command_instance = 2;
@@ -152,13 +153,13 @@ message Nack {
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ReplicaInbound {
   oneof request {
-    Request client_request = 1;
+    ClientRequest client_request = 1;
     PreAccept pre_accept = 2;
     PreAcceptOk pre_accept_ok = 3;
     Accept accept = 4;
     AcceptOk accept_ok = 5;
     Commit commit = 6;
-    Prepare prepare_request = 7;
+    Prepare prepare = 7;
     PrepareOk prepare_ok = 8;
     Nack nack = 9;
   }
@@ -166,6 +167,6 @@ message ReplicaInbound {
 
 message ClientInbound {
   oneof request {
-    RequestReply requestReply = 1;
+    ClientReply client_reply = 1;
   }
 }

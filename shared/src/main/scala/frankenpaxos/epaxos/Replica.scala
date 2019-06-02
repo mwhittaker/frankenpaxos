@@ -33,9 +33,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = ReplicaInbound
   override def serializer = Replica.serializer
 
+  type ReplicaIndex = Int
+
   logger.check(config.valid())
   logger.check(config.replicaAddresses.contains(address))
-  private val index: Int = config.replicaAddresses.indexOf(address)
+  private val index: ReplicaIndex = config.replicaAddresses.indexOf(address)
 
   private val replicas: Seq[Chan[Replica[Transport]]] =
     for (replicaAddress <- config.replicaAddresses)
@@ -51,8 +53,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       status: CommandStatus
   )
 
-  var preacceptResponses: mutable.Map[Instance, mutable.Buffer[PreAcceptOk]] =
-    mutable.Map()
+  var preacceptResponses = mutable.Map[Instance, mutable.Buffer[PreAcceptOk]]()
 
   var acceptOkResponses: mutable.Map[Instance, mutable.Buffer[AcceptOk]] =
     mutable.Map()
@@ -89,15 +90,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import ReplicaInbound.Request
     inbound.request match {
-      case Request.ClientRequest(r)  => handleClientRequest(src, r)
-      case Request.PreAccept(r)      => handlePreAccept(src, r)
-      case Request.PreAcceptOk(r)    => handlePreAcceptOk(src, r)
-      case Request.Accept(r)         => handleAccept(src, r)
-      case Request.AcceptOk(r)       => handleAcceptOk(src, r)
-      case Request.Commit(r)         => handleCommit(src, r)
-      case Request.PrepareRequest(r) => handlePrepareRequest(src, r)
-      case Request.PrepareOk(r)      => handlePrepareOk(src, r)
-      case Request.Nack(r)           => handleNack(src, r)
+      case Request.ClientRequest(r) => handleClientRequest(src, r)
+      case Request.PreAccept(r)     => handlePreAccept(src, r)
+      case Request.PreAcceptOk(r)   => handlePreAcceptOk(src, r)
+      case Request.Accept(r)        => handleAccept(src, r)
+      case Request.AcceptOk(r)      => handleAcceptOk(src, r)
+      case Request.Commit(r)        => handleCommit(src, r)
+      case Request.Prepare(r)       => handlePrepare(src, r)
+      case Request.PrepareOk(r)     => handlePrepareOk(src, r)
+      case Request.Nack(r)          => handleNack(src, r)
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -163,7 +164,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handleClientRequest(
       address: Transport#Address,
-      request: Request
+      request: ClientRequest
   ): Unit = {
     val instance: Instance = Instance(index, nextAvailableInstance)
     nextAvailableInstance += 1
@@ -205,12 +206,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     val buffer =
       preacceptResponses.getOrElse(instance, mutable.Buffer[PreAcceptOk]())
-    val message = PreAcceptOk(request.command,
-                              seqCommand,
-                              seqDeps.toSeq,
-                              instance,
-                              false,
-                              ballotMapping.getOrElse(instance, currentBallot))
+    val message = PreAcceptOk(
+      command = request.command,
+      sequenceNumber = seqCommand,
+      dependencies = seqDeps.toSeq,
+      commandInstance = instance,
+      avoid = false,
+      ballot = ballotMapping.getOrElse(instance, currentBallot),
+      replicaIndex = index
+    )
     buffer.append(message)
     preacceptResponses.put(instance, buffer)
   }
@@ -253,12 +257,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     val buffer =
       preacceptResponses.getOrElse(instance, mutable.Buffer[PreAcceptOk]())
-    val message = PreAcceptOk(value.command,
-                              seqCommand,
-                              seqDeps.toSeq,
-                              instance,
-                              true,
-                              ballotMapping.getOrElse(instance, currentBallot))
+    val message = PreAcceptOk(
+      command = value.command,
+      sequenceNumber = seqCommand,
+      dependencies = seqDeps.toSeq,
+      commandInstance = instance,
+      avoid = true,
+      ballot = ballotMapping.getOrElse(instance, currentBallot),
+      replicaIndex = index
+    )
     buffer.append(message)
     preacceptResponses.put(instance, buffer)
   }
@@ -302,12 +309,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     leader.send(
       ReplicaInbound().withPreAcceptOk(
         PreAcceptOk(
-          value.command,
-          seqNum,
-          deps.toSeq,
-          value.commandInstance,
-          value.avoid,
-          ballotMapping.getOrElse(value.commandInstance, value.ballot)
+          command = value.command,
+          sequenceNumber = seqNum,
+          dependencies = deps.toSeq,
+          commandInstance = value.commandInstance,
+          avoid = value.avoid,
+          ballot = ballotMapping.getOrElse(value.commandInstance, value.ballot),
+          replicaIndex = index
         )
       )
     )
@@ -423,8 +431,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         // TODO(mwhittaker): Double check that we're sending back the right
         // command and instance.
         client.send(
-          ClientInbound().withRequestReply(
-            RequestReply(
+          ClientInbound().withClientReply(
+            ClientReply(
               value.command,
               value.commandInstance
             )
@@ -489,9 +497,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val buffer =
       acceptOkResponses.getOrElse(commandInstance, mutable.Buffer[AcceptOk]())
     val message = AcceptOk(
-      command,
-      commandInstance,
-      ballotMapping.getOrElse(commandInstance, lowestBallot)
+      command = command,
+      commandInstance = commandInstance,
+      ballot = ballotMapping.getOrElse(commandInstance, lowestBallot),
+      replicaIndex = index
     )
     buffer.append(message)
     acceptOkResponses.put(commandInstance, buffer)
@@ -526,7 +535,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         AcceptOk(
           command = value.command,
           commandInstance = value.commandInstance,
-          ballot = ballotMapping.getOrElse(value.commandInstance, value.ballot)
+          ballot = ballotMapping.getOrElse(value.commandInstance, value.ballot),
+          replicaIndex = index
         )
       )
     )
@@ -570,8 +580,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         val client =
           chan[Client[Transport]](clientAddress.get, Client.serializer)
         client.send(
-          ClientInbound().withRequestReply(
-            RequestReply(
+          ClientInbound().withClientReply(
+            ClientReply(
               value.command,
               value.commandInstance
             )
@@ -732,7 +742,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     ballotMapping.put(instance, currentBallot)
     for (replica <- replicas) {
       replica.send(
-        ReplicaInbound().withPrepareRequest(
+        ReplicaInbound().withPrepare(
           Prepare(
             ballot = newBallot,
             instance
@@ -748,7 +758,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def handlePrepareRequest(
+  private def handlePrepare(
       src: Transport#Address,
       value: Prepare
   ): Unit = {
