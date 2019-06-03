@@ -30,11 +30,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     logger: Logger,
     config: Config[Transport]
 ) extends Actor(address, transport, logger) {
+  // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = ReplicaInbound
   override def serializer = Replica.serializer
-
   type ReplicaIndex = Int
 
+  // Fields ////////////////////////////////////////////////////////////////////
   logger.check(config.valid())
   logger.check(config.replicaAddresses.contains(address))
   private val index: ReplicaIndex = config.replicaAddresses.indexOf(address)
@@ -42,6 +43,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private val replicas: Seq[Chan[Replica[Transport]]] =
     for (replicaAddress <- config.replicaAddresses)
       yield chan[Replica[Transport]](replicaAddress, Replica.serializer)
+
+  private val otherReplicas: Seq[Chan[Replica[Transport]]] =
+    for (a <- config.replicaAddresses if a != address)
+      yield chan[Replica[Transport]](a, Replica.serializer)
 
   // TODO(mwhittaker): Start at 0?
   var nextAvailableInstance: Int = 1
@@ -52,6 +57,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       dependencies: mutable.Set[Instance],
       status: CommandStatus
   )
+
+  var commands: mutable.Map[Instance, State] = mutable.Map[Instance, State]()
 
   var preacceptResponses = mutable.Map[Instance, mutable.Buffer[PreAcceptOk]]()
 
@@ -73,8 +80,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private val ballotMapping: mutable.Map[Instance, Ballot] = mutable.Map()
 
   private val executedCommands: mutable.Set[Command] = mutable.Set()
-
-  var commands: mutable.Map[Instance, State] = mutable.Map[Instance, State]()
 
   var conflictsMap =
     mutable.Map[String, (mutable.Set[Instance], mutable.Set[Instance])]()
@@ -173,6 +178,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     ballotMapping.put(instance, currentBallot)
     updateConflictMap(request.command, instance)
 
+    // TODO(mwhittaker): Replace with new state machine abstraction.
     val attributes = findAttributes(request.command, instance)
     val seqCommand: Int = attributes._2
     val seqDeps: mutable.Set[Instance] = attributes._1
@@ -182,31 +188,27 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       State(request.command, seqCommand, seqDeps, CommandStatus.PreAccepted)
     )
 
-    var count: Int = 0
-    var setIndex: Int = 0
-
-    while (setIndex < replicas.size && count != config.fastQuorumSize - 1) {
-      if (setIndex != index) {
-        replicas(setIndex).send(
-          ReplicaInbound().withPreAccept(
-            PreAccept(
-              command = request.command,
-              sequenceNumber = seqCommand,
-              dependencies = seqDeps.toSeq,
-              commandInstance = instance,
-              avoid = false,
-              ballot = ballotMapping.getOrElse(instance, currentBallot)
-            )
+    // Send PreAccept messages to all other replicas.
+    //
+    // TODO(mwhittaker): Maybe add thriftiness. Thriftiness is less important
+    // for basic EPaxos since the fast quorum sizes are so big.
+    for (replica <- otherReplicas) {
+      replica.send(
+        ReplicaInbound().withPreAccept(
+          PreAccept(
+            command = request.command,
+            sequenceNumber = seqCommand,
+            dependencies = seqDeps.toSeq,
+            commandInstance = instance,
+            avoid = false,
+            ballot = ballotMapping.getOrElse(instance, currentBallot)
           )
         )
-        count += 1
-      }
-      setIndex += 1
+      )
     }
 
-    val buffer =
-      preacceptResponses.getOrElse(instance, mutable.Buffer[PreAcceptOk]())
-    val message = PreAcceptOk(
+    preacceptResponses(instance) = mutable.Buffer[PreAcceptOk]()
+    preacceptResponses(instance) += PreAcceptOk(
       command = request.command,
       sequenceNumber = seqCommand,
       dependencies = seqDeps.toSeq,
@@ -215,8 +217,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       ballot = ballotMapping.getOrElse(instance, currentBallot),
       replicaIndex = index
     )
-    buffer.append(message)
-    preacceptResponses.put(instance, buffer)
   }
 
   private def startPhaseOne(
@@ -365,45 +365,51 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handlePreAcceptOk(
       address: Transport#Address,
-      value: PreAcceptOk
+      preAcceptOk: PreAcceptOk
   ): Unit = {
+    // Ignore messages from previous ballots.
+
     // TODO(mwhittaker): Understand when we Nack. NACKing a PreAccept makes
     // sense to me, byt why Nack a PreAcceptOk?
-    if (value.ballot.ordering < ballotMapping
-          .getOrElse(value.commandInstance, lowestBallot)
+    if (preAcceptOk.ballot.ordering < ballotMapping
+          .getOrElse(preAcceptOk.commandInstance, lowestBallot)
           .ordering) {
       val replica = chan[Replica[Transport]](address, Replica.serializer)
       replica.send(
         ReplicaInbound().withNack(
           Nack(
-            oldBallot =
-              ballotMapping.getOrElse(value.commandInstance, lowestBallot),
-            instance = value.commandInstance
+            oldBallot = ballotMapping.getOrElse(preAcceptOk.commandInstance,
+                                                lowestBallot),
+            instance = preAcceptOk.commandInstance
           )
         )
       )
       return
     }
-    ballotMapping.put(value.commandInstance, value.ballot)
+    ballotMapping.put(preAcceptOk.commandInstance, preAcceptOk.ballot)
 
     // TODO(mwhittaker): Check that we're getting PreAcceptOks in our current
     // round and not in a higher round.
 
-    // Verify leader is receiving responses
-    if (value.commandInstance.leaderIndex != index) {
-      // TODO(mwhittaker): Add fatal message.
-      return
-    }
+    // TODO(mwhittaker): During recovery, isn't it possible that a replica is
+    // received PreAcceptOks for an instance it doesn't own? Figure out if this
+    // code is correct.
+    //
+    // // Verify leader is receiving responses
+    // if (preAcceptOk.commandInstance.leaderIndex != index) {
+    //   return
+    // }
 
     // TODO(mwhittaker): Handle fast path. Right now, I think this always goes
     // to the slow path.
     val preAcceptOkSet: mutable.Buffer[PreAcceptOk] = preacceptResponses
-      .getOrElse(value.commandInstance, mutable.Buffer.empty)
-    preAcceptOkSet.append(value)
-    preacceptResponses.put(value.commandInstance, preAcceptOkSet)
+      .getOrElse(preAcceptOk.commandInstance, mutable.Buffer.empty)
+
+    preAcceptOkSet.append(preAcceptOk)
+    preacceptResponses.put(preAcceptOk.commandInstance, preAcceptOkSet)
 
     if (preacceptResponses
-          .getOrElse(value.commandInstance, mutable.Buffer.empty)
+          .getOrElse(preAcceptOk.commandInstance, mutable.Buffer.empty)
           .size < config.slowQuorumSize) {
       // TODO(mwhittaker): Add a debug log maybe?
       return
@@ -411,18 +417,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     val N: Int = config.replicaAddresses.size
     val seqTuple: (Boolean, Option[Int]) = checkSameSequenceNumbers(
-      preacceptResponses.getOrElse(value.commandInstance, mutable.Buffer.empty),
+      preacceptResponses.getOrElse(preAcceptOk.commandInstance,
+                                   mutable.Buffer.empty),
       N - 1
     )
     val depsTuple: (Boolean, Option[Seq[Instance]]) = checkSameDependencies(
-      preacceptResponses.getOrElse(value.commandInstance, mutable.Buffer.empty),
+      preacceptResponses.getOrElse(preAcceptOk.commandInstance,
+                                   mutable.Buffer.empty),
       N - 1
     )
 
-    if (seqTuple._1 && depsTuple._1 && !value.avoid) {
+    if (seqTuple._1 && depsTuple._1 && !preAcceptOk.avoid) {
       // Send request reply to client
       val clientAddress: Option[Transport#Address] =
-        instanceClientMapping.get(value.commandInstance)
+        instanceClientMapping.get(preAcceptOk.commandInstance)
       // TODO(mwhittaker): Double check that even backup replicas have the
       // address of the client.
       if (clientAddress.nonEmpty) {
@@ -433,23 +441,23 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         client.send(
           ClientInbound().withClientReply(
             ClientReply(
-              value.command,
-              value.commandInstance
+              preAcceptOk.command,
+              preAcceptOk.commandInstance
             )
           )
         )
       }
 
       // Run commit phase
-      runCommitPhase(value.command,
+      runCommitPhase(preAcceptOk.command,
                      seqTuple._2.get,
                      depsTuple._2.get,
-                     value.commandInstance)
+                     preAcceptOk.commandInstance)
     } else {
       var updatedDeps: mutable.Set[Instance] = mutable.Set()
-      var maxSequenceNumber: Int = value.sequenceNumber
+      var maxSequenceNumber: Int = preAcceptOk.sequenceNumber
       for (preacceptResponse <- preacceptResponses.getOrElse(
-             value.commandInstance,
+             preAcceptOk.commandInstance,
              mutable.Buffer.empty
            )) {
         updatedDeps =
@@ -457,10 +465,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         maxSequenceNumber =
           Math.max(maxSequenceNumber, preacceptResponse.sequenceNumber)
       }
-      startPaxosAcceptPhase(value.command,
+      startPaxosAcceptPhase(preAcceptOk.command,
                             maxSequenceNumber,
                             updatedDeps,
-                            value.commandInstance)
+                            preAcceptOk.commandInstance)
     }
   }
 

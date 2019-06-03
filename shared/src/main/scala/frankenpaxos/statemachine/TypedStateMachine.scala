@@ -15,6 +15,7 @@ trait TypedStateMachine[I, O] extends StateMachine {
     outputSerializer.toBytes(output)
   }
 
+  // TODO(mwhittaker): Re-think whether this API is the one we want.
   override def conflicts(
       firstCommand: Array[Byte],
       secondCommand: Array[Byte]

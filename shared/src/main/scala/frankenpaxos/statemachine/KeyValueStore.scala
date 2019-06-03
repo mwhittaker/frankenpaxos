@@ -1,7 +1,6 @@
 package frankenpaxos.statemachine
 
 import collection.mutable
-import frankenpaxos.Logger
 import scala.scalajs.js.annotation._
 
 object KeyValueStoreInputSerializer
