@@ -1,9 +1,7 @@
-package epaxos
-import com.google.protobuf.ByteString
-import frankenpaxos.epaxos.{Command, DependencyGraph, StateMachine}
-import frankenpaxos.statemachine.KeyValueStore
-import org.scalatest.FlatSpec
+package frankenpaxos.epaxos
 
+import com.google.protobuf.ByteString
+import org.scalatest.FlatSpec
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 

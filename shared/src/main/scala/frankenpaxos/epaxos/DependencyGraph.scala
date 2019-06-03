@@ -1,6 +1,5 @@
 package frankenpaxos.epaxos
 
-import frankenpaxos.statemachine._
 import java.util.Collections
 import java.util.Comparator
 import org.jgrapht

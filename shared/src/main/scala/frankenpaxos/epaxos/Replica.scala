@@ -6,7 +6,6 @@ import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
-import frankenpaxos.statemachine.KeyValueStore
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 

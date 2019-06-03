@@ -1,4 +1,4 @@
-package epaxos
+package frankenpaxos.epaxos
 
 import frankenpaxos.simulator._
 import org.scalatest.FlatSpec
