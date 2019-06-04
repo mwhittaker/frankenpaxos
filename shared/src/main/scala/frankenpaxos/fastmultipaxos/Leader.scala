@@ -217,10 +217,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
 
-// The client table records the response to the latest request from each
-// client. For example, if command c1 sends command x with id 2 to a leader
-// and the leader later executes x yielding response y, then c1 maps to (2,
-// y) in the client table.
+  // The client table records the response to the latest request from each
+  // client. For example, if command c1 sends command x with id 2 to a leader
+  // and the leader later executes x yielding response y, then c1 maps to (2,
+  // y) in the client table.
+  //
+  // TODO(mwhittaker): Extract out a client table abstraction?
   @JSExport
   protected var clientTable =
     mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
