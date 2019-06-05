@@ -15,16 +15,16 @@ import scala.scalajs.js.annotation._
 // that.
 @JSExportAll
 object BallotHelpers {
-  private val ordering = scala.math.Ordering.Tuple2[Int, Int]
+  object BallotOrdering extends scala.math.Ordering[Ballot] {
+    private def ballotToTuple(ballot: Ballot): (Int, Int) = {
+      val Ballot(ordering, replicaIndex) = ballot
+      (ordering, replicaIndex)
+    }
 
-  private def ballotToTuple(ballot: Ballot): (Int, Int) = {
-    val Ballot(ordering, replicaIndex) = ballot
-    (ordering, replicaIndex)
-  }
-
-  private def tupleToBallot(t: (Int, Int)): Ballot = {
-    val (ordering, replicaIndex) = t
-    Ballot(ordering, replicaIndex)
+    override def compare(lhs: Ballot, rhs: Ballot): Int = {
+      val ordering = scala.math.Ordering.Tuple2[Int, Int]
+      ordering.compare(ballotToTuple(lhs), ballotToTuple(rhs))
+    }
   }
 
   def inc(ballot: Ballot): Ballot = {
@@ -33,14 +33,14 @@ object BallotHelpers {
   }
 
   def max(lhs: Ballot, rhs: Ballot): Ballot = {
-    tupleToBallot(ordering.max(ballotToTuple(lhs), ballotToTuple(rhs)))
+    BallotOrdering.max(lhs, rhs)
   }
 
   implicit class BallotOrdering(lhs: Ballot) {
-    def <(rhs: Ballot) = ordering.lt(ballotToTuple(lhs), ballotToTuple(rhs))
-    def <=(rhs: Ballot) = ordering.lteq(ballotToTuple(lhs), ballotToTuple(rhs))
-    def >(rhs: Ballot) = ordering.gt(ballotToTuple(lhs), ballotToTuple(rhs))
-    def >=(rhs: Ballot) = ordering.gteq(ballotToTuple(lhs), ballotToTuple(rhs))
+    def <(rhs: Ballot) = BallotOrdering.lt(lhs, rhs)
+    def <=(rhs: Ballot) = BallotOrdering.lteq(lhs, rhs)
+    def >(rhs: Ballot) = BallotOrdering.gt(lhs, rhs)
+    def >=(rhs: Ballot) = BallotOrdering.gteq(lhs, rhs)
   }
 }
 
@@ -57,6 +57,8 @@ object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
 @JSExportAll
 object Replica {
   val serializer = ReplicaInboundSerializer
+
+  val nullBallot = Ballot(-1, -1)
 }
 
 @JSExportAll
@@ -332,6 +334,42 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       ),
       resendAcceptsTimer = makeResendAcceptsTimer(accept)
     )
+  }
+
+  private def commit(instance: Instance, cmdLogEntry: CmdLogEntry): Unit = {
+//    // Stop any currently running timers.
+//    stopTimers(instance)
+//
+//    // Update the command log and notify other replicas.
+//    cmdLogEntry.commandTriple match {
+//      case NotSeenCommandTriple =>
+//        logger.fatal("Replica trying to commit an instance without a command.")
+//
+//      case SeenCommandTriple(
+//        status,
+//        command,
+//        sequenceNumber,
+//        dependencies
+//      ) =>
+//      for (replica <- otherReplicas) {
+//        logger.check_eq(status, CommandStatus.Committed)
+//
+//        replica.send(
+//          ReplicaInbound().withCommit(
+//            Commit(
+//              command = command,
+//              sequenceNumber = sequenceNumber,
+//              dependencies = dependencies.toSeq,
+//              instance = instance,
+//              ballot = ballot
+//            )
+//          )
+//        )
+//      }
+//    }
+//
+//    // Update the leader state.
+//    leaderStates -= instance
   }
 
   private def transitionToPreparePhase(instance: Instance): Unit = {
@@ -1010,7 +1048,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             PrepareOk(
               ballot = prepare.ballot,
               instance = prepare.instance,
-              voteBallot = None,
+              replicaIndex = index,
+              voteBallot = Replica.nullBallot,
               command = None,
               sequenceNumber = None,
               dependencies = Seq(),
@@ -1033,7 +1072,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             PrepareOk(
               ballot = prepare.ballot,
               instance = prepare.instance,
-              voteBallot = None,
+              replicaIndex = index,
+              voteBallot = Replica.nullBallot,
               command = None,
               sequenceNumber = None,
               dependencies = Seq(),
@@ -1054,7 +1094,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             PrepareOk(
               ballot = prepare.ballot,
               instance = prepare.instance,
-              voteBallot = Some(voteBallot),
+              replicaIndex = index,
+              voteBallot = voteBallot,
               command = Some(triple.command),
               sequenceNumber = Some(triple.sequenceNumber),
               dependencies = triple.dependencies.toSeq,
@@ -1068,6 +1109,101 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           voteBallot = voteBallot,
           commandTriple = triple
         )
+    }
+  }
+
+  private def handlePrepareOk(
+      src: Transport#Address,
+      prepareOk: PrepareOk
+  ): Unit = {
+    leaderStates.get(prepareOk.instance) match {
+      case None =>
+        logger.warn(
+          s"Replica received a PreareOk in instance ${prepareOk.instance} " +
+            s"but is not leading the instance."
+        )
+
+      case Some(_: PreAccepting) =>
+        logger.warn(
+          s"Replica received a PrepareOk in instance ${prepareOk.instance} " +
+            s"but is pre-accepting."
+        )
+
+      case Some(_: Accepting) =>
+        logger.warn(
+          s"Replica received a PrepareOk in instance ${prepareOk.instance} " +
+            s"but is accepting."
+        )
+
+      case Some(preparing @ Preparing(ballot, responses, resendAcceptsTimer)) =>
+        if (prepareOk.ballot != ballot) {
+          logger.warn(
+            s"Replica received a preAcceptOk in ballot ${prepareOk.instance} " +
+              s"but is currently leading ballot $ballot."
+          )
+          return
+        }
+
+        responses(prepareOk.replicaIndex) = prepareOk
+
+        if (responses.size < config.slowQuorumSize) {
+          // We don't have enough responses yet.
+          return
+        }
+
+        val maxBallot =
+          responses.values.map(_.voteBallot).max(BallotHelpers.BallotOrdering)
+        val prepareOks = responses.values.filter(_.voteBallot == maxBallot)
+
+        if (prepareOks.exists(_.status == Some(CommandStatus.Committed))) {
+          return
+        }
+
+        if (prepareOks.exists(_.status == Some(CommandStatus.Accepted))) {
+          return
+        }
+
+    }
+
+    val prepareValues: mutable.Buffer[PrepareOk] =
+      prepareResponses.getOrElse(value.instance, mutable.Buffer())
+    prepareValues.append(value)
+
+    if (prepareValues.size >= config.slowQuorumSize) {
+      val maxBallot: Int =
+        prepareValues.maxBy(_.ballot.ordering).ballot.ordering
+      val R: mutable.Buffer[PrepareOk] =
+        prepareValues.filter(_.ballot.ordering == maxBallot)
+      val sameMessage: (Boolean, PrepareOk, Boolean, PrepareOk) =
+        checkPrepareOkSame(config.n / 2, value.instance.replicaIndex, R)
+      if (R.exists(_.status.equals(CommandStatus.Committed))) {
+        val message: PrepareOk =
+          R.filter(_.status.eq(CommandStatus.Committed)).head
+        runCommitPhase(message.command,
+                       message.sequenceNumber,
+                       message.dependencies,
+                       message.instance)
+      } else if (R.exists(_.status.equals(CommandStatus.Accepted))) {
+        val message: PrepareOk =
+          R.filter(_.status.equals(CommandStatus.Accepted)).head
+        startPaxosAcceptPhase(message.command,
+                              message.sequenceNumber,
+                              mutable.Set(message.dependencies: _*),
+                              message.instance)
+      } else if (sameMessage._1) {
+        startPaxosAcceptPhase(sameMessage._2.command,
+                              sameMessage._2.sequenceNumber,
+                              mutable.Set(sameMessage._2.dependencies: _*),
+                              sameMessage._2.instance)
+      } else if (sameMessage._3) {
+        startPhaseOne(sameMessage._4.instance,
+                      sameMessage._4.command,
+                      sameMessage._4)
+      } else {
+        startPhaseOne(sameMessage._4.instance,
+                      Command(null, -1, ByteString.copyFromUtf8("Noop")),
+                      sameMessage._4)
+      }
     }
   }
 
@@ -1345,48 +1481,4 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     (false, null, false, null)
   }
 
-  private def handlePrepareOk(
-      src: Transport#Address,
-      value: PrepareOk
-  ): Unit = {
-    val prepareValues: mutable.Buffer[PrepareOk] =
-      prepareResponses.getOrElse(value.instance, mutable.Buffer())
-    prepareValues.append(value)
-    if (prepareValues.size >= config.slowQuorumSize) {
-      val maxBallot: Int =
-        prepareValues.maxBy(_.ballot.ordering).ballot.ordering
-      val R: mutable.Buffer[PrepareOk] =
-        prepareValues.filter(_.ballot.ordering == maxBallot)
-      val sameMessage: (Boolean, PrepareOk, Boolean, PrepareOk) =
-        checkPrepareOkSame(config.n / 2, value.instance.replicaIndex, R)
-      if (R.exists(_.status.equals(CommandStatus.Committed))) {
-        val message: PrepareOk =
-          R.filter(_.status.eq(CommandStatus.Committed)).head
-        runCommitPhase(message.command,
-                       message.sequenceNumber,
-                       message.dependencies,
-                       message.instance)
-      } else if (R.exists(_.status.equals(CommandStatus.Accepted))) {
-        val message: PrepareOk =
-          R.filter(_.status.equals(CommandStatus.Accepted)).head
-        startPaxosAcceptPhase(message.command,
-                              message.sequenceNumber,
-                              mutable.Set(message.dependencies: _*),
-                              message.instance)
-      } else if (sameMessage._1) {
-        startPaxosAcceptPhase(sameMessage._2.command,
-                              sameMessage._2.sequenceNumber,
-                              mutable.Set(sameMessage._2.dependencies: _*),
-                              sameMessage._2.instance)
-      } else if (sameMessage._3) {
-        startPhaseOne(sameMessage._4.instance,
-                      sameMessage._4.command,
-                      sameMessage._4)
-      } else {
-        startPhaseOne(sameMessage._4.instance,
-                      Command(null, -1, ByteString.copyFromUtf8("Noop")),
-                      sameMessage._4)
-      }
-    }
-  }
 }
