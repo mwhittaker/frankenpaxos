@@ -76,27 +76,18 @@ message PreAccept {
   repeated Instance dependencies = 3;
 
   // The instance in which this command is being chosen.
-  required Instance command_instance = 4;
-
-  // If true, this command should avoid taking the fast path and resort only to
-  // the slow path. In the normal case, avoid is false. During recovery, avoid
-  // may sometimes be true.
-  //
-  // TODO(mwhittaker): Move avoid out of PreAccept and into something stored at
-  // the leader. There's no need to shuttle avoid back and forth.
-  required bool avoid = 5;
+  required Instance instance = 4;
 
   // The message's ballot. As with Paxos, every command is annotated with a
   // ballot. Replicas ignore messages from smaller ballots.
-  required Ballot ballot = 6;
+  required Ballot ballot = 5;
 }
 
 message PreAcceptOk {
   required Command command = 1;
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
-  required Instance command_instance = 4;
-  required bool avoid = 5;
+  required Instance instance = 4;
   required Ballot ballot = 6;
   required int32 replica_index = 7;
 }
@@ -105,13 +96,13 @@ message Accept {
   required Command command = 1;
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
-  required Instance command_instance = 4;
+  required Instance instance = 4;
   required Ballot ballot = 6;
 }
 
 message AcceptOk {
   required Command command = 1;
-  required Instance command_instance = 2;
+  required Instance instance = 2;
   required Ballot ballot = 3;
   required int32 replica_index = 7;
 }
@@ -120,14 +111,14 @@ message Commit {
   required Command command = 1;
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
-  required Instance command_instance = 4;
+  required Instance instance = 4;
   required Ballot ballot = 5;
 }
 
 message ClientReply {
   // TODO(mwhittaker): Add reply bytes.
   required Command command = 1;
-  required Instance command_instance = 2;
+  required Instance instance = 2;
 }
 
 message Prepare {
