@@ -115,20 +115,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       // EPaxos paper for a description of what these are.
       command: Command,
       sequenceNumber: Int,
-      dependencies: mutable.Set[Instance],
+      dependencies: Set[Instance],
       status: CommandStatus,
-      // The EPaxos paper and technical report are a tiny bit vague as to how
-      // and when ballots should be updated. After skimming through EPaxos'
-      // TLA+ specification and implementation, we believe that EPaxos might
-      // have a small bug in how it implements ballots. The TLA+ spec and
-      // implementation have a single ballot for every instance, but we think
-      // that we need two (like with Paxos) in order to maintain correctness.
+      // EPaxos has a small bug in how it implements ballots. The EPaxos TLA+
+      // specification and Go implementation have a single ballot per command
+      // log entry. As detailed in [1], this is a bug. We need two ballots,
+      // like what is done in normal Paxos. Note that we haven't proven this is
+      // correct, so it may also be wrong.
       //
-      // Thus, we have ballot and voteBallot that play the same role as a Paxos
-      // acceptor. ballot is the largest ballot this replica has seen for this
-      // instance. voteBallot is the largest ballot in which the replica has
-      // voted for a command (i.e. processed a PreAccept or Accept). Note that
-      // we haven't proven this is correct, so it may also be wrong.
+      // [1]: https://drive.google.com/open?id=1dQ_cigMWJ7w9KAJeSYcH3cZoFpbraWxm
       ballot: Ballot,
       voteBallot: Ballot
   )
@@ -175,10 +170,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       // when the replica acts like an acceptor. leaderBallots is used when a
       // replica acts like a leader. In particular, leaderBallots[instance] is
       // the ballot in which the replica is trying to get a value chosen. This
-      // value is like the ballot stored by a Paxos proposer.
-      //
-      // Note that this implementation of ballots differs from the one in
-      // EPaxos' TLA+ spec, but we think this is more likely to be correct.
+      // value is like the ballot stored by a Paxos proposer. Note that this
+      // implementation of ballots differs from the one in EPaxos' TLA+ spec.
       ballot: Ballot,
       // PreAcceptOk responses, indexed by the replica that sent them.
       responses: mutable.Map[ReplicaIndex, PreAcceptOk],
@@ -230,10 +223,57 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // var graph: DependencyGraph = new DependencyGraph()
 
   // Helpers ///////////////////////////////////////////////////////////////////
-  private def preAcceptingSlowPath(preAccepting: PreAccepting): Unit = {
-    // TODO(mwhittaker): Implement.
-    // TODO(mwhittaker): Don't forget to stop the timers!
-    ???
+  private def preAcceptingSlowPath(
+      instance: Instance,
+      preAccepting: PreAccepting
+  ): Unit = {
+    logger.check(preAccepting.responses.size >= config.slowQuorumSize)
+
+    // Compute the new dependencies and sequence numbers.
+    val preAcceptOks: Set[PreAcceptOk] = preAccepting.responses.values.toSet
+    val dependencies: Set[Instance] =
+      preAcceptOks.map(_.dependencies.to[Set]).flatten
+    val sequenceNumber: Int = preAcceptOks.map(_.sequenceNumber).max
+
+    // Update our command log.
+    logger.check(cmdLog.contains(instance))
+    val cmdLogEntry = cmdLog(instance)
+    logger.check_eq(cmdLogEntry.ballot, preAccepting.ballot)
+    logger.check_eq(cmdLogEntry.voteBallot, preAccepting.ballot)
+    cmdLog(instance) = cmdLogEntry.copy(
+      sequenceNumber = sequenceNumber,
+      dependencies = dependencies,
+      status = CommandStatus.Accepted
+    )
+
+    // Send out an accept message to other replicas.
+    // TODO(mwhittaker): Implement thriftiness.
+    val accept = Accept(
+      command = cmdLogEntry.command,
+      sequenceNumber = sequenceNumber,
+      dependencies = dependencies.toSeq,
+      instance = instance,
+      ballot = preAccepting.ballot
+    )
+    otherReplicas.foreach(_.send(ReplicaInbound().withAccept(accept)))
+
+    // Stop existing timers.
+    preAccepting.resendPreAcceptsTimer.stop()
+    preAccepting.defaultToSlowPathTimer.foreach(_.stop())
+
+    // Update leader state.
+    leaderStates(instance) = Accepting(
+      ballot = preAccepting.ballot,
+      responses = mutable.Map[ReplicaIndex, AcceptOk](
+        index -> AcceptOk(
+          command = cmdLogEntry.command,
+          instance = instance,
+          ballot = preAccepting.ballot,
+          replicaIndex = index
+        )
+      ),
+      resendAcceptsTimer = makeResendAcceptsTimer(accept)
+    )
   }
 
   // Timers ////////////////////////////////////////////////////////////////////
@@ -268,8 +308,22 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                 "preAccepting."
             )
           case Some(preAccepting @ PreAccepting(_, _, _, _, _)) =>
-            preAcceptingSlowPath(preAccepting)
+            preAcceptingSlowPath(instance, preAccepting)
         }
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendAcceptsTimer(accept: Accept): Transport#Timer = {
+    // TODO(mwhittaker): Pull this duration out into an option.
+    lazy val t: Transport#Timer = timer(
+      s"resendAccepts ${accept.instance} ${accept.ballot}",
+      java.time.Duration.ofMillis(500),
+      () => {
+        otherReplicas.foreach(_.send(ReplicaInbound().withAccept(accept)))
+        t.start()
       }
     )
     t.start()
@@ -555,12 +609,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         // right away. There's no need to wait after we've received a quorum of
         // responses.
         if (avoidFastPath && newNumberOfResponses >= config.slowQuorumSize) {
-          preAcceptingSlowPath(preAccepting)
+          preAcceptingSlowPath(preAcceptOk.instance, preAccepting)
           return
         }
 
-        // If we've received a fast quorum of responses, we can take the fast
-        // path!
+        // If we've received a fast quorum of responses, we can try to take the
+        // fast path!
         if (newNumberOfResponses >= config.fastQuorumSize) {
           logger.check(!avoidFastPath)
 
@@ -571,94 +625,55 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             .filterKeys(_ != index)
             .values
             .to[Seq]
-            .map(p => (p.sequenceNumber, p.dependencies))
+            .map(p => (p.sequenceNumber, p.dependencies.toSet))
           val candidates = Util.popularItems(seqDeps, config.fastQuorumSize - 1)
+
+          // If we have N-2 matching responses, then we can take the fast path
+          // and transition directly into the commit phase. If we don't have
+          // N-2 matching responses, then we take the slow path.
           if (candidates.size > 0) {
             logger.check_eq(candidates.size, 1)
-            // TODO(mwhittaker): Start the fast path with the candidate.
-            // set status to committed
-            // to some stuff to execute
-            // send out commit messages
-            // TODO(mwhittaker): Don't forget to stop the timers.
+            val (sequenceNumber, dependencies) = candidates.head
+
+            // Update the command log.
+            logger.check(cmdLog.contains(preAcceptOk.instance))
+            val cmdLogEntry = cmdLog(preAcceptOk.instance)
+            logger.check_eq(cmdLogEntry.ballot, ballot)
+            logger.check_eq(cmdLogEntry.voteBallot, ballot)
+            cmdLog(preAcceptOk.instance) = cmdLogEntry.copy(
+              sequenceNumber = sequenceNumber,
+              dependencies = dependencies,
+              status = CommandStatus.Committed
+            )
+
+            // Notify other replicas.
+            for (replica <- otherReplicas) {
+              replica.send(
+                ReplicaInbound().withCommit(
+                  Commit(
+                    command = cmdLogEntry.command,
+                    sequenceNumber = sequenceNumber,
+                    dependencies = dependencies.toSeq,
+                    instance = preAcceptOk.instance,
+                    ballot = ballot
+                  )
+                )
+              )
+            }
+
+            // Stop existing timers and update the leader state.
+            resendPreAcceptsTimer.stop()
+            defaultToSlowPathTimer.foreach(_.stop())
+            leaderStates -= preAcceptOk.instance
+
+            // TODO(mwhittaker): Make the command eligible for execution.
           } else {
             // There were not enough matching (seq, deps) pairs. We have to
             // resort to the slow path.
-            preAcceptingSlowPath(preAccepting)
+            preAcceptingSlowPath(preAcceptOk.instance, preAccepting)
           }
+          return
         }
-    }
-
-    // add to responses
-    // if exactly a classic quorum (and not avoid):
-    //   start timer for defaulting to classic
-    // else if fast quroum:
-    //   stop defaulting to classic timer
-    //   check to see if we have a quorum of matching responses
-    //   if so:
-    //     accept and send accepts
-    //   else:
-    //     compute deps and stuff and start next phase
-
-    // TODO(mwhittaker): During recovery, isn't it possible that a replica is
-    // received PreAcceptOks for an instance it doesn't own? Figure out if this
-    // code is correct.
-    //
-    // // Verify leader is receiving responses
-    // if (preAcceptOk.commandInstance.replicaIndex != index) {
-    //   return
-    // }
-
-    // TODO(mwhittaker): Handle fast path. Right now, I think this always goes
-    // to the slow path.
-    val preAcceptOkSet: mutable.Buffer[PreAcceptOk] = preacceptResponses
-      .getOrElse(preAcceptOk.commandInstance, mutable.Buffer.empty)
-
-    preAcceptOkSet.append(preAcceptOk)
-    preacceptResponses.put(preAcceptOk.commandInstance, preAcceptOkSet)
-
-    if (preacceptResponses
-          .getOrElse(preAcceptOk.commandInstance, mutable.Buffer.empty)
-          .size < config.slowQuorumSize) {
-      // TODO(mwhittaker): Add a debug log maybe?
-      return
-    }
-
-    val N: Int = config.replicaAddresses.size
-    val seqTuple: (Boolean, Option[Int]) = checkSameSequenceNumbers(
-      preacceptResponses.getOrElse(preAcceptOk.commandInstance,
-                                   mutable.Buffer.empty),
-      N - 1
-    )
-    val depsTuple: (Boolean, Option[Seq[Instance]]) = checkSameDependencies(
-      preacceptResponses.getOrElse(preAcceptOk.commandInstance,
-                                   mutable.Buffer.empty),
-      N - 1
-    )
-
-    if (seqTuple._1 && depsTuple._1 && !preAcceptOk.avoid) {
-      // TODO(mwhittaker): Send response to client.
-
-      // Run commit phase
-      runCommitPhase(preAcceptOk.command,
-                     seqTuple._2.get,
-                     depsTuple._2.get,
-                     preAcceptOk.commandInstance)
-    } else {
-      var updatedDeps: mutable.Set[Instance] = mutable.Set()
-      var maxSequenceNumber: Int = preAcceptOk.sequenceNumber
-      for (preacceptResponse <- preacceptResponses.getOrElse(
-             preAcceptOk.commandInstance,
-             mutable.Buffer.empty
-           )) {
-        updatedDeps =
-          updatedDeps.union(mutable.Set(preacceptResponse.dependencies: _*))
-        maxSequenceNumber =
-          Math.max(maxSequenceNumber, preacceptResponse.sequenceNumber)
-      }
-      startPaxosAcceptPhase(preAcceptOk.command,
-                            maxSequenceNumber,
-                            updatedDeps,
-                            preAcceptOk.commandInstance)
     }
   }
 

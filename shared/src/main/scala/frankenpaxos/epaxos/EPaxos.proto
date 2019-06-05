@@ -84,6 +84,7 @@ message PreAccept {
 }
 
 message PreAcceptOk {
+  // TODO(mwhittaker): Does the command need to be included?
   required Command command = 1;
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
@@ -101,6 +102,7 @@ message Accept {
 }
 
 message AcceptOk {
+  // TODO(mwhittaker): Does the command need to be included?
   required Command command = 1;
   required Instance instance = 2;
   required Ballot ballot = 3;
@@ -112,6 +114,7 @@ message Commit {
   required int32 sequence_number = 2;
   repeated Instance dependencies = 3;
   required Instance instance = 4;
+  // TODO(mwhittaker): Do you need ballot in a commit?
   required Ballot ballot = 5;
 }
 
