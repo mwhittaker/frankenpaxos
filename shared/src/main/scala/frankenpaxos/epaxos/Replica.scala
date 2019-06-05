@@ -302,12 +302,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       java.time.Duration.ofMillis(500),
       () => {
         leaderStates.get(instance) match {
-          case None | Some(Accepting(_, _, _)) | Some(Preparing(_, _, _)) =>
+          case None | Some(_: Accepting) | Some(_: Preparing) =>
             logger.fatal(
               "defaultToSlowPath timer triggered but replica is not " +
                 "preAccepting."
             )
-          case Some(preAccepting @ PreAccepting(_, _, _, _, _)) =>
+          case Some(preAccepting: PreAccepting) =>
             preAcceptingSlowPath(instance, preAccepting)
         }
       }
@@ -550,13 +550,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             s"${preAcceptOk.instance} but is not leading the instance."
         )
 
-      case Some(Accepting(_, _, _)) =>
+      case Some(_: Accepting) =>
         logger.warn(
           s"Replica received a PreAcceptOk in instance " +
             s"${preAcceptOk.instance} but is accepting."
         )
 
-      case Some(Preparing(_, _, _)) =>
+      case Some(_: Preparing) =>
         logger.warn(
           s"Replica received a PreAcceptOk in instance " +
             s"${preAcceptOk.instance} but is preparing."
@@ -741,6 +741,77 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     )
   }
 
+  private def handleAcceptOk(
+      src: Transport#Address,
+      acceptOk: AcceptOk
+  ): Unit = {
+    leaderStates.get(acceptOk.instance) match {
+      case None =>
+        logger.warn(
+          s"Replica received an AcceptOk in instance ${acceptOk.instance} " +
+            s"but is not leading the instance."
+        )
+
+      case Some(_: PreAccepting) =>
+        logger.warn(
+          s"Replica received an AcceptOk in instance ${acceptOk.instance} " +
+            s"but is pre-accepting."
+        )
+
+      case Some(_: Preparing) =>
+        logger.warn(
+          s"Replica received an AcceptOk in instance ${acceptOk.instance} " +
+            s"but is preparing."
+        )
+
+      case Some(accepting @ Accepting(ballot, responses, resendAcceptsTimer)) =>
+        if (acceptOk.ballot != ballot) {
+          logger.warn(
+            s"Replica received an AcceptOk in ballot ${acceptOk.instance} " +
+              s"but is currently leading ballot $ballot."
+          )
+          return
+        }
+
+        responses(acceptOk.replicaIndex) = acceptOk
+
+        // We don't have enough responses yet.
+        if (responses.size < config.slowQuorumSize) {
+          return
+        }
+
+        // Update the command log.
+        logger.check(cmdLog.contains(acceptOk.instance))
+        val cmdLogEntry = cmdLog(acceptOk.instance)
+        logger.check_eq(cmdLogEntry.ballot, ballot)
+        logger.check_eq(cmdLogEntry.voteBallot, ballot)
+        cmdLog(acceptOk.instance) = cmdLogEntry.copy(
+          status = CommandStatus.Committed
+        )
+
+        // Notify other replicas.
+        for (replica <- otherReplicas) {
+          replica.send(
+            ReplicaInbound().withCommit(
+              Commit(
+                command = cmdLogEntry.command,
+                sequenceNumber = cmdLogEntry.sequenceNumber,
+                dependencies = cmdLogEntry.dependencies.toSeq,
+                instance = acceptOk.instance,
+                ballot = ballot
+              )
+            )
+          )
+        }
+
+        // Stop existing timers and update the leader state.
+        resendAcceptsTimer.stop()
+        leaderStates -= acceptOk.instance
+
+      // TODO(mwhittaker): Make the command eligible for execution.
+    }
+  }
+
   private def startPhaseOne(
       instance: Instance,
       newCommand: Command,
@@ -880,52 +951,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     )
     buffer.append(message)
     acceptResponses.put(commandInstance, buffer)
-  }
-
-  private def handleAcceptOk(
-      src: Transport#Address,
-      value: AcceptOk
-  ): Unit = {
-    // TODO(mwhittaker): Double check that NACKing here is appropriate.
-    if (value.ballot.ordering < 42
-        // ballotMapping
-        // .getOrElse(value.commandInstance, lowestBallot)
-        // .ordering
-        ) {
-      val replica = chan[Replica[Transport]](address, Replica.serializer)
-      replica.send(
-        ReplicaInbound().withNack(
-          Nack(
-            oldBallot = ???,
-            // ballotMapping.getOrElse(value.commandInstance, lowestBallot),
-            instance = value.commandInstance
-          )
-        )
-      )
-      return
-    }
-
-    val responseSet: mutable.Buffer[AcceptOk] = acceptResponses.getOrElse(
-      value.commandInstance,
-      mutable.Buffer.empty
-    )
-    responseSet.append(value)
-    acceptResponses.put(value.commandInstance, responseSet)
-    // ballotMapping.put(value.commandInstance, value.ballot)
-
-    if (responseSet.size >= config.slowQuorumSize) {
-      // TODO(mwhittaker): Send reply to client.
-
-      // run commit phase
-      val commandState: Option[CmdLogEntry] =
-        cmdLog.get(value.commandInstance)
-      if (commandState.nonEmpty) {
-        runCommitPhase(commandState.get.command,
-                       commandState.get.sequenceNumber,
-                       commandState.get.dependencies.toSeq,
-                       value.commandInstance)
-      }
-    }
   }
 
   // TODO(mwhittaker): Is this correct? Can we remove cmdLog this eagerly?
