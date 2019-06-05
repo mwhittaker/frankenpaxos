@@ -27,6 +27,11 @@ object BallotHelpers {
     Ballot(ordering, replicaIndex)
   }
 
+  def inc(ballot: Ballot): Ballot = {
+    val (ordering, replicaIndex) = ballot
+    Ballot(ordering + 1, replicaIndex)
+  }
+
   def max(lhs: Ballot, rhs: Ballot): Ballot = {
     tupleToBallot(ordering.max(ballotToTuple(lhs), ballotToTuple(rhs)))
   }
@@ -196,11 +201,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       resendAcceptsTimer: Transport#Timer
   ) extends LeaderState
 
+  // TODO(mwhittaker): Might want to add an Executing phase so that this leader
+  // knows to send the result of the command back to the client.
+
   case class Preparing(
       // See above.
       ballot: Ballot,
       // Prepare responses, indexed by the replica that sent them.
-      responses: mutable.Map[ReplicaIndex, AcceptOk],
+      responses: mutable.Map[ReplicaIndex, PrepareOk],
       // A timer to re-send Prepares.
       resendPreparesTimer: Transport#Timer
   ) extends LeaderState
@@ -223,6 +231,23 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // var graph: DependencyGraph = new DependencyGraph()
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  // stopTimers(instance) stops any timers that may be running in instance
+  // `instance`. This is useful when we transition from one state to another
+  // and need to make sure that all old timers have been stopped.
+  private def stopTimers(instance: Instance): Unit = {
+    leaderStates.get(instance) match {
+      case None =>
+      // No timers to stop.
+      case Some(preAccepting: PreAccepting) =>
+        preAccepting.resendPreAcceptsTimer.stop()
+        preAccepting.defaultToSlowPathTimer.foreach(_.stop())
+      case Some(accepting: Accepting) =>
+        accepting.resendAcceptsTimer.stop()
+      case Some(preparing: Preparing) =>
+        preparing.resendPreparesTimer.stop()
+    }
+  }
+
   private def preAcceptingSlowPath(
       instance: Instance,
       preAccepting: PreAccepting
@@ -273,6 +298,30 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         )
       ),
       resendAcceptsTimer = makeResendAcceptsTimer(accept)
+    )
+  }
+
+  private def transitionToPreparePhase(instance: Instance): Unit = {
+    // Stop any currently running timers.
+    stopTimers(instance)
+
+    // Choose a ballot larger than any we've seen before.
+    largestBallot = BallotHelpers.inc(largestBallot)
+    val ballot = largestBallot
+
+    // Note that we don't touch the command log when we transition to the
+    // prepare phase. We may have a command log entry in `instance`; we may
+    // not.
+
+    // Send Prepares to all replicas, including ourselves.
+    val prepare = Prepare(ballot = ballot, instance = instance)
+    replicas.foreach(_.send(ReplicaInbound().withPrepare(prepare)))
+
+    // Update our leader state.
+    leaderStates(instance) = Preparing(
+      ballot = ballot,
+      responses = mutable.Map(),
+      resendPreparesTimer = makeResendPreparesTimer(prepare)
     )
   }
 
@@ -330,6 +379,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     t
   }
 
+  private def makeResendPreparesTimer(prepare: Prepare): Transport#Timer = {
+    // TODO(mwhittaker): Pull this duration out into an option.
+    lazy val t: Transport#Timer = timer(
+      s"resendPrepares ${prepare.instance} ${prepare.ballot}",
+      java.time.Duration.ofMillis(500),
+      () => {
+        replicas.foreach(_.send(ReplicaInbound().withPrepare(prepare)))
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
       src: Transport#Address,
@@ -343,9 +406,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Accept(r)        => handleAccept(src, r)
       case Request.AcceptOk(r)      => handleAcceptOk(src, r)
       case Request.Commit(r)        => handleCommit(src, r)
+      case Request.Nack(r)          => handleNack(src, r)
       case Request.Prepare(r)       => handlePrepare(src, r)
       case Request.PrepareOk(r)     => handlePrepareOk(src, r)
-      case Request.Nack(r)          => handleNack(src, r)
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -812,6 +875,55 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private def handleCommit(src: Transport#Address, commit: Commit): Unit = {
+    // Update largestBallot.
+    largestBallot = BallotHelpers.max(largestBallot, commit.ballot)
+
+    // Update our command log entry.
+    cmdLog(commit.instance) = CmdLogEntry(
+      command = commit.command,
+      sequenceNumber = commit.sequenceNumber,
+      dependencies = commit.dependencies.toSet,
+      status = CommandStatus.Committed,
+      // TODO(mwhittaker): I believe that once something is committed, the
+      // ballots are pretty much irrelevant. This replica will no longer vote
+      // for this instance, and when asked about this instance, it will always
+      // report that the value has been chosen. Double check that this is true
+      // and think about what values to set here.
+      ballot = commit.ballot,
+      voteBallot = commit.ballot
+    )
+
+    // TODO(mwhittaker): If we're recovering this instance, we can stop doing
+    // that as well.
+
+    // TODO(mwhittaker): Make command eligible for execution.
+  }
+
+  private def explicitPrepare(instance: Instance, oldBallot: Ballot): Unit = {
+    val newBallot: Ballot = Ballot(oldBallot.ordering + 1, index)
+    largestBallot = newBallot
+    // ballotMapping.put(instance, largestBallot)
+    for (replica <- replicas) {
+      replica.send(
+        ReplicaInbound().withPrepare(
+          Prepare(
+            ballot = newBallot,
+            instance
+          )
+        )
+      )
+    }
+  }
+
+  private def handleNack(src: Transport#Address, nack: Nack): Unit = {
+    // TODO(mwhittaker): If we get a Nack, it's possible there's another
+    // replica trying to recover this instance. To avoid dueling replicas, we
+    // may want to do a random exponential backoff.
+    largestBallot = BallotHelpers.max(largestBallot, nack.largestBallot)
+    transitionToPreparePhase(nack.instance)
+  }
+
   private def startPhaseOne(
       instance: Instance,
       newCommand: Command,
@@ -865,6 +977,46 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     )
     buffer.append(message)
     preacceptResponses.put(instance, buffer)
+  }
+
+  private def handlePrepare(
+      src: Transport#Address,
+      value: Prepare
+  ): Unit = {
+    val replica = chan[Replica[Transport]](src, Replica.serializer)
+    if (value.ballot.ordering > 42
+        // ballotMapping
+        //     .getOrElse(value.instance, lowestBallot)
+        //     .ordering
+        ) {
+      // ballotMapping.put(value.instance, value.ballot)
+      val state: Option[CmdLogEntry] = cmdLog.get(value.instance)
+      if (state.nonEmpty) {
+        replica.send(
+          ReplicaInbound().withPrepareOk(
+            PrepareOk(
+              ballot = value.ballot,
+              instance = value.instance,
+              command = state.get.command,
+              sequenceNumber = state.get.sequenceNumber,
+              dependencies = state.get.dependencies.toSeq,
+              status = state.get.status,
+              replicaIndex = index
+            )
+          )
+        )
+      }
+      // TODO(mwhittaker): What if the state is non-empty?
+    } else {
+      replica.send(
+        ReplicaInbound().withNack(
+          Nack(
+            oldBallot = ???, //ballotMapping.getOrElse(value.instance, lowestBallot),
+            instance = value.instance
+          )
+        )
+      )
+    }
   }
 
   private def checkSameSequenceNumbers(
@@ -1052,111 +1204,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           }
         }
       }
-    }
-  }
-
-  private def handleCommit(src: Transport#Address, value: Commit): Unit = {
-    // TODO(mwhittaker): You can't Nack a commit can you?
-    if (value.ballot.ordering <
-          42
-        // ballotMapping
-        //     .getOrElse(value.commandInstance, lowestBallot)
-        //     .ordering
-        ) {
-      val replica = chan[Replica[Transport]](address, Replica.serializer)
-      replica.send(
-        ReplicaInbound().withNack(
-          Nack(
-            oldBallot = ???,
-            // ballotMapping.getOrElse(value.commandInstance, lowestBallot),
-            instance = value.commandInstance
-          )
-        )
-      )
-      return
-    }
-
-    // TODO(mwhittaker): Call runCommitPhase here instead?
-
-    cmdLog.put(value.commandInstance,
-               CmdLogEntry(value.command,
-                           value.sequenceNumber,
-                           mutable.Set(value.dependencies: _*),
-                           CommandStatus.Committed,
-                           ???))
-
-    recursiveAdd(value.commandInstance)
-    graph.executeDependencyGraph(stateMachine, executedCommands)
-
-    for (inst <- removeCommands) {
-      val st = cmdLog.get(inst)
-      if (st.nonEmpty) {
-        removeInstance(st.get.command, inst)
-      }
-      cmdLog.remove(inst)
-    }
-    removeCommands.clear()
-  }
-
-  private def explicitPrepare(instance: Instance, oldBallot: Ballot): Unit = {
-    val newBallot: Ballot = Ballot(oldBallot.ordering + 1, index)
-    largestBallot = newBallot
-    // ballotMapping.put(instance, largestBallot)
-    for (replica <- replicas) {
-      replica.send(
-        ReplicaInbound().withPrepare(
-          Prepare(
-            ballot = newBallot,
-            instance
-          )
-        )
-      )
-    }
-  }
-
-  private def handleNack(src: Transport#Address, value: Nack): Unit = {
-    if (index == value.instance.replicaIndex) {
-      explicitPrepare(value.instance, value.oldBallot)
-    }
-  }
-
-  private def handlePrepare(
-      src: Transport#Address,
-      value: Prepare
-  ): Unit = {
-    val replica = chan[Replica[Transport]](src, Replica.serializer)
-    if (value.ballot.ordering > 42
-        // ballotMapping
-        //     .getOrElse(value.instance, lowestBallot)
-        //     .ordering
-        ) {
-      // ballotMapping.put(value.instance, value.ballot)
-      val state: Option[CmdLogEntry] = cmdLog.get(value.instance)
-      if (state.nonEmpty) {
-        replica.send(
-          ReplicaInbound().withPrepareOk(
-            PrepareOk(
-              ballot = value.ballot,
-              instance = value.instance,
-              command = state.get.command,
-              sequenceNumber = state.get.sequenceNumber,
-              dependencies = state.get.dependencies.toSeq,
-              status = state.get.status,
-              replicaIndex = index
-            )
-          )
-        )
-      }
-      // TODO(mwhittaker): What if the state is non-empty?
-    } else {
-      replica.send(
-        ReplicaInbound().withNack(
-          Nack(
-            oldBallot = ???, //ballotMapping.getOrElse(value.instance, lowestBallot),
-            instance = value.instance
-          )
-        )
-      )
     }
   }
 
