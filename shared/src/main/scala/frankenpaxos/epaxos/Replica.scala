@@ -28,7 +28,7 @@ object BallotHelpers {
   }
 
   def inc(ballot: Ballot): Ballot = {
-    val (ordering, replicaIndex) = ballot
+    val Ballot(ordering, replicaIndex) = ballot
     Ballot(ordering + 1, replicaIndex)
   }
 
@@ -115,22 +115,45 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // represents i. Note that replicas are not represented with names like Q, R,
   // S, but with integer-valued indexes.
   @JSExportAll
-  case class CmdLogEntry(
-      // A command and its sequence number, dependencies, and status. See the
-      // EPaxos paper for a description of what these are.
+  sealed trait CommandTriple
+
+  @JSExportAll
+  object NotSeenCommandTriple extends CommandTriple
+
+  @JSExportAll
+  case class SeenCommandTriple(
+      status: CommandStatus,
       command: Command,
       sequenceNumber: Int,
-      dependencies: Set[Instance],
-      status: CommandStatus,
+      dependencies: Set[Instance]
+  ) extends CommandTriple
+
+  @JSExportAll
+  case class CmdLogEntry(
       // EPaxos has a small bug in how it implements ballots. The EPaxos TLA+
       // specification and Go implementation have a single ballot per command
       // log entry. As detailed in [1], this is a bug. We need two ballots,
-      // like what is done in normal Paxos. Note that we haven't proven this is
-      // correct, so it may also be wrong.
+      // like what is done in normal Paxos. Note that we haven't proven this
+      // two-ballot implementation is correct, so it may also be wrong.
       //
       // [1]: https://drive.google.com/open?id=1dQ_cigMWJ7w9KAJeSYcH3cZoFpbraWxm
       ballot: Ballot,
-      voteBallot: Ballot
+      voteBallot: Ballot,
+      // A command triple (gamma, seq_gamma, deps_gamma) consisting of a
+      // command, it's sequence number, and its dependencies (and it's status).
+      //
+      // If a replica has never seen any command in a particular instance, then
+      // it simply won't have a CmdLogEntry for the instance in cmdLog.
+      // However, if a replica receives a Prepare request for an instance I and
+      // has not previously received any command for instance I, then the
+      // replica needs to increment it's ballot. So, it must create a
+      // CmdLogEntry. In this case, commandTriple is NotSeenCommandTriple.
+      //
+      // Intuitively, a CmdLogEntry is similar to a Paxos acceptor's state. We
+      // need a ballot, voteBallot, and voteValue. commandTriple is like
+      // voteValue, and it is None (in thise case NotSeenCommandTriple) when
+      // the acceptor hasn't yet voted.
+      commandTriple: CommandTriple
   )
 
   @JSExport
@@ -142,7 +165,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // The lowest possible ballot used by this replica.
   @JSExport
-  protected val lowestBallot: Ballot = Ballot(0, index)
+  protected val defaultBallot: Ballot = Ballot(0, index)
 
   // The largest ballot ever seen by this replica. largestBallot is used when a
   // replica receives a nack and needs to choose a larger ballot.
@@ -265,16 +288,26 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val cmdLogEntry = cmdLog(instance)
     logger.check_eq(cmdLogEntry.ballot, preAccepting.ballot)
     logger.check_eq(cmdLogEntry.voteBallot, preAccepting.ballot)
+    val seenCommandTriple = cmdLogEntry.commandTriple match {
+      case NotSeenCommandTriple =>
+        logger.fatal(
+          s"Received PreAcceptOk for instance $instance, but the " +
+            s"corresponding command log entry is empty."
+        )
+      case seen: SeenCommandTriple => seen
+    }
     cmdLog(instance) = cmdLogEntry.copy(
-      sequenceNumber = sequenceNumber,
-      dependencies = dependencies,
-      status = CommandStatus.Accepted
+      commandTriple = seenCommandTriple.copy(
+        status = CommandStatus.Accepted,
+        sequenceNumber = sequenceNumber,
+        dependencies = dependencies
+      )
     )
 
     // Send out an accept message to other replicas.
     // TODO(mwhittaker): Implement thriftiness.
     val accept = Accept(
-      command = cmdLogEntry.command,
+      command = seenCommandTriple.command,
       sequenceNumber = sequenceNumber,
       dependencies = dependencies.toSeq,
       instance = instance,
@@ -487,12 +520,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     cmdLog.put(
       instance,
       CmdLogEntry(
-        command = request.command,
-        sequenceNumber = ???, // TODO(mwhittaker): Implement.
-        dependencies = ???, // TODO(mwhittaker): Implement.
-        status = CommandStatus.PreAccepted,
-        ballot = lowestBallot,
-        voteBallot = lowestBallot
+        ballot = defaultBallot,
+        voteBallot = defaultBallot,
+        commandTriple = SeenCommandTriple(
+          status = CommandStatus.PreAccepted,
+          command = request.command,
+          sequenceNumber = ???, // TODO(mwhittaker): Implement.
+          dependencies = ??? // TODO(mwhittaker): Implement.
+        )
       )
     )
 
@@ -505,21 +540,21 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       sequenceNumber = ???, // TODO(mwhittaker): Implement.
       dependencies = ???, // TODO(mwhittaker): Implement.  commandInstance =
       instance,
-      ballot = lowestBallot
+      ballot = defaultBallot
     )
     otherReplicas.foreach(_.send(ReplicaInbound().withPreAccept(preAccept)))
 
-// Update our leader state.
+    // Update our leader state.
     logger.check(!leaderStates.contains(instance))
     leaderStates(instance) = PreAccepting(
-      ballot = lowestBallot,
+      ballot = defaultBallot,
       responses = mutable.Map[ReplicaIndex, PreAcceptOk](
         index -> PreAcceptOk(
           command = request.command,
           sequenceNumber = ???, // TODO(mwhittaker): Implement.
           dependencies = ???, // TODO(mwhittaker): Implement.
           instance = instance,
-          ballot = lowestBallot,
+          ballot = defaultBallot,
           replicaIndex = index
         )
       ),
@@ -578,12 +613,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     cmdLog.put(
       preAccept.instance,
       CmdLogEntry(
-        command = preAccept.command,
-        sequenceNumber = ???, // TODO(mwhittaker): Implement.
-        dependencies = ???, // TODO(mwhittaker): Implement.
-        status = CommandStatus.PreAccepted,
         ballot = preAccept.ballot,
-        voteBallot = preAccept.ballot
+        voteBallot = preAccept.ballot,
+        commandTriple = SeenCommandTriple(
+          status = CommandStatus.PreAccepted,
+          command = preAccept.command,
+          sequenceNumber = ???, // TODO(mwhittaker): Implement.
+          dependencies = ??? // TODO(mwhittaker): Implement.
+        )
       )
     )
 
@@ -703,10 +740,22 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             val cmdLogEntry = cmdLog(preAcceptOk.instance)
             logger.check_eq(cmdLogEntry.ballot, ballot)
             logger.check_eq(cmdLogEntry.voteBallot, ballot)
+            val seenCommandTriple = cmdLogEntry.commandTriple match {
+              case NotSeenCommandTriple =>
+                logger.fatal(
+                  s"Received PreAcceptOk for instance " +
+                    s"${preAcceptOk.instance}, but the corresponding command " +
+                    s"log entry is empty."
+                )
+
+              case seen: SeenCommandTriple => seen
+            }
             cmdLog(preAcceptOk.instance) = cmdLogEntry.copy(
-              sequenceNumber = sequenceNumber,
-              dependencies = dependencies,
-              status = CommandStatus.Committed
+              commandTriple = seenCommandTriple.copy(
+                status = CommandStatus.Committed,
+                sequenceNumber = sequenceNumber,
+                dependencies = dependencies
+              )
             )
 
             // Notify other replicas.
@@ -714,7 +763,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               replica.send(
                 ReplicaInbound().withCommit(
                   Commit(
-                    command = cmdLogEntry.command,
+                    command = seenCommandTriple.command,
                     sequenceNumber = sequenceNumber,
                     dependencies = dependencies.toSeq,
                     instance = preAcceptOk.instance,
@@ -763,16 +812,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Ignore the Accept if we've already voted.
     cmdLog.get(accept.instance) match {
-      case Some(entry) =>
-        if (accept.ballot <= entry.voteBallot &&
-            entry.status != CommandStatus.PreAccepted) {
+      case Some(CmdLogEntry(ballot, voteBallot, seen: SeenCommandTriple)) =>
+        if (accept.ballot <= voteBallot &&
+            seen.status != CommandStatus.PreAccepted) {
           logger.warn(
             s"Replica $index received an Accept in ballot ${accept.ballot} " +
               s"of instance ${accept.instance} but already voted in ballot " +
-              s"${entry.ballot}."
+              s"${voteBallot}."
           )
           return
         }
+
+      case Some(CmdLogEntry(_ballot, _voteBallot, NotSeenCommandTriple)) =>
+      // We haven't voted yet.
 
       case None =>
       // We haven't seen anything for this instance before, so we're good.
@@ -783,12 +835,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Update our command log.
     cmdLog(accept.instance) = CmdLogEntry(
-      command = accept.command,
-      sequenceNumber = accept.sequenceNumber,
-      dependencies = accept.dependencies.toSet,
-      status = CommandStatus.Accepted,
       ballot = accept.ballot,
-      voteBallot = accept.ballot
+      voteBallot = accept.ballot,
+      commandTriple = SeenCommandTriple(
+        status = CommandStatus.Accepted,
+        command = accept.command,
+        sequenceNumber = accept.sequenceNumber,
+        dependencies = accept.dependencies.toSet
+      )
     )
 
     val leader = chan[Replica[Transport]](src, Replica.serializer)
@@ -848,8 +902,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         val cmdLogEntry = cmdLog(acceptOk.instance)
         logger.check_eq(cmdLogEntry.ballot, ballot)
         logger.check_eq(cmdLogEntry.voteBallot, ballot)
+        val seenCommandTriple = cmdLogEntry.commandTriple match {
+          case NotSeenCommandTriple =>
+            logger.fatal(
+              s"Received AcceptOk for instance " +
+                s"${acceptOk.instance}, but the corresponding command " +
+                s"log entry is empty."
+            )
+          case triple: SeenCommandTriple => triple
+        }
         cmdLog(acceptOk.instance) = cmdLogEntry.copy(
-          status = CommandStatus.Committed
+          commandTriple = seenCommandTriple.copy(
+            status = CommandStatus.Committed
+          )
         )
 
         // Notify other replicas.
@@ -857,9 +922,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           replica.send(
             ReplicaInbound().withCommit(
               Commit(
-                command = cmdLogEntry.command,
-                sequenceNumber = cmdLogEntry.sequenceNumber,
-                dependencies = cmdLogEntry.dependencies.toSeq,
+                command = seenCommandTriple.command,
+                sequenceNumber = seenCommandTriple.sequenceNumber,
+                dependencies = seenCommandTriple.dependencies.toSeq,
                 instance = acceptOk.instance,
                 ballot = ballot
               )
@@ -881,17 +946,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Update our command log entry.
     cmdLog(commit.instance) = CmdLogEntry(
-      command = commit.command,
-      sequenceNumber = commit.sequenceNumber,
-      dependencies = commit.dependencies.toSet,
-      status = CommandStatus.Committed,
       // TODO(mwhittaker): I believe that once something is committed, the
       // ballots are pretty much irrelevant. This replica will no longer vote
       // for this instance, and when asked about this instance, it will always
       // report that the value has been chosen. Double check that this is true
       // and think about what values to set here.
       ballot = commit.ballot,
-      voteBallot = commit.ballot
+      voteBallot = commit.ballot,
+      commandTriple = SeenCommandTriple(
+        status = CommandStatus.Committed,
+        command = commit.command,
+        sequenceNumber = commit.sequenceNumber,
+        dependencies = commit.dependencies.toSet
+      )
     )
 
     // TODO(mwhittaker): If we're recovering this instance, we can stop doing
@@ -900,28 +967,108 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // TODO(mwhittaker): Make command eligible for execution.
   }
 
-  private def explicitPrepare(instance: Instance, oldBallot: Ballot): Unit = {
-    val newBallot: Ballot = Ballot(oldBallot.ordering + 1, index)
-    largestBallot = newBallot
-    // ballotMapping.put(instance, largestBallot)
-    for (replica <- replicas) {
-      replica.send(
-        ReplicaInbound().withPrepare(
-          Prepare(
-            ballot = newBallot,
-            instance
-          )
-        )
-      )
-    }
-  }
-
   private def handleNack(src: Transport#Address, nack: Nack): Unit = {
     // TODO(mwhittaker): If we get a Nack, it's possible there's another
     // replica trying to recover this instance. To avoid dueling replicas, we
     // may want to do a random exponential backoff.
     largestBallot = BallotHelpers.max(largestBallot, nack.largestBallot)
     transitionToPreparePhase(nack.instance)
+  }
+
+  private def handlePrepare(
+      src: Transport#Address,
+      prepare: Prepare
+  ): Unit = {
+    // Nack the Prepare if it's not a newer ballot.
+    val replica = chan[Replica[Transport]](src, Replica.serializer)
+    cmdLog.get(prepare.instance) match {
+      case Some(entry) =>
+        if (prepare.ballot <= entry.ballot) {
+          logger.warn(
+            s"Replica $index received an Accept in ballot ${prepare.ballot} " +
+              s"of instance ${prepare.instance} but already processed a " +
+              s"message in ballot ${entry.ballot}."
+          )
+          replica.send(
+            ReplicaInbound().withNack(Nack(prepare.instance, largestBallot))
+          )
+          return
+        }
+
+      case None =>
+      // We haven't seen anything for this instance before, so we're good.
+    }
+
+    // Update largestBallot.
+    largestBallot = BallotHelpers.max(largestBallot, prepare.ballot)
+
+    // Send back a PrepareOk and Update our ballot.
+    cmdLog.get(prepare.instance) match {
+      case None =>
+        replica.send(
+          ReplicaInbound().withPrepareOk(
+            PrepareOk(
+              ballot = prepare.ballot,
+              instance = prepare.instance,
+              voteBallot = None,
+              command = None,
+              sequenceNumber = None,
+              dependencies = Seq(),
+              status = None
+            )
+          )
+        )
+
+        cmdLog(prepare.instance) = CmdLogEntry(
+          ballot = prepare.ballot,
+          voteBallot = Ballot(-1, index),
+          NotSeenCommandTriple
+        )
+
+      case Some(CmdLogEntry(ballot, voteBallot, NotSeenCommandTriple)) =>
+        logger.check_eq(voteBallot, Ballot(-1, index))
+
+        replica.send(
+          ReplicaInbound().withPrepareOk(
+            PrepareOk(
+              ballot = prepare.ballot,
+              instance = prepare.instance,
+              voteBallot = None,
+              command = None,
+              sequenceNumber = None,
+              dependencies = Seq(),
+              status = None
+            )
+          )
+        )
+
+        cmdLog(prepare.instance) = CmdLogEntry(
+          ballot = prepare.ballot,
+          voteBallot = voteBallot,
+          NotSeenCommandTriple
+        )
+
+      case Some(CmdLogEntry(ballot, voteBallot, triple: SeenCommandTriple)) =>
+        replica.send(
+          ReplicaInbound().withPrepareOk(
+            PrepareOk(
+              ballot = prepare.ballot,
+              instance = prepare.instance,
+              voteBallot = Some(voteBallot),
+              command = Some(triple.command),
+              sequenceNumber = Some(triple.sequenceNumber),
+              dependencies = triple.dependencies.toSeq,
+              status = Some(triple.status)
+            )
+          )
+        )
+
+        cmdLog(prepare.instance) = CmdLogEntry(
+          ballot = prepare.ballot,
+          voteBallot = voteBallot,
+          commandTriple = triple
+        )
+    }
   }
 
   private def startPhaseOne(
@@ -977,46 +1124,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     )
     buffer.append(message)
     preacceptResponses.put(instance, buffer)
-  }
-
-  private def handlePrepare(
-      src: Transport#Address,
-      value: Prepare
-  ): Unit = {
-    val replica = chan[Replica[Transport]](src, Replica.serializer)
-    if (value.ballot.ordering > 42
-        // ballotMapping
-        //     .getOrElse(value.instance, lowestBallot)
-        //     .ordering
-        ) {
-      // ballotMapping.put(value.instance, value.ballot)
-      val state: Option[CmdLogEntry] = cmdLog.get(value.instance)
-      if (state.nonEmpty) {
-        replica.send(
-          ReplicaInbound().withPrepareOk(
-            PrepareOk(
-              ballot = value.ballot,
-              instance = value.instance,
-              command = state.get.command,
-              sequenceNumber = state.get.sequenceNumber,
-              dependencies = state.get.dependencies.toSeq,
-              status = state.get.status,
-              replicaIndex = index
-            )
-          )
-        )
-      }
-      // TODO(mwhittaker): What if the state is non-empty?
-    } else {
-      replica.send(
-        ReplicaInbound().withNack(
-          Nack(
-            oldBallot = ???, //ballotMapping.getOrElse(value.instance, lowestBallot),
-            instance = value.instance
-          )
-        )
-      )
-    }
   }
 
   private def checkSameSequenceNumbers(
@@ -1083,7 +1190,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               sequenceNum,
               deps.toSeq,
               commandInstance,
-              ??? // ballotMapping.getOrElse(commandInstance, lowestBallot)
+              ??? // ballotMapping.getOrElse(commandInstance, defaultBallot)
             )
           )
         )
@@ -1098,7 +1205,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val message = AcceptOk(
       command = command,
       commandInstance = commandInstance,
-      ballot = ???, //ballotMapping.getOrElse(commandInstance, lowestBallot),
+      ballot = ???, //ballotMapping.getOrElse(commandInstance, defaultBallot),
       replicaIndex = index
     )
     buffer.append(message)
@@ -1162,7 +1269,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             seqNum,
             deps,
             instance,
-            ??? //ballotMapping.getOrElse(instance, lowestBallot)
+            ??? //ballotMapping.getOrElse(instance, defaultBallot)
           )
         )
       )

@@ -132,11 +132,15 @@ message Prepare {
 message PrepareOk {
   required Ballot ballot = 1;
   required Instance instance = 2;
-  required Command command = 3;
-  required int32 sequence_number = 4;
-  repeated Instance dependencies = 5;
-  required CommandStatus status = 6;
-  required int32 replica_index = 7;
+
+  // When a replica receives a Prepare in instance I, it's possible that the
+  // replica has never seen any command in instance I yet. In this case, it
+  // leaves the following fields empty.
+  optional Ballot vote_ballot = 3;
+  optional Command command = 4;
+  optional int32 sequence_number = 5;
+  repeated Instance dependencies = 6;
+  optional CommandStatus status = 7;
 }
 
 message Nack {
