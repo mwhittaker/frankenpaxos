@@ -27,25 +27,6 @@ option (scalapb.options) = {
 
 
 // Helper messages. ////////////////////////////////////////////////////////////
-message Command {
-  // The client's address.
-  required bytes client_address = 1;
-
-  // Clients annotate every command with a unique and monotonically increasing
-  // id. The pair of (client address, client id) uniquely identify a command.
-  required int32 client_id = 2;
-
-  required bytes command = 3;
-}
-
-// Every ballot has the form `ordering.replica_index` where `ordering` is a
-// monotonically increasing integer and `replica_index` is the unique index of
-// the replica.
-message Ballot {
-  required int32 ordering = 1;
-  required int32 replica_index = 2;
-}
-
 // Every instance is of the form `leader_index.instance_number` where
 // `leader_index` is the unique index of the leader and `instance_number` is a
 // monotonically increasing integer. In the EPaxos paper, for example, these
@@ -56,11 +37,43 @@ message Instance {
   required int32 instance_number = 2;
 }
 
+// Every ballot has the form `ordering.replica_index` where `ordering` is a
+// monotonically increasing integer and `replica_index` is the unique index of
+// the replica.
+message Ballot {
+  required int32 ordering = 1;
+  required int32 replica_index = 2;
+}
+
+// A special noop command that does not affect the state machine.
+message Noop {}
+
+// A client issued command.
+message Command {
+  // The client's address.
+  required bytes client_address = 1;
+
+  // Clients annotate every command with a unique and monotonically increasing
+  // id. The pair of (client address, client id) uniquely identify a command.
+  required int32 client_id = 2;
+
+  // The actual command.
+  required bytes command = 3;
+}
+
+message CommandOrNoop {
+  oneof value {
+    Command command = 1;
+    Noop noop = 2;
+  }
+}
+
+// TODO(mwhittaker): Do we need all these statuses?
 enum CommandStatus {
-  PreAccepted = 0;
-  Accepted = 1;
-  Committed = 2;
-  Executed = 3;
+  NotSeen = 0;
+  PreAccepted = 1;
+  Accepted = 2;
+  Committed = 3;
 }
 
 // Protocol messages. //////////////////////////////////////////////////////////
@@ -69,64 +82,53 @@ message ClientRequest {
 }
 
 message PreAccept {
-  // The command, sequence number, and dependencies. In the EPaxos paper, this
-  // is written as the triple (\gamma, seq_\gamma, deps_\gamma).
-  required Command command = 1;
-  required int32 sequence_number = 2;
-  repeated Instance dependencies = 3;
+  required Instance instance = 1;
+  required Ballot ballot = 2;
 
-  // The instance in which this command is being chosen.
-  required Instance instance = 4;
-
-  // The message's ballot. As with Paxos, every command is annotated with a
-  // ballot. Replicas ignore messages from smaller ballots.
-  required Ballot ballot = 5;
+  required CommandOrNoop command_or_noop = 3;
+  required int32 sequence_number = 4;
+  repeated Instance dependencies = 5;
 }
 
 message PreAcceptOk {
-  // TODO(mwhittaker): Does the command need to be included?
-  required Command command = 1;
-  required int32 sequence_number = 2;
-  repeated Instance dependencies = 3;
-  required Instance instance = 4;
-  required Ballot ballot = 6;
-  required int32 replica_index = 7;
+  required Instance instance = 1;
+  required Ballot ballot = 2;
+  required int32 replica_index = 3;
+
+  required int32 sequence_number = 4;
+  repeated Instance dependencies = 5;
 }
 
 message Accept {
-  required Command command = 1;
-  required int32 sequence_number = 2;
-  repeated Instance dependencies = 3;
-  required Instance instance = 4;
-  required Ballot ballot = 6;
+  required Instance instance = 1;
+  required Ballot ballot = 2;
+
+  required CommandOrNoop command_or_noop = 3;
+  required int32 sequence_number = 4;
+  repeated Instance dependencies = 5;
 }
 
 message AcceptOk {
-  // TODO(mwhittaker): Does the command need to be included?
-  required Command command = 1;
   required Instance instance = 2;
   required Ballot ballot = 3;
   required int32 replica_index = 7;
 }
 
 message Commit {
-  required Command command = 1;
-  required int32 sequence_number = 2;
-  repeated Instance dependencies = 3;
-  required Instance instance = 4;
-  // TODO(mwhittaker): Do you need ballot in a commit?
-  required Ballot ballot = 5;
+  required Instance instance = 1;
+  required CommandOrNoop command_or_noop = 2;
+  required int32 sequence_number = 3;
+  repeated Instance dependencies = 4;
 }
 
 message ClientReply {
+  required int32 client_id = 1;
   // TODO(mwhittaker): Add reply bytes.
-  required Command command = 1;
-  required Instance instance = 2;
 }
 
 message Prepare {
-  required Ballot ballot = 1;
-  required Instance instance = 2;
+  required Instance instance = 1;
+  required Ballot ballot = 2;
 }
 
 message PrepareOk {
@@ -134,22 +136,27 @@ message PrepareOk {
   required Instance instance = 2;
   required int32 replica_index = 3;
 
-  // When a replica receives a Prepare in instance I, it's possible that the
-  // replica has never seen any command in instance I yet. In this case,
-  // voteBallot is set to the null ballot Ballot(-1, -1) and all remaining
-  // fields are left empty.
+  // When a replica receives a Prepare message for instance I, there are two
+  // scenarios to consider:
+  //
+  //   Case 1. The replica has no command log entry for instance I. In this
+  //           case, vote_ballot is set to the null ballot, Ballot(-1, -1),
+  //           status is set to NotSeen, and the triple is left empty.
+  //
+  //   Case 2. The replica has a command log entry for instance I. In this
+  //           case, vote_ballot is not the null ballot, status is not NotSeen,
+  //           and the triple is not empty.
   required Ballot vote_ballot = 4;
-  optional Command command = 5;
-  optional int32 sequence_number = 6;
-  repeated Instance dependencies = 7;
-  optional CommandStatus status = 8;
+  required CommandStatus status = 5;
+  optional CommandOrNoop command_or_noop = 6;
+  optional int32 sequence_number = 7;
+  repeated Instance dependencies = 8;
 }
 
 message Nack {
   required Instance instance = 1;
   required Ballot largest_ballot = 2;
 }
-
 
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ReplicaInbound {
