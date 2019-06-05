@@ -677,6 +677,70 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private def handleAccept(src: Transport#Address, accept: Accept): Unit = {
+    // Nack the Accept if it's from an older ballot.
+    cmdLog.get(accept.instance) match {
+      case Some(entry) =>
+        if (accept.ballot < entry.ballot) {
+          logger.warn(
+            s"Replica $index received an Accept in ballot ${accept.ballot} " +
+              s"of instance ${accept.instance} but already processed a " +
+              s"message in ballot ${entry.ballot}."
+          )
+          val replica = chan[Replica[Transport]](src, Replica.serializer)
+          replica.send(
+            ReplicaInbound().withNack(Nack(accept.instance, largestBallot))
+          )
+          return
+        }
+
+      case None =>
+      // We haven't seen anything for this instance before, so we're good.
+    }
+
+    // Ignore the Accept if we've already voted.
+    cmdLog.get(accept.instance) match {
+      case Some(entry) =>
+        if (accept.ballot <= entry.voteBallot &&
+            entry.status != CommandStatus.PreAccepted) {
+          logger.warn(
+            s"Replica $index received an Accept in ballot ${accept.ballot} " +
+              s"of instance ${accept.instance} but already voted in ballot " +
+              s"${entry.ballot}."
+          )
+          return
+        }
+
+      case None =>
+      // We haven't seen anything for this instance before, so we're good.
+    }
+
+    // Update largestBallot.
+    largestBallot = BallotHelpers.max(largestBallot, accept.ballot)
+
+    // Update our command log.
+    cmdLog(accept.instance) = CmdLogEntry(
+      command = accept.command,
+      sequenceNumber = accept.sequenceNumber,
+      dependencies = accept.dependencies.toSet,
+      status = CommandStatus.Accepted,
+      ballot = accept.ballot,
+      voteBallot = accept.ballot
+    )
+
+    val leader = chan[Replica[Transport]](src, Replica.serializer)
+    leader.send(
+      ReplicaInbound().withAcceptOk(
+        AcceptOk(
+          command = accept.command,
+          instance = accept.instance,
+          ballot = accept.ballot,
+          replicaIndex = index
+        )
+      )
+    )
+  }
+
   private def startPhaseOne(
       instance: Instance,
       newCommand: Command,
@@ -816,46 +880,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     )
     buffer.append(message)
     acceptResponses.put(commandInstance, buffer)
-  }
-
-  private def handleAccept(src: Transport#Address, value: Accept): Unit = {
-    if (value.ballot.ordering <
-          42
-        // ballotMapping
-        //     .getOrElse(value.commandInstance, lowestBallot)
-        //     .ordering
-        ) {
-      val replica = chan[Replica[Transport]](address, Replica.serializer)
-      replica.send(
-        ReplicaInbound().withNack(
-          Nack(
-            oldBallot = ???,
-            // ballotMapping.getOrElse(value.commandInstance, lowestBallot),
-            instance = value.commandInstance
-          )
-        )
-      )
-      return
-    }
-
-    cmdLog.put(value.commandInstance,
-               CmdLogEntry(value.command,
-                           value.sequenceNumber,
-                           mutable.Set(value.dependencies: _*),
-                           CommandStatus.Accepted,
-                           ???))
-    // ballotMapping.put(value.commandInstance, value.ballot)
-    val leader = replicas(value.commandInstance.replicaIndex)
-    leader.send(
-      ReplicaInbound().withAcceptOk(
-        AcceptOk(
-          command = value.command,
-          commandInstance = value.commandInstance,
-          ballot = ???, // ballotMapping.getOrElse(value.commandInstance, value.ballot),
-          replicaIndex = index
-        )
-      )
-    )
   }
 
   private def handleAcceptOk(
