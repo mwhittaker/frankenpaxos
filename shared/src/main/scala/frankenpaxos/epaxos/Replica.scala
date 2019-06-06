@@ -68,9 +68,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: Config[Transport],
+    config: Config[Transport]
+    // TODO(mwhittaker): Uncomment and integrate state machine.
     // Public for Javascript.
-    val stateMachine: StateMachine
+    // val stateMachine: StateMachine
 ) extends Actor(address, transport, logger) {
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = ReplicaInbound
@@ -225,7 +226,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       // See above.
       ballot: Ballot,
       // The command being accepted.
-      commandOrNoop: CommandOrNoop,
+      triple: CommandTriple,
       // AcceptOk responses, indexed by the replica that sent them.
       responses: mutable.Map[ReplicaIndex, AcceptOk],
       // A timer to re-send Accepts.
@@ -249,19 +250,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // TODO(mwhittaker): Add dependency graph.
 
-  // TODO(mwhittaker): Use generic state machine.
-  // val stateMachine: KeyValueStore = new KeyValueStore()
-  // TODO(mwhittaker): Remove.
-  // private val executedCommands: mutable.Set[Command] = mutable.Set()
-  // TODO(mwhittaker): Remove.
-  // var conflictsMap =
-  //   mutable.Map[String, (mutable.Set[Instance], mutable.Set[Instance])]()
-  // TODO(mwhittaker): Remove.
-  // val removeCommands: mutable.Set[Instance] = mutable.Set[Instance]()
-
-  // var graph: DependencyGraph = new DependencyGraph()
-
   // Helpers ///////////////////////////////////////////////////////////////////
+  private def leaderBallot(leaderState: LeaderState): Ballot = {
+    leaderState match {
+      case state: PreAccepting => state.ballot
+      case state: Accepting    => state.ballot
+      case state: Preparing    => state.ballot
+    }
+  }
+
   // stopTimers(instance) stops any timers that may be running in instance
   // `instance`. This is useful when we transition from one state to another
   // and need to make sure that all old timers have been stopped.
@@ -279,84 +276,175 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def preAcceptingSlowPath(
+  // Transition to the pre-accept phase.
+  private def transitionToPreAcceptPhase(
       instance: Instance,
-      preAccepting: PreAccepting
+      ballot: Ballot,
+      commandOrNoop: CommandOrNoop,
+      avoidFastPath: Boolean
   ): Unit = {
-    logger.check(preAccepting.responses.size >= config.slowQuorumSize)
-
-    // Compute the new dependencies and sequence numbers.
-    val preAcceptOks: Set[PreAcceptOk] = preAccepting.responses.values.toSet
-    val dependencies: Set[Instance] =
-      preAcceptOks.map(_.dependencies.to[Set]).flatten
-    val sequenceNumber: Int = preAcceptOks.map(_.sequenceNumber).max
-
-    // Update our command log.
+    // Update our command log. This part of the algorithm is a little subtle.
+    //
+    // This replica acts as both a leader of this instance (e.g., sending out
+    // PreAccepts and receiving PreAcceptOks) and as an acceptor of this
+    // instance (e.g., receiving PreAccepts and sending PreAcceptOks).
+    //
+    // leaderStates is state used by a replica when acting as a leader, and
+    // cmdLog is state used by a replica when acting as an acceptor. We're
+    // currently acting as a leader but are about to modify cmdLog. Typically
+    // when we modify cmdLog, we first have to check a lot of things (e.g., our
+    // ballot is big enough, we haven't already voted, etc.).
+    //
+    // Here, we don't do those checks. Instead, we know that if we're at this
+    // point in the algorithm, then our current ballot is larger than any we've
+    // ever seen. If we ever receive a message for this instance in a higher
+    // ballot (and hence change the command log entry of this instance), we
+    // stop being a leader.
+    //
+    // This subtlety and complexity is arguably a drawback of EPaxos.
     cmdLog.get(instance) match {
-      case None =>
-        logger.fatal(s"PreAccepting slow path (index $index) has no log entry.")
-
-      case Some(_: AcceptedEntry) =>
-        // If we're on the pre-accepting slow path, then we must have
-        // pre-accepted most recently. We couldn't have most recently accepted.
-        logger.fatal(s"PreAccepting slow path (index $index) was accepting.")
-
       case Some(_: CommittedEntry) =>
-        // If we're on the pre-accepting slow path, then we must have
-        // pre-accepted most recently. We couldn't have most recently accepted.
-        logger.fatal(s"PreAccepting slow path (index $index) was committed.")
-
-      case Some(PreAcceptedEntry(ballot, voteBallot, triple)) =>
-        logger.fatal(s"PreAccepting slow path (index $index) has no log entry.")
-    }
-
-    logger.check(cmdLog.contains(instance))
-    val cmdLogEntry = cmdLog(instance)
-    logger.check_eq(cmdLogEntry.ballot, preAccepting.ballot)
-    logger.check_eq(cmdLogEntry.voteBallot, preAccepting.ballot)
-    val seenCommandTriple = cmdLogEntry.commandTriple match {
-      case NotSeenCommandTriple =>
         logger.fatal(
-          s"Received PreAcceptOk for instance $instance, but the " +
-            s"corresponding command log entry is empty."
+          s"A replica is transitioning to the pre-accept phase for instance " +
+            s"$instance, but this instance has already been committed."
         )
-      case seen: SeenCommandTriple => seen
+
+      case None =>
+      // No checks to do.
+
+      case Some(noCommand: NoCommandEntry) =>
+        logger.check_le(noCommand.ballot, ballot)(BallotHelpers.Ordering)
+
+      case Some(accepted: AcceptedEntry) =>
+        logger.check_le(accepted.ballot, ballot)(BallotHelpers.Ordering)
+        logger.check_le(accepted.voteBallot, ballot)(BallotHelpers.Ordering)
+
+      case Some(preAccepted: PreAcceptedEntry) =>
+        logger.check_le(preAccepted.ballot, ballot)(BallotHelpers.Ordering)
+        logger.check_le(preAccepted.voteBallot, ballot)(BallotHelpers.Ordering)
     }
-    cmdLog(instance) = cmdLogEntry.copy(
-      commandTriple = seenCommandTriple.copy(
-        status = CommandStatus.Accepted,
-        sequenceNumber = sequenceNumber,
-        dependencies = dependencies
+
+    cmdLog(instance) = AcceptedEntry(
+      ballot = ballot,
+      voteBallot = ballot,
+      triple = CommandTriple(
+        commandOrNoop,
+        sequenceNumber = ???, // TODO(mwhittaker): Implement.
+        dependencies = ??? // TODO(mwhittaker): Implement.
       )
     )
+
+    // Send PreAccept messages to all other replicas.
+    //
+    // TODO(mwhittaker): Maybe add thriftiness. Thriftiness is less important
+    // for basic EPaxos since the fast quorum sizes are so big.
+    val preAccept = PreAccept(
+      instance = instance,
+      ballot = ballot,
+      commandOrNoop = commandOrNoop,
+      sequenceNumber = ???, // TODO(mwhittaker): Implement.
+      dependencies = ??? // TODO(mwhittaker): Implement.
+    )
+    otherReplicas.foreach(_.send(ReplicaInbound().withPreAccept(preAccept)))
+
+    // Stop existing timers.
+    stopTimers(instance)
+
+    // Update our leader state.
+    leaderStates(instance) = PreAccepting(
+      ballot = ballot,
+      commandOrNoop = commandOrNoop,
+      responses = mutable.Map[ReplicaIndex, PreAcceptOk](
+        index -> PreAcceptOk(
+          instance = instance,
+          ballot = ballot,
+          replicaIndex = index,
+          sequenceNumber = ???, // TODO(mwhittaker): Implement.
+          dependencies = ??? // TODO(mwhittaker): Implement.
+        )
+      ),
+      avoidFastPath = avoidFastPath,
+      resendPreAcceptsTimer = makeResendPreAcceptsTimer(preAccept),
+      defaultToSlowPathTimer = None
+    )
+  }
+
+  // Transition to the accept phase.
+  private def transitionToAcceptPhase(
+      instance: Instance,
+      ballot: Ballot,
+      triple: CommandTriple
+  ): Unit = {
+    // Update our command log. This part of the algorithm is a little subtle.
+    // See transitionToPreAcceptPhase for details.
+    cmdLog.get(instance) match {
+      case Some(_: CommittedEntry) =>
+        logger.fatal(
+          s"A replica is transitioning to the accept phase for instance " +
+            s"$instance, but this instance has already been committed."
+        )
+
+      case None =>
+      // No checks to do.
+
+      case Some(noCommand: NoCommandEntry) =>
+        logger.check_le(noCommand.ballot, ballot)(BallotHelpers.Ordering)
+
+      case Some(accepted: AcceptedEntry) =>
+        logger.check_le(accepted.ballot, ballot)(BallotHelpers.Ordering)
+        logger.check_le(accepted.voteBallot, ballot)(BallotHelpers.Ordering)
+
+      case Some(preAccepted: PreAcceptedEntry) =>
+        logger.check_le(preAccepted.ballot, ballot)(BallotHelpers.Ordering)
+        logger.check_le(preAccepted.voteBallot, ballot)(BallotHelpers.Ordering)
+    }
+    cmdLog(instance) =
+      AcceptedEntry(ballot = ballot, voteBallot = ballot, triple)
 
     // Send out an accept message to other replicas.
     // TODO(mwhittaker): Implement thriftiness.
     val accept = Accept(
-      command = seenCommandTriple.command,
-      sequenceNumber = sequenceNumber,
-      dependencies = dependencies.toSeq,
       instance = instance,
-      ballot = preAccepting.ballot
+      ballot = ballot,
+      commandOrNoop = triple.commandOrNoop,
+      sequenceNumber = triple.sequenceNumber,
+      dependencies = triple.dependencies.toSeq
     )
     otherReplicas.foreach(_.send(ReplicaInbound().withAccept(accept)))
 
     // Stop existing timers.
-    preAccepting.resendPreAcceptsTimer.stop()
-    preAccepting.defaultToSlowPathTimer.foreach(_.stop())
+    stopTimers(instance)
 
     // Update leader state.
     leaderStates(instance) = Accepting(
-      ballot = preAccepting.ballot,
+      ballot = ballot,
+      triple = triple,
       responses = mutable.Map[ReplicaIndex, AcceptOk](
         index -> AcceptOk(
-          command = cmdLogEntry.command,
           instance = instance,
-          ballot = preAccepting.ballot,
+          ballot = ballot,
           replicaIndex = index
         )
       ),
       resendAcceptsTimer = makeResendAcceptsTimer(accept)
+    )
+  }
+
+  // Take the slow path during the pre-accept phase.
+  private def preAcceptingSlowPath(
+      instance: Instance,
+      preAccepting: PreAccepting
+  ): Unit = {
+    // Compute the new dependencies and sequence numbers.
+    logger.check(preAccepting.responses.size >= config.slowQuorumSize)
+    val preAcceptOks: Set[PreAcceptOk] = preAccepting.responses.values.toSet
+    val sequenceNumber: Int = preAcceptOks.map(_.sequenceNumber).max
+    val dependencies: Set[Instance] =
+      preAcceptOks.map(_.dependencies.to[Set]).flatten
+    transitionToAcceptPhase(
+      instance,
+      preAccepting.ballot,
+      CommandTriple(preAccepting.commandOrNoop, sequenceNumber, dependencies)
     )
   }
 
@@ -406,7 +494,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // not.
 
     // Send Prepares to all replicas, including ourselves.
-    val prepare = Prepare(ballot = ballot, instance = instance)
+    val prepare = Prepare(instance = instance, ballot = ballot)
     replicas.foreach(_.send(ReplicaInbound().withPrepare(prepare)))
 
     // Update our leader state.
@@ -507,63 +595,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // TODO(mwhittaker): This method has to add 1 to the maximum sequence number.
-  //  private def findAttributes(
-  //      command: Command,
-  //      commandInstance: Instance
-  //  ): (mutable.Set[Instance], Int) = {
-  //    var deps: mutable.Set[Instance] = mutable.Set()
-  //    var maxSeqNum: Int = 0
-  //
-  //    val commandString = command.command.toStringUtf8
-  //    val tokens = commandString.split(" ")
-  //
-  //    val action = tokens(0)
-  //    val key = tokens(1)
-  //
-  //    val tupleSet: (mutable.Set[Instance], mutable.Set[Instance]) =
-  //      conflictsMap.getOrElse(key,
-  //                             (mutable.Set[Instance](), mutable.Set[Instance]()))
-  //
-  //    action match {
-  //      case "GET" => deps = deps.union(tupleSet._2)
-  //      case "SET" => deps = deps.union(tupleSet._1).union(tupleSet._2)
-  //    }
-  //
-  //    if (deps.isEmpty) {
-  //      return (deps, 0)
-  //    }
-  //
-  //    // TODO(mwhittaker): This doesn't compute the maximum sequence number, I
-  //    // don't think.
-  //    val state = cmdLog.get(deps.head)
-  //    if (state.nonEmpty) {
-  //      maxSeqNum = Math.max(maxSeqNum, state.get.sequenceNumber)
-  //    }
-  //    deps.remove(commandInstance)
-  //    (deps, maxSeqNum)
-  //  }
-  //
-  //  private def updateConflictMap(command: Command, instance: Instance): Unit = {
-  //    val commandString = command.command.toStringUtf8
-  //    val tokens = commandString.split(" ")
-  //
-  //    val action = tokens(0)
-  //    val key = tokens(1)
-  //
-  //    val tupleSet: (mutable.Set[Instance], mutable.Set[Instance]) =
-  //      conflictsMap.getOrElse(key,
-  //                             (mutable.Set[Instance](), mutable.Set[Instance]()))
-  //
-  //    action match {
-  //      case "GET" => tupleSet._1.add(instance)
-  //      case "SET" => tupleSet._2.add(instance)
-  //    }
-  //
-  //    conflictsMap.put(key, tupleSet)
-  //    logger.info("Tuple set: " + tupleSet.toString())
-  //  }
-
   private def handleClientRequest(
       src: Transport#Address,
       request: ClientRequest
@@ -573,61 +604,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     val instance: Instance = Instance(index, nextAvailableInstance)
     nextAvailableInstance += 1
-
-    // Update the command log.
-    // TODO(mwhittaker): Compute sequence number and dependencies.
-    val command = CommandOrNoop().withCommand(request.command)
-    cmdLog.put(
-      instance,
-      PreAcceptedEntry(
-        ballot = defaultBallot,
-        voteBallot = defaultBallot,
-        triple = CommandTriple(
-          commandOrNoop = command,
-          sequenceNumber = ???, // TODO(mwhittaker): Implement.
-          dependencies = ??? // TODO(mwhittaker): Implement.
-        )
-      )
-    )
-
-    // Send PreAccept messages to all other replicas.
-    //
-    // TODO(mwhittaker): Maybe add thriftiness. Thriftiness is less important
-    // for basic EPaxos since the fast quorum sizes are so big.
-    val preAccept = PreAccept(
-      instance = instance,
-      ballot = defaultBallot,
-      commandOrNoop = command,
-      sequenceNumber = ???, // TODO(mwhittaker): Implement.
-      dependencies = ??? // TODO(mwhittaker): Implement.  commandInstance =
-    )
-    otherReplicas.foreach(_.send(ReplicaInbound().withPreAccept(preAccept)))
-
-    // Update our leader state.
-    logger.check(!leaderStates.contains(instance))
-    leaderStates(instance) = PreAccepting(
-      ballot = defaultBallot,
-      commandOrNoop = command,
-      responses = mutable.Map[ReplicaIndex, PreAcceptOk](
-        index -> PreAcceptOk(
-          instance = instance,
-          ballot = defaultBallot,
-          replicaIndex = index,
-          sequenceNumber = ???, // TODO(mwhittaker): Implement.
-          dependencies = ??? // TODO(mwhittaker): Implement.
-        )
-      ),
-      avoidFastPath = false,
-      resendPreAcceptsTimer = makeResendPreAcceptsTimer(preAccept),
-      defaultToSlowPathTimer = None
-    )
+    transitionToPreAcceptPhase(instance,
+                               defaultBallot,
+                               CommandOrNoop().withCommand(request.command),
+                               avoidFastPath = false)
   }
 
   private def handlePreAccept(
       src: Transport#Address,
       preAccept: PreAccept
   ): Unit = {
-    // Make sure we should be processing this message at all.
+    // Make sure we should be processing this message at all. For example,
+    // sometimes we nack it, sometimes we ignore it, sometimes we re-send
+    // replies that we previously sent because of it.
     val replica = chan[Replica[Transport]](src, Replica.serializer)
     val nack =
       ReplicaInbound().withNack(Nack(preAccept.instance, largestBallot))
@@ -639,7 +628,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Some(NoCommandEntry(ballot)) =>
         // Don't process messages from old ballots. Note that we want to have
         // `<` here instead of `<=` because we may have previously received a
-        // Prepare in this ballot.
+        // Prepare in this ballot. Another way to think of it is that
+        // pre-accepting is like phase 2 of Paxos, whereas preparing is like
+        // phase 1. In phase 2, we don't reject a ballot if it is equal to our
+        // ballot, only if it is smaller.
         if (preAccept.ballot < ballot) {
           replica.send(nack)
           return
@@ -657,13 +649,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         if (preAccept.ballot == voteBallot) {
           replica.send(
             ReplicaInbound().withPreAcceptOk(
-              PreAcceptOk(
-                instance = preAccept.instance,
-                ballot = preAccept.ballot,
-                replicaIndex = index,
-                sequenceNumber = triple.sequenceNumber,
-                dependencies = triple.dependencies.toSeq
-              )
+              PreAcceptOk(instance = preAccept.instance,
+                          ballot = preAccept.ballot,
+                          replicaIndex = index,
+                          sequenceNumber = triple.sequenceNumber,
+                          dependencies = triple.dependencies.toSeq)
             )
           )
           return
@@ -677,23 +667,31 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // If we've already accepted in this ballot, we shouldn't be
-        // PreAccepting in it again.
-        if (preAccept.ballot == ballot) {
+        // PreAccepting it again.
+        if (preAccept.ballot == voteBallot) {
           return
         }
 
       case Some(CommittedEntry(triple)) =>
+        // The command has already been committed. No need to run the protocol.
         replica.send(
           ReplicaInbound().withCommit(
-            Commit(
-              instance = preAccept.instance,
-              commandOrNoop = triple.commandOrNoop,
-              sequenceNumber = triple.sequenceNumber,
-              dependencies = triple.dependencies.toSeq
-            )
+            Commit(instance = preAccept.instance,
+                   commandOrNoop = triple.commandOrNoop,
+                   sequenceNumber = triple.sequenceNumber,
+                   dependencies = triple.dependencies.toSeq)
           )
         )
         return
+    }
+
+    // If we're currently leading this instance and the ballot we just received
+    // is larger than the ballot we're using, then we should stop leading the
+    // instance and yield to the replica with the higher ballot.
+    if (leaderStates.contains(preAccept.instance) &&
+        preAccept.ballot > leaderBallot(leaderStates(preAccept.instance))) {
+      stopTimers(preAccept.instance)
+      leaderStates -= preAccept.instance
     }
 
     // Update largestBallot.
@@ -769,6 +767,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               s"${preAcceptOk.instance} but is currently leading ballot " +
               s"$ballot."
           )
+          // If preAcceptOk.ballot were larger, then we would have received a
+          // Nack instead of a PreAcceptOk.
+          logger.check_lt(preAcceptOk.ballot, ballot)(BallotHelpers.Ordering)
           return
         }
 
@@ -843,70 +844,87 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleAccept(src: Transport#Address, accept: Accept): Unit = {
-    // Nack the Accept if it's from an older ballot.
+    // Make sure we should be processing this message at all.
+    val replica = chan[Replica[Transport]](src, Replica.serializer)
+    val nack = ReplicaInbound().withNack(Nack(accept.instance, largestBallot))
     cmdLog.get(accept.instance) match {
-      case Some(entry) =>
-        if (accept.ballot < entry.ballot) {
-          logger.warn(
-            s"Replica $index received an Accept in ballot ${accept.ballot} " +
-              s"of instance ${accept.instance} but already processed a " +
-              s"message in ballot ${entry.ballot}."
-          )
-          val replica = chan[Replica[Transport]](src, Replica.serializer)
+      case None =>
+      // We haven't seen anything for this instance yet, so we're good to
+      // process the message.
+
+      case Some(NoCommandEntry(ballot)) =>
+        // Don't process messages from old ballots.
+        if (accept.ballot < ballot) {
+          replica.send(nack)
+          return
+        }
+
+      case Some(PreAcceptedEntry(ballot, voteBallot, triple)) =>
+        // Don't process messages from old ballots.
+        if (accept.ballot < ballot) {
+          replica.send(nack)
+          return
+        }
+
+      case Some(AcceptedEntry(ballot, voteBallot, _triple)) =>
+        // Don't process messages from old ballots.
+        if (accept.ballot < ballot) {
+          replica.send(nack)
+          return
+        }
+
+        // Ignore an Accept if we've already responded, but re-send our
+        // response for liveness.
+        if (accept.ballot == voteBallot) {
           replica.send(
-            ReplicaInbound().withNack(Nack(accept.instance, largestBallot))
+            ReplicaInbound().withAcceptOk(
+              AcceptOk(instance = accept.instance,
+                       ballot = accept.ballot,
+                       replicaIndex = index)
+            )
           )
           return
         }
 
-      case None =>
-      // We haven't seen anything for this instance before, so we're good.
+      case Some(CommittedEntry(triple)) =>
+        // The command has already been committed. No need to run the protocol.
+        replica.send(
+          ReplicaInbound().withCommit(
+            Commit(instance = accept.instance,
+                   commandOrNoop = triple.commandOrNoop,
+                   sequenceNumber = triple.sequenceNumber,
+                   dependencies = triple.dependencies.toSeq)
+          )
+        )
+        return
     }
 
-    // Ignore the Accept if we've already voted.
-    cmdLog.get(accept.instance) match {
-      case Some(CmdLogEntry(ballot, voteBallot, seen: SeenCommandTriple)) =>
-        if (accept.ballot <= voteBallot &&
-            seen.status != CommandStatus.PreAccepted) {
-          logger.warn(
-            s"Replica $index received an Accept in ballot ${accept.ballot} " +
-              s"of instance ${accept.instance} but already voted in ballot " +
-              s"${voteBallot}."
-          )
-          return
-        }
-
-      case Some(CmdLogEntry(_ballot, _voteBallot, NotSeenCommandTriple)) =>
-      // We haven't voted yet.
-
-      case None =>
-      // We haven't seen anything for this instance before, so we're good.
+    // If we're currently leading this instance and the ballot we just received
+    // is larger than the ballot we're using, then we should stop leading the
+    // instance and yield to the replica with the higher ballot.
+    if (leaderStates.contains(accept.instance) &&
+        accept.ballot > leaderBallot(leaderStates(accept.instance))) {
+      stopTimers(accept.instance)
+      leaderStates -= accept.instance
     }
 
     // Update largestBallot.
     largestBallot = BallotHelpers.max(largestBallot, accept.ballot)
 
     // Update our command log.
-    cmdLog(accept.instance) = CmdLogEntry(
+    cmdLog(accept.instance) = AcceptedEntry(
       ballot = accept.ballot,
       voteBallot = accept.ballot,
-      commandTriple = SeenCommandTriple(
-        status = CommandStatus.Accepted,
-        command = accept.command,
-        sequenceNumber = accept.sequenceNumber,
-        dependencies = accept.dependencies.toSet
-      )
+      triple = CommandTriple(commandOrNoop = accept.commandOrNoop,
+                             sequenceNumber = accept.sequenceNumber,
+                             dependencies = accept.dependencies.toSet)
     )
 
-    val leader = chan[Replica[Transport]](src, Replica.serializer)
-    leader.send(
+    replica.send(
       ReplicaInbound().withAcceptOk(
-        AcceptOk(
-          command = accept.command,
-          instance = accept.instance,
-          ballot = accept.ballot,
-          replicaIndex = index
-        )
+        AcceptOk(instance = accept.instance,
+                 ballot = accept.ballot,
+                 replicaIndex = index)
       )
     )
   }
@@ -934,12 +952,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             s"but is preparing."
         )
 
-      case Some(accepting @ Accepting(ballot, responses, resendAcceptsTimer)) =>
+      case Some(
+          accepting @ Accepting(ballot, triple, responses, resendAcceptsTimer)
+          ) =>
         if (acceptOk.ballot != ballot) {
           logger.warn(
             s"Replica received an AcceptOk in ballot ${acceptOk.instance} " +
               s"but is currently leading ballot $ballot."
           )
+          // If acceptOk.ballot were larger, then we would have received a
+          // Nack instead of an AcceptOk.
+          logger.check_lt(acceptOk.ballot, ballot)(BallotHelpers.Ordering)
           return
         }
 
@@ -950,74 +973,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
-        // Update the command log.
-        logger.check(cmdLog.contains(acceptOk.instance))
-        val cmdLogEntry = cmdLog(acceptOk.instance)
-        logger.check_eq(cmdLogEntry.ballot, ballot)
-        logger.check_eq(cmdLogEntry.voteBallot, ballot)
-        val seenCommandTriple = cmdLogEntry.commandTriple match {
-          case NotSeenCommandTriple =>
-            logger.fatal(
-              s"Received AcceptOk for instance " +
-                s"${acceptOk.instance}, but the corresponding command " +
-                s"log entry is empty."
-            )
-          case triple: SeenCommandTriple => triple
-        }
-        cmdLog(acceptOk.instance) = cmdLogEntry.copy(
-          commandTriple = seenCommandTriple.copy(
-            status = CommandStatus.Committed
-          )
-        )
-
-        // Notify other replicas.
-        for (replica <- otherReplicas) {
-          replica.send(
-            ReplicaInbound().withCommit(
-              Commit(
-                command = seenCommandTriple.command,
-                sequenceNumber = seenCommandTriple.sequenceNumber,
-                dependencies = seenCommandTriple.dependencies.toSeq,
-                instance = acceptOk.instance,
-                ballot = ballot
-              )
-            )
-          )
-        }
-
-        // Stop existing timers and update the leader state.
-        resendAcceptsTimer.stop()
-        leaderStates -= acceptOk.instance
-
-      // TODO(mwhittaker): Make the command eligible for execution.
+        // We have a quorum of replies. Commit the triple.
+        commit(acceptOk.instance, triple, informOthers = true)
     }
   }
 
-  private def handleCommit(src: Transport#Address, commit: Commit): Unit = {
-    // Update largestBallot.
-    largestBallot = BallotHelpers.max(largestBallot, commit.ballot)
-
-    // Update our command log entry.
-    cmdLog(commit.instance) = CmdLogEntry(
-      // TODO(mwhittaker): I believe that once something is committed, the
-      // ballots are pretty much irrelevant. This replica will no longer vote
-      // for this instance, and when asked about this instance, it will always
-      // report that the value has been chosen. Double check that this is true
-      // and think about what values to set here.
-      ballot = commit.ballot,
-      voteBallot = commit.ballot,
-      commandTriple = SeenCommandTriple(
-        status = CommandStatus.Committed,
-        command = commit.command,
-        sequenceNumber = commit.sequenceNumber,
-        dependencies = commit.dependencies.toSet
-      )
+  private def handleCommit(src: Transport#Address, c: Commit): Unit = {
+    commit(
+      c.instance,
+      CommandTriple(c.commandOrNoop, c.sequenceNumber, c.dependencies.toSet),
+      informOthers = false
     )
-
-    // TODO(mwhittaker): If we're recovering this instance, we can stop doing
-    // that as well.
-
-    // TODO(mwhittaker): Make command eligible for execution.
   }
 
   private def handleNack(src: Transport#Address, nack: Nack): Unit = {
@@ -1032,30 +998,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       prepare: Prepare
   ): Unit = {
-    // Nack the Prepare if it's not a newer ballot.
-    val replica = chan[Replica[Transport]](src, Replica.serializer)
-    cmdLog.get(prepare.instance) match {
-      case Some(entry) =>
-        if (prepare.ballot <= entry.ballot) {
-          logger.warn(
-            s"Replica $index received an Accept in ballot ${prepare.ballot} " +
-              s"of instance ${prepare.instance} but already processed a " +
-              s"message in ballot ${entry.ballot}."
-          )
-          replica.send(
-            ReplicaInbound().withNack(Nack(prepare.instance, largestBallot))
-          )
-          return
-        }
-
-      case None =>
-      // We haven't seen anything for this instance before, so we're good.
-    }
-
     // Update largestBallot.
     largestBallot = BallotHelpers.max(largestBallot, prepare.ballot)
 
-    // Send back a PrepareOk and Update our ballot.
+    // If we're currently leading this instance and the ballot we just received
+    // is larger than the ballot we're using, then we should stop leading the
+    // instance and yield to the replica with the higher ballot.
+    if (leaderStates.contains(prepare.instance) &&
+        prepare.ballot > leaderBallot(leaderStates(prepare.instance))) {
+      stopTimers(prepare.instance)
+      leaderStates -= prepare.instance
+    }
+
+    val replica = chan[Replica[Transport]](src, Replica.serializer)
+    val nack = ReplicaInbound().withNack(Nack(prepare.instance, largestBallot))
     cmdLog.get(prepare.instance) match {
       case None =>
         replica.send(
@@ -1065,22 +1021,24 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               instance = prepare.instance,
               replicaIndex = index,
               voteBallot = Replica.nullBallot,
-              command = None,
+              status = CommandStatus.NotSeen,
+              commandOrNoop = None,
               sequenceNumber = None,
-              dependencies = Seq(),
-              status = None
+              dependencies = Seq()
             )
           )
         )
+        cmdLog(prepare.instance) = NoCommandEntry(prepare.ballot)
 
-        cmdLog(prepare.instance) = CmdLogEntry(
-          ballot = prepare.ballot,
-          voteBallot = Ballot(-1, index),
-          NotSeenCommandTriple
-        )
-
-      case Some(CmdLogEntry(ballot, voteBallot, NotSeenCommandTriple)) =>
-        logger.check_eq(voteBallot, Ballot(-1, index))
+      case Some(NoCommandEntry(ballot)) =>
+        // Don't process messages from old ballots. Note that we use `<`
+        // instead of `<=` so that a replica can re-send a reply back to the
+        // leader. If we used `<=`, then leaders would have to time out and
+        // increment their ballots.
+        if (prepare.ballot < ballot) {
+          replica.send(nack)
+          return
+        }
 
         replica.send(
           ReplicaInbound().withPrepareOk(
@@ -1089,21 +1047,22 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               instance = prepare.instance,
               replicaIndex = index,
               voteBallot = Replica.nullBallot,
-              command = None,
+              status = CommandStatus.NotSeen,
+              commandOrNoop = None,
               sequenceNumber = None,
-              dependencies = Seq(),
-              status = None
+              dependencies = Seq()
             )
           )
         )
+        cmdLog(prepare.instance) = NoCommandEntry(prepare.ballot)
 
-        cmdLog(prepare.instance) = CmdLogEntry(
-          ballot = prepare.ballot,
-          voteBallot = voteBallot,
-          NotSeenCommandTriple
-        )
+      case Some(entry @ PreAcceptedEntry(ballot, voteBallot, triple)) =>
+        // Don't process messages from old ballots.
+        if (prepare.ballot < ballot) {
+          replica.send(nack)
+          return
+        }
 
-      case Some(CmdLogEntry(ballot, voteBallot, triple: SeenCommandTriple)) =>
         replica.send(
           ReplicaInbound().withPrepareOk(
             PrepareOk(
@@ -1111,18 +1070,47 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               instance = prepare.instance,
               replicaIndex = index,
               voteBallot = voteBallot,
-              command = Some(triple.command),
+              status = CommandStatus.PreAccepted,
+              commandOrNoop = Some(triple.commandOrNoop),
               sequenceNumber = Some(triple.sequenceNumber),
-              dependencies = triple.dependencies.toSeq,
-              status = Some(triple.status)
+              dependencies = triple.dependencies.toSeq
             )
           )
         )
+        cmdLog(prepare.instance) = entry.copy(ballot = prepare.ballot)
 
-        cmdLog(prepare.instance) = CmdLogEntry(
-          ballot = prepare.ballot,
-          voteBallot = voteBallot,
-          commandTriple = triple
+      case Some(entry @ AcceptedEntry(ballot, voteBallot, triple)) =>
+        // Don't process messages from old ballots.
+        if (prepare.ballot < ballot) {
+          replica.send(nack)
+          return
+        }
+
+        replica.send(
+          ReplicaInbound().withPrepareOk(
+            PrepareOk(
+              ballot = prepare.ballot,
+              instance = prepare.instance,
+              replicaIndex = index,
+              voteBallot = voteBallot,
+              status = CommandStatus.Accepted,
+              commandOrNoop = Some(triple.commandOrNoop),
+              sequenceNumber = Some(triple.sequenceNumber),
+              dependencies = triple.dependencies.toSeq
+            )
+          )
+        )
+        cmdLog(prepare.instance) = entry.copy(ballot = prepare.ballot)
+
+      case Some(CommittedEntry(triple)) =>
+        // The command has already been committed. No need to run the protocol.
+        replica.send(
+          ReplicaInbound().withCommit(
+            Commit(instance = prepare.instance,
+                   commandOrNoop = triple.commandOrNoop,
+                   sequenceNumber = triple.sequenceNumber,
+                   dependencies = triple.dependencies.toSeq)
+          )
         )
     }
   }
@@ -1134,7 +1122,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     leaderStates.get(prepareOk.instance) match {
       case None =>
         logger.warn(
-          s"Replica received a PreareOk in instance ${prepareOk.instance} " +
+          s"Replica received a PrepareOk in instance ${prepareOk.instance} " +
             s"but is not leading the instance."
         )
 
@@ -1156,344 +1144,79 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             s"Replica received a preAcceptOk in ballot ${prepareOk.instance} " +
               s"but is currently leading ballot $ballot."
           )
+          // If prepareOk.ballot were larger, then we would have received a
+          // Nack instead of a PrepareOk.
+          logger.check_lt(prepareOk.ballot, ballot)(BallotHelpers.Ordering)
           return
         }
 
         responses(prepareOk.replicaIndex) = prepareOk
 
+        // If we don't have a quorum of responses yet, we have to wait to get one.
         if (responses.size < config.slowQuorumSize) {
-          // We don't have enough responses yet.
           return
         }
 
+        // Look only at the ballots from the highest ballot, just like in
+        // Paxos.
         val maxBallot =
-          responses.values.map(_.voteBallot).max(BallotHelpers.BallotOrdering)
+          responses.values.map(_.voteBallot).max(BallotHelpers.Ordering)
         val prepareOks = responses.values.filter(_.voteBallot == maxBallot)
 
-        if (prepareOks.exists(_.status == Some(CommandStatus.Committed))) {
+        // If some response was accepted, then we go with it. We are guaranteed
+        // that there is only one such response. This is like getting a
+        // response in a classic round during Fast Paxos.
+        prepareOks.find(_.status == Some(CommandStatus.Accepted)) match {
+          case Some(accepted) =>
+            transitionToAcceptPhase(prepareOk.instance,
+                                    ballot,
+                                    CommandTriple(accepted.commandOrNoop.get,
+                                                  accepted.sequenceNumber.get,
+                                                  accepted.dependencies.toSet))
+            return
+
+          case None =>
+        }
+
+        // If we have f matching responses in the fast round, excluding the
+        // leader, then we go with it. Clearly, there can only be one response
+        // with f matches out of f+1 responses. This is like checking if any
+        // response has a majority of the quorum in Fast Paxos.
+        val preAcceptsInDefaultBallotNotFromLeader: Seq[CommandTriple] =
+          prepareOks
+            .filter(_.status == CommandStatus.PreAccepted)
+            .filter(p => p.ballot == Ballot(0, p.instance.replicaIndex))
+            .filter(_.replicaIndex != index)
+            .to[Seq]
+            .map(
+              p =>
+                CommandTriple(p.commandOrNoop.get,
+                              p.sequenceNumber.get,
+                              p.dependencies.toSet)
+            )
+        val candidates =
+          Util.popularItems(preAcceptsInDefaultBallotNotFromLeader, config.f)
+        if (candidates.size > 0) {
+          logger.check_eq(candidates.size, 1)
+          transitionToAcceptPhase(prepareOk.instance, ballot, candidates.head)
           return
         }
 
-        if (prepareOks.exists(_.status == Some(CommandStatus.Accepted))) {
-          return
+        // If no command had f matching responses, then we nothing was chosen
+        // on the fast path. Now, we just start the protocol over with a
+        // command (if there is one) or with a noop if there isn't.
+        prepareOks.find(_.status == CommandStatus.PreAccepted) match {
+          case Some(preAccepted) =>
+            transitionToPreAcceptPhase(prepareOk.instance,
+                                       ballot,
+                                       preAccepted.commandOrNoop.get,
+                                       avoidFastPath = true)
+          case None =>
+            transitionToPreAcceptPhase(prepareOk.instance,
+                                       ballot,
+                                       CommandOrNoop().withNoop(Noop()),
+                                       avoidFastPath = true)
         }
-
-    }
-
-    val prepareValues: mutable.Buffer[PrepareOk] =
-      prepareResponses.getOrElse(value.instance, mutable.Buffer())
-    prepareValues.append(value)
-
-    if (prepareValues.size >= config.slowQuorumSize) {
-      val maxBallot: Int =
-        prepareValues.maxBy(_.ballot.ordering).ballot.ordering
-      val R: mutable.Buffer[PrepareOk] =
-        prepareValues.filter(_.ballot.ordering == maxBallot)
-      val sameMessage: (Boolean, PrepareOk, Boolean, PrepareOk) =
-        checkPrepareOkSame(config.n / 2, value.instance.replicaIndex, R)
-      if (R.exists(_.status.equals(CommandStatus.Committed))) {
-        val message: PrepareOk =
-          R.filter(_.status.eq(CommandStatus.Committed)).head
-        runCommitPhase(message.command,
-                       message.sequenceNumber,
-                       message.dependencies,
-                       message.instance)
-      } else if (R.exists(_.status.equals(CommandStatus.Accepted))) {
-        val message: PrepareOk =
-          R.filter(_.status.equals(CommandStatus.Accepted)).head
-        startPaxosAcceptPhase(message.command,
-                              message.sequenceNumber,
-                              mutable.Set(message.dependencies: _*),
-                              message.instance)
-      } else if (sameMessage._1) {
-        startPaxosAcceptPhase(sameMessage._2.command,
-                              sameMessage._2.sequenceNumber,
-                              mutable.Set(sameMessage._2.dependencies: _*),
-                              sameMessage._2.instance)
-      } else if (sameMessage._3) {
-        startPhaseOne(sameMessage._4.instance,
-                      sameMessage._4.command,
-                      sameMessage._4)
-      } else {
-        startPhaseOne(sameMessage._4.instance,
-                      Command(null, -1, ByteString.copyFromUtf8("Noop")),
-                      sameMessage._4)
-      }
     }
   }
-
-  private def startPhaseOne(
-      instance: Instance,
-      newCommand: Command,
-      value: PrepareOk
-  ): Unit = {
-    val attributes = findAttributes(newCommand, value.instance)
-    val seqCommand: Int = attributes._2
-    val seqDeps: mutable.Set[Instance] = attributes._1
-    cmdLog.put(
-      instance,
-      CmdLogEntry(newCommand,
-                  seqCommand,
-                  seqDeps,
-                  CommandStatus.PreAccepted,
-                  ???)
-    )
-    // ballotMapping.put(instance, value.ballot)
-
-    var count: Int = 0
-    var setIndex: Int = 0
-
-    while (setIndex < replicas.size && count != config.fastQuorumSize - 1) {
-      if (setIndex != index) {
-        replicas(setIndex).send(
-          ReplicaInbound().withPreAccept(
-            PreAccept(
-              command = newCommand,
-              sequenceNumber = seqCommand,
-              dependencies = seqDeps.toSeq,
-              commandInstance = instance,
-              avoid = true,
-              ballot = ??? ///ballotMapping.getOrElse(instance, value.ballot)
-            )
-          )
-        )
-        count += 1
-      }
-      setIndex += 1
-    }
-
-    val buffer =
-      preacceptResponses.getOrElse(instance, mutable.Buffer[PreAcceptOk]())
-    val message = PreAcceptOk(
-      command = value.command,
-      sequenceNumber = seqCommand,
-      dependencies = seqDeps.toSeq,
-      commandInstance = instance,
-      avoid = true,
-      ballot = ???, // ballotMapping.getOrElse(instance, largestBallot),
-      replicaIndex = index
-    )
-    buffer.append(message)
-    preacceptResponses.put(instance, buffer)
-  }
-
-  private def checkSameSequenceNumbers(
-      preAcceptResponses: mutable.Buffer[PreAcceptOk],
-      numSameNeeded: Int
-  ): (Boolean, Option[Int]) = {
-    val sequenceNumCount: mutable.Map[Int, Int] = mutable.Map()
-    for (preacceptOk <- preAcceptResponses) {
-      sequenceNumCount.put(
-        preacceptOk.sequenceNumber,
-        sequenceNumCount.getOrElse(preacceptOk.sequenceNumber, 0) + 1
-      )
-    }
-
-    for (key <- sequenceNumCount.keys) {
-      if (sequenceNumCount.getOrElse(key, 0) >= numSameNeeded) {
-        return (true, Some(key))
-      }
-    }
-
-    (false, None)
-  }
-
-  private def checkSameDependencies(
-      preAcceptResponses: mutable.Buffer[PreAcceptOk],
-      numSameNeeded: Int
-  ): (Boolean, Option[Seq[Instance]]) = {
-    val dependenciesNumCount: mutable.Map[Seq[Instance], Int] = mutable.Map()
-    for (preacceptOk <- preAcceptResponses) {
-      dependenciesNumCount.put(
-        preacceptOk.dependencies,
-        dependenciesNumCount.getOrElse(preacceptOk.dependencies, 0) + 1
-      )
-    }
-
-    for (key <- dependenciesNumCount.keys) {
-      if (dependenciesNumCount.getOrElse(key, 0) >= numSameNeeded) {
-        return (true, Some(key))
-      }
-    }
-
-    (false, None)
-  }
-
-  private def startPaxosAcceptPhase(
-      command: Command,
-      sequenceNum: Int,
-      deps: mutable.Set[Instance],
-      commandInstance: Instance
-  ): Unit = {
-    cmdLog.put(
-      commandInstance,
-      CmdLogEntry(command, sequenceNum, deps, CommandStatus.Accepted, ???)
-    )
-    var count: Int = 0
-    var setIndex: Int = 0
-
-    while (setIndex < replicas.size && count != config.slowQuorumSize - 1) {
-      if (setIndex != index) {
-        replicas(setIndex).send(
-          ReplicaInbound().withAccept(
-            Accept(
-              command,
-              sequenceNum,
-              deps.toSeq,
-              commandInstance,
-              ??? // ballotMapping.getOrElse(commandInstance, defaultBallot)
-            )
-          )
-        )
-        count += 1
-      }
-      setIndex += 1
-    }
-
-    // Add leader accept ok response
-    val buffer =
-      acceptResponses.getOrElse(commandInstance, mutable.Buffer[AcceptOk]())
-    val message = AcceptOk(
-      command = command,
-      commandInstance = commandInstance,
-      ballot = ???, //ballotMapping.getOrElse(commandInstance, defaultBallot),
-      replicaIndex = index
-    )
-    buffer.append(message)
-    acceptResponses.put(commandInstance, buffer)
-  }
-
-  // TODO(mwhittaker): Is this correct? Can we remove cmdLog this eagerly?
-  private def removeInstance(command: Command, instance: Instance): Unit = {
-    val commandString = command.command.toStringUtf8
-    val tokens = commandString.split(" ")
-
-    val action = tokens(0)
-    val key = tokens(1)
-
-    val tupleSet: (mutable.Set[Instance], mutable.Set[Instance]) =
-      conflictsMap.getOrElse(key,
-                             (mutable.Set[Instance](), mutable.Set[Instance]()))
-
-    action match {
-      case "GET" => tupleSet._1.remove(instance)
-      case "SET" => tupleSet._2.remove(instance)
-    }
-
-    conflictsMap.put(key, tupleSet)
-  }
-
-  private def runCommitPhase(
-      command: Command,
-      seqNum: Int,
-      deps: Seq[Instance],
-      instance: Instance
-  ): Unit = {
-    cmdLog.put(
-      instance,
-      CmdLogEntry(command,
-                  seqNum,
-                  mutable.Set(deps: _*),
-                  CommandStatus.Committed,
-                  ???)
-    )
-
-    // TODO(mwhittaker): I think this is adding committed cmdLog before the
-    // command's dependencies are necessarily committed.
-    recursiveAdd(instance)
-    graph.executeDependencyGraph(stateMachine, executedCommands)
-
-    for (inst <- removeCommands) {
-      val st = cmdLog.get(inst)
-      if (st.nonEmpty) {
-        removeInstance(st.get.command, inst)
-      }
-      cmdLog.remove(inst)
-    }
-    removeCommands.clear()
-
-    for (replica <- replicas) {
-      replica.send(
-        ReplicaInbound().withCommit(
-          Commit(
-            command,
-            seqNum,
-            deps,
-            instance,
-            ??? //ballotMapping.getOrElse(instance, defaultBallot)
-          )
-        )
-      )
-    }
-
-  }
-
-  private def recursiveAdd(instance: Instance): Unit = {
-    val instanceQueue = mutable.Queue[Instance]()
-    instanceQueue.enqueue(instance)
-
-    while (instanceQueue.nonEmpty) {
-      val headInstance = instanceQueue.dequeue()
-      val headState = cmdLog.get(headInstance)
-
-      if (headState.nonEmpty && headState.get.status == CommandStatus.Committed) {
-        graph.directedGraph.addVertex(
-          (headState.get.command, headState.get.sequenceNumber)
-        )
-        removeCommands.add(headInstance)
-
-        for (dep <- headState.get.dependencies) {
-          val depState = cmdLog.get(dep)
-          if (depState.nonEmpty && depState.get.status == CommandStatus.Committed) {
-            removeCommands.add(dep)
-            graph.directedGraph.addVertex(
-              (depState.get.command, depState.get.sequenceNumber)
-            )
-
-            if (!(headState.get.command.equals(depState.get.command) && headState.get.sequenceNumber
-                  .equals(depState.get.sequenceNumber))) {
-              graph.directedGraph.addEdge(
-                (headState.get.command, headState.get.sequenceNumber),
-                (depState.get.command, depState.get.sequenceNumber)
-              )
-            }
-
-            instanceQueue.enqueue(dep)
-          }
-        }
-      }
-    }
-  }
-
-  private def checkPrepareOkSame(
-      neededSize: Int,
-      replicaIndex: Int,
-      responses: mutable.Buffer[PrepareOk]
-  ): (Boolean, PrepareOk, Boolean, PrepareOk) = {
-    val responseMap: mutable.Map[PrepareOk, Int] = mutable.Map()
-    val responseMapExclude: mutable.Map[PrepareOk, Int] = mutable.Map()
-
-    for (response <- responses) {
-      responseMap.put(response, responseMap.getOrElse(response, 0) + 1)
-      if (response.instance.replicaIndex != replicaIndex) {
-        responseMapExclude.put(response,
-                               responseMapExclude.getOrElse(response, 0) + 1)
-      }
-    }
-
-    for (response <- responseMapExclude.keys) {
-      if (responseMapExclude.getOrElse(response, 0) >= neededSize) {
-        return (true, response, true, response)
-      }
-    }
-
-    for (response <- responseMap.keys) {
-      if (responseMap.getOrElse(response, 0) >= 1) {
-        return (false, null, true, response)
-      }
-    }
-
-    (false, null, false, null)
-  }
-
 }

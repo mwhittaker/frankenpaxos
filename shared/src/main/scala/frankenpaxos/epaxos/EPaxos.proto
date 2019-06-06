@@ -6,7 +6,7 @@
 //      |                  | <------------------ |        PreAcceptOk
 //      |                  | ------------------> |        Accept
 //      |                  | <------------------ |        AcceptOk
-//      |                  | ------------------> |        Commit
+//      |                  | <-----------------> |        Commit
 //      | <--------------- |                     |        ClientReply
 //      |                  | ------------------> |        Prepare
 //      |                  | <------------------ |        PrepareOk
@@ -73,7 +73,6 @@ enum CommandStatus {
   NotSeen = 0;
   PreAccepted = 1;
   Accepted = 2;
-  Committed = 3;
 }
 
 // Protocol messages. //////////////////////////////////////////////////////////

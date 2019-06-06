@@ -65,7 +65,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   case class PendingCommand(
       id: Int,
       command: Array[Byte],
-      result: Promise[Instance]
+      // TODO(mwhittaker): Change this to a Promise[Array[Byte]]
+      result: Promise[Unit]
   )
 
   @JSExport
@@ -133,28 +134,28 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     pendingCommand match {
       case Some(PendingCommand(id, command, promise)) =>
-        if (requestReply.command.clientId == id) {
+        if (requestReply.clientId == id) {
           pendingCommand = None
           reproposeTimer.stop()
-          promise.success(requestReply.commandInstance)
+          promise.success(())
         } else {
           logger.warn(
             s"Received a reply for unpending command with id " +
-              s"'${requestReply.command.clientId}'."
+              s"'${requestReply.clientId}'."
           )
         }
 
       case None =>
         logger.warn(
           s"Received a reply for unpending command with id " +
-            s"'${requestReply.command.clientId}'."
+            s"'${requestReply.clientId}'."
         )
     }
   }
 
   private def _propose(
       command: Array[Byte],
-      promise: Promise[Instance]
+      promise: Promise[Unit]
   ): Unit = {
     pendingCommand match {
       case Some(_) =>
@@ -173,14 +174,14 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Interface /////////////////////////////////////////////////////////////////
-  def propose(command: Array[Byte]): Future[Instance] = {
-    val promise = Promise[Instance]()
+  def propose(command: Array[Byte]): Future[Unit] = {
+    val promise = Promise[Unit]()
     transport.executionContext.execute(() => _propose(command, promise))
     promise.future
   }
 
-  def propose(command: String): Future[Instance] = {
-    val promise = Promise[Instance]()
+  def propose(command: String): Future[Unit] = {
+    val promise = Promise[Unit]()
     transport.executionContext.execute(
       () => _propose(command.getBytes(), promise)
     )
