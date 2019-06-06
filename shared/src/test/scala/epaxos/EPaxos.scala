@@ -23,22 +23,18 @@ class EPaxos(val f: Int) {
   // Clients.
   val clients = for (i <- 1 to numClients)
     yield
-      new Client[FakeTransport](
-        FakeTransportAddress(s"Client $i"),
-        transport,
-        logger,
-        config
-      )
+      new Client[FakeTransport](FakeTransportAddress(s"Client $i"),
+                                transport,
+                                logger,
+                                config)
 
   // Replicas
   val replicas = for (i <- 1 to numReplicas)
     yield
-      new Replica[FakeTransport](
-        FakeTransportAddress(s"Replica $i"),
-        transport,
-        logger,
-        config
-      )
+      new Replica[FakeTransport](FakeTransportAddress(s"Replica $i"),
+                                 transport,
+                                 logger,
+                                 config)
 }
 
 sealed trait EPaxosCommand
@@ -77,21 +73,23 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
       commands.add(client.pendingCommand.get.command)
     }
     commands.toSet*/
-    var minStateMachine = Int.MaxValue
-    for (replica <- ePaxos.replicas) {
-      minStateMachine =
-        Math.min(minStateMachine, replica.stateMachine.executedCommands.size)
-    }
-    for (i <- 1 to minStateMachine) {
-      var set = mutable.Set[String]()
-      for (replica <- ePaxos.replicas) {
-        set.add(replica.stateMachine.executedCommands(i).request.toString)
-      }
-      if (set.size != 1) {
-        println("Test failed")
-        return set.toSet
-      }
-    }
+
+    // TODO(mwhittaker): Re-implement.
+    // var minStateMachine = Int.MaxValue
+    // for (replica <- ePaxos.replicas) {
+    //   minStateMachine =
+    //     Math.min(minStateMachine, replica.stateMachine.executedCommands.size)
+    // }
+    // for (i <- 1 to minStateMachine) {
+    //   var set = mutable.Set[String]()
+    //   for (replica <- ePaxos.replicas) {
+    //     set.add(replica.stateMachine.executedCommands(i).request.toString)
+    //   }
+    //   if (set.size != 1) {
+    //     println("Test failed")
+    //     return set.toSet
+    //   }
+    // }
     Set.empty
   }
 
