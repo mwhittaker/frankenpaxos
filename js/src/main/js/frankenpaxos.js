@@ -643,12 +643,49 @@ Vue.component('fp-object', {
 });
 
 Vue.component('fp-field', {
-  props: ['name', 'value'],
+  props: {
+    name: String,
+    value: null,
+    show_at_start: {default: true},
+  },
 
   template: `
     <tr>
       <td>{{name}}</td>
-      <td><slot :let="value">{{value}}</slot></td>
+      <td>
+        <fp-toggle :value="value" :show_at_start="show_at_start">
+          <slot :let="value">{{value}}</slot>
+        </fp-toggle>
+      </td>
     </tr>
+  `
+});
+
+Vue.component('fp-toggle', {
+  props: ['value', 'show_at_start'],
+
+  data: function() {
+    return {
+      show: this.show_at_start,
+    };
+  },
+
+  computed: {
+    buttonName: function() {
+      if (this.show) {
+        return 'Hide';
+      } else {
+        return 'Show';
+      }
+    },
+  },
+
+  // TODO(mwhittaker): Add the persist thing.
+  template: `
+    <div>
+      <button v-on:click="show = !show">{{buttonName}}</button>
+      <slot v-if="show">{{value}}</slot>
+      <span v-else>...</span>
+    </div>
   `
 });

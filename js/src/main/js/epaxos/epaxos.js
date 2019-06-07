@@ -53,7 +53,7 @@ let replica_info = {
               <fp-field :name="'voteBallot'" :value="preAccepted.voteBallot"></fp-field>
               <fp-field v-slot="{let: triple}" :name="'triple'" :value="preAccepted.triple">
                 <fp-object :value="triple">
-                  <fp-field :name="'commandOrNoop'" :value="triple.commandOrNoop"></fp-field>
+                  <fp-field :name="'commandOrNoop'" :value="triple.commandOrNoop" :show_at_start="false"></fp-field>
                   <fp-field :name="'sequenceNumber'" :value="triple.sequenceNumber"></fp-field>
                   <fp-field :name="'dependencies'" :value="triple.dependencies"></fp-field>
                 </fp-object>
@@ -68,7 +68,7 @@ let replica_info = {
               <fp-field :name="'voteBallot'" :value="accepted.voteBallot"></fp-field>
               <fp-field v-slot="{let: triple}" :name="'triple'" :value="accepted.triple">
                 <fp-object :value="triple">
-                  <fp-field :name="'commandOrNoop'" :value="triple.commandOrNoop"></fp-field>
+                  <fp-field :name="'commandOrNoop'" :value="triple.commandOrNoop" :show_at_start="false"></fp-field>
                   <fp-field :name="'sequenceNumber'" :value="triple.sequenceNumber"></fp-field>
                   <fp-field :name="'dependencies'" :value="triple.dependencies"></fp-field>
                 </fp-object>
@@ -81,7 +81,7 @@ let replica_info = {
             <fp-object v-slot="{let: committed}" :value="entry">
               <fp-field v-slot="{let: triple}" :name="'triple'" :value="committed.triple">
                 <fp-object :value="triple">
-                  <fp-field :name="'commandOrNoop'" :value="triple.commandOrNoop"></fp-field>
+                  <fp-field :name="'commandOrNoop'" :value="triple.commandOrNoop" :show_at_start="false"></fp-field>
                   <fp-field :name="'sequenceNumber'" :value="triple.sequenceNumber"></fp-field>
                   <fp-field :name="'dependencies'" :value="triple.dependencies"></fp-field>
                 </fp-object>
