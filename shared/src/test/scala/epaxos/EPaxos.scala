@@ -30,11 +30,13 @@ class EPaxos(val f: Int) {
 
   // Replicas
   val replicas = for (i <- 1 to numReplicas)
+    // TODO(mwhittaker): Implement.
     yield
       new Replica[FakeTransport](FakeTransportAddress(s"Replica $i"),
                                  transport,
                                  logger,
-                                 config)
+                                 config,
+                                 ???)
 }
 
 sealed trait EPaxosCommand

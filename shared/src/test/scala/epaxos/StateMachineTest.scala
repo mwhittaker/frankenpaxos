@@ -1,6 +1,7 @@
 package frankenpaxos.epaxos
 
-import org.scalatest._
+import org.scalatest.FlatSpec
+import org.scalatest.Matchers
 
 class StateMachineTest extends FlatSpec with Matchers {
   private def bytes(x: Int): Array[Byte] = {

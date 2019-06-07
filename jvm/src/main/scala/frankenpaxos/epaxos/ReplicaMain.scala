@@ -40,5 +40,6 @@ object ReplicaMain extends App {
   val transport = new NettyTcpTransport(logger);
   val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
   val address = config.replicaAddresses(flags.index)
-  new Replica[NettyTcpTransport](address, transport, logger, config)
+  // TODO(mwhittaker): Implement.
+  new Replica[NettyTcpTransport](address, transport, logger, config, ???)
 }
