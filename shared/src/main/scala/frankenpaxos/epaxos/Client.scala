@@ -89,10 +89,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           logger.fatal("Attempting to repropose, but no value was proposed.")
 
         case Some(pendingCommand) =>
-          val request = toClientRequest(pendingCommand)
-          for ((_, replica) <- replicas) {
-            replica.send(ReplicaInbound().withClientRequest(request))
-          }
+          // Ideally, we would re-send our request to all replicas. But, since
+          // EPaxos doesn't have a mechanism to prevent dueling leaders, we
+          // send to one leader at a time.
+          sendProposeRequest(pendingCommand)
       }
       reproposeTimer.start()
     }
