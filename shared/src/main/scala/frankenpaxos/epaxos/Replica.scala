@@ -1,5 +1,7 @@
 package frankenpaxos.epaxos
 
+import BallotHelpers.BallotImplicits
+import CommandOrNoopHelpers.CommandOrNoopImplicits
 import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.Chan
@@ -8,43 +10,6 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
-
-// By default, Scala case classes cannot be compared using comparators like `<`
-// or `>`. This is particularly annoying for Ballots because we often want to
-// compare them. The BallotsOrdering implicit class below allows us to do just
-// that.
-@JSExportAll
-object BallotHelpers {
-  object Ordering extends scala.math.Ordering[Ballot] {
-    private def ballotToTuple(ballot: Ballot): (Int, Int) = {
-      val Ballot(ordering, replicaIndex) = ballot
-      (ordering, replicaIndex)
-    }
-
-    override def compare(lhs: Ballot, rhs: Ballot): Int = {
-      val ordering = scala.math.Ordering.Tuple2[Int, Int]
-      ordering.compare(ballotToTuple(lhs), ballotToTuple(rhs))
-    }
-  }
-
-  def inc(ballot: Ballot): Ballot = {
-    val Ballot(ordering, replicaIndex) = ballot
-    Ballot(ordering + 1, replicaIndex)
-  }
-
-  def max(lhs: Ballot, rhs: Ballot): Ballot = {
-    Ordering.max(lhs, rhs)
-  }
-
-  implicit class Comparators(lhs: Ballot) {
-    def <(rhs: Ballot) = Ordering.lt(lhs, rhs)
-    def <=(rhs: Ballot) = Ordering.lteq(lhs, rhs)
-    def >(rhs: Ballot) = Ordering.gt(lhs, rhs)
-    def >=(rhs: Ballot) = Ordering.gteq(lhs, rhs)
-  }
-}
-
-import BallotHelpers.Comparators
 
 @JSExportAll
 object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
@@ -233,9 +198,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       resendAcceptsTimer: Transport#Timer
   ) extends LeaderState
 
-  // TODO(mwhittaker): Might want to add an Executing phase so that this leader
-  // knows to send the result of the command back to the client.
-
   case class Preparing(
       // See above.
       ballot: Ballot,
@@ -248,11 +210,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val leaderStates = mutable.Map[Instance, LeaderState]()
 
+  // An index used to efficiently compute dependencies and sequence numbers.
+  // Note that noops are not entered into the conflict index.
+  @JSExport
+  protected val conflictIndex = stateMachine.conflictIndex[Instance]()
+
   // TODO(mwhittaker): Add a timer to recovery an instance. Use a random
   // timeout to avoid recovery cascades.
-
-  // TODO(mwhittaker): Add a state machine conflict index to efficiently
-  // compute dependencies.
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def leaderBallot(leaderState: LeaderState): Ballot = {
@@ -260,6 +224,38 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case state: PreAccepting => state.ballot
       case state: Accepting    => state.ballot
       case state: Preparing    => state.ballot
+    }
+  }
+
+  private def instanceSequenceNumber(instance: Instance): Option[Int] = {
+    cmdLog.get(instance) match {
+      case None | Some(_: NoCommandEntry) => None
+      case Some(entry: PreAcceptedEntry)  => Some(entry.triple.sequenceNumber)
+      case Some(entry: AcceptedEntry)     => Some(entry.triple.sequenceNumber)
+      case Some(entry: CommittedEntry)    => Some(entry.triple.sequenceNumber)
+    }
+  }
+
+  private def computeSequenceNumberAndDependencies(
+      instance: Instance,
+      commandOrNoop: CommandOrNoop
+  ): (Int, Set[Instance]) = {
+    val dependencies = commandOrNoop
+      .bytes()
+      .map(conflictIndex.getConflicts(instance, _))
+      .getOrElse(Set[Instance]())
+    val sequenceNumber =
+      (dependencies.flatMap(instanceSequenceNumber) + 0).max + 1
+    (sequenceNumber, dependencies)
+  }
+
+  private def updateConflictIndex(
+      instance: Instance,
+      commandOrNoop: CommandOrNoop
+  ): Unit = {
+    commandOrNoop.bytes() match {
+      case Some(bytes) => conflictIndex.put(instance, bytes)
+      case None        => conflictIndex.remove(instance)
     }
   }
 
@@ -287,6 +283,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       commandOrNoop: CommandOrNoop,
       avoidFastPath: Boolean
   ): Unit = {
+    // Compute sequence number and dependencies.
+    val (sequenceNumber, dependencies) =
+      computeSequenceNumberAndDependencies(instance, commandOrNoop)
+
     // Update our command log. This part of the algorithm is a little subtle.
     //
     // This replica acts as both a leader of this instance (e.g., sending out
@@ -333,10 +333,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       voteBallot = ballot,
       triple = CommandTriple(
         commandOrNoop,
-        sequenceNumber = ???, // TODO(mwhittaker): Implement.
-        dependencies = ??? // TODO(mwhittaker): Implement.
+        sequenceNumber = sequenceNumber,
+        dependencies = dependencies
       )
     )
+    updateConflictIndex(instance, commandOrNoop)
 
     // Send PreAccept messages to all other replicas.
     //
@@ -346,8 +347,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       instance = instance,
       ballot = ballot,
       commandOrNoop = commandOrNoop,
-      sequenceNumber = ???, // TODO(mwhittaker): Implement.
-      dependencies = ??? // TODO(mwhittaker): Implement.
+      sequenceNumber = sequenceNumber,
+      dependencies = dependencies.toSeq
     )
     otherReplicas.foreach(_.send(ReplicaInbound().withPreAccept(preAccept)))
 
@@ -363,8 +364,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           instance = instance,
           ballot = ballot,
           replicaIndex = index,
-          sequenceNumber = ???, // TODO(mwhittaker): Implement.
-          dependencies = ??? // TODO(mwhittaker): Implement.
+          sequenceNumber = sequenceNumber,
+          dependencies = dependencies.toSeq
         )
       ),
       avoidFastPath = avoidFastPath,
@@ -404,6 +405,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
     cmdLog(instance) =
       AcceptedEntry(ballot = ballot, voteBallot = ballot, triple)
+    updateConflictIndex(instance, triple.commandOrNoop)
 
     // Send out an accept message to other replicas.
     // TODO(mwhittaker): Implement thriftiness.
@@ -462,6 +464,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Update the command log.
     cmdLog(instance) = CommittedEntry(triple)
+    updateConflictIndex(instance, triple.commandOrNoop)
 
     // Update the leader state.
     leaderStates -= instance
@@ -754,9 +757,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // Update largestBallot.
     largestBallot = BallotHelpers.max(largestBallot, preAccept.ballot)
 
-    // TODO(mwhittaker): Compute dependencies and sequence number, taking into
-    // consideration the ones in the PreAccept.
+    // Compute dependencies and sequence number.
+    var (sequenceNumber, dependencies) = computeSequenceNumberAndDependencies(
+      preAccept.instance,
+      preAccept.commandOrNoop
+    )
+    sequenceNumber = Math.max(sequenceNumber, preAccept.sequenceNumber)
+    dependencies = dependencies.union(preAccept.dependencies.toSet)
 
+    // Update the command log.
     cmdLog.put(
       preAccept.instance,
       PreAcceptedEntry(
@@ -764,12 +773,18 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         voteBallot = preAccept.ballot,
         triple = CommandTriple(
           commandOrNoop = preAccept.commandOrNoop,
-          sequenceNumber = ???, // TODO(mwhittaker): Implement.
-          dependencies = ??? // TODO(mwhittaker): Implement.
+          sequenceNumber = sequenceNumber,
+          dependencies = dependencies
         )
       )
     )
 
+    // Update the conflict index.
+    preAccept.commandOrNoop
+      .bytes()
+      .foreach(conflictIndex.put(preAccept.instance, _))
+
+    // Send back our response.
     val leader = chan[Replica[Transport]](src, Replica.serializer)
     leader.send(
       ReplicaInbound().withPreAcceptOk(
@@ -777,8 +792,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           instance = preAccept.instance,
           ballot = preAccept.ballot,
           replicaIndex = index,
-          sequenceNumber = ???, // TODO(mwhittaker): Implement.
-          dependencies = ??? // TODO(mwhittaker): Implement.
+          sequenceNumber = sequenceNumber,
+          dependencies = dependencies.toSeq
         )
       )
     )
@@ -976,6 +991,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                              sequenceNumber = accept.sequenceNumber,
                              dependencies = accept.dependencies.toSet)
     )
+    updateConflictIndex(accept.instance, accept.commandOrNoop)
 
     replica.send(
       ReplicaInbound().withAcceptOk(
