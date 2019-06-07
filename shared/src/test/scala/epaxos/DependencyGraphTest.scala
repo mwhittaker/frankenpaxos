@@ -14,8 +14,8 @@ class DependencyGraphTest extends FlatSpec with Matchers {
   private def instances(xs: Int*): Seq[Instance] = xs.toSeq.map(instance)
 
   private def runTest(test: (DependencyGraph) => Unit): Unit = {
-    test(new JgraphtDependencyGraph())
-    // test(new ScalaGraphDependencyGraph())
+    // test(new JgraphtDependencyGraph())
+    test(new ScalaGraphDependencyGraph())
   }
 
   "A dep graph" should "correctly commit a command with no dependencies" in {
@@ -25,7 +25,7 @@ class DependencyGraphTest extends FlatSpec with Matchers {
     runTest(test)
   }
 
-  "A dep graph" should "ignore repeated commands" in {
+  it should "ignore repeated commands" in {
     def test(graph: DependencyGraph): Unit = {
       graph.commit(instance(0), 0, deps()) shouldBe instances(0)
       graph.commit(instance(0), 1, deps()) shouldBe instances()
