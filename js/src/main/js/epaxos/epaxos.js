@@ -33,8 +33,8 @@ let replica_info = {
     <div>
       <div>nextAvailableInstance = {{node.actor.nextAvailableInstance}}</div>
       <div>largestBallot = {{node.actor.largestBallot}}</div>
-      <div>stateMachine = {{node.actor.stateMachine}}</div>
-      <div>dependencyGraph = {{node.actor.dependencyGraph}}</div>
+      <!-- <div>stateMachine = {{node.actor.stateMachine}}</div> -->
+      <!-- <div>dependencyGraph = {{node.actor.dependencyGraph}}</div> -->
 
       <div>
         cmdLog =

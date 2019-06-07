@@ -29,6 +29,24 @@ object Replica {
 }
 
 @JSExportAll
+case class ReplicaOptions(
+    resendPreAcceptsTimerPeriod: java.time.Duration,
+    defaultToSlowPathTimerPeriod: java.time.Duration,
+    resendAcceptsTimerPeriod: java.time.Duration,
+    resendPreparesTimerPeriod: java.time.Duration
+)
+
+@JSExportAll
+object ReplicaOptions {
+  val default = ReplicaOptions(
+    resendPreAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
+    defaultToSlowPathTimerPeriod = java.time.Duration.ofSeconds(1),
+    resendAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
+    resendPreparesTimerPeriod = java.time.Duration.ofSeconds(1)
+  )
+}
+
+@JSExportAll
 class Replica[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
@@ -38,7 +56,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val stateMachine: StateMachine,
     // An empty dependency graph. This is a constructor argument so that
     // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
-    private val dependencyGraph: DependencyGraph = new JgraphtDependencyGraph()
+    // Public for the JS visualizations.
+    val dependencyGraph: DependencyGraph = new JgraphtDependencyGraph(),
+    options: ReplicaOptions = ReplicaOptions.default
 ) extends Actor(address, transport, logger) {
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = ReplicaInbound
@@ -572,7 +592,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // TODO(mwhittaker): Pull this duration out into an option.
     lazy val t: Transport#Timer = timer(
       s"resendPreAccepts ${preAccept.instance} ${preAccept.ballot}",
-      java.time.Duration.ofMillis(500),
+      options.resendPreAcceptsTimerPeriod,
       () => {
         otherReplicas.foreach(_.send(ReplicaInbound().withPreAccept(preAccept)))
         t.start()
@@ -588,7 +608,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // TODO(mwhittaker): Pull this duration out into an option.
     val t = timer(
       s"defaultToSlowPath ${instance}",
-      java.time.Duration.ofMillis(500),
+      options.defaultToSlowPathTimerPeriod,
       () => {
         leaderStates.get(instance) match {
           case None | Some(_: Accepting) | Some(_: Preparing) =>
@@ -609,7 +629,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // TODO(mwhittaker): Pull this duration out into an option.
     lazy val t: Transport#Timer = timer(
       s"resendAccepts ${accept.instance} ${accept.ballot}",
-      java.time.Duration.ofMillis(500),
+      options.resendAcceptsTimerPeriod,
       () => {
         otherReplicas.foreach(_.send(ReplicaInbound().withAccept(accept)))
         t.start()
@@ -623,7 +643,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // TODO(mwhittaker): Pull this duration out into an option.
     lazy val t: Transport#Timer = timer(
       s"resendPrepares ${prepare.instance} ${prepare.ballot}",
-      java.time.Duration.ofMillis(500),
+      options.resendPreparesTimerPeriod,
       () => {
         replicas.foreach(_.send(ReplicaInbound().withPrepare(prepare)))
         t.start()
