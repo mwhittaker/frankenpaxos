@@ -19,8 +19,7 @@ let client_info = {
 
   template: `
     <div>
-      <div>proposed value = {{node.actor.proposedValue}}</div>
-      <div>state = {{node.actor.state}}</div>
+      <div>pendingCommand = {{node.actor.pendingCommand}}</div>
       <button v-on:click="propose">Propose</button>
       <input v-model="proposal" v-on:keyup.enter="propose"></input>
     </div>
@@ -33,48 +32,18 @@ let replica_info = {
   template: `
     <div>
       <div>nextAvailableInstance = {{node.actor.nextAvailableInstance}}</div>
+      <div>largestBallot = {{node.actor.largestBallot}}</div>
       <div>stateMachine = {{node.actor.stateMachine}}</div>
+      <div>dependencyGraph = {{node.actor.dependencyGraph}}</div>
 
       <div>
-        commands =
-        <frankenpaxos-map :map=node.actor.commands>
+        cmdLog =
+        <frankenpaxos-map :map=node.actor.cmdLog>
         </frankenpaxos-map>
       </div>
       <div>
-        preacceptResponses =
-        <frankenpaxos-map :map=node.actor.preacceptResponses v-slot="slotProps">
-          <frankenpaxos-seq :seq="slotProps.value">
-          </frankenpaxos-seq>
-        </frankenpaxos-map>
-      </div>
-      <div>
-        acceptOkResponses =
-        <frankenpaxos-map :map=node.actor.acceptOkResponses v-slot="slotProps">
-          <frankenpaxos-seq :seq="slotProps.value">
-          </frankenpaxos-seq>
-        </frankenpaxos-map>
-      </div>
-      <div>
-        prepareResponses =
-        <frankenpaxos-map :map=node.actor.prepareResponses v-slot="slotProps">
-          <frankenpaxos-seq :seq="slotProps.value">
-          </frankenpaxos-seq>
-        </frankenpaxos-map>
-      </div>
-      <div>
-        instanceClientMapping =
-        <frankenpaxos-map :map=node.actor.instanceClientMapping>
-        </frankenpaxos-map>
-      </div>
-      <div>ballot = {{node.actor.ballot}}</div>
-      <div>
-        ballotMapping =
-        <frankenpaxos-map :map=node.actor.ballotMapping>
-        </frankenpaxos-map>
-      </div>
-      <div>
-        interferenceData =
-        <frankenpaxos-map :map=node.actor.interferenceData>
+        leaderStates =
+        <frankenpaxos-map :map=node.actor.leaderStates>
         </frankenpaxos-map>
       </div>
     </div>
@@ -114,25 +83,28 @@ function make_nodes(EPaxos, snap) {
     actor: EPaxos.client1,
     color: flat_red,
     svgs: [
-      snap.circle(client_x, 50, 20).attr(colored(flat_red)),
-      snap.text(client_x, 50, '1').attr(number_style),
+      snap.circle(client_x, 100, 20).attr(colored(flat_red)),
+      snap.text(client_x, 100, '1').attr(number_style),
     ],
+    component: client_info,
   };
   nodes[EPaxos.client2.address] = {
     actor: EPaxos.client2,
     color: flat_red,
     svgs: [
-      snap.circle(client_x - 100, 150, 20).attr(colored(flat_red)),
-      snap.text(client_x - 100, 150, '2').attr(number_style),
+      snap.circle(client_x - 100, 300, 20).attr(colored(flat_red)),
+      snap.text(client_x - 100, 300, '2').attr(number_style),
     ],
+    component: client_info,
   };
   nodes[EPaxos.client3.address] = {
     actor: EPaxos.client3,
     color: flat_red,
     svgs: [
-      snap.circle(client_x, 250, 20).attr(colored(flat_red)),
-      snap.text(client_x, 250, '3').attr(number_style),
+      snap.circle(client_x, 500, 20).attr(colored(flat_red)),
+      snap.text(client_x, 500, '3').attr(number_style),
     ],
+    component: client_info,
   };
 
   // Replicas.
@@ -140,25 +112,46 @@ function make_nodes(EPaxos, snap) {
     actor: EPaxos.replica1,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x, 50, 20).attr(colored(flat_blue)),
-      snap.text(replica_x, 50, '1').attr(number_style),
+      snap.circle(replica_x, 100, 20).attr(colored(flat_blue)),
+      snap.text(replica_x, 100, '1').attr(number_style),
     ],
+    component: replica_info,
   };
   nodes[EPaxos.replica2.address] = {
     actor: EPaxos.replica2,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x + 100, 150, 20).attr(colored(flat_blue)),
-      snap.text(replica_x + 100, 150, '2').attr(number_style),
+      snap.circle(replica_x + 100, 200, 20).attr(colored(flat_blue)),
+      snap.text(replica_x + 100, 200, '2').attr(number_style),
     ],
+    component: replica_info,
   };
   nodes[EPaxos.replica3.address] = {
     actor: EPaxos.replica3,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x, 250, 20).attr(colored(flat_blue)),
-      snap.text(replica_x, 250, '3').attr(number_style),
+      snap.circle(replica_x + 100, 300, 20).attr(colored(flat_blue)),
+      snap.text(replica_x + 100, 300, '3').attr(number_style),
     ],
+    component: replica_info,
+  };
+  nodes[EPaxos.replica4.address] = {
+    actor: EPaxos.replica4,
+    color: flat_blue,
+    svgs: [
+      snap.circle(replica_x + 100, 400, 20).attr(colored(flat_blue)),
+      snap.text(replica_x + 100, 400, '4').attr(number_style),
+    ],
+    component: replica_info,
+  };
+  nodes[EPaxos.replica5.address] = {
+    actor: EPaxos.replica5,
+    color: flat_blue,
+    svgs: [
+      snap.circle(replica_x, 500, 20).attr(colored(flat_blue)),
+      snap.text(replica_x, 500, '5').attr(number_style),
+    ],
+    component: replica_info,
   };
 
   // Node titles.
@@ -168,44 +161,44 @@ function make_nodes(EPaxos, snap) {
   return nodes;
 }
 
-function make_app(EPaxos, snap, app_id) {
+function main() {
+  let EPaxos =
+    frankenpaxos.epaxos.TweenedEPaxos.EPaxos;
+  let snap = Snap('#tweened_animation');
   let nodes = make_nodes(EPaxos, snap);
 
   // Create the vue app.
   let vue_app = new Vue({
-    el: app_id,
+    el: '#tweened_app',
 
     data: {
+      nodes: nodes,
       node: nodes[EPaxos.client1.address],
       transport: EPaxos.transport,
-      send_message: (message, callback) => {
-        let src = nodes[message.src];
-        let dst = nodes[message.dst];
-        let svg_message =
-          snap.circle(src.svgs[0].attr("cx"), src.svgs[0].attr("cy"), 9)
-              .attr({fill: '#2c3e50'});
-        snap.prepend(svg_message);
-        svg_message.animate(
-          {cx: dst.svgs[0].attr("cx"), cy: dst.svgs[0].attr("cy")},
-          500 + Math.random() * 200,
-          callback);
-      }
-    },
-
-    computed: {
-      current_component: function() {
-        if (this.node.actor.address.address.includes('Client')) {
-          return client_info;
-        } else if (this.node.actor.address.address.includes('Replica')) {
-          return replica_info;
-        } else {
-          // Impossible!
-          console.assert(false);
-        }
-      },
+      time_scale: 1,
+      auto_deliver_messages: true,
+      auto_start_timers: true,
     },
 
     methods: {
+      send_message: function(message) {
+        let src = nodes[message.src];
+        let dst = nodes[message.dst];
+        let src_x = src.svgs[0].attr("cx");
+        let src_y = src.svgs[0].attr("cy");
+        let dst_x = dst.svgs[0].attr("cx");
+        let dst_y = dst.svgs[0].attr("cy");
+
+        let svg_message = snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
+        snap.prepend(svg_message);
+        let duration = (1000 + Math.random() * 200) / 1000;
+        return TweenMax.to(svg_message.node, duration, {
+          attr: { cx: dst_x, cy: dst_y },
+          ease: Linear.easeNone,
+          onComplete: () => { svg_message.remove(); },
+        });
+      },
+
       partition: function(address) {
         nodes[address].svgs[0].attr({fill: "#7f8c8d"})
       },
@@ -224,16 +217,6 @@ function make_app(EPaxos, snap, app_id) {
       }
     }
   }
-}
-
-function main() {
-  let epaxos = frankenpaxos.epaxos;
-  make_app(epaxos.SimulatedEPaxos.EPaxos,
-           Snap('#simulated_animation'),
-           '#simulated_app');
-  make_app(epaxos.ClickthroughEPaxos.EPaxos,
-           Snap('#clickthrough_animation'),
-           '#clickthrough_app');
 }
 
 window.onload = main

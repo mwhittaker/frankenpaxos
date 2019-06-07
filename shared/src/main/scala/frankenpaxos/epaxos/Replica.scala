@@ -858,16 +858,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // If we've achieved a classic quorum for the first time (and we're not
-        // avoiding the fast path), we still want to wait for a fast quorum,
-        // but we need to set a timer to default to taking the slow path.
+        // avoiding the fast path, and the classic quorum size is smaller than
+        // the fast quorum size), we still want to wait for a fast quorum, but
+        // we need to set a timer to default to taking the slow path.
         if (!avoidFastPath &&
             oldNumberOfResponses < config.slowQuorumSize &&
-            newNumberOfResponses >= config.slowQuorumSize) {
+            newNumberOfResponses >= config.slowQuorumSize &&
+            config.slowQuorumSize < config.fastQuorumSize) {
           logger.check(defaultToSlowPathTimer.isEmpty)
           leaderStates(preAcceptOk.instance) = preAccepting.copy(
             defaultToSlowPathTimer =
               Some(makeDefaultToSlowPathTimer(preAcceptOk.instance))
           )
+
           return
         }
 

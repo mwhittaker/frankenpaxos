@@ -1,7 +1,9 @@
 package frankenpaxos.epaxos
 
+import frankenpaxos.JsLogger
+import frankenpaxos.JsTransport
+import frankenpaxos.JsTransportAddress
 import scala.scalajs.js.annotation._
-import frankenpaxos._
 
 @JSExportAll
 class EPaxos {
@@ -11,19 +13,23 @@ class EPaxos {
 
   // Configuration.
   val config = Config[JsTransport](
-    f = 1,
+    f = 2,
     replicaAddresses = Seq(
       JsTransportAddress("Replica 1"),
       JsTransportAddress("Replica 2"),
-      JsTransportAddress("Replica 3")
-    ),
+      JsTransportAddress("Replica 3"),
+      JsTransportAddress("Replica 4"),
+      JsTransportAddress("Replica 5")
+    )
   )
 
   // Clients.
   val clients = for (i <- 1 to 3) yield {
     val logger = new JsLogger()
     val address = JsTransportAddress(s"Client $i")
-    val client = new Client[JsTransport](address, transport, logger, config)
+    val options = ClientOptions.default
+    val client =
+      new Client[JsTransport](address, transport, logger, config, options)
     (logger, client)
   }
   val (client1logger, client1) = clients(0)
@@ -31,25 +37,28 @@ class EPaxos {
   val (client3logger, client3) = clients(2)
 
   // Replicas.
-  val replicas = for (i <- 1 to 3) yield {
+  val replicas = for (i <- 1 to 5) yield {
     val logger = new JsLogger()
     val address = JsTransportAddress(s"Replica $i")
-    val replica = new Replica[JsTransport](address, transport, logger, config)
+    val stateMachine = new Register()
+    val dependencyGraph = new ScalaGraphDependencyGraph()
+    val replica = new Replica[JsTransport](address,
+                                           transport,
+                                           logger,
+                                           config,
+                                           stateMachine,
+                                           dependencyGraph)
     (logger, replica)
   }
   val (replica1logger, replica1) = replicas(0)
   val (replica2logger, replica2) = replicas(1)
   val (replica3logger, replica3) = replicas(2)
+  val (replica4logger, replica4) = replicas(3)
+  val (replica5logger, replica5) = replicas(4)
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.epaxos.SimulatedEPaxos")
-object SimulatedEPaxos {
-  val EPaxos = new EPaxos();
-}
-
-@JSExportAll
-@JSExportTopLevel("frankenpaxos.epaxos.ClickthroughEPaxos")
-object ClickthroughEPaxos {
+@JSExportTopLevel("frankenpaxos.epaxos.TweenedEPaxos")
+object TweenedEPaxos {
   val EPaxos = new EPaxos();
 }

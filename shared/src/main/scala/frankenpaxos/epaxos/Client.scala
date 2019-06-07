@@ -69,17 +69,17 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   )
 
   @JSExport
-  var pendingCommand: Option[PendingCommand] = None
+  protected var pendingCommand: Option[PendingCommand] = None
 
-  // Replica channels.
+// Replica channels.
   private val replicas: Map[Int, Chan[Replica[Transport]]] = {
     for ((address, i) <- config.replicaAddresses.zipWithIndex)
       yield i -> chan[Replica[Transport]](address, Replica.serializer)
   }.toMap
 
-  // Timers ////////////////////////////////////////////////////////////////////
-  // A timer to resend a proposed value. If a client doesn't hear back from a
-  // replica quickly enough, it resends its proposal to all of the replicas.
+// Timers ////////////////////////////////////////////////////////////////////
+// A timer to resend a proposed value. If a client doesn't hear back from a
+// replica quickly enough, it resends its proposal to all of the replicas.
   private val reproposeTimer: Transport#Timer = timer(
     "reproposeTimer",
     options.reproposePeriod,
@@ -98,7 +98,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     }
   )
 
-  // Methods ///////////////////////////////////////////////////////////////////
+// Methods ///////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
     inbound.request match {
@@ -172,7 +172,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // Interface /////////////////////////////////////////////////////////////////
+// Interface /////////////////////////////////////////////////////////////////
   def propose(command: Array[Byte]): Future[Array[Byte]] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(() => _propose(command, promise))
