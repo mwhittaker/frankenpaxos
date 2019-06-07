@@ -38,9 +38,59 @@ let replica_info = {
 
       <div>
         cmdLog =
-        <frankenpaxos-map :map=node.actor.cmdLog>
+        <frankenpaxos-map :map=node.actor.cmdLog v-slot="{value: entry}">
+          <div v-if="entry.constructor.name.endsWith('$NoCommandEntry')">
+            <strong>NoCommandEntry</strong>
+            <fp-object v-slot="{let: noCommand}" :value="entry">
+              <fp-field :name="'ballot'" :value="noCommand.ballot"></fp-field>
+            </fp-object>
+          </div>
+
+          <div v-if="entry.constructor.name.endsWith('$PreAcceptedEntry')">
+            <strong>PreAcceptedEntry</strong>
+            <fp-object v-slot="{let: preAccepted}" :value="entry">
+              <fp-field :name="'ballot'" :value="preAccepted.ballot"></fp-field>
+              <fp-field :name="'voteBallot'" :value="preAccepted.voteBallot"></fp-field>
+              <fp-field v-slot="{let: triple}" :name="'triple'" :value="preAccepted.triple">
+                <fp-object :value="triple">
+                  <fp-field :name="'commandOrNoop'" :value="triple.commandOrNoop"></fp-field>
+                  <fp-field :name="'sequenceNumber'" :value="triple.sequenceNumber"></fp-field>
+                  <fp-field :name="'dependencies'" :value="triple.dependencies"></fp-field>
+                </fp-object>
+              </fp-field>
+            </fp-object>
+          </div>
+
+          <div v-if="entry.constructor.name.endsWith('$AcceptedEntry')">
+            <strong>AcceptedEntry</strong>
+            <fp-object v-slot="{let: accepted}" :value="entry">
+              <fp-field :name="'ballot'" :value="accepted.ballot"></fp-field>
+              <fp-field :name="'voteBallot'" :value="accepted.voteBallot"></fp-field>
+              <fp-field v-slot="{let: triple}" :name="'triple'" :value="accepted.triple">
+                <fp-object :value="triple">
+                  <fp-field :name="'commandOrNoop'" :value="triple.commandOrNoop"></fp-field>
+                  <fp-field :name="'sequenceNumber'" :value="triple.sequenceNumber"></fp-field>
+                  <fp-field :name="'dependencies'" :value="triple.dependencies"></fp-field>
+                </fp-object>
+              </fp-field>
+            </fp-object>
+          </div>
+
+          <div v-if="entry.constructor.name.endsWith('$CommittedEntry')">
+            <strong>CommittedEntry</strong>
+            <fp-object v-slot="{let: committed}" :value="entry">
+              <fp-field v-slot="{let: triple}" :name="'triple'" :value="committed.triple">
+                <fp-object :value="triple">
+                  <fp-field :name="'commandOrNoop'" :value="triple.commandOrNoop"></fp-field>
+                  <fp-field :name="'sequenceNumber'" :value="triple.sequenceNumber"></fp-field>
+                  <fp-field :name="'dependencies'" :value="triple.dependencies"></fp-field>
+                </fp-object>
+              </fp-field>
+            </fp-object>
+          </div>
         </frankenpaxos-map>
       </div>
+
       <div>
         leaderStates =
         <frankenpaxos-map :map=node.actor.leaderStates>

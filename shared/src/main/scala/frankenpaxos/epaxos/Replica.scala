@@ -348,7 +348,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         logger.check_le(preAccepted.voteBallot, ballot)(BallotHelpers.Ordering)
     }
 
-    cmdLog(instance) = AcceptedEntry(
+    cmdLog(instance) = PreAcceptedEntry(
       ballot = ballot,
       voteBallot = ballot,
       triple = CommandTriple(

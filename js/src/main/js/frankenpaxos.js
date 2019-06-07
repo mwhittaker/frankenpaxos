@@ -629,3 +629,26 @@ Vue.component('frankenpaxos-tuple', {
     </table>
   `
 });
+
+Vue.component('fp-object', {
+  props: ['value'],
+
+  template: `
+    <div>
+      <table>
+        <slot :let="value">{{value}}</slot>
+      </table>
+    </div>
+  `
+});
+
+Vue.component('fp-field', {
+  props: ['name', 'value'],
+
+  template: `
+    <tr>
+      <td>{{name}}</td>
+      <td><slot :let="value">{{value}}</slot></td>
+    </tr>
+  `
+});
