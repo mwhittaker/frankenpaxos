@@ -122,7 +122,8 @@ message Commit {
 
 message ClientReply {
   required int32 client_id = 1;
-  // TODO(mwhittaker): Add reply bytes.
+  // The result of executing the command.
+  required bytes result = 2;
 }
 
 message Prepare {

@@ -65,8 +65,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   case class PendingCommand(
       id: Int,
       command: Array[Byte],
-      // TODO(mwhittaker): Change this to a Promise[Array[Byte]]
-      result: Promise[Unit]
+      result: Promise[Array[Byte]]
   )
 
   @JSExport
@@ -130,32 +129,32 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handleClientReply(
       src: Transport#Address,
-      requestReply: ClientReply
+      clientReply: ClientReply
   ): Unit = {
     pendingCommand match {
       case Some(PendingCommand(id, command, promise)) =>
-        if (requestReply.clientId == id) {
+        if (clientReply.clientId == id) {
           pendingCommand = None
           reproposeTimer.stop()
-          promise.success(())
+          promise.success(clientReply.result.toByteArray)
         } else {
           logger.warn(
             s"Received a reply for unpending command with id " +
-              s"'${requestReply.clientId}'."
+              s"'${clientReply.clientId}'."
           )
         }
 
       case None =>
         logger.warn(
           s"Received a reply for unpending command with id " +
-            s"'${requestReply.clientId}'."
+            s"'${clientReply.clientId}'."
         )
     }
   }
 
   private def _propose(
       command: Array[Byte],
-      promise: Promise[Unit]
+      promise: Promise[Array[Byte]]
   ): Unit = {
     pendingCommand match {
       case Some(_) =>
@@ -174,14 +173,14 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Interface /////////////////////////////////////////////////////////////////
-  def propose(command: Array[Byte]): Future[Unit] = {
-    val promise = Promise[Unit]()
+  def propose(command: Array[Byte]): Future[Array[Byte]] = {
+    val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(() => _propose(command, promise))
     promise.future
   }
 
-  def propose(command: String): Future[Unit] = {
-    val promise = Promise[Unit]()
+  def propose(command: String): Future[Array[Byte]] = {
+    val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
       () => _propose(command.getBytes(), promise)
     )

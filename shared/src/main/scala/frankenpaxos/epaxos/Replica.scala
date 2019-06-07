@@ -68,10 +68,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    config: Config[Transport]
-    // TODO(mwhittaker): Uncomment and integrate state machine.
-    // Public for Javascript.
-    // val stateMachine: StateMachine
+    config: Config[Transport],
+    // Public for the JS visualizations.
+    val stateMachine: StateMachine,
+    // An empty dependency graph. This is a constructor argument so that
+    // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
+    private val dependencyGraph: DependencyGraph = new JgraphtDependencyGraph()
 ) extends Actor(address, transport, logger) {
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = ReplicaInbound
@@ -164,8 +166,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       triple: CommandTriple
   ) extends CmdLogEntry
 
-  // TODO(mwhittaker): We might need to add an ExecutedEntry case class.
-
   @JSExport
   protected val cmdLog: mutable.Map[Instance, CmdLogEntry] =
     mutable.Map[Instance, CmdLogEntry]()
@@ -248,7 +248,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val leaderStates = mutable.Map[Instance, LeaderState]()
 
-  // TODO(mwhittaker): Add dependency graph.
+  // TODO(mwhittaker): Add a timer to recovery an instance. Use a random
+  // timeout to avoid recovery cascades.
+
+  // TODO(mwhittaker): Add a state machine conflict index to efficiently
+  // compute dependencies.
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def leaderBallot(leaderState: LeaderState): Ballot = {
@@ -478,7 +482,60 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
 
-    // TODO(mwhittaker): Make the command eligible for execution.
+    // Execute commands.
+    val executable: Seq[Instance] = dependencyGraph.commit(
+      instance,
+      triple.sequenceNumber,
+      triple.dependencies
+    )
+
+    for (i <- executable) {
+      // TODO(mwhittaker): Stop timers for choosing this instance.
+
+      import CommandOrNoop.Value
+      cmdLog.get(i) match {
+        case None | Some(_: NoCommandEntry) | Some(_: PreAcceptedEntry) |
+            Some(_: AcceptedEntry) =>
+          logger.fatal(
+            s"Instance $i is ready for execution but our command log " +
+              s"doesn't have a CommittedEntry for it."
+          )
+
+        case Some(CommittedEntry(triple)) => {
+          triple.commandOrNoop.value match {
+            case Value.Empty =>
+              logger.fatal("Empty CommandOrNoop.")
+
+            case Value.Noop(Noop()) =>
+            // Noop.
+
+            case Value.Command(Command(clientAddress, clientId, command)) =>
+              // TODO(mwhittaker): Check the client log to ensure that we don't
+              // execute the same command more than once.
+
+              val output = stateMachine.run(command.toByteArray)
+              // TODO(mwhittaker): Update the client log.
+
+              // The leader of the command instance returns the response to the
+              // client. If the leader is dead, then the client will eventually
+              // re-send its request and some other replica will reply, either
+              // from its client log or by getting the command chosen in a new
+              // instance.
+              if (index == i.replicaIndex) {
+                val address = transport.addressSerializer.fromBytes(
+                  clientAddress.toByteArray()
+                )
+                val client = chan[Client[Transport]](address, Client.serializer)
+                client.send(
+                  ClientInbound().withClientReply(
+                    ClientReply(clientId, ByteString.copyFrom(output))
+                  )
+                )
+              }
+          }
+        }
+      }
+    }
   }
 
   private def transitionToPreparePhase(instance: Instance): Unit = {
