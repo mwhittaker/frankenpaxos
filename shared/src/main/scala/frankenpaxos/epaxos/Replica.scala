@@ -217,11 +217,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     logger: Logger,
     config: Config[Transport],
     // Public for the JS visualizations.
-    private val stateMachine: StateMachine,
+    val stateMachine: StateMachine,
     // An empty dependency graph. This is a constructor argument so that
     // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
     // Public for the JS visualizations.
-    private val dependencyGraph: DependencyGraph = new JgraphtDependencyGraph(),
+    val dependencyGraph: DependencyGraph = new JgraphtDependencyGraph(),
     options: ReplicaOptions = ReplicaOptions.default
 ) extends Actor(address, transport, logger) {
   // Types /////////////////////////////////////////////////////////////////////
@@ -619,7 +619,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     stopTimers(instance)
 
     // Choose a ballot larger than any we've seen before.
-    largestBallot = BallotHelpers.inc(largestBallot)
+    largestBallot = Ballot(largestBallot.ordering + 1, index)
     val ballot = largestBallot
 
     // Note that we don't touch the command log when we transition to the

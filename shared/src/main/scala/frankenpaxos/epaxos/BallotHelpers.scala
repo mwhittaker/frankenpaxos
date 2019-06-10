@@ -20,11 +20,6 @@ object BallotHelpers {
     }
   }
 
-  def inc(ballot: Ballot): Ballot = {
-    val Ballot(ordering, replicaIndex) = ballot
-    Ballot(ordering + 1, replicaIndex)
-  }
-
   def max(lhs: Ballot, rhs: Ballot): Ballot = {
     Ordering.max(lhs, rhs)
   }
