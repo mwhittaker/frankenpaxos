@@ -1,6 +1,7 @@
 package frankenpaxos.clienttable
 
 import scala.collection.mutable
+import scala.scalajs.js.annotation._
 
 // Replicated state machine protocols provide linearizability. This means that
 // every client request appears to have been executed exactly once between when
@@ -79,6 +80,7 @@ import scala.collection.mutable
 //
 // [1]: https://scholar.google.com/scholar?cluster=13000400770252658813
 // [2]: https://scholar.google.com/scholar?cluster=15141061938475263862
+@JSExportAll
 object ClientTable {
   sealed trait ExecutedResult[+Output]
   object NotExecuted extends ExecutedResult[Nothing]
@@ -86,6 +88,7 @@ object ClientTable {
       extends ExecutedResult[Output]
 }
 
+@JSExportAll
 class ClientTable[ClientAddress, Output] {
   type ClientId = Int
 

@@ -429,6 +429,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     metrics.requestsTotal.labels("ProposeRequest").inc()
     val client = chan[Client[Transport]](src, Client.serializer)
 
+    // TODO(mwhittaker): Ignore requests that are older than the current id
+    // stored in the client table.
+
     // If we've cached the result of this proposed command in the client table,
     // then we can reply to the client directly. Note that only the leader
     // replies to the client since ProposeReplies include the round of the

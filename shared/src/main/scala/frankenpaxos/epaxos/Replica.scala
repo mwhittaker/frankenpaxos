@@ -8,6 +8,7 @@ import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
+import frankenpaxos.clienttable.ClientTable
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -74,6 +75,7 @@ object Replica {
   val serializer = ReplicaInboundSerializer
 
   type ReplicaIndex = Int
+  type ClientId = Int
 
   // The special null ballot. Replicas set their vote ballot to nullBallot to
   // indicate that they have not yet voted.
@@ -228,6 +230,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = ReplicaInbound
   override def serializer = Replica.serializer
   import Replica.ReplicaIndex
+  import Replica.ClientId
   import Replica.CommandTriple
   import Replica.CmdLogEntry
   import Replica.NoCommandEntry
@@ -272,8 +275,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var largestBallot: Ballot = Ballot(0, index)
 
-  // TODO(mwhittaker): Add a client table. Potentially pull out some code from
-  // Fast MultiPaxos so that client table code is shared across protocols.
+  // The client table records the response to the latest request from each
+  // client. For example, if command c1 sends command x with id 2 to a leader
+  // and the leader later executes x yielding response y, then c1 maps to (2,
+  // y) in the client table.
+  @JSExport
+  protected val clientTable = new ClientTable[Transport#Address, Array[Byte]]()
 
   @JSExport
   protected val leaderStates = mutable.Map[Instance, LeaderState]()
@@ -585,28 +592,34 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             case Value.Noop(Noop()) =>
             // Noop.
 
-            case Value.Command(Command(clientAddress, clientId, command)) =>
-              // TODO(mwhittaker): Check the client log to ensure that we don't
-              // execute the same command more than once.
+            case Value.Command(
+                Command(clientAddressBytes, clientId, command)
+                ) =>
+              val clientAddress = transport.addressSerializer.fromBytes(
+                clientAddressBytes.toByteArray
+              )
+              clientTable.executed(clientAddress, clientId) match {
+                case ClientTable.Executed(_) =>
+                // Don't execute the same command twice.
 
-              val output = stateMachine.run(command.toByteArray)
-              // TODO(mwhittaker): Update the client log.
+                case ClientTable.NotExecuted =>
+                  val output = stateMachine.run(command.toByteArray)
+                  clientTable.execute(clientAddress, clientId, output)
 
-              // The leader of the command instance returns the response to the
-              // client. If the leader is dead, then the client will eventually
-              // re-send its request and some other replica will reply, either
-              // from its client log or by getting the command chosen in a new
-              // instance.
-              if (index == i.replicaIndex) {
-                val address = transport.addressSerializer.fromBytes(
-                  clientAddress.toByteArray()
-                )
-                val client = chan[Client[Transport]](address, Client.serializer)
-                client.send(
-                  ClientInbound().withClientReply(
-                    ClientReply(clientId, ByteString.copyFrom(output))
-                  )
-                )
+                  // The leader of the command instance returns the response to
+                  // the client. If the leader is dead, then the client will
+                  // eventually re-send its request and some other replica will
+                  // reply, either from its client log or by getting the
+                  // command chosen in a new instance.
+                  if (index == i.replicaIndex) {
+                    val client =
+                      chan[Client[Transport]](clientAddress, Client.serializer)
+                    client.send(
+                      ClientInbound().withClientReply(
+                        ClientReply(clientId, ByteString.copyFrom(output))
+                      )
+                    )
+                  }
               }
           }
         }
@@ -733,8 +746,27 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       request: ClientRequest
   ): Unit = {
-    // TODO(mwhittaker): Check the client table. If the command already exists
-    // in the client table, then we can return it immediately.
+    // If we already have a response to this request in the client table, we
+    // simply return it.
+    clientTable.executed(src, request.command.clientId) match {
+      case ClientTable.NotExecuted =>
+      // Not executed yet, we'll have to get it chosen.
+
+      case ClientTable.Executed(None) =>
+      // Executed already but a stale command. We ignore this request.
+
+      case ClientTable.Executed(Some(output)) =>
+        // Executed already and is the most recent command. We relay the
+        // response to the client.
+        val client = chan[Client[Transport]](src, Client.serializer)
+        client.send(
+          ClientInbound()
+            .withClientReply(
+              ClientReply(request.command.clientId, ByteString.copyFrom(output))
+            )
+        )
+        return
+    }
 
     val instance: Instance = Instance(index, nextAvailableInstance)
     nextAvailableInstance += 1

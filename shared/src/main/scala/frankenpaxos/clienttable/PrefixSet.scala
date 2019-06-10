@@ -1,6 +1,7 @@
 package frankenpaxos.clienttable
 
 import scala.collection.mutable
+import scala.scalajs.js.annotation._
 
 // A PrefixSet is an add-only set of natural numbers (i.e., integers greater
 // than or equal to 0). Because a PrefixSet is add-only and because natural
@@ -19,6 +20,7 @@ import scala.collection.mutable
 //   | {0, 1, 3}       | watermark: 2; values: {3}    |
 //   | {0, 1, 3, 4}    | watermark: 2; values: {3, 4} |
 //   | {0, 1, 2, 3, 4} | watermark: 5; values: {}     |
+@JSExportAll
 class PrefixSet {
   private var watermark: Int = 0
   private val values = mutable.Set[Int]()
