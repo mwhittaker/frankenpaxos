@@ -20,15 +20,6 @@ object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
 }
 
 @JSExportAll
-object Replica {
-  val serializer = ReplicaInboundSerializer
-
-  // The special null ballot. Replicas set their vote ballot to nullBallot to
-  // indicate that they have not yet voted.
-  val nullBallot = Ballot(-1, -1)
-}
-
-@JSExportAll
 case class ReplicaOptions(
     resendPreAcceptsTimerPeriod: java.time.Duration,
     defaultToSlowPathTimerPeriod: java.time.Duration,
@@ -46,37 +37,47 @@ object ReplicaOptions {
   )
 }
 
+// Note that there are a couple of types (e.g., CmdLogEntry, LeaderState) that
+// you might expect to be in the Replica class instead of the Replica
+// companion. Unfortunately, there is a technical reason related to scala.js
+// that prevents us from doing so.
+//
+// If we place CmdLogEntry or LeaderState within the Replica class, then it
+// becomes an inner class. When scala.js compiles an instance of an inner
+// class, it includes a pointer to the enclosing object. For example, an
+// instance of NoCommandEntry would end up looking something like this:
+//
+//   NoCommandEntry(
+//       replica = ...,        // Something of type Replica.
+//       ballot = Ballot(...),
+//   )
+//
+// I don't know why scala.js does this. I don't even understand how it does
+// this. Shouldn't you be able to instantiate a NoCommandEntry without an
+// enclosing replica? Who knows.
+//
+// Anyway, when an object like this is put within a map within a Replica
+// instance, and that map is displayed using <frankenpaxos-map>, then Vue does
+// a deep watch on the map. The deep watch on the map watches the objects
+// within the map, and since those objects have pointers to a Replica, Vue ends
+// up watching every field inside Replica. This is especially bad because a
+// Replica object includes a dependency graph which is cyclic. When Vue
+// encounters cyclic data structures, it can overflow the stack and crash.
+//
+// To avoid these issues, we pull types out of the Replica class and put them
+// into the companion Replica object. This prevents scala.js from embedding a
+// parent pointer to a Replica, which prevents Vue from watching all fields
+// within Replica, which prevents Vue from crashing. It's annoying and very
+// subtle, but it's the best we can do for now.
 @JSExportAll
-class Replica[Transport <: frankenpaxos.Transport[Transport]](
-    address: Transport#Address,
-    transport: Transport,
-    logger: Logger,
-    config: Config[Transport],
-    // Public for the JS visualizations.
-    val stateMachine: StateMachine,
-    // An empty dependency graph. This is a constructor argument so that
-    // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
-    // Public for the JS visualizations.
-    val dependencyGraph: DependencyGraph = new JgraphtDependencyGraph(),
-    options: ReplicaOptions = ReplicaOptions.default
-) extends Actor(address, transport, logger) {
-  // Types /////////////////////////////////////////////////////////////////////
-  override type InboundMessage = ReplicaInbound
-  override def serializer = Replica.serializer
+object Replica {
+  val serializer = ReplicaInboundSerializer
+
   type ReplicaIndex = Int
 
-  // Fields ////////////////////////////////////////////////////////////////////
-  logger.check(config.valid())
-  logger.check(config.replicaAddresses.contains(address))
-  private val index: ReplicaIndex = config.replicaAddresses.indexOf(address)
-
-  private val replicas: Seq[Chan[Replica[Transport]]] =
-    for (replicaAddress <- config.replicaAddresses)
-      yield chan[Replica[Transport]](replicaAddress, Replica.serializer)
-
-  private val otherReplicas: Seq[Chan[Replica[Transport]]] =
-    for (a <- config.replicaAddresses if a != address)
-      yield chan[Replica[Transport]](a, Replica.serializer)
+  // The special null ballot. Replicas set their vote ballot to nullBallot to
+  // indicate that they have not yet voted.
+  val nullBallot = Ballot(-1, -1)
 
   // A command (or noop) along with its sequence number and dependencies. In
   // the EPaxos paper, these triples are denoted like this:
@@ -117,6 +118,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // implementation is correct, so it may also be wrong.
   //
   // [1]: https://drive.google.com/open?id=1dQ_cigMWJ7w9KAJeSYcH3cZoFpbraWxm
+  @JSExportAll
   sealed trait CmdLogEntry
 
   // A NoCommandEntry represents a command entry for which a replica has not
@@ -151,39 +153,16 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       triple: CommandTriple
   ) extends CmdLogEntry
 
-  @JSExport
-  protected val cmdLog: mutable.Map[Instance, CmdLogEntry] =
-    mutable.Map[Instance, CmdLogEntry]()
-
-  // Every replica maintains a local instance number i, initially 0. When a
-  // replica R receives a command, it assigns the command instance R.i and then
-  // increments i. Thus, every replica fills in the cmd log vertically within
-  // its column from bottom to top. `nextAvailableInstance` represents i.
-  @JSExport
-  protected var nextAvailableInstance: Int = 0
-
-  // The default fast path ballot used by this replica.
-  @JSExport
-  protected val defaultBallot: Ballot = Ballot(0, index)
-
-  // The largest ballot ever seen by this replica. largestBallot is used when a
-  // replica receives a nack and needs to choose a larger ballot.
-  @JSExport
-  protected var largestBallot: Ballot = Ballot(0, index)
-
-  // TODO(mwhittaker): Add a client table. Potentially pull out some code from
-  // Fast MultiPaxos so that client table code is shared across protocols.
-
   // When a replica receives a command from a client, it becomes the leader of
   // the command, the designated replica that is responsible for driving the
   // protocol through its phases to get the command chosen. LeaderState
   // represents the state of a leader during various points in the lifecycle of
   // the protocol, whether the leader is pre-accepting, accepting, or preparing
   // (during recovery).
-  sealed trait LeaderState
+  sealed trait LeaderState[Transport <: frankenpaxos.Transport[Transport]]
 
   @JSExportAll
-  case class PreAccepting(
+  case class PreAccepting[Transport <: frankenpaxos.Transport[Transport]](
       // Every EPaxos replica plays the role of a Paxos proposer _and_ a Paxos
       // acceptor. The ballot and voteBallot in a command log entry are used
       // when the replica acts like an acceptor. leaderBallots is used when a
@@ -206,10 +185,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       // certain amount of time for the fast path before reverting to the
       // classic path. This timer is used for that waiting.
       defaultToSlowPathTimer: Option[Transport#Timer]
-  ) extends LeaderState
+  ) extends LeaderState[Transport]
 
   @JSExportAll
-  case class Accepting(
+  case class Accepting[Transport <: frankenpaxos.Transport[Transport]](
       // See above.
       ballot: Ballot,
       // The command being accepted.
@@ -218,17 +197,83 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       responses: mutable.Map[ReplicaIndex, AcceptOk],
       // A timer to re-send Accepts.
       resendAcceptsTimer: Transport#Timer
-  ) extends LeaderState
+  ) extends LeaderState[Transport]
 
   @JSExportAll
-  case class Preparing(
+  case class Preparing[Transport <: frankenpaxos.Transport[Transport]](
       // See above.
       ballot: Ballot,
       // Prepare responses, indexed by the replica that sent them.
       responses: mutable.Map[ReplicaIndex, PrepareOk],
       // A timer to re-send Prepares.
       resendPreparesTimer: Transport#Timer
-  ) extends LeaderState
+  ) extends LeaderState[Transport]
+}
+
+@JSExportAll
+class Replica[Transport <: frankenpaxos.Transport[Transport]](
+    address: Transport#Address,
+    transport: Transport,
+    logger: Logger,
+    config: Config[Transport],
+    // Public for the JS visualizations.
+    private val stateMachine: StateMachine,
+    // An empty dependency graph. This is a constructor argument so that
+    // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
+    // Public for the JS visualizations.
+    private val dependencyGraph: DependencyGraph = new JgraphtDependencyGraph(),
+    options: ReplicaOptions = ReplicaOptions.default
+) extends Actor(address, transport, logger) {
+  // Types /////////////////////////////////////////////////////////////////////
+  override type InboundMessage = ReplicaInbound
+  override def serializer = Replica.serializer
+  import Replica.ReplicaIndex
+  import Replica.CommandTriple
+  import Replica.CmdLogEntry
+  import Replica.NoCommandEntry
+  import Replica.PreAcceptedEntry
+  import Replica.AcceptedEntry
+  import Replica.CommittedEntry
+  type LeaderState = Replica.LeaderState[Transport]
+  type PreAccepting = Replica.PreAccepting[Transport]
+  type Accepting = Replica.Accepting[Transport]
+  type Preparing = Replica.Preparing[Transport]
+
+  // Fields ////////////////////////////////////////////////////////////////////
+  logger.check(config.valid())
+  logger.check(config.replicaAddresses.contains(address))
+  private val index: ReplicaIndex = config.replicaAddresses.indexOf(address)
+
+  private val replicas: Seq[Chan[Replica[Transport]]] =
+    for (replicaAddress <- config.replicaAddresses)
+      yield chan[Replica[Transport]](replicaAddress, Replica.serializer)
+
+  private val otherReplicas: Seq[Chan[Replica[Transport]]] =
+    for (a <- config.replicaAddresses if a != address)
+      yield chan[Replica[Transport]](a, Replica.serializer)
+
+  @JSExport
+  protected val cmdLog: mutable.Map[Instance, CmdLogEntry] =
+    mutable.Map[Instance, CmdLogEntry]()
+
+  // Every replica maintains a local instance number i, initially 0. When a
+  // replica R receives a command, it assigns the command instance R.i and then
+  // increments i. Thus, every replica fills in the cmd log vertically within
+  // its column from bottom to top. `nextAvailableInstance` represents i.
+  @JSExport
+  protected var nextAvailableInstance: Int = 0
+
+  // The default fast path ballot used by this replica.
+  @JSExport
+  protected val defaultBallot: Ballot = Ballot(0, index)
+
+  // The largest ballot ever seen by this replica. largestBallot is used when a
+  // replica receives a nack and needs to choose a larger ballot.
+  @JSExport
+  protected var largestBallot: Ballot = Ballot(0, index)
+
+  // TODO(mwhittaker): Add a client table. Potentially pull out some code from
+  // Fast MultiPaxos so that client table code is shared across protocols.
 
   @JSExport
   protected val leaderStates = mutable.Map[Instance, LeaderState]()
@@ -351,6 +396,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         logger.check_le(preAccepted.voteBallot, ballot)(BallotHelpers.Ordering)
     }
 
+    cmdLog -= instance
     cmdLog(instance) = PreAcceptedEntry(
       ballot = ballot,
       voteBallot = ballot,
@@ -379,7 +425,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     stopTimers(instance)
 
     // Update our leader state.
-    leaderStates(instance) = PreAccepting(
+    leaderStates -= instance
+    leaderStates(instance) = Replica.PreAccepting(
       ballot = ballot,
       commandOrNoop = commandOrNoop,
       responses = mutable.Map[ReplicaIndex, PreAcceptOk](
@@ -426,6 +473,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         logger.check_le(preAccepted.ballot, ballot)(BallotHelpers.Ordering)
         logger.check_le(preAccepted.voteBallot, ballot)(BallotHelpers.Ordering)
     }
+    cmdLog -= instance
     cmdLog(instance) =
       AcceptedEntry(ballot = ballot, voteBallot = ballot, triple)
     updateConflictIndex(instance, triple.commandOrNoop)
@@ -445,7 +493,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     stopTimers(instance)
 
     // Update leader state.
-    leaderStates(instance) = Accepting(
+    leaderStates -= instance
+    leaderStates(instance) = Replica.Accepting(
       ballot = ballot,
       triple = triple,
       responses = mutable.Map[ReplicaIndex, AcceptOk](
@@ -486,6 +535,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     stopTimers(instance)
 
     // Update the command log.
+    cmdLog -= instance
     cmdLog(instance) = CommittedEntry(triple)
     updateConflictIndex(instance, triple.commandOrNoop)
 
@@ -581,7 +631,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     replicas.foreach(_.send(ReplicaInbound().withPrepare(prepare)))
 
     // Update our leader state.
-    leaderStates(instance) = Preparing(
+    leaderStates -= instance
+    leaderStates(instance) = Replica.Preparing(
       ballot = ballot,
       responses = mutable.Map(),
       resendPreparesTimer = makeResendPreparesTimer(prepare)
@@ -849,12 +900,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         return
 
       case Some(
-          preAccepting @ PreAccepting(ballot,
-                                      commandOrNoop,
-                                      responses,
-                                      avoidFastPath,
-                                      resendPreAcceptsTimer,
-                                      defaultToSlowPathTimer)
+          preAccepting @ Replica.PreAccepting(ballot,
+                                              commandOrNoop,
+                                              responses,
+                                              avoidFastPath,
+                                              resendPreAcceptsTimer,
+                                              defaultToSlowPathTimer)
           ) =>
         if (preAcceptOk.ballot != ballot) {
           logger.warn(
@@ -1010,6 +1061,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     largestBallot = BallotHelpers.max(largestBallot, accept.ballot)
 
     // Update our command log.
+    cmdLog -= instance
     cmdLog(accept.instance) = AcceptedEntry(
       ballot = accept.ballot,
       voteBallot = accept.ballot,
@@ -1052,7 +1104,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case Some(
-          accepting @ Accepting(ballot, triple, responses, resendAcceptsTimer)
+          accepting @ Replica.Accepting(ballot,
+                                        triple,
+                                        responses,
+                                        resendAcceptsTimer)
           ) =>
         if (acceptOk.ballot != ballot) {
           logger.warn(
@@ -1065,6 +1120,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
+        responses -= acceptOk.replicaIndex
         responses(acceptOk.replicaIndex) = acceptOk
 
         // We don't have enough responses yet.
@@ -1153,6 +1209,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             )
           )
         )
+        cmdLog -= prepare.instance
         cmdLog(prepare.instance) = NoCommandEntry(prepare.ballot)
 
       case Some(entry @ PreAcceptedEntry(ballot, voteBallot, triple)) =>
@@ -1176,6 +1233,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             )
           )
         )
+        cmdLog -= prepare.instance
         cmdLog(prepare.instance) = entry.copy(ballot = prepare.ballot)
 
       case Some(entry @ AcceptedEntry(ballot, voteBallot, triple)) =>
@@ -1199,6 +1257,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             )
           )
         )
+        cmdLog -= prepare.instance
         cmdLog(prepare.instance) = entry.copy(ballot = prepare.ballot)
 
       case Some(CommittedEntry(triple)) =>
@@ -1237,7 +1296,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             s"but is accepting."
         )
 
-      case Some(preparing @ Preparing(ballot, responses, resendAcceptsTimer)) =>
+      case Some(
+          preparing @ Replica.Preparing(ballot, responses, resendAcceptsTimer)
+          ) =>
         if (prepareOk.ballot != ballot) {
           logger.warn(
             s"Replica received a preAcceptOk in ballot ${prepareOk.instance} " +

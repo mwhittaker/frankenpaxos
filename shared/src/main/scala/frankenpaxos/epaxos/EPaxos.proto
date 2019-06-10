@@ -32,7 +32,9 @@ option (scalapb.options) = {
 // monotonically increasing integer. In the EPaxos paper, for example, these
 // are written like R.1 or Q.2.
 message Instance {
-  // TODO(mwhittaker): Maybe rename to replica_index.
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required int32 replica_index = 1;
   required int32 instance_number = 2;
 }
@@ -41,15 +43,24 @@ message Instance {
 // monotonically increasing integer and `replica_index` is the unique index of
 // the replica.
 message Ballot {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required int32 ordering = 1;
   required int32 replica_index = 2;
 }
 
 // A special noop command that does not affect the state machine.
-message Noop {}
+message Noop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
 
 // A client issued command.
 message Command {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   // The client's address.
   required bytes client_address = 1;
 
@@ -62,6 +73,9 @@ message Command {
 }
 
 message CommandOrNoop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   oneof value {
     Command command = 1;
     Noop noop = 2;
@@ -77,10 +91,16 @@ enum CommandStatus {
 
 // Protocol messages. //////////////////////////////////////////////////////////
 message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Command command = 1;
 }
 
 message PreAccept {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Instance instance = 1;
   required Ballot ballot = 2;
 
@@ -102,6 +122,9 @@ message PreAcceptOk {
 }
 
 message Accept {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Instance instance = 1;
   required Ballot ballot = 2;
 
@@ -120,6 +143,9 @@ message AcceptOk {
 }
 
 message Commit {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Instance instance = 1;
   required CommandOrNoop command_or_noop = 2;
   required int32 sequence_number = 3;
@@ -127,12 +153,18 @@ message Commit {
 }
 
 message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required int32 client_id = 1;
   // The result of executing the command.
   required bytes result = 2;
 }
 
 message Prepare {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Instance instance = 1;
   required Ballot ballot = 2;
 }
@@ -163,12 +195,18 @@ message PrepareOk {
 }
 
 message Nack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Instance instance = 1;
   required Ballot largest_ballot = 2;
 }
 
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ReplicaInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   oneof request {
     ClientRequest client_request = 1;
     PreAccept pre_accept = 2;
@@ -183,6 +221,9 @@ message ReplicaInbound {
 }
 
 message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   oneof request {
     ClientReply client_reply = 1;
   }

@@ -83,10 +83,13 @@
           </div>
 
           <div class="frankenpaxos-box">
-            <h3 class="frankenpaxos-box-title">Data</h3>
-            <keep-alive>
-              <component :is="node.component" :node="node"></component>
-            </keep-alive>
+            <h3 class="frankenpaxos-box-title">Messages</h3>
+            <frankenpaxos-staged-messages
+              :transport="transport"
+              :actor="node.actor"
+              :messages="JsUtils.seqToJs(
+                transport.stagedMessagesForAddress(node.actor.address))">
+            </frankenpaxos-staged-messages>
           </div>
 
           <div class="frankenpaxos-box">
@@ -97,13 +100,10 @@
           </div>
 
           <div class="frankenpaxos-box">
-            <h3 class="frankenpaxos-box-title">Messages</h3>
-            <frankenpaxos-staged-messages
-              :transport="transport"
-              :actor="node.actor"
-              :messages="JsUtils.seqToJs(
-                transport.stagedMessagesForAddress(node.actor.address))">
-            </frankenpaxos-staged-messages>
+            <h3 class="frankenpaxos-box-title">Data</h3>
+            <keep-alive>
+              <component :is="node.component" :node="node"></component>
+            </keep-alive>
           </div>
 
           <div class="frankenpaxos-box">

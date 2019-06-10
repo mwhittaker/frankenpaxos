@@ -114,14 +114,14 @@ let replica_info = {
     <div>
       <div>nextAvailableInstance = {{node.actor.nextAvailableInstance}}</div>
       <div>largestBallot = {{node.actor.largestBallot}}</div>
-      <!-- <div>stateMachine = {{node.actor.stateMachine}}</div> -->
-      <!-- <div>dependencyGraph = {{node.actor.dependencyGraph}}</div> -->
+      <div>stateMachine = {{node.actor.stateMachine}}</div>
+      <div>dependencyGraph = {{node.actor.dependencyGraph}}</div>
 
       <!-- cmdLog -->
       <div>
         cmdLog =
 
-        <frankenpaxos-map :map=node.actor.cmdLog v-slot="{value: entry}">
+        <frankenpaxos-map :map="node.actor.cmdLog" v-slot="{value: entry}">
           <!-- NoCommandEntry -->
           <div v-if="entry.constructor.name.endsWith('$NoCommandEntry')">
             <strong>NoCommandEntry</strong>
@@ -173,7 +173,7 @@ let replica_info = {
       <div>
         leaderStates =
 
-        <frankenpaxos-map :map=node.actor.leaderStates v-slot="{value: state}">
+        <frankenpaxos-map :map="node.actor.leaderStates" v-slot="{value: state}">
           <!-- PreAccepting -->
           <div v-if="state.constructor.name.endsWith('$PreAccepting')">
             <strong>PreAccepting</strong>

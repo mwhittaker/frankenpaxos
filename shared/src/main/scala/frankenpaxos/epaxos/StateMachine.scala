@@ -156,7 +156,7 @@ trait TypedStateMachine[I, O] extends StateMachine {
 class Register extends StateMachine {
   private var x: String = ""
 
-  override def toString(): String = x
+  override def toString(): String = s"Register($x)"
 
   override def run(input: Array[Byte]): Array[Byte] = {
     x = new String(input)

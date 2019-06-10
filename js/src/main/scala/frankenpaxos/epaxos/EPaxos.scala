@@ -42,8 +42,6 @@ class EPaxos {
   val replicas = for (i <- 1 to 5) yield {
     val logger = new JsLogger()
     val address = JsTransportAddress(s"Replica $i")
-    val stateMachine = new Register()
-    val dependencyGraph = new ScalaGraphDependencyGraph()
     val options = ReplicaOptions.default.copy(
       resendPreAcceptsTimerPeriod = java.time.Duration.ofSeconds(3),
       defaultToSlowPathTimerPeriod = java.time.Duration.ofSeconds(5),
@@ -54,8 +52,8 @@ class EPaxos {
                                            transport,
                                            logger,
                                            config,
-                                           stateMachine,
-                                           dependencyGraph,
+                                           new Register(),
+                                           new ScalaGraphDependencyGraph(),
                                            options)
     (logger, replica)
   }
