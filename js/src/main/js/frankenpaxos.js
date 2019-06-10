@@ -505,8 +505,54 @@ Vue.component('frankenpaxos-unittest', {
   `
 });
 
+// Data structure visualizations. //////////////////////////////////////////////
+Vue.component('fp-toggle', {
+  props: {
+    value: {
+      required: true,
+    },
+    show_at_start: {
+      type: Boolean,
+      default: true,
+    },
+  },
+
+  data: function() {
+    return {
+      show: this.show_at_start,
+    };
+  },
+
+  computed: {
+    buttonName: function() {
+      if (this.show) {
+        return 'Hide';
+      } else {
+        return 'Show';
+      }
+    },
+  },
+
+  // TODO(mwhittaker): Add the persist thing.
+  template: `
+    <div>
+      <button v-on:click="show = !show">{{buttonName}}</button>
+      <slot v-if="show">{{value}}</slot>
+      <span v-else>...</span>
+    </div>
+  `
+});
+
 Vue.component('frankenpaxos-map', {
-  props: ['map'],
+  props: {
+    map: {
+      required: true,
+    },
+    show_values_at_start: {
+      type: Boolean,
+      default: true,
+    },
+  },
 
   data: function() {
     return {
@@ -531,7 +577,11 @@ Vue.component('frankenpaxos-map', {
     <table class="frankenpaxos-map">
       <tr v-for="kv in js_map">
         <td>{{kv[0]}}</td>
-        <td><slot :value="kv[1]">{{kv[1]}}</slot></td>
+        <td>
+          <fp-toggle :value="kv[1]" :show_at_start="show_values_at_start">
+            <slot :value="kv[1]">{{kv[1]}}</slot>
+          </fp-toggle>
+        </td>
       </tr>
     </table>
   `
@@ -658,34 +708,5 @@ Vue.component('fp-field', {
         </fp-toggle>
       </td>
     </tr>
-  `
-});
-
-Vue.component('fp-toggle', {
-  props: ['value', 'show_at_start'],
-
-  data: function() {
-    return {
-      show: this.show_at_start,
-    };
-  },
-
-  computed: {
-    buttonName: function() {
-      if (this.show) {
-        return 'Hide';
-      } else {
-        return 'Show';
-      }
-    },
-  },
-
-  // TODO(mwhittaker): Add the persist thing.
-  template: `
-    <div>
-      <button v-on:click="show = !show">{{buttonName}}</button>
-      <slot v-if="show">{{value}}</slot>
-      <span v-else>...</span>
-    </div>
   `
 });

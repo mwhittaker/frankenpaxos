@@ -182,6 +182,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // (during recovery).
   sealed trait LeaderState
 
+  @JSExportAll
   case class PreAccepting(
       // Every EPaxos replica plays the role of a Paxos proposer _and_ a Paxos
       // acceptor. The ballot and voteBallot in a command log entry are used
@@ -207,6 +208,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       defaultToSlowPathTimer: Option[Transport#Timer]
   ) extends LeaderState
 
+  @JSExportAll
   case class Accepting(
       // See above.
       ballot: Ballot,
@@ -218,6 +220,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       resendAcceptsTimer: Transport#Timer
   ) extends LeaderState
 
+  @JSExportAll
   case class Preparing(
       // See above.
       ballot: Ballot,

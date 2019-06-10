@@ -90,6 +90,9 @@ message PreAccept {
 }
 
 message PreAcceptOk {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Instance instance = 1;
   required Ballot ballot = 2;
   required int32 replica_index = 3;
@@ -108,6 +111,9 @@ message Accept {
 }
 
 message AcceptOk {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Instance instance = 2;
   required Ballot ballot = 3;
   required int32 replica_index = 7;
@@ -132,6 +138,9 @@ message Prepare {
 }
 
 message PrepareOk {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Ballot ballot = 1;
   required Instance instance = 2;
   required int32 replica_index = 3;
