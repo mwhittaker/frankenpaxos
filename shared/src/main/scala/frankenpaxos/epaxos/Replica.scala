@@ -656,7 +656,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private def makeResendPreAcceptsTimer(
       preAccept: PreAccept
   ): Transport#Timer = {
-    // TODO(mwhittaker): Pull this duration out into an option.
     lazy val t: Transport#Timer = timer(
       s"resendPreAccepts ${preAccept.instance} ${preAccept.ballot}",
       options.resendPreAcceptsTimerPeriod,
@@ -672,7 +671,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private def makeDefaultToSlowPathTimer(
       instance: Instance
   ): Transport#Timer = {
-    // TODO(mwhittaker): Pull this duration out into an option.
     val t = timer(
       s"defaultToSlowPath ${instance}",
       options.defaultToSlowPathTimerPeriod,
@@ -693,7 +691,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def makeResendAcceptsTimer(accept: Accept): Transport#Timer = {
-    // TODO(mwhittaker): Pull this duration out into an option.
     lazy val t: Transport#Timer = timer(
       s"resendAccepts ${accept.instance} ${accept.ballot}",
       options.resendAcceptsTimerPeriod,
@@ -707,7 +704,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def makeResendPreparesTimer(prepare: Prepare): Transport#Timer = {
-    // TODO(mwhittaker): Pull this duration out into an option.
     lazy val t: Transport#Timer = timer(
       s"resendPrepares ${prepare.instance} ${prepare.ballot}",
       options.resendPreparesTimerPeriod,
