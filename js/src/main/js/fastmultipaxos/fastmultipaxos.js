@@ -344,6 +344,7 @@ function main() {
       time_scale: 1,
       auto_deliver_messages: true,
       auto_start_timers: true,
+      record_history_for_unit_tests: false,
     },
 
     methods: {
@@ -371,6 +372,12 @@ function main() {
 
       unpartition: function(address) {
         nodes[address].svgs[0].attr({fill: nodes[address].color})
+      },
+    },
+
+    watch: {
+      record_history_for_unit_tests: function(b) {
+        this.transport.recordHistory = b;
       },
     },
   });

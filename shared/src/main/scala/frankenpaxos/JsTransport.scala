@@ -78,6 +78,8 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   val timers = mutable.Buffer[JsTransport#Timer]()
   var bufferedMessages = mutable.Buffer[JsTransportMessage]()
   var stagedMessages = mutable.Buffer[JsTransportMessage]()
+
+  var recordHistory: Boolean = false
   val history = mutable.Buffer[Command]()
 
   var messageId: Int = 0
@@ -128,7 +130,9 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     // TODO(mwhittaker): If a timer already exists with the given name and it
     // is stopped, delete it. We are replacing that timer with a new one.
     val timer = new JsTransportTimer(address, name, delay, () => {
-      history += TriggerTimer((address, name))
+      if (recordHistory) {
+        history += TriggerTimer((address, name))
+      }
       f()
     })
     timers += timer
@@ -189,7 +193,9 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     actors.get(msg.dst) match {
       case Some(actor) => {
         actor.receiveImpl(msg.src, msg.bytes)
-        history += DeliverMessage(msg)
+        if (recordHistory) {
+          history += DeliverMessage(msg)
+        }
       }
       case None =>
         logger.warn(
