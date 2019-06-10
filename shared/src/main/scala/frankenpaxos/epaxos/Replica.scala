@@ -1061,7 +1061,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     largestBallot = BallotHelpers.max(largestBallot, accept.ballot)
 
     // Update our command log.
-    cmdLog -= instance
+    cmdLog -= accept.instance
     cmdLog(accept.instance) = AcceptedEntry(
       ballot = accept.ballot,
       voteBallot = accept.ballot,
