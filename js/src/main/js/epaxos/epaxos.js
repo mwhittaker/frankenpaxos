@@ -310,8 +310,8 @@ function make_nodes(EPaxos, snap) {
     actor: EPaxos.replica2,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x + 100, 200, 20).attr(colored(flat_blue)),
-      snap.text(replica_x + 100, 200, '2').attr(number_style),
+      snap.circle(replica_x + 50, 200, 20).attr(colored(flat_blue)),
+      snap.text(replica_x + 50, 200, '2').attr(number_style),
     ],
     component: replica_info,
   };
@@ -328,8 +328,8 @@ function make_nodes(EPaxos, snap) {
     actor: EPaxos.replica4,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x + 100, 400, 20).attr(colored(flat_blue)),
-      snap.text(replica_x + 100, 400, '4').attr(number_style),
+      snap.circle(replica_x + 50, 400, 20).attr(colored(flat_blue)),
+      snap.text(replica_x + 50, 400, '4').attr(number_style),
     ],
     component: replica_info,
   };
