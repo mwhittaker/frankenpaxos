@@ -26,237 +26,26 @@
       margin-top: 16pt;
       margin-bottom: 16pt;
     }
+
+    .object {
+      margin-bottom: 16pt;
+    }
   </style>
 </head>
 <body>
   <div id="container">
     <div id="tweened_app">
       <h1>VueTest</h1>
-      mutableString: mutable.Map[String, String] =
-      <frankenpaxos-map :map="VueTest.mutableString"></frankenpaxos-map>
 
-      <div>
-        <button
-          v-on:click="VueTest.directAddMutableString(key, value)">
-          directAddMutableString
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.putMutableString(key, value)">
-          putMutableString
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.updateMutableString(key, value)">
-          updateMutableString
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.plusEqualMutableString(key, value)">
-          plusEqualMutableString
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.reassignMutableString(key, value)">
-          reassignMutableString
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.plusMutableString(key, value)">
-          plusMutableString
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.removeMutableString(key)">
-          removeMutableString
-        </button>
-        <input v-model="key"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.minusEqualsMutableString(key)">
-          minusEqualsMutableString
-        </button>
-        <input v-model="key"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.minusMutableString(key)">
-          minusMutableString
-        </button>
-        <input v-model="key"></input>
-      </div>
-
-      mutableCell: mutable.Map[String, Cell] =
-      <frankenpaxos-map :map="VueTest.mutableCell"></frankenpaxos-map>
-      <div>
-        <button
-          v-on:click="VueTest.directAddMutableCell(key, value)">
-          directAddMutableCell
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.putMutableCell(key, value)">
-          putMutableCell
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.updateMutableCell(key, value)">
-          updateMutableCell
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.plusEqualMutableCell(key, value)">
-          plusEqualMutableCell
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.reassignMutableCell(key, value)">
-          reassignMutableCell
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.plusMutableCell(key, value)">
-          plusMutableCell
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.mutateMutableCell(key, value)">
-          mutateMutableCell
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.removeMutableCell(key)">
-          removeMutableCell
-        </button>
-        <input v-model="key"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.minusEqualsMutableCell(key)">
-          minusEqualsMutableCell
-        </button>
-        <input v-model="key"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.minusMutableCell(key)">
-          minusMutableCell
-        </button>
-        <input v-model="key"></input>
-      </div>
-
-      mutableWrapper: mutable.Map[String, Wrapper] =
-      <frankenpaxos-map :map="VueTest.mutableWrapper"></frankenpaxos-map>
-      <div>
-        <button
-          v-on:click="VueTest.directAddMutableWrapper(key, value)">
-          directAddMutableWrapper
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.putMutableWrapper(key, value)">
-          putMutableWrapper
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.updateMutableWrapper(key, value)">
-          updateMutableWrapper
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.plusEqualMutableWrapper(key, value)">
-          plusEqualMutableWrapper
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.reassignMutableWrapper(key, value)">
-          reassignMutableWrapper
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.plusMutableWrapper(key, value)">
-          plusMutableWrapper
-        </button>
-        <input v-model="key"></input>
-        <input v-model="value"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.removeMutableWrapper(key)">
-          removeMutableWrapper
-        </button>
-        <input v-model="key"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.minusEqualsMutableWrapper(key)">
-          minusEqualsMutableWrapper
-        </button>
-        <input v-model="key"></input>
-      </div>
-      <div>
-        <button
-          v-on:click="VueTest.minusMutableWrapper(key)">
-          minusMutableWrapper
-        </button>
-        <input v-model="key"></input>
-      </div>
-
+      <object-and-methods  v-bind="mutableStrings" v-slot="{object: o}">
+        <frankenpaxos-seq :seq="o"></frankenpaxos-seq>
+      </object-and-methods>
+      <object-and-methods  v-bind="mutableString" v-slot="{object: o}">
+        <frankenpaxos-map :map="o"></frankenpaxos-map>
+      </object-and-methods>
+      <object-and-methods  v-bind="mutableCell" v-slot="{object: o}">
+        <frankenpaxos-map :map="o"></frankenpaxos-map>
+      </object-and-methods>
     </div>
   </div>
 

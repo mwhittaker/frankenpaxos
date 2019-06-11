@@ -5,15 +5,18 @@ import scala.scalajs.js.annotation._
 
 @JSExportAll
 class VueTest {
-  case class Wrapper(x: String)
-
   class Cell(var x: String) {
     override def toString(): String = x
   }
 
+  var mutableStrings = mutable.Buffer[String]()
   var mutableString = mutable.Map[String, String]()
   var mutableCell = mutable.Map[String, Cell]()
-  var mutableWrapper = mutable.Map[String, Wrapper]()
+
+  def plusEqualsMutableStrings(x: String) =
+    mutableStrings += x
+  def clearMutableStrings() =
+    mutableStrings.clear()
 
   def directAddMutableString(key: String, value: String) =
     mutableString(key) = value
@@ -54,25 +57,6 @@ class VueTest {
     mutableCell -= key
   def minusMutableCell(key: String) =
     mutableCell = mutableCell - key
-
-  def directAddMutableWrapper(key: String, value: String) =
-    mutableWrapper(key) = Wrapper(value)
-  def putMutableWrapper(key: String, value: String) =
-    mutableWrapper.put(key, Wrapper(value))
-  def updateMutableWrapper(key: String, value: String) =
-    mutableWrapper.update(key, Wrapper(value))
-  def plusEqualMutableWrapper(key: String, value: String) =
-    mutableWrapper += key -> Wrapper(value)
-  def reassignMutableWrapper(key: String, value: String) =
-    mutableWrapper = mutableWrapper += (key -> Wrapper(value))
-  def plusMutableWrapper(key: String, value: String) =
-    mutableWrapper = mutableWrapper + (key -> Wrapper(value))
-  def removeMutableWrapper(key: String) =
-    mutableWrapper.remove(key)
-  def minusEqualsMutableWrapper(key: String) =
-    mutableWrapper -= key
-  def minusMutableWrapper(key: String) =
-    mutableWrapper = mutableWrapper - key
 }
 
 @JSExportAll
