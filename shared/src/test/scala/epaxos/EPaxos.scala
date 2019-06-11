@@ -1,7 +1,9 @@
 package frankenpaxos.epaxos
 
-import frankenpaxos.simulator._
-import frankenpaxos.epaxos._
+import frankenpaxos.simulator.FakeLogger
+import frankenpaxos.simulator.FakeTransport
+import frankenpaxos.simulator.FakeTransportAddress
+import frankenpaxos.simulator.SimulatedSystem
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -30,146 +32,68 @@ class EPaxos(val f: Int) {
 
   // Replicas
   val replicas = for (i <- 1 to numReplicas)
-    // TODO(mwhittaker): Implement.
     yield
       new Replica[FakeTransport](FakeTransportAddress(s"Replica $i"),
                                  transport,
                                  logger,
                                  config,
-                                 ???)
+                                 new Register(),
+                                 new JgraphtDependencyGraph())
 }
 
-sealed trait EPaxosCommand
-case class Propose(clientIndex: Int, value: String) extends EPaxosCommand
-case class TransportCommand(command: FakeTransportCommand) extends EPaxosCommand
+object SimulatedEPaxos {
+  sealed trait Command
+  case class Propose(clientIndex: Int, value: String) extends Command
+  case class TransportCommand(command: FakeTransport.Command) extends Command
+}
 
 class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
-  override type System = (EPaxos, Set[Unit])
-  override type State = Set[Unit]
-  override type Command = EPaxosCommand
+  import SimulatedEPaxos._
 
-  val commands: mutable.ListBuffer[String] = mutable.ListBuffer()
-
-  def chosenValues(ePaxos: EPaxos): Set[String] = {
-    // First, we look at any chosen values that the clients and proposers have
-    // learned.
-    //val clientChosen = paxos.clients.flatMap(_.chosenValue).to[Set]
-    //val proposerChosen = paxos.proposers.flatMap(_.chosenValue).to[Set]
-
-    // Next, we compute any value chosen by the acceptors. A value is
-    // considered chosen if it has a majority of votes in the same round.
-    //val votes: Seq[(Int, String)] = paxos.acceptors.flatMap(acceptor => {
-    //  acceptor.voteValue.map((acceptor.voteRound, _))
-    //})
-    //val acceptorChosen: Set[String] =
-    //  votes
-    //    .filter(round_and_value => {
-    //      votes.count(_ == round_and_value) >= f + 1
-    //    })
-    //    .map(_._2)
-    //    .to[Set]
-
-    //clientChosen ++ proposerChosen ++ acceptorChosen
-    /*var commands: mutable.Set[Array[Byte]] = mutable.Set()
-    for (client <- ePaxos.clients) {
-      commands.add(client.pendingCommand.get.command)
-    }
-    commands.toSet*/
-
-    // TODO(mwhittaker): Re-implement.
-    // var minStateMachine = Int.MaxValue
-    // for (replica <- ePaxos.replicas) {
-    //   minStateMachine =
-    //     Math.min(minStateMachine, replica.stateMachine.executedCommands.size)
-    // }
-    // for (i <- 1 to minStateMachine) {
-    //   var set = mutable.Set[String]()
-    //   for (replica <- ePaxos.replicas) {
-    //     set.add(replica.stateMachine.executedCommands(i).request.toString)
-    //   }
-    //   if (set.size != 1) {
-    //     println("Test failed")
-    //     return set.toSet
-    //   }
-    // }
-    Set.empty
-  }
-
-  override def newSystem(): System = {
-    (new EPaxos(f), Set())
-  }
-
-  override def getState(
-      system: System
-  ): State = {
-    system._2
-  }
-
+  override type System = EPaxos
   // TODO(mwhittaker): Implement.
-  // override def invariantHolds(
-  //     newState: State,
-  //     oldState: Option[State]
-  // ): Option[String] = {
-  //   if (newState.size > 1) {
-  //     return Some(
-  //       "State machines are not linearizable"
-  //     )
-  //   }
-  //   None
-  // }
+  override type State = Unit
+  override type Command = SimulatedEPaxos.Command
 
-  override def generateCommand(
-      system: System
-  ): Option[Command] = {
-    val (ePaxos, _) = system
+  override def newSystem(): System = new EPaxos(f)
 
+  override def getState(system: System): State = {
+    // TODO(mwhittaker): Implement.
+  }
+
+  override def generateCommand(epaxos: System): Option[Command] = {
     var subgens = mutable.Buffer[(Int, Gen[Command])]()
-    subgens += (
-      (
-        ePaxos.numClients,
-        for (clientId <- Gen.choose(0, ePaxos.numClients - 1);
-             value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString("")))
-          yield Propose(clientId, value)
-      )
-    )
+    subgens +=
+      epaxos.numClients -> {
+        for {
+          clientId <- Gen.choose(0, epaxos.numClients - 1)
+          value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
+        } yield Propose(clientId, value)
+      }
 
-    if ((ePaxos.transport.messages.size +
-          ePaxos.transport.runningTimers().size) > 0) {
-      subgens += (
-        (
-          ePaxos.transport.messages.size +
-            ePaxos.transport.runningTimers().size,
+    val numTransportItems = epaxos.transport.messages.size +
+      epaxos.transport.runningTimers().size
+    if (numTransportItems > 0) {
+      subgens +=
+        numTransportItems ->
           FakeTransport
-            .generateCommand(ePaxos.transport)
+            .generateCommand(epaxos.transport)
             .map(TransportCommand(_))
-        )
-      )
     }
 
     val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
-  override def runCommand(
-      system: System,
-      command: Command
-  ): System = {
-    val (ePaxos, allChosenValues) = system
+  override def runCommand(epaxos: System, command: Command): System = {
     command match {
       case Propose(clientId, value) =>
-        //println("Propose to client: " + clientId + " with value " + value)
-        commands.append(value)
-        val r = scala.util.Random
-        val index: Int = r.nextInt(commands.size)
-
-        /*for (rep <- ePaxos.replicas) {
-          rep.stateMachine.addConflict(commands(index).getBytes(), value.getBytes())
-        }*/
-
-        ePaxos.clients(clientId).propose("SET a " + value)
+        epaxos.clients(clientId).propose("TODO")
       case TransportCommand(command) =>
-        FakeTransport.runCommand(ePaxos.transport, command)
+        FakeTransport.runCommand(epaxos.transport, command)
     }
-    (ePaxos, Set.empty)
+    epaxos
   }
+
+  // TODO(mwhittaker): Implement invariants.
 }

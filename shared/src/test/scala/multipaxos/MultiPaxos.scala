@@ -1,6 +1,9 @@
 package frankenpaxos.multipaxos
 
-import frankenpaxos.simulator._
+import frankenpaxos.simulator.FakeLogger
+import frankenpaxos.simulator.FakeTransport
+import frankenpaxos.simulator.FakeTransportAddress
+import frankenpaxos.simulator.SimulatedSystem
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -66,127 +69,59 @@ class MultiPaxos(val f: Int) {
       )
 }
 
-sealed trait MultiPaxosCommand
-case class Propose(clientIndex: Int, value: String) extends MultiPaxosCommand
-case class TransportCommand(command: FakeTransportCommand)
-    extends MultiPaxosCommand
+object SimulatedMultiPaxos {
+  sealed trait Command
+  case class Propose(clientIndex: Int, value: String) extends Command
+  case class TransportCommand(command: FakeTransport.Command) extends Command
+}
 
 class SimulatedMultiPaxos(val f: Int) extends SimulatedSystem {
-  override type System = (MultiPaxos, Set[String])
-  override type State = Set[String]
-  override type Command = MultiPaxosCommand
+  import SimulatedMultiPaxos._
 
-  def chosenValues(multiPaxos: MultiPaxos): Set[String] = {
-    // First, we look at any chosen values that the clients and proposers have
-    // learned.
-    //val clientChosen = paxos.clients.flatMap(_.chosenValue).to[Set]
-    //val proposerChosen = paxos.proposers.flatMap(_.chosenValue).to[Set]
+  override type System = MultiPaxos
+  // TODO(mwhittaker): Implement.
+  override type State = Unit
+  override type Command = SimulatedMultiPaxos.Command
 
-    // Next, we compute any value chosen by the acceptors. A value is
-    // considered chosen if it has a majority of votes in the same round.
-    //val votes: Seq[(Int, String)] = paxos.acceptors.flatMap(acceptor => {
-    //  acceptor.voteValue.map((acceptor.voteRound, _))
-    //})
-    //val acceptorChosen: Set[String] =
-    //  votes
-    //    .filter(round_and_value => {
-    //      votes.count(_ == round_and_value) >= f + 1
-    //    })
-    //    .map(_._2)
-    //    .to[Set]
+  override def newSystem(): System = new MultiPaxos(f)
 
-    //clientChosen ++ proposerChosen ++ acceptorChosen
-    var slotToTest: Int = 3
-    var commands: Set[String] = Set()
-    for (replica <- multiPaxos.replicas) {
-      var proposals: Set[ClientProposal] = replica.decisions
-      var pairs: String = ""
-      for (clientProposal <- proposals) {
-        if (clientProposal.slot == slotToTest) {
-          commands += clientProposal.command
-        }
-        //pairs = pairs + "(" + clientProposal.slot + ", " + clientProposal.command + ")\n"
-
-      }
-      //commands += pairs
-    }
-    commands
+  override def getState(system: System): State = {
+    // TODO(mwhittaker): Implement.
   }
 
-  override def newSystem(): System = {
-    (new MultiPaxos(f), Set())
-  }
-
-  override def getState(
-      system: System
-  ): State = {
-    system._2
-  }
-
-  override def invariantHolds(
-      newState: State,
-      oldState: Option[State]
-  ): Option[String] = {
-    if (newState.size > 1) {
-      return Some(
-        s"Multiple values have been chosen: $newState (previously $oldState)."
-      )
-    }
-
-    if (oldState.isDefined && !oldState.get.subsetOf(newState)) {
-      return Some(
-        s"Different values have been chosen: ${oldState.get} and " +
-          s"then $newState."
-      )
-    }
-
-    None
-  }
-
-  override def generateCommand(
-      system: System
-  ): Option[Command] = {
-    val (multiPaxos, _) = system
-
+  override def generateCommand(multiPaxos: System): Option[Command] = {
     var subgens = mutable.Buffer[(Int, Gen[Command])]()
-    subgens += (
-      (
-        multiPaxos.numClients,
-        for (clientId <- Gen.choose(0, multiPaxos.numClients - 1);
-             value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString("")))
-          yield Propose(clientId, value)
-      )
-    )
+    subgens +=
+      multiPaxos.numClients -> {
+        for {
+          clientId <- Gen.choose(0, multiPaxos.numClients - 1)
+          value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
+        } yield Propose(clientId, value)
+      }
 
-    if ((multiPaxos.transport.messages.size +
-          multiPaxos.transport.runningTimers().size) > 0) {
-      subgens += (
-        (
-          multiPaxos.transport.messages.size +
-            multiPaxos.transport.runningTimers().size,
+    val numTransportItems = multiPaxos.transport.messages.size +
+      multiPaxos.transport.runningTimers().size
+    if (numTransportItems > 0) {
+      subgens +=
+        numTransportItems ->
           FakeTransport
             .generateCommand(multiPaxos.transport)
             .map(TransportCommand(_))
-        )
-      )
     }
 
     val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
-  override def runCommand(
-      system: System,
-      command: Command
-  ): System = {
-    val (multiPaxos, allChosenValues) = system
+  override def runCommand(multiPaxos: System, command: Command): System = {
     command match {
       case Propose(clientId, value) =>
-        //println("Propose to client: " + clientId + " with value " + value)
         multiPaxos.clients(clientId).propose(value)
       case TransportCommand(command) =>
         FakeTransport.runCommand(multiPaxos.transport, command)
     }
-    (multiPaxos, allChosenValues ++ chosenValues(multiPaxos))
+    multiPaxos
   }
+
+  // TODO(mwhittaker): Add invariants.
 }

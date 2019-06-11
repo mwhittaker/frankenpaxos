@@ -187,8 +187,6 @@ trait SimulatedSystem {
   // are invariants that hold over ever pair of consecutive states in a
   // history. History invariants are invariants that hold over the entire
   // (non-empty) history.
-  def invariantHolds(a: State, b: State): Option[String] = None
-
   def stateInvariantHolds(state: State): InvariantResult =
     InvariantHolds
 

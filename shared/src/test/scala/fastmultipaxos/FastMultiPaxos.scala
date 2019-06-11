@@ -1,7 +1,10 @@
 package frankenpaxos.fastmultipaxos
 
 import frankenpaxos.monitoring.FakeCollectors
-import frankenpaxos.simulator._
+import frankenpaxos.simulator.FakeLogger
+import frankenpaxos.simulator.FakeTransport
+import frankenpaxos.simulator.FakeTransportAddress
+import frankenpaxos.simulator.SimulatedSystem
 import frankenpaxos.statemachine.AppendLog
 import org.scalacheck
 import org.scalacheck.Gen
@@ -63,80 +66,63 @@ class FastMultiPaxos(val f: Int) {
                                   new AcceptorMetrics(FakeCollectors))
 }
 
-sealed trait FastMultiPaxosCommand
-case class Propose(clientIndex: Int, clientPseudonym: Int, value: String)
-    extends FastMultiPaxosCommand
-case class TransportCommand(command: FakeTransportCommand)
-    extends FastMultiPaxosCommand
+object SimulatedFastMultiPaxos {
+  sealed trait Command
+  case class Propose(clientIndex: Int, clientPseudonym: Int, value: String)
+      extends Command
+  case class TransportCommand(command: FakeTransport.Command) extends Command
+}
 
 class SimulatedFastMultiPaxos(val f: Int) extends SimulatedSystem {
-  // TODO(mwhittaker): Implement.
-  override type System = (FastMultiPaxos, Unit)
+  import SimulatedFastMultiPaxos._
+
+  override type System = FastMultiPaxos
   // TODO(mwhittaker): Implement.
   override type State = Unit
-  override type Command = FastMultiPaxosCommand
+  override type Command = SimulatedFastMultiPaxos.Command
 
-  override def newSystem(): System = {
-    (new FastMultiPaxos(f), ())
+  override def newSystem(): System = new FastMultiPaxos(f)
+
+  override def getState(system: System): State = {
+    // TODO(mwhittaker): Implement.
   }
 
-  override def getState(
-      system: System
-  ): State = system._2
-
-  override def invariantHolds(
-      newState: State,
-      oldState: Option[State]
-  ): Option[String] = {
-    None
-  }
-
-  override def generateCommand(
-      system: System
-  ): Option[Command] = {
-    val (fastMultiPaxos, _) = system
-
+  override def generateCommand(fastMultiPaxos: System): Option[Command] = {
     var subgens = mutable.Buffer[(Int, Gen[Command])]()
-    subgens += (
-      (
-        fastMultiPaxos.numClients,
-        for (clientId <- Gen.choose(0, fastMultiPaxos.numClients - 1);
-             clientPseudonym <- Gen.choose(0, 1);
-             value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString("")))
-          yield Propose(clientId, clientPseudonym, value)
-      )
-    )
+    subgens +=
+      fastMultiPaxos.numClients -> {
+        for {
+          clientId <- Gen.choose(0, fastMultiPaxos.numClients - 1);
+          clientPseudonym <- Gen.choose(0, 1);
+          value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
+        } yield Propose(clientId, clientPseudonym, value)
+      }
 
-    if ((fastMultiPaxos.transport.messages.size +
-          fastMultiPaxos.transport.runningTimers().size) > 0) {
-      subgens += (
-        (
-          fastMultiPaxos.transport.messages.size +
-            fastMultiPaxos.transport.runningTimers().size,
+    val numTransportItems = fastMultiPaxos.transport.messages.size +
+      fastMultiPaxos.transport.runningTimers().size
+    if (numTransportItems > 0) {
+      subgens +=
+        numTransportItems ->
           FakeTransport
             .generateCommand(fastMultiPaxos.transport)
             .map(TransportCommand(_))
-        )
-      )
     }
 
     val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
-  override def runCommand(
-      system: System,
-      command: Command
-  ): System = {
-    val (fastMultiPaxos, allChosenValues) = system
+  override def runCommand(fastMultiPaxos: System, command: Command): System = {
     command match {
       case Propose(clientId, clientPseudonym, value) =>
         fastMultiPaxos.clients(clientId).propose(clientPseudonym, value)
       case TransportCommand(command) =>
         FakeTransport.runCommand(fastMultiPaxos.transport, command)
     }
-    (fastMultiPaxos, ())
+    fastMultiPaxos
   }
+
+  // TODO(mwhittaker): Implement invariants.
 
   def commandToString(command: Command): String = {
     val fastMultiPaxos = new FastMultiPaxos(f)
@@ -145,14 +131,14 @@ class SimulatedFastMultiPaxos(val f: Int) extends SimulatedSystem {
         val clientAddress = fastMultiPaxos.clients(clientIndex).address.address
         s"Propose($clientAddress, $clientPseudonym, $value)"
 
-      case TransportCommand(DeliverMessage(msg)) =>
+      case TransportCommand(FakeTransport.DeliverMessage(msg)) =>
         val dstActor = fastMultiPaxos.transport.actors(msg.dst)
         val s = dstActor.serializer.toPrettyString(
           dstActor.serializer.fromBytes(msg.bytes.to[Array])
         )
         s"DeliverMessage(src=${msg.src.address}, dst=${msg.dst.address})\n$s"
 
-      case TransportCommand(TriggerTimer((address, name))) =>
+      case TransportCommand(FakeTransport.TriggerTimer((address, name))) =>
         s"TriggerTimer(${address.address}:$name)"
     }
   }

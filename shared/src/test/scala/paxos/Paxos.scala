@@ -1,6 +1,10 @@
 package frankenpaxos.paxos
 
-import frankenpaxos.simulator._
+import frankenpaxos.Util
+import frankenpaxos.simulator.FakeLogger
+import frankenpaxos.simulator.FakeTransport
+import frankenpaxos.simulator.FakeTransportAddress
+import frankenpaxos.simulator.SimulatedSystem
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -53,16 +57,23 @@ class Paxos(val f: Int) {
       )
 }
 
-sealed trait PaxosCommand
-case class Propose(clientIndex: Int, value: String) extends PaxosCommand
-case class TransportCommand(command: FakeTransportCommand) extends PaxosCommand
+object SimulatedPaxos {
+  sealed trait Command
+  case class Propose(clientIndex: Int, value: String) extends Command
+  case class TransportCommand(command: FakeTransport.Command) extends Command
+}
 
 class SimulatedPaxos(val f: Int) extends SimulatedSystem {
-  override type System = (Paxos, Set[String])
-  override type State = Set[String]
-  override type Command = PaxosCommand
+  import SimulatedPaxos._
 
-  def chosenValues(paxos: Paxos): Set[String] = {
+  override type System = Paxos
+  // The set of strings that are chosen in the current system.
+  override type State = Set[String]
+  override type Command = SimulatedPaxos.Command
+
+  override def newSystem(): System = new Paxos(f)
+
+  override def getState(paxos: System): State = {
     // First, we look at any chosen values that the clients and leaders have
     // learned.
     val clientChosen = paxos.clients.flatMap(_.chosenValue).to[Set]
@@ -70,74 +81,33 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem {
 
     // Next, we compute any value chosen by the acceptors. A value is
     // considered chosen if it has a majority of votes in the same round.
-    val votes: Seq[(Int, String)] = paxos.acceptors.flatMap(acceptor => {
-      acceptor.voteValue.map((acceptor.voteRound, _))
-    })
-    val acceptorChosen: Set[String] =
-      votes
-        .filter(round_and_value => {
-          votes.count(_ == round_and_value) >= f + 1
-        })
-        .map(_._2)
-        .to[Set]
+    val votes: Seq[(Int, String)] = paxos.acceptors.flatMap(
+      acceptor => acceptor.voteValue.map((acceptor.voteRound, _))
+    )
+    val acceptorChosen = Util
+      .popularItems(votes, f + 1)
+      .map({ case (voteRound, voteValue) => voteValue })
 
     clientChosen ++ leaderChosen ++ acceptorChosen
   }
 
-  override def newSystem(): System = {
-    (new Paxos(f), Set())
-  }
-
-  override def getState(system: System): State = {
-    system._2
-  }
-
-  override def invariantHolds(
-      newState: State,
-      oldState: Option[State]
-  ): Option[String] = {
-    if (newState.size > 1) {
-      return Some(
-        s"Multiple values have been chosen: $newState (previously $oldState)."
-      )
-    }
-
-    if (oldState.isDefined && !oldState.get.subsetOf(newState)) {
-      return Some(
-        s"Different values have been chosen: ${oldState.get} and " +
-          s"then $newState."
-      )
-    }
-
-    None
-  }
-
-  override def generateCommand(
-      system: System
-  ): Option[Command] = {
-    val (paxos, _) = system
-
+  override def generateCommand(paxos: System): Option[Command] = {
     var subgens = mutable.Buffer[(Int, Gen[Command])]()
-    subgens += (
-      (
-        paxos.numClients,
-        for (clientId <- Gen.choose(0, paxos.numClients - 1);
-             value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString("")))
-          yield Propose(clientId, value)
-      )
-    )
+    subgens += paxos.numClients -> {
+      for {
+        clientId <- Gen.choose(0, paxos.numClients - 1);
+        value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
+      } yield Propose(clientId, value)
+    }
 
-    if ((paxos.transport.messages.size +
-          paxos.transport.runningTimers().size) > 0) {
-      subgens += (
-        (
-          paxos.transport.messages.size +
-            paxos.transport.runningTimers().size,
+    val numTransportItems = paxos.transport.messages.size +
+      paxos.transport.runningTimers().size
+    if (numTransportItems > 0) {
+      subgens +=
+        numTransportItems ->
           FakeTransport
             .generateCommand(paxos.transport)
             .map(TransportCommand(_))
-        )
-      )
     }
 
     val gen: Gen[Command] = Gen.frequency(subgens: _*)
@@ -145,34 +115,58 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem {
   }
 
   override def runCommand(
-      system: System,
+      paxos: System,
       command: Command
   ): System = {
-    val (paxos, allChosenValues) = system
     command match {
       case Propose(clientId, value) =>
         paxos.clients(clientId).propose(value)
       case TransportCommand(command) =>
         FakeTransport.runCommand(paxos.transport, command)
     }
-    (paxos, allChosenValues ++ chosenValues(paxos))
+    paxos
   }
 
-  def commandToString(command: Command): String = {
+  override def stateInvariantHolds(
+      state: State
+  ): SimulatedSystem.InvariantResult = {
+    if (state.size > 1) {
+      SimulatedSystem.InvariantViolated(
+        s"Multiple values have been chosen: $state"
+      )
+    } else {
+      SimulatedSystem.InvariantHolds
+    }
+  }
+
+  override def stepInvariantHolds(
+      oldState: State,
+      newState: State
+  ): SimulatedSystem.InvariantResult = {
+    if (oldState.subsetOf(newState)) {
+      SimulatedSystem.InvariantHolds
+    } else {
+      SimulatedSystem.InvariantViolated(
+        s"Different values have been chosen: $oldState and then $newState."
+      )
+    }
+  }
+
+  private def commandToString(command: Command): String = {
     val paxos = new Paxos(f)
     command match {
       case Propose(clientIndex, value) =>
         val clientAddress = paxos.clients(clientIndex).address.address
         s"Propose($clientAddress, $value)"
 
-      case TransportCommand(DeliverMessage(msg)) =>
+      case TransportCommand(FakeTransport.DeliverMessage(msg)) =>
         val dstActor = paxos.transport.actors(msg.dst)
         val s = dstActor.serializer.toPrettyString(
           dstActor.serializer.fromBytes(msg.bytes.to[Array])
         )
         s"DeliverMessage(src=${msg.src.address}, dst=${msg.dst.address})\n$s"
 
-      case TransportCommand(TriggerTimer((address, name))) =>
+      case TransportCommand(FakeTransport.TriggerTimer((address, name))) =>
         s"TriggerTimer(${address.address}:$name)"
     }
   }

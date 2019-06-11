@@ -1,6 +1,9 @@
 package frankenpaxos.fastpaxos
 
-import frankenpaxos.simulator._
+import frankenpaxos.simulator.FakeLogger
+import frankenpaxos.simulator.FakeTransport
+import frankenpaxos.simulator.FakeTransportAddress
+import frankenpaxos.simulator.SimulatedSystem
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -47,97 +50,91 @@ class FastPaxos(val f: Int) {
                                   config)
 }
 
-sealed trait FastPaxosCommand
-case class Propose(clientIndex: Int, value: String) extends FastPaxosCommand
-case class TransportCommand(command: FakeTransportCommand)
-    extends FastPaxosCommand
+object SimulatedFastPaxos {
+  sealed trait Command
+  case class Propose(clientIndex: Int, value: String) extends Command
+  case class TransportCommand(command: FakeTransport.Command) extends Command
+}
 
 class SimulatedFastPaxos(val f: Int) extends SimulatedSystem {
-  // A Fast Paxos instance and the set of values chosen.
-  override type System = (FastPaxos, Set[String])
-  // The set of values chosen.
-  override type State = Set[String]
-  override type Command = FastPaxosCommand
+  import SimulatedFastPaxos._
 
-  def chosenValues(fastPaxos: FastPaxos): Set[String] = {
+  override type System = FastPaxos
+  // The set of chosen values.
+  override type State = Set[String]
+  override type Command = SimulatedFastPaxos.Command
+
+  override def newSystem(): System = new FastPaxos(f)
+
+  override def getState(fastPaxos: System): State = {
+    // TODO(mwhittaker): Add values chosen by acceptors.
+
     // First, we look at any chosen values that the clients and leaders have
     // learned.
     val clientChosen = fastPaxos.clients.flatMap(_.chosenValue).to[Set]
     val leaderChosen = fastPaxos.leaders.flatMap(_.chosenValue).to[Set]
     clientChosen ++ leaderChosen
-
-    // TODO(mwhittaker): Add acceptor chosen.
   }
 
-  override def newSystem(): System = {
-    (new FastPaxos(f), Set())
-  }
-
-  override def getState(
-      system: System
-  ): State = system._2
-
-  override def invariantHolds(
-      newState: State,
-      oldState: Option[State]
-  ): Option[String] = {
-    if (newState.size > 1) {
-      return Some(s"""Multiple values have been chosen: $newState (previously
-                     |$oldState).""".stripMargin)
-    }
-
-    if (oldState.isDefined && !oldState.get.subsetOf(newState)) {
-      return Some(s"""Different values have been chosen: ${oldState.get} and
-                     |then $newState.""".stripMargin)
-    }
-
-    None
-  }
-
-  override def generateCommand(
-      system: System
-  ): Option[Command] = {
-    val (fastPaxos, _) = system
-
+  override def generateCommand(fastPaxos: System): Option[Command] = {
     var subgens = mutable.Buffer[(Int, Gen[Command])]()
-    subgens += (
-      (
-        fastPaxos.numClients,
-        for (clientId <- Gen.choose(0, fastPaxos.numClients - 1);
-             value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString("")))
-          yield Propose(clientId, value)
-      )
-    )
+    subgens += fastPaxos.numClients -> {
+      for {
+        clientId <- Gen.choose(0, fastPaxos.numClients - 1)
+        value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
+      } yield Propose(clientId, value)
+    }
 
-    if ((fastPaxos.transport.messages.size +
-          fastPaxos.transport.runningTimers().size) > 0) {
-      subgens += (
-        (
-          fastPaxos.transport.messages.size +
-            fastPaxos.transport.runningTimers().size,
+    val numTransportItems = fastPaxos.transport.messages.size +
+      fastPaxos.transport.runningTimers().size
+    if (numTransportItems > 0) {
+      subgens +=
+        numTransportItems ->
           FakeTransport
             .generateCommand(fastPaxos.transport)
             .map(TransportCommand(_))
-        )
-      )
     }
 
     val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
+  override def stateInvariantHolds(
+      state: State
+  ): SimulatedSystem.InvariantResult = {
+    if (state.size > 1) {
+      SimulatedSystem.InvariantViolated(
+        s"Multiple values have been chosen: $state"
+      )
+    } else {
+      SimulatedSystem.InvariantHolds
+    }
+  }
+
+  override def stepInvariantHolds(
+      oldState: State,
+      newState: State
+  ): SimulatedSystem.InvariantResult = {
+    if (oldState.subsetOf(newState)) {
+      SimulatedSystem.InvariantHolds
+    } else {
+      SimulatedSystem.InvariantViolated(
+        s"Different values have been chosen: $oldState and then $newState."
+      )
+    }
+  }
+
   override def runCommand(
-      system: System,
+      fastPaxos: System,
       command: Command
   ): System = {
-    val (fastPaxos, allChosenValues) = system
     command match {
       case Propose(clientId, value) =>
         fastPaxos.clients(clientId).propose(value)
       case TransportCommand(command) =>
         FakeTransport.runCommand(fastPaxos.transport, command)
     }
-    (fastPaxos, allChosenValues ++ chosenValues(fastPaxos))
+    fastPaxos
   }
 
   def commandToString(command: Command): String = {
@@ -147,14 +144,14 @@ class SimulatedFastPaxos(val f: Int) extends SimulatedSystem {
         val clientAddress = fastPaxos.clients(clientIndex).address.address
         s"Propose($clientAddress, $value)"
 
-      case TransportCommand(DeliverMessage(msg)) =>
+      case TransportCommand(FakeTransport.DeliverMessage(msg)) =>
         val dstActor = fastPaxos.transport.actors(msg.dst)
         val s = dstActor.serializer.toPrettyString(
           dstActor.serializer.fromBytes(msg.bytes.to[Array])
         )
         s"DeliverMessage(src=${msg.src.address}, dst=${msg.dst.address})\n$s"
 
-      case TransportCommand(TriggerTimer((address, name))) =>
+      case TransportCommand(FakeTransport.TriggerTimer((address, name))) =>
         s"TriggerTimer(${address.address}:$name)"
     }
   }

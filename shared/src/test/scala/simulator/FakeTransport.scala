@@ -1,6 +1,8 @@
 package frankenpaxos.simulator
 
-import frankenpaxos._
+import frankenpaxos.Actor
+import frankenpaxos.Logger
+import frankenpaxos.Transport
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -163,27 +165,21 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
   }
 }
 
-sealed trait FakeTransportCommand
-case class DeliverMessage(msg: FakeTransportMessage)
-    extends FakeTransportCommand
-case class TriggerTimer(address_and_name: (FakeTransportAddress, String))
-    extends FakeTransportCommand
-
 object FakeTransport {
-  def generateCommand(
-      fakeTransport: FakeTransport
-  ): Gen[FakeTransportCommand] = {
-    var subgens = mutable.Buffer[(Int, Gen[FakeTransportCommand])]()
+  sealed trait Command
+  case class DeliverMessage(msg: FakeTransportMessage) extends Command
+  case class TriggerTimer(address_and_name: (FakeTransportAddress, String))
+      extends Command
+
+  def generateCommand(fakeTransport: FakeTransport): Gen[Command] = {
+    var subgens = mutable.Buffer[(Int, Gen[Command])]()
 
     if (fakeTransport.messages.size > 0) {
-      subgens += (
-        (
-          fakeTransport.messages.size,
+      subgens +=
+        fakeTransport.messages.size ->
           Gen
             .oneOf(fakeTransport.messages)
             .map(DeliverMessage(_))
-        )
-      )
     }
 
     if (fakeTransport.runningTimers().size > 0) {
@@ -198,12 +194,10 @@ object FakeTransport {
     Gen.frequency(subgens: _*)
   }
 
-  def runCommand(
-      fakeTransport: FakeTransport,
-      command: FakeTransportCommand
-  ): Unit = {
+  def runCommand(fakeTransport: FakeTransport, command: Command): Unit = {
     command match {
-      case DeliverMessage(msg) => fakeTransport.deliverMessage(msg)
+      case DeliverMessage(msg) =>
+        fakeTransport.deliverMessage(msg)
       case TriggerTimer(address_and_name) =>
         fakeTransport.triggerTimer(address_and_name)
     }

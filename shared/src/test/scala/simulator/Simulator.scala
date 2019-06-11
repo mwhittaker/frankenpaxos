@@ -9,7 +9,7 @@ import org.scalacheck.Test
 // is, if the simulated system executes the history, its invariant will be
 // violated or an exception will be thrown. A BadHistory also includes a
 // Throwable that explains what went wrong.
-case class BadHistory[Sim <: SimulatedSystem](
+case class BadHistory[+Sim <: SimulatedSystem](
     history: Seq[Sim#Command],
     throwable: Throwable
 )
@@ -21,28 +21,25 @@ object Simulator {
   // `simulate(sim, runLength, numRuns)` runs `numRuns` simulations of the
   // simulated system `sim`. Each simulation is at most `runLength` commands
   // long. After every step of every simulation, the invariant of the system is
-  // checked. If the invariant does not hold, an error message and the sequence
-  // of commands that led to the invariant violation are returned.
+  // checked. If the invariant does not hold, the run is minimized, and then an
+  // error message and the sequence of commands that led to the invariant
+  // violation are returned.
   def simulate[Sim <: SimulatedSystem](
       sim: Sim,
       runLength: Int,
       numRuns: Int
-  ): Option[BadHistory[sim.type]] = {
+  ): Option[BadHistory[Sim]] = {
     for (_ <- 1 to numRuns) {
-      val badHistory = simulateOne[sim.type, sim.State](sim, runLength)
-      if (badHistory.isDefined) {
-        return badHistory
+      simulateOne(sim, runLength) match {
+        case badHistory @ Some(_) => badHistory
+        case None                 =>
       }
     }
 
     None
   }
 
-  def minimize[
-      Sim <: SimulatedSystem { type State = S; type Command = C },
-      S,
-      C
-  ](
+  def minimize[Sim <: SimulatedSystem { type Command = C }, C](
       sim: Sim,
       run: Seq[C]
   ): Option[BadHistory[Sim]] = {
@@ -52,7 +49,7 @@ object Simulator {
     // will find a minimal subsequence of `run` that also violates the
     // invariant.
     val prop = Prop.forAll(Gen.someOf(run)) { subrun =>
-      runOne[Sim, S, C](sim, subrun).isSuccess
+      runOne[sim.type, sim.Command](sim, subrun).isSuccess
     }
 
     val params = Test.Parameters.default
@@ -61,13 +58,14 @@ object Simulator {
     Test.check(params, prop) match {
       case Test.Result(Test.Failed(arg :: _, _), _, _, _, _) => {
         val subrun = arg.arg.asInstanceOf[Seq[sim.Command]]
-        Some(BadHistory(subrun, runOne[Sim, S, C](sim, subrun).failed.get))
+        val throwable = runOne[sim.type, sim.Command](sim, subrun).failed.get
+        Some(BadHistory(subrun, throwable))
       }
       case _ => None
     }
   }
 
-  private def simulateOne[Sim <: SimulatedSystem { type State = S }, S](
+  private def simulateOne[Sim <: SimulatedSystem](
       sim: Sim,
       runLength: Int
   ): Option[BadHistory[Sim]] = {
@@ -75,7 +73,7 @@ object Simulator {
     var system = sim.newSystem()
     var states = Seq[sim.State](sim.getState(system))
 
-    checkInvariants[Sim, sim.State](sim, states) match {
+    checkInvariants[sim.type, sim.State](sim, states) match {
       case SimulatedSystem.InvariantViolated(explanation) =>
         return Some(BadHistory(history, new IllegalStateException(explanation)))
 
@@ -97,7 +95,7 @@ object Simulator {
       }
       states = states :+ sim.getState(system)
 
-      checkInvariants[Sim, sim.State](sim, states) match {
+      checkInvariants[sim.type, sim.State](sim, states) match {
         case SimulatedSystem.InvariantViolated(explanation) =>
           return Some(
             BadHistory(history, new IllegalStateException(explanation))
@@ -116,23 +114,15 @@ object Simulator {
   // successful---i.e., no invariants are violated and no exceptions are
   // thrown---then util.Success(()) is returned. Otherwise, util.Failure is
   // returned.
-  private def runOne[
-      Sim <: SimulatedSystem { type State = S; type Command = C },
-      S,
-      C
-  ](
+  private def runOne[Sim <: SimulatedSystem { type Command = C }, C](
       sim: Sim,
       run: Seq[C]
   ): util.Try[Unit] = {
-    util.Try(runOneImpl[Sim, S, C](sim, run))
+    util.Try(runOneImpl[sim.type, C](sim, run))
   }
 
   // Same as runOne, but throws an exception if an invariant is violated.
-  private def runOneImpl[
-      Sim <: SimulatedSystem { type State = S; type Command = C },
-      S,
-      C
-  ](
+  private def runOneImpl[Sim <: SimulatedSystem { type Command = C }, C](
       sim: Sim,
       run: Seq[C]
   ): Unit = {
@@ -143,7 +133,7 @@ object Simulator {
       system = sim.runCommand(system, command)
       states = states :+ sim.getState(system)
 
-      checkInvariants[Sim, S](sim, states) match {
+      checkInvariants[sim.type, sim.State](sim, states) match {
         case SimulatedSystem.InvariantViolated(explanation) =>
           throw new IllegalStateException(explanation)
 
@@ -156,6 +146,18 @@ object Simulator {
     util.Success(())
   }
 
+  // checkInvariants(sim, states) checks that the most recent states in
+  // `states` satisfy `sim`'s invariants. That is,
+  //
+  //   - sim's state invariant is checked only on the last state;
+  //   - sim's step invariant is checked only on the last step;
+  //   - and sim's history invariant is checked on the entire history of
+  //     states.
+  //
+  // Note that checkInvariants does not check the state invariant on every
+  // state and does not check the step invariant on every step. However, by
+  // invoking checkInvariants on a growing history each time a new state is
+  // added, we can ensure that the history maintains all invariants.
   private def checkInvariants[Sim <: SimulatedSystem { type State = S }, S](
       sim: Sim,
       states: Seq[S]

@@ -121,9 +121,9 @@ class SimulatedDieHard extends SimulatedSystem {
     // with four gallons.
     //
     //   if (small != 4 && big != 4) {
-    //     None
+    //     SimulatedSystem.InvariantHolds
     //   } else {
-    //     Some(newState.toString())
+    //     SimulatedSystem.InvariantViolated("4 gallon found!")
     //   }
   }
 
