@@ -81,6 +81,12 @@ let client_info = {
     };
   },
 
+  computed: {
+    pendingCommand: function() {
+      return this.JsUtils.optionToJs(this.node.actor.pendingCommand);
+    },
+  },
+
   methods: {
     propose: function() {
       if (this.proposal === "") {
@@ -93,7 +99,15 @@ let client_info = {
 
   template: `
     <div>
-      <div>pendingCommand = {{node.actor.pendingCommand}}</div>
+      <div v-if="pendingCommand === undefined">pendingCommand = None</div>
+      <div v-else>
+        pendingCommand =
+        <fp-object v-slot="{let: pc}" :value="pendingCommand">
+          <fp-field :name="'id'" :value="pc.id"></fp-field>
+          <fp-field :name="'command'" :value="pc.command"></fp-field>
+          <fp-field :name="'result'" :value="pc.result"></fp-field>
+        </fp-object>
+      </div>
       <button v-on:click="propose">Propose</button>
       <input v-model="proposal" v-on:keyup.enter="propose"></input>
     </div>

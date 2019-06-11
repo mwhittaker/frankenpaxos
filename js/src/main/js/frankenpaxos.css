@@ -71,6 +71,16 @@
   background: #3498db;
 }
 
+/* Objects ********************************************************************/
+.fp-object {
+  border-collapse: collapse;
+}
+
+.fp-object td {
+  border: 1pt solid black;
+  padding: 4pt;
+}
+
 /* Maps ***********************************************************************/
 .frankenpaxos-map {
   border-collapse: collapse;

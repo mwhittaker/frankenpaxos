@@ -685,7 +685,7 @@ Vue.component('fp-object', {
 
   template: `
     <div>
-      <table>
+      <table class="fp-object">
         <slot :let="value">{{value}}</slot>
       </table>
     </div>
