@@ -60,24 +60,24 @@ case object EmptyBig extends DieHardCommand
 case object SmallToBig extends DieHardCommand
 case object BigToSmall extends DieHardCommand
 
-class SimulatedDieHard extends SimulatedSystem[SimulatedDieHard] {
+class SimulatedDieHard extends SimulatedSystem {
   override type System = DieHard
   override type State = (Int, Int)
   override type Command = DieHardCommand
 
-  override def newSystem(): SimulatedDieHard#System = {
+  override def newSystem(): System = {
     new DieHard()
   }
 
   override def getState(
-      system: SimulatedDieHard#System
-  ): SimulatedDieHard#State = {
+      system: System
+  ): State = {
     (system.small, system.big)
   }
 
   override def invariantHolds(
-      newState: SimulatedDieHard#State,
-      oldState: Option[SimulatedDieHard#State]
+      newState: State,
+      oldState: Option[State]
   ): Option[String] = {
     val (small, big) = newState
     if (0 <= small && small <= 3 && 0 <= big && big <= 5) {
@@ -97,9 +97,9 @@ class SimulatedDieHard extends SimulatedSystem[SimulatedDieHard] {
   }
 
   override def generateCommand(
-      system: SimulatedDieHard#System
-  ): Option[SimulatedDieHard#Command] = {
-    val gen: Gen[SimulatedDieHard#Command] =
+      system: System
+  ): Option[Command] = {
+    val gen: Gen[Command] =
       Gen.oneOf(
         Gen.const(FillSmall),
         Gen.const(FillBig),
@@ -112,9 +112,9 @@ class SimulatedDieHard extends SimulatedSystem[SimulatedDieHard] {
   }
 
   override def runCommand(
-      system: SimulatedDieHard#System,
-      command: SimulatedDieHard#Command
-  ): SimulatedDieHard#System = {
+      system: System,
+      command: Command
+  ): System = {
     command match {
       case FillSmall  => system.fillSmall()
       case FillBig    => system.fillBig()

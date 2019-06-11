@@ -24,24 +24,24 @@ sealed trait BankAccountCommand
 case class Deposit(amount: Int) extends BankAccountCommand
 case class Withdraw(amount: Int) extends BankAccountCommand
 
-class SimulatedBankAccount extends SimulatedSystem[SimulatedBankAccount] {
+class SimulatedBankAccount extends SimulatedSystem {
   override type System = BankAccount
   override type State = Int
   override type Command = BankAccountCommand
 
-  override def newSystem(): SimulatedBankAccount#System = {
+  override def newSystem(): System = {
     new BankAccount()
   }
 
   override def getState(
-      system: SimulatedBankAccount#System
-  ): SimulatedBankAccount#State = {
+      system: System
+  ): State = {
     system.balance
   }
 
   override def invariantHolds(
-      newState: SimulatedBankAccount#State,
-      oldState: Option[SimulatedBankAccount#State]
+      newState: State,
+      oldState: Option[State]
   ): Option[String] = {
     if (newState < 0) {
       return Some(s"Bank account balance $newState is less than 0.")
@@ -51,9 +51,9 @@ class SimulatedBankAccount extends SimulatedSystem[SimulatedBankAccount] {
   }
 
   override def generateCommand(
-      system: SimulatedBankAccount#System
-  ): Option[SimulatedBankAccount#Command] = {
-    val gen: Gen[SimulatedBankAccount#Command] =
+      system: System
+  ): Option[Command] = {
+    val gen: Gen[Command] =
       Gen.oneOf(
         Gen.choose(0, 100).map(Deposit(_)),
         Gen.choose(0, 100).map(Withdraw(_))
@@ -62,9 +62,9 @@ class SimulatedBankAccount extends SimulatedSystem[SimulatedBankAccount] {
   }
 
   override def runCommand(
-      system: SimulatedBankAccount#System,
-      command: SimulatedBankAccount#Command
-  ): SimulatedBankAccount#System = {
+      system: System,
+      command: Command
+  ): System = {
     command match {
       case Deposit(amount)  => system.deposit(amount)
       case Withdraw(amount) => system.withdraw(amount)

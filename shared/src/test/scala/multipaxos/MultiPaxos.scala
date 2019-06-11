@@ -71,8 +71,7 @@ case class Propose(clientIndex: Int, value: String) extends MultiPaxosCommand
 case class TransportCommand(command: FakeTransportCommand)
     extends MultiPaxosCommand
 
-class SimulatedMultiPaxos(val f: Int)
-    extends SimulatedSystem[SimulatedMultiPaxos] {
+class SimulatedMultiPaxos(val f: Int) extends SimulatedSystem {
   override type System = (MultiPaxos, Set[String])
   override type State = Set[String]
   override type Command = MultiPaxosCommand
@@ -114,19 +113,19 @@ class SimulatedMultiPaxos(val f: Int)
     commands
   }
 
-  override def newSystem(): SimulatedMultiPaxos#System = {
+  override def newSystem(): System = {
     (new MultiPaxos(f), Set())
   }
 
   override def getState(
-      system: SimulatedMultiPaxos#System
-  ): SimulatedMultiPaxos#State = {
+      system: System
+  ): State = {
     system._2
   }
 
   override def invariantHolds(
-      newState: SimulatedMultiPaxos#State,
-      oldState: Option[SimulatedMultiPaxos#State]
+      newState: State,
+      oldState: Option[State]
   ): Option[String] = {
     if (newState.size > 1) {
       return Some(
@@ -145,11 +144,11 @@ class SimulatedMultiPaxos(val f: Int)
   }
 
   override def generateCommand(
-      system: SimulatedMultiPaxos#System
-  ): Option[SimulatedMultiPaxos#Command] = {
+      system: System
+  ): Option[Command] = {
     val (multiPaxos, _) = system
 
-    var subgens = mutable.Buffer[(Int, Gen[SimulatedMultiPaxos#Command])]()
+    var subgens = mutable.Buffer[(Int, Gen[Command])]()
     subgens += (
       (
         multiPaxos.numClients,
@@ -172,14 +171,14 @@ class SimulatedMultiPaxos(val f: Int)
       )
     }
 
-    val gen: Gen[SimulatedMultiPaxos#Command] = Gen.frequency(subgens: _*)
+    val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
   override def runCommand(
-      system: SimulatedMultiPaxos#System,
-      command: SimulatedMultiPaxos#Command
-  ): SimulatedMultiPaxos#System = {
+      system: System,
+      command: Command
+  ): System = {
     val (multiPaxos, allChosenValues) = system
     command match {
       case Propose(clientId, value) =>

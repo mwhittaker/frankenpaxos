@@ -69,35 +69,34 @@ case class Propose(clientIndex: Int, clientPseudonym: Int, value: String)
 case class TransportCommand(command: FakeTransportCommand)
     extends FastMultiPaxosCommand
 
-class SimulatedFastMultiPaxos(val f: Int)
-    extends SimulatedSystem[SimulatedFastMultiPaxos] {
+class SimulatedFastMultiPaxos(val f: Int) extends SimulatedSystem {
   // TODO(mwhittaker): Implement.
   override type System = (FastMultiPaxos, Unit)
   // TODO(mwhittaker): Implement.
   override type State = Unit
   override type Command = FastMultiPaxosCommand
 
-  override def newSystem(): SimulatedFastMultiPaxos#System = {
+  override def newSystem(): System = {
     (new FastMultiPaxos(f), ())
   }
 
   override def getState(
-      system: SimulatedFastMultiPaxos#System
-  ): SimulatedFastMultiPaxos#State = system._2
+      system: System
+  ): State = system._2
 
   override def invariantHolds(
-      newState: SimulatedFastMultiPaxos#State,
-      oldState: Option[SimulatedFastMultiPaxos#State]
+      newState: State,
+      oldState: Option[State]
   ): Option[String] = {
     None
   }
 
   override def generateCommand(
-      system: SimulatedFastMultiPaxos#System
-  ): Option[SimulatedFastMultiPaxos#Command] = {
+      system: System
+  ): Option[Command] = {
     val (fastMultiPaxos, _) = system
 
-    var subgens = mutable.Buffer[(Int, Gen[SimulatedFastMultiPaxos#Command])]()
+    var subgens = mutable.Buffer[(Int, Gen[Command])]()
     subgens += (
       (
         fastMultiPaxos.numClients,
@@ -121,14 +120,14 @@ class SimulatedFastMultiPaxos(val f: Int)
       )
     }
 
-    val gen: Gen[SimulatedFastMultiPaxos#Command] = Gen.frequency(subgens: _*)
+    val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
   override def runCommand(
-      system: SimulatedFastMultiPaxos#System,
-      command: SimulatedFastMultiPaxos#Command
-  ): SimulatedFastMultiPaxos#System = {
+      system: System,
+      command: Command
+  ): System = {
     val (fastMultiPaxos, allChosenValues) = system
     command match {
       case Propose(clientId, clientPseudonym, value) =>
@@ -139,7 +138,7 @@ class SimulatedFastMultiPaxos(val f: Int)
     (fastMultiPaxos, ())
   }
 
-  def commandToString(command: SimulatedFastMultiPaxos#Command): String = {
+  def commandToString(command: Command): String = {
     val fastMultiPaxos = new FastMultiPaxos(f)
     command match {
       case Propose(clientIndex, clientPseudonym, value) =>
@@ -158,7 +157,7 @@ class SimulatedFastMultiPaxos(val f: Int)
     }
   }
 
-  def historyToString(history: Seq[SimulatedFastMultiPaxos#Command]): String = {
+  def historyToString(history: Seq[Command]): String = {
     def indent(s: String, n: Int): String = {
       s.replaceAll("\n", "\n" + " " * n)
     }

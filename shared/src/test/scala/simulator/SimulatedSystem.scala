@@ -60,8 +60,8 @@ package frankenpaxos.simulator
 //   case class Withdraw(amount: Int) extends BankAccountCommand
 //
 //   // Next, we define our SimulatedBankAccount class. The SimulatedSystem
-//   trait uses F-bounded polymorphism so SimulatedBankAccount extends
-//   SimulatedSystem[SimulatedBankAccount].
+//   // trait uses F-bounded polymorphism so SimulatedBankAccount extends
+//   // SimulatedSystem[SimulatedBankAccount].
 //   class SimulatedBankAccount extends SimulatedSystem[SimulatedBankAccount] {
 //     // Every simulated system has to define three types. System is the type
 //     // of the system being tested. Here, it's the bank account class.
@@ -149,28 +149,20 @@ package frankenpaxos.simulator
 // specification.
 //
 // [1] github.com/rickynils/scalacheck/blob/master/doc/UserGuide.md#stateful-testing
-trait SimulatedSystem[Self <: SimulatedSystem[Self]] {
+trait SimulatedSystem {
   type System
   type State
   type Command
 
-  def newSystem(): Self#System
+  def newSystem(): System
 
-  def getState(system: Self#System): Self#State
+  def getState(system: System): State
 
-  def invariantHolds(
-      newState: Self#State,
-      oldState: Option[Self#State]
-  ): Option[String]
+  def invariantHolds(newState: State, oldState: Option[State]): Option[String]
 
-  def generateCommand(
-      system: Self#System
-  ): Option[Self#Command]
+  def generateCommand(system: System): Option[Command]
 
   // TODO(mwhittaker): Note that if the command is illegal, the state should be
   // unchanged. This allows us to look at subsets of failing test cases.
-  def runCommand(
-      system: Self#System,
-      command: Self#Command
-  ): Self#System
+  def runCommand(system: System, command: Command): System
 }

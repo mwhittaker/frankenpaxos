@@ -9,7 +9,7 @@ import util.control.Breaks._
 // invariant violation. That is, if the simulated system executes the history,
 // its invariant will be violated. A BadHistory also includes the error
 // message that results from the invariant violation.
-case class BadHistory[Sim <: SimulatedSystem[Sim]](
+case class BadHistory[Sim <: SimulatedSystem](
     history: Seq[Sim#Command],
     throwable: Throwable
 )
@@ -23,7 +23,7 @@ object Simulator {
   // long. After every step of every simulation, the invariant of the system is
   // checked. If the invariant does not hold, an error message and the sequence
   // of commands that led to the invariant violation are returned.
-  def simulate[Sim <: SimulatedSystem[Sim]](
+  def simulate[Sim <: SimulatedSystem](
       sim: Sim,
       runLength: Int,
       numRuns: Int
@@ -38,9 +38,9 @@ object Simulator {
     None
   }
 
-  def minimize[Sim <: SimulatedSystem[Sim]](
+  def minimize[Sim <: SimulatedSystem { type Command = C }, C](
       sim: Sim,
-      run: Seq[Sim#Command]
+      run: Seq[C]
   ): Option[BadHistory[Sim]] = {
     // We check that every subrun of `run` is a good history (i.e. a history
     // that does not lead to an invariant violation). Of course, `run` should
@@ -56,20 +56,20 @@ object Simulator {
       .withWorkers(Runtime.getRuntime().availableProcessors())
     Test.check(params, prop) match {
       case Test.Result(Test.Failed(arg :: _, _), _, _, _, _) => {
-        val subrun = arg.arg.asInstanceOf[Seq[Sim#Command]]
+        val subrun = arg.arg.asInstanceOf[Seq[sim.Command]]
         Some(BadHistory(subrun, runOne(sim, subrun).failed.get))
       }
       case _ => None
     }
   }
 
-  private def simulateOne[Sim <: SimulatedSystem[Sim]](
+  private def simulateOne[Sim <: SimulatedSystem](
       sim: Sim,
       runLength: Int
   ): Option[BadHistory[Sim]] = {
-    var history = Seq[Sim#Command]()
+    var history = Seq[sim.Command]()
     var system = sim.newSystem()
-    var oldState: Option[Sim#State] = None
+    var oldState: Option[sim.State] = None
     var newState = sim.getState(system)
 
     sim.invariantHolds(newState, oldState) match {
@@ -106,20 +106,20 @@ object Simulator {
   // successful---i.e., no invariants are violated and no exceptions are
   // thrown---then util.Success(()) is returned. Otherwise, util.Failure is
   // returned.
-  private def runOne[Sim <: SimulatedSystem[Sim]](
+  private def runOne[Sim <: SimulatedSystem { type Command = C }, C](
       sim: Sim,
-      run: Seq[Sim#Command]
+      run: Seq[C]
   ): util.Try[Unit] = {
     util.Try(runOneImpl(sim, run))
   }
 
   // Same as runOne, but throws an exception if an invariant is violated.
-  private def runOneImpl[Sim <: SimulatedSystem[Sim]](
+  private def runOneImpl[Sim <: SimulatedSystem { type Command = C }, C](
       sim: Sim,
-      run: Seq[Sim#Command]
+      run: Seq[C]
   ): Unit = {
     var system = sim.newSystem()
-    var oldState: Option[Sim#State] = None
+    var oldState: Option[sim.State] = None
     var newState = sim.getState(system)
 
     sim.invariantHolds(newState, oldState) match {

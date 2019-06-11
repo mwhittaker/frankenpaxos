@@ -52,8 +52,7 @@ case class Propose(clientIndex: Int, value: String) extends FastPaxosCommand
 case class TransportCommand(command: FakeTransportCommand)
     extends FastPaxosCommand
 
-class SimulatedFastPaxos(val f: Int)
-    extends SimulatedSystem[SimulatedFastPaxos] {
+class SimulatedFastPaxos(val f: Int) extends SimulatedSystem {
   // A Fast Paxos instance and the set of values chosen.
   override type System = (FastPaxos, Set[String])
   // The set of values chosen.
@@ -70,17 +69,17 @@ class SimulatedFastPaxos(val f: Int)
     // TODO(mwhittaker): Add acceptor chosen.
   }
 
-  override def newSystem(): SimulatedFastPaxos#System = {
+  override def newSystem(): System = {
     (new FastPaxos(f), Set())
   }
 
   override def getState(
-      system: SimulatedFastPaxos#System
-  ): SimulatedFastPaxos#State = system._2
+      system: System
+  ): State = system._2
 
   override def invariantHolds(
-      newState: SimulatedFastPaxos#State,
-      oldState: Option[SimulatedFastPaxos#State]
+      newState: State,
+      oldState: Option[State]
   ): Option[String] = {
     if (newState.size > 1) {
       return Some(s"""Multiple values have been chosen: $newState (previously
@@ -96,11 +95,11 @@ class SimulatedFastPaxos(val f: Int)
   }
 
   override def generateCommand(
-      system: SimulatedFastPaxos#System
-  ): Option[SimulatedFastPaxos#Command] = {
+      system: System
+  ): Option[Command] = {
     val (fastPaxos, _) = system
 
-    var subgens = mutable.Buffer[(Int, Gen[SimulatedFastPaxos#Command])]()
+    var subgens = mutable.Buffer[(Int, Gen[Command])]()
     subgens += (
       (
         fastPaxos.numClients,
@@ -123,14 +122,14 @@ class SimulatedFastPaxos(val f: Int)
       )
     }
 
-    val gen: Gen[SimulatedFastPaxos#Command] = Gen.frequency(subgens: _*)
+    val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
   override def runCommand(
-      system: SimulatedFastPaxos#System,
-      command: SimulatedFastPaxos#Command
-  ): SimulatedFastPaxos#System = {
+      system: System,
+      command: Command
+  ): System = {
     val (fastPaxos, allChosenValues) = system
     command match {
       case Propose(clientId, value) =>
@@ -141,7 +140,7 @@ class SimulatedFastPaxos(val f: Int)
     (fastPaxos, allChosenValues ++ chosenValues(fastPaxos))
   }
 
-  def commandToString(command: SimulatedFastPaxos#Command): String = {
+  def commandToString(command: Command): String = {
     val fastPaxos = new FastPaxos(f)
     command match {
       case Propose(clientIndex, value) =>
@@ -160,7 +159,7 @@ class SimulatedFastPaxos(val f: Int)
     }
   }
 
-  def historyToString(history: Seq[SimulatedFastPaxos#Command]): String = {
+  def historyToString(history: Seq[Command]): String = {
     def indent(s: String, n: Int): String = {
       s.replaceAll("\n", "\n" + " " * n)
     }

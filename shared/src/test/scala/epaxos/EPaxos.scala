@@ -43,7 +43,7 @@ sealed trait EPaxosCommand
 case class Propose(clientIndex: Int, value: String) extends EPaxosCommand
 case class TransportCommand(command: FakeTransportCommand) extends EPaxosCommand
 
-class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
+class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   override type System = (EPaxos, Set[Unit])
   override type State = Set[Unit]
   override type Command = EPaxosCommand
@@ -95,19 +95,19 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
     Set.empty
   }
 
-  override def newSystem(): SimulatedEPaxos#System = {
+  override def newSystem(): System = {
     (new EPaxos(f), Set())
   }
 
   override def getState(
-      system: SimulatedEPaxos#System
-  ): SimulatedEPaxos#State = {
+      system: System
+  ): State = {
     system._2
   }
 
   override def invariantHolds(
-      newState: SimulatedEPaxos#State,
-      oldState: Option[SimulatedEPaxos#State]
+      newState: State,
+      oldState: Option[State]
   ): Option[String] = {
     if (newState.size > 1) {
       return Some(
@@ -118,11 +118,11 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
   }
 
   override def generateCommand(
-      system: SimulatedEPaxos#System
-  ): Option[SimulatedEPaxos#Command] = {
+      system: System
+  ): Option[Command] = {
     val (ePaxos, _) = system
 
-    var subgens = mutable.Buffer[(Int, Gen[SimulatedEPaxos#Command])]()
+    var subgens = mutable.Buffer[(Int, Gen[Command])]()
     subgens += (
       (
         ePaxos.numClients,
@@ -145,14 +145,14 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem[SimulatedEPaxos] {
       )
     }
 
-    val gen: Gen[SimulatedEPaxos#Command] = Gen.frequency(subgens: _*)
+    val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
   override def runCommand(
-      system: SimulatedEPaxos#System,
-      command: SimulatedEPaxos#Command
-  ): SimulatedEPaxos#System = {
+      system: System,
+      command: Command
+  ): System = {
     val (ePaxos, allChosenValues) = system
     command match {
       case Propose(clientId, value) =>

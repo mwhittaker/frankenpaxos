@@ -57,7 +57,7 @@ sealed trait PaxosCommand
 case class Propose(clientIndex: Int, value: String) extends PaxosCommand
 case class TransportCommand(command: FakeTransportCommand) extends PaxosCommand
 
-class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
+class SimulatedPaxos(val f: Int) extends SimulatedSystem {
   override type System = (Paxos, Set[String])
   override type State = Set[String]
   override type Command = PaxosCommand
@@ -84,17 +84,17 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
     clientChosen ++ leaderChosen ++ acceptorChosen
   }
 
-  override def newSystem(): SimulatedPaxos#System = {
+  override def newSystem(): System = {
     (new Paxos(f), Set())
   }
 
-  override def getState(system: SimulatedPaxos#System): SimulatedPaxos#State = {
+  override def getState(system: System): State = {
     system._2
   }
 
   override def invariantHolds(
-      newState: SimulatedPaxos#State,
-      oldState: Option[SimulatedPaxos#State]
+      newState: State,
+      oldState: Option[State]
   ): Option[String] = {
     if (newState.size > 1) {
       return Some(
@@ -113,11 +113,11 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
   }
 
   override def generateCommand(
-      system: SimulatedPaxos#System
-  ): Option[SimulatedPaxos#Command] = {
+      system: System
+  ): Option[Command] = {
     val (paxos, _) = system
 
-    var subgens = mutable.Buffer[(Int, Gen[SimulatedPaxos#Command])]()
+    var subgens = mutable.Buffer[(Int, Gen[Command])]()
     subgens += (
       (
         paxos.numClients,
@@ -140,14 +140,14 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
       )
     }
 
-    val gen: Gen[SimulatedPaxos#Command] = Gen.frequency(subgens: _*)
+    val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
   override def runCommand(
-      system: SimulatedPaxos#System,
-      command: SimulatedPaxos#Command
-  ): SimulatedPaxos#System = {
+      system: System,
+      command: Command
+  ): System = {
     val (paxos, allChosenValues) = system
     command match {
       case Propose(clientId, value) =>
@@ -158,7 +158,7 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
     (paxos, allChosenValues ++ chosenValues(paxos))
   }
 
-  def commandToString(command: SimulatedPaxos#Command): String = {
+  def commandToString(command: Command): String = {
     val paxos = new Paxos(f)
     command match {
       case Propose(clientIndex, value) =>
@@ -177,7 +177,7 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem[SimulatedPaxos] {
     }
   }
 
-  def historyToString(history: Seq[SimulatedPaxos#Command]): String = {
+  def historyToString(history: Seq[Command]): String = {
     def indent(s: String, n: Int): String = {
       s.replaceAll("\n", "\n" + " " * n)
     }
