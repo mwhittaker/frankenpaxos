@@ -1,6 +1,6 @@
 package frankenpaxos.diehard
 
-import frankenpaxos.simulator._
+import frankenpaxos.simulator.SimulatedSystem
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -75,27 +75,6 @@ class SimulatedDieHard extends SimulatedSystem {
     (system.small, system.big)
   }
 
-  override def invariantHolds(
-      newState: State,
-      oldState: Option[State]
-  ): Option[String] = {
-    val (small, big) = newState
-    if (0 <= small && small <= 3 && 0 <= big && big <= 5) {
-      None
-    } else {
-      Some(s"Type invariant broken: small=${small}, big=${big}.")
-    }
-
-    // Uncomment this code to find an execution of the system that finds a jug
-    // with four gallons.
-    //
-    //   if (small != 4 && big != 4) {
-    //     None
-    //   } else {
-    //     Some(newState.toString())
-    //   }
-  }
-
   override def generateCommand(
       system: System
   ): Option[Command] = {
@@ -125,4 +104,27 @@ class SimulatedDieHard extends SimulatedSystem {
     }
     system
   }
+
+  override def stateInvariantHolds(
+      state: State
+  ): SimulatedSystem.InvariantResult = {
+    val (small, big) = state
+    if (0 <= small && small <= 3 && 0 <= big && big <= 5) {
+      SimulatedSystem.InvariantHolds
+    } else {
+      SimulatedSystem.InvariantViolated(
+        s"Type invariant broken: small=${small}, big=${big}."
+      )
+    }
+
+    // Uncomment this code to find an execution of the system that finds a jug
+    // with four gallons.
+    //
+    //   if (small != 4 && big != 4) {
+    //     None
+    //   } else {
+    //     Some(newState.toString())
+    //   }
+  }
+
 }

@@ -29,30 +29,11 @@ class SimulatedBankAccount extends SimulatedSystem {
   override type State = Int
   override type Command = BankAccountCommand
 
-  override def newSystem(): System = {
-    new BankAccount()
-  }
+  override def newSystem(): System = new BankAccount()
 
-  override def getState(
-      system: System
-  ): State = {
-    system.balance
-  }
+  override def getState(system: System): State = system.balance
 
-  override def invariantHolds(
-      newState: State,
-      oldState: Option[State]
-  ): Option[String] = {
-    if (newState < 0) {
-      return Some(s"Bank account balance $newState is less than 0.")
-    }
-
-    None
-  }
-
-  override def generateCommand(
-      system: System
-  ): Option[Command] = {
+  override def generateCommand(system: System): Option[Command] = {
     val gen: Gen[Command] =
       Gen.oneOf(
         Gen.choose(0, 100).map(Deposit(_)),
@@ -61,14 +42,23 @@ class SimulatedBankAccount extends SimulatedSystem {
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
-  override def runCommand(
-      system: System,
-      command: Command
-  ): System = {
+  override def runCommand(system: System, command: Command): System = {
     command match {
       case Deposit(amount)  => system.deposit(amount)
       case Withdraw(amount) => system.withdraw(amount)
     }
     system
+  }
+
+  override def stateInvariantHolds(
+      state: State
+  ): SimulatedSystem.InvariantResult = {
+    if (state < 0) {
+      SimulatedSystem.InvariantViolated(
+        s"Bank account balance $state is less than 0."
+      )
+    } else {
+      SimulatedSystem.InvariantHolds
+    }
   }
 }

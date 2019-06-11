@@ -14,7 +14,7 @@ class DependencyGraphTest extends FlatSpec with Matchers {
   private def instances(xs: Int*): Seq[Instance] = xs.toSeq.map(instance)
 
   private def runTest(test: (DependencyGraph) => Unit): Unit = {
-    // test(new JgraphtDependencyGraph())
+    test(new JgraphtDependencyGraph())
     test(new ScalaGraphDependencyGraph())
   }
 

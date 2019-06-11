@@ -59,10 +59,8 @@ package frankenpaxos.simulator
 //   case class Deposit(amount: Int) extends BankAccountCommand
 //   case class Withdraw(amount: Int) extends BankAccountCommand
 //
-//   // Next, we define our SimulatedBankAccount class. The SimulatedSystem
-//   // trait uses F-bounded polymorphism so SimulatedBankAccount extends
-//   // SimulatedSystem[SimulatedBankAccount].
-//   class SimulatedBankAccount extends SimulatedSystem[SimulatedBankAccount] {
+//   // Next, we define our SimulatedBankAccount class.
+//   class SimulatedBankAccount extends SimulatedSystem {
 //     // Every simulated system has to define three types. System is the type
 //     // of the system being tested. Here, it's the bank account class.
 //     override type System = BankAccount
@@ -77,40 +75,17 @@ package frankenpaxos.simulator
 //     override type Command = BankAccountCommand
 //
 //     // newSystem returns a new instantiation of our system.
-//     override def newSystem(): SimulatedBankAccount#System = {
-//       new BankAccount()
-//     }
+//     override def newSystem(): System = new BankAccount()
 //
 //     // getState extracts the state from our system.
-//     override def getState(
-//         system: SimulatedBankAccount#System
-//     ): SimulatedBankAccount#State = {
-//       system.balance
-//     }
-//
-//     // invariantHolds returns None if the invariant holds and Some(error) if
-//     // the invariant does not hold. invariantHolds takes in the current state
-//     // and previous state of the system to make it easier to test invariants
-//     // that deal with state transitions (e.g., account balance only goes up).
-//     override def invariantHolds(
-//         newState: SimulatedBankAccount#State,
-//         oldState: Option[SimulatedBankAccount#State]
-//     ): Option[String] = {
-//       if (newState < 0) {
-//         return Some(s"Bank account balance $newState is less than 0.")
-//       }
-//
-//       None
-//     }
+//     override def getState(system: System): State = system.balance
 //
 //     // generateCommand returns a randomly generated command that can be
 //     // applied to the state machine. If no such command exists (e.g., the
 //     // system has halted and cannot process any further commands), then
 //     // generateCommand should return None.
-//     override def generateCommand(
-//         system: SimulatedBankAccount#System
-//     ): Option[SimulatedBankAccount#Command] = {
-//       val gen: Gen[SimulatedBankAccount#Command] =
+//     override def generateCommand(system: System): Option[Command] = {
+//       val gen: Gen[Command] =
 //         Gen.oneOf(
 //           Gen.choose(0, 100).map(Deposit(_)),
 //           Gen.choose(0, 100).map(Withdraw(_))
@@ -119,22 +94,33 @@ package frankenpaxos.simulator
 //     }
 //
 //     // runCommand runs a particular command through a system.
-//     override def runCommand(
-//         system: SimulatedBankAccount#System,
-//         command: SimulatedBankAccount#Command
-//     ): SimulatedBankAccount#System = {
+//     override def runCommand(system: System, command: Command): System = {
 //       command match {
 //         case Deposit(amount)  => system.deposit(amount)
 //         case Withdraw(amount) => system.withdraw(amount)
 //       }
 //       system
 //     }
+//
+//     // stateInvariantHolds evaluates an invariant that should be true on
+//     // every single state of an execution of our system. Here, we check that
+//     // the bank account is not negative.
+//     override def stateInvariantHolds(
+//         state: State
+//     ): SimulatedSystem.InvariantResult = {
+//       if (state < 0) {
+//         SimulatedSystem.InvariantViolated(
+//           s"Bank account balance $state is less than 0."
+//         )
+//       } else {
+//         SimulatedSystem.InvariantHolds
+//       }
+//     }
 //   }
 //
 // Once we've defined a SimulatedSystem, we can property test it with the
 // Simulator object. See Simulator.scala for more information. See
-// examples/BankAccount.scala and examples/BankAccountTest.scala for an
-// executable version of the example above.
+// frankenpaxos.bankaccount for an executable version of the example above.
 //
 // # Why not ScalaCheck?
 //
@@ -149,20 +135,66 @@ package frankenpaxos.simulator
 // specification.
 //
 // [1] github.com/rickynils/scalacheck/blob/master/doc/UserGuide.md#stateful-testing
+object SimulatedSystem {
+  sealed trait InvariantResult {
+    def and(result: => InvariantResult): InvariantResult = {
+      this match {
+        case InvariantHolds       => result
+        case InvariantViolated(_) => this
+      }
+    }
+  }
+
+  object InvariantHolds extends InvariantResult
+  case class InvariantViolated(explanation: String) extends InvariantResult
+}
+
 trait SimulatedSystem {
+  import SimulatedSystem._
+
+  // The type of the system being checked. Typically System is a complex
+  // mutable type (e.g., PaxosReplica), but it can also be immutable (e.g.,
+  // Int).
   type System
+
+  // A System includes ALL the state of a system (e.g., an entire Paxos
+  // replica) whereas State is only the relevant bits for testing (e.g., the
+  // chosen commands). Note that state _must_ be immutable.
   type State
+
+  // The commands fed to a System.
   type Command
 
+  // newSystem generates a new system.
   def newSystem(): System
 
+  // getState extracts the relevant state from a sytem.
   def getState(system: System): State
 
-  def invariantHolds(newState: State, oldState: Option[State]): Option[String]
-
+  // generateCommand generates a command to run against the system. If there
+  // are no valid commands left (e.g., the system has halted), then
+  // generateCommand should return None.
   def generateCommand(system: System): Option[Command]
 
-  // TODO(mwhittaker): Note that if the command is illegal, the state should be
-  // unchanged. This allows us to look at subsets of failing test cases.
+  // Run a command against a system, returning the new system. If the command
+  // is not valid for the current system, the system should be left unchanged.
+  // Note that runCommand can mutate `system`.
   def runCommand(system: System, command: Command): System
+
+  // SimulatedSystem allows you to specify three types of invariants: state
+  // invariants, step invariants, and history invariants. State invariants are
+  // invariants that hold over every single state in a history. Step invariants
+  // are invariants that hold over ever pair of consecutive states in a
+  // history. History invariants are invariants that hold over the entire
+  // (non-empty) history.
+  def invariantHolds(a: State, b: State): Option[String] = None
+
+  def stateInvariantHolds(state: State): InvariantResult =
+    InvariantHolds
+
+  def stepInvariantHolds(oldState: State, newState: State): InvariantResult =
+    InvariantHolds
+
+  def historyInvariantHolds(history: Seq[State]): InvariantResult =
+    InvariantHolds
 }

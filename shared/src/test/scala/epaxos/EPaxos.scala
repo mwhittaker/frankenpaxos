@@ -105,17 +105,18 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
     system._2
   }
 
-  override def invariantHolds(
-      newState: State,
-      oldState: Option[State]
-  ): Option[String] = {
-    if (newState.size > 1) {
-      return Some(
-        "State machines are not linearizable"
-      )
-    }
-    None
-  }
+  // TODO(mwhittaker): Implement.
+  // override def invariantHolds(
+  //     newState: State,
+  //     oldState: Option[State]
+  // ): Option[String] = {
+  //   if (newState.size > 1) {
+  //     return Some(
+  //       "State machines are not linearizable"
+  //     )
+  //   }
+  //   None
+  // }
 
   override def generateCommand(
       system: System
