@@ -131,6 +131,13 @@ let replica_info = {
       <div>stateMachine = {{node.actor.stateMachine}}</div>
       <div>dependencyGraph = {{node.actor.dependencyGraph}}</div>
 
+      <!-- recoveryInstanceTimers -->
+      <div>
+        recoverInstanceTimers =
+        <frankenpaxos-map :map="node.actor.recoverInstanceTimers">
+        </frankenpaxos-map>
+      </div>
+
       <!-- cmdLog -->
       <div>
         cmdLog =

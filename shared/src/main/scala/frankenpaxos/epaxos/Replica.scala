@@ -25,7 +25,9 @@ case class ReplicaOptions(
     resendPreAcceptsTimerPeriod: java.time.Duration,
     defaultToSlowPathTimerPeriod: java.time.Duration,
     resendAcceptsTimerPeriod: java.time.Duration,
-    resendPreparesTimerPeriod: java.time.Duration
+    resendPreparesTimerPeriod: java.time.Duration,
+    recoverInstanceTimerMinPeriod: java.time.Duration,
+    recoverInstanceTimerMaxPeriod: java.time.Duration
 )
 
 @JSExportAll
@@ -34,7 +36,9 @@ object ReplicaOptions {
     resendPreAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
     defaultToSlowPathTimerPeriod = java.time.Duration.ofSeconds(1),
     resendAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
-    resendPreparesTimerPeriod = java.time.Duration.ofSeconds(1)
+    resendPreparesTimerPeriod = java.time.Duration.ofSeconds(1),
+    recoverInstanceTimerMinPeriod = java.time.Duration.ofMillis(500),
+    recoverInstanceTimerMaxPeriod = java.time.Duration.ofMillis(1500)
   )
 }
 
@@ -290,8 +294,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val conflictIndex = stateMachine.conflictIndex[Instance]()
 
-  // TODO(mwhittaker): Add a timer to recovery an instance. Use a random
-  // timeout to avoid recovery cascades.
+  // If a replica commits a command in instance I with a dependency on
+  // uncommitted instance J, then the replica sets a timer to recover instance
+  // J. This prevents an instance from being forever stalled.
+  @JSExport
+  protected val recoverInstanceTimers = mutable.Map[Instance, Transport#Timer]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def leaderBallot(leaderState: LeaderState): Ballot = {
@@ -308,6 +315,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Some(entry: PreAcceptedEntry)  => Some(entry.triple.sequenceNumber)
       case Some(entry: AcceptedEntry)     => Some(entry.triple.sequenceNumber)
       case Some(entry: CommittedEntry)    => Some(entry.triple.sequenceNumber)
+    }
+  }
+
+  private def isCommitted(instance: Instance): Boolean = {
+    cmdLog.get(instance) match {
+      case None | Some(_: NoCommandEntry) | Some(_: PreAcceptedEntry) |
+          Some(_: AcceptedEntry) =>
+        false
+      case Some(_: CommittedEntry) => true
     }
   }
 
@@ -565,6 +581,18 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
 
+    // Stop any recovery timer for the current instance, and start recovery
+    // timers for any uncommitted instances on which we depend.
+    recoverInstanceTimers.get(instance).foreach(_.stop())
+    recoverInstanceTimers -= instance
+    for {
+      i <- triple.dependencies
+      if !isCommitted(i)
+      if !recoverInstanceTimers.contains(i)
+    } {
+      recoverInstanceTimers(i) = makeRecoverInstanceTimer(i)
+    }
+
     // Execute commands.
     val executable: Seq[Instance] = dependencyGraph.commit(
       instance,
@@ -573,8 +601,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     )
 
     for (i <- executable) {
-      // TODO(mwhittaker): Stop timers for choosing this instance.
-
       import CommandOrNoop.Value
       cmdLog.get(i) match {
         case None | Some(_: NoCommandEntry) | Some(_: PreAcceptedEntry) |
@@ -709,6 +735,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       options.resendPreparesTimerPeriod,
       () => {
         replicas.foreach(_.send(ReplicaInbound().withPrepare(prepare)))
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeRecoverInstanceTimer(instance: Instance): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"recoverInstance $instance",
+      Util.randomDuration(options.recoverInstanceTimerMinPeriod,
+                          options.recoverInstanceTimerMaxPeriod),
+      () => {
+        transitionToPreparePhase(instance)
         t.start()
       }
     )
@@ -858,6 +898,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Update largestBallot.
     largestBallot = BallotHelpers.max(largestBallot, preAccept.ballot)
+
+    // Reset recovery timer.
+    recoverInstanceTimers.get(preAccept.instance).foreach(_.reset())
 
     // Compute dependencies and sequence number.
     var (sequenceNumber, dependencies) = computeSequenceNumberAndDependencies(
@@ -1088,6 +1131,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // Update largestBallot.
     largestBallot = BallotHelpers.max(largestBallot, accept.ballot)
 
+    // Reset recovery timer.
+    recoverInstanceTimers.get(accept.instance).foreach(_.reset())
+
     // Update our command log.
     cmdLog -= accept.instance
     cmdLog(accept.instance) = AcceptedEntry(
@@ -1170,11 +1216,18 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleNack(src: Transport#Address, nack: Nack): Unit = {
-    // TODO(mwhittaker): If we get a Nack, it's possible there's another
-    // replica trying to recover this instance. To avoid dueling replicas, we
-    // may want to do a random exponential backoff.
+    // If we get a Nack, it's possible there's another replica trying to
+    // recover this instance. To avoid dueling replicas, we wait a bit to
+    // recover.
     largestBallot = BallotHelpers.max(largestBallot, nack.largestBallot)
-    transitionToPreparePhase(nack.instance)
+
+    recoverInstanceTimers.get(nack.instance) match {
+      case Some(timer) => timer.reset()
+      case None =>
+        recoverInstanceTimers(nack.instance) = makeRecoverInstanceTimer(
+          nack.instance
+        )
+    }
   }
 
   private def handlePrepare(
@@ -1183,6 +1236,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     // Update largestBallot.
     largestBallot = BallotHelpers.max(largestBallot, prepare.ballot)
+
+    // Reset recovery timer.
+    recoverInstanceTimers.get(prepare.instance).foreach(_.reset())
 
     // If we're currently leading this instance and the ballot we just received
     // is larger than the ballot we're using, then we should stop leading the

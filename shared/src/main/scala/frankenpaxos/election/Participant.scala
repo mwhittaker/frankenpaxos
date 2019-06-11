@@ -1,11 +1,12 @@
 package frankenpaxos.election
 
-import scala.collection.mutable
-import scala.scalajs.js.annotation._
 import frankenpaxos.Actor
+import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.Chan
+import frankenpaxos.Util
+import scala.collection.mutable
+import scala.scalajs.js.annotation._
 
 @JSExportAll
 object ParticipantInboundSerializer
@@ -343,7 +344,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     noPingTimerId = noPingTimerId + 1
     timer(
       s"noPingTimer.$noPingTimerId",
-      randomDuration(options.noPingTimeoutMin, options.noPingTimeoutMax),
+      Util.randomDuration(options.noPingTimeoutMin, options.noPingTimeoutMax),
       () => {
         state match {
           case LeaderlessFollower(noPingTimer) => {
@@ -367,7 +368,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     notEnoughVotesTimerId += 1
     timer(
       s"notEnoughVotes.$notEnoughVotesTimerId",
-      randomDuration(
+      Util.randomDuration(
         options.notEnoughVotesTimeoutMin,
         options.notEnoughVotesTimeoutMax
       ),
@@ -407,25 +408,5 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
         ParticipantInbound().withVoteRequest(VoteRequest(round = round))
       )
     }
-  }
-
-  // Helpers ///////////////////////////////////////////////////////////////////
-  // Returns a duration sampled uniformly at random between min (inclusive) and
-  // max (inclusive). For example,
-  //
-  //  randomDuration(
-  //    java.time.Duration.ofSeconds(3),
-  //    java.time.Duration.ofSeconds(5)
-  //  )
-  //
-  // returns a random duration between 3 and 5 seconds.
-  private def randomDuration(
-      min: java.time.Duration,
-      max: java.time.Duration
-  ): java.time.Duration = {
-    logger.check_le(min, max)
-    val rand = java.util.concurrent.ThreadLocalRandom.current()
-    val delta = max.minus(min)
-    min.plus(java.time.Duration.ofNanos(rand.nextLong(0, delta.toNanos() + 1)))
   }
 }

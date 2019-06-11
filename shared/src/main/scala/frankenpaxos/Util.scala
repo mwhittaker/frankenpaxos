@@ -18,4 +18,22 @@ object Util {
   def popularItems[T](xs: Iterable[T], n: Int): Set[T] = {
     { for ((x, count) <- histogram(xs); if count >= n) yield x }.to[Set]
   }
+
+  // Returns a duration sampled uniformly at random between min (inclusive) and
+  // max (inclusive). For example,
+  //
+  //  randomDuration(
+  //    java.time.Duration.ofSeconds(3),
+  //    java.time.Duration.ofSeconds(5)
+  //  )
+  //
+  // returns a random duration between 3 and 5 seconds.
+  def randomDuration(
+      min: java.time.Duration,
+      max: java.time.Duration
+  ): java.time.Duration = {
+    val rand = java.util.concurrent.ThreadLocalRandom.current()
+    val delta = max.minus(min)
+    min.plus(java.time.Duration.ofNanos(rand.nextLong(0, delta.toNanos() + 1)))
+  }
 }
