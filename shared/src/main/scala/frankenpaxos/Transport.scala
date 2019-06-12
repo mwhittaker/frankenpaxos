@@ -70,7 +70,7 @@ trait Transport[Self <: Transport[Self]] {
 
   // Create a named timer for a particular actor. You should not call this
   // method directly. Instead, use the timer method inside Actor.
-  def timer(
+  private[frankenpaxos] def timer(
       address: Self#Address,
       name: String,
       delay: java.time.Duration,
