@@ -62,18 +62,23 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   }
 
   override def generateCommand(epaxos: System): Option[Command] = {
-    val gen: Gen[Command] = Gen.frequency(
+    val subgens = mutable.Buffer[(Int, Gen[Command])](
       // Propose.
       epaxos.numClients -> {
         for {
           clientId <- Gen.choose(0, epaxos.numClients - 1)
           value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
         } yield Propose(clientId, value)
-      },
-      // TransportCommand.
-      FakeTransport.frequency(epaxos.transport) ->
-        FakeTransport.generateCommand(epaxos.transport).map(TransportCommand(_))
+      }
     )
+    FakeTransport
+      .generateCommandWithFrequency(epaxos.transport)
+      .foreach({
+        case (frequency, gen) =>
+          subgens += frequency -> gen.map(TransportCommand(_))
+      })
+
+    val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
@@ -88,4 +93,36 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   }
 
   // TODO(mwhittaker): Implement invariants.
+
+  def commandToString(command: Command): String = {
+    val epaxos = newSystem()
+    command match {
+      case Propose(clientIndex, value) =>
+        val clientAddress = epaxos.clients(clientIndex).address.address
+        s"Propose($clientAddress, $value)"
+
+      case TransportCommand(FakeTransport.DeliverMessage(msg)) =>
+        val dstActor = epaxos.transport.actors(msg.dst)
+        val s = dstActor.serializer.toPrettyString(
+          dstActor.serializer.fromBytes(msg.bytes.to[Array])
+        )
+        s"DeliverMessage(src=${msg.src.address}, dst=${msg.dst.address})\n$s"
+
+      case TransportCommand(FakeTransport.TriggerTimer((address, name))) =>
+        s"TriggerTimer(${address.address}:$name)"
+    }
+  }
+
+  def historyToString(history: Seq[Command]): String = {
+    def indent(s: String, n: Int): String = {
+      s.replaceAll("\n", "\n" + " " * n)
+    }
+    history.zipWithIndex
+      .map({
+        case (command, i) =>
+          val num = "%3d".format(i)
+          s"$num. ${indent(commandToString(command), 5)}"
+      })
+      .mkString("\n")
+  }
 }

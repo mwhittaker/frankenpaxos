@@ -172,7 +172,9 @@ object FakeTransport {
   case class TriggerTimer(address_and_name: (FakeTransportAddress, String))
       extends Command
 
-  def generateCommand(fakeTransport: FakeTransport): Gen[Command] = {
+  // Generate a FakeTransport command. Every possible command (i.e. delivering
+  // a message or triggering a running timer) has equal probability.
+  def generateCommand(fakeTransport: FakeTransport): Option[Gen[Command]] = {
     var subgens = mutable.Buffer[(Int, Gen[Command])]()
 
     if (fakeTransport.messages.size > 0) {
@@ -187,20 +189,22 @@ object FakeTransport {
           Gen.oneOf(fakeTransport.runningTimers().to[Seq]).map(TriggerTimer(_))
     }
 
-    Gen.frequency(subgens: _*)
+    if (subgens.size > 0) {
+      Some(Gen.frequency(subgens: _*))
+    } else {
+      None
+    }
   }
 
-  // frequency is useful when you want to decide between a transport command
-  // and some other type of command. For example,
-  //
-  //   Gen.frequency(
-  //     10 -> ...,
-  //     20 -> ...,
-  //     FakeTransport.frequency(fakeTransport) -> ...,
-  //   )
-  def frequency(fakeTransport: FakeTransport): Int =
-    fakeTransport.messages.size +
-      fakeTransport.runningTimers().size
+  // generateCommandWithFrequency is useful when you want to decide between a
+  // transport command and some other type of command using Gen.frequency.
+  def generateCommandWithFrequency(
+      fakeTransport: FakeTransport
+  ): Option[(Int, Gen[Command])] = {
+    val frequency =
+      fakeTransport.messages.size + fakeTransport.runningTimers().size
+    generateCommand(fakeTransport).map((frequency, _))
+  }
 
   def runCommand(fakeTransport: FakeTransport, command: Command): Unit = {
     command match {

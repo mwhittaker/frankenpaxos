@@ -74,36 +74,33 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem {
   override def newSystem(): System = new Paxos(f)
 
   override def getState(paxos: System): State = {
-    // First, we look at any chosen values that the clients and leaders have
-    // learned.
     val clientChosen = paxos.clients.flatMap(_.chosenValue).to[Set]
     val leaderChosen = paxos.leaders.flatMap(_.chosenValue).to[Set]
+    clientChosen ++ leaderChosen
 
-    // Next, we compute any value chosen by the acceptors. A value is
-    // considered chosen if it has a majority of votes in the same round.
-    val votes: Seq[(Int, String)] = paxos.acceptors.flatMap(
-      acceptor => acceptor.voteValue.map((acceptor.voteRound, _))
-    )
-    val acceptorChosen = Util
-      .popularItems(votes, f + 1)
-      .map({ case (voteRound, voteValue) => voteValue })
-
-    clientChosen ++ leaderChosen ++ acceptorChosen
+    // Note that looking at acceptors is easy to get wrong. A value is chosen
+    // when a majority of acceptors vote for it, but these votes don't have to
+    // exist all at the same time.
   }
 
   override def generateCommand(paxos: System): Option[Command] = {
-    val gen: Gen[Command] = Gen.frequency(
+    val subgens = mutable.Buffer[(Int, Gen[Command])](
       // Propose.
       paxos.numClients -> {
         for {
           clientId <- Gen.choose(0, paxos.numClients - 1)
           value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
         } yield Propose(clientId, value)
-      },
-      // TransportCommand.
-      FakeTransport.frequency(paxos.transport) ->
-        FakeTransport.generateCommand(paxos.transport).map(TransportCommand(_))
+      }
     )
+    FakeTransport
+      .generateCommandWithFrequency(paxos.transport)
+      .foreach({
+        case (frequency, gen) =>
+          subgens += frequency -> gen.map(TransportCommand(_))
+      })
+
+    val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 

@@ -1,7 +1,8 @@
 package frankenpaxos.fastmultipaxos
 
-import frankenpaxos.simulator._
-import org.scalatest._
+import frankenpaxos.simulator.BadHistory
+import frankenpaxos.simulator.Simulator
+import org.scalatest.FlatSpec
 
 class FastMultiPaxosSpec extends FlatSpec {
   val runLength = 100

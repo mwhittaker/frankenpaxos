@@ -77,20 +77,23 @@ class SimulatedFastPaxos(val f: Int) extends SimulatedSystem {
   }
 
   override def generateCommand(fastPaxos: System): Option[Command] = {
-    val gen: Gen[Command] = Gen.frequency(
+    val subgens = mutable.Buffer[(Int, Gen[Command])](
       // Propose.
       fastPaxos.numClients -> {
         for {
           clientId <- Gen.choose(0, fastPaxos.numClients - 1)
           value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
         } yield Propose(clientId, value)
-      },
-      // TransportCommand.
-      FakeTransport.frequency(fastPaxos.transport) ->
-        FakeTransport
-          .generateCommand(fastPaxos.transport)
-          .map(TransportCommand(_))
+      }
     )
+    FakeTransport
+      .generateCommandWithFrequency(fastPaxos.transport)
+      .foreach({
+        case (frequency, gen) =>
+          subgens += frequency -> gen.map(TransportCommand(_))
+      })
+
+    val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
