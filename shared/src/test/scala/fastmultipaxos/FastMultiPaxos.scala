@@ -4,6 +4,8 @@ import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator.FakeLogger
 import frankenpaxos.simulator.FakeTransport
 import frankenpaxos.simulator.FakeTransportAddress
+import frankenpaxos.simulator.FakeTransportMessage
+import frankenpaxos.simulator.FakeTransportTimer
 import frankenpaxos.simulator.SimulatedSystem
 import frankenpaxos.statemachine.AppendLog
 import org.scalacheck
@@ -11,7 +13,10 @@ import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
 
-class FastMultiPaxos(val f: Int) {
+class FastMultiPaxos(
+    val f: Int,
+    val roundSystem: RoundSystem
+) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = f + 1
@@ -45,25 +50,34 @@ class FastMultiPaxos(val f: Int) {
                                 new ClientMetrics(FakeCollectors))
 
   // Leaders.
-  val leaders = for (i <- 1 to numLeaders)
-    yield
-      new Leader[FakeTransport](FakeTransportAddress(s"Leader $i"),
+  val leaders = for (i <- 1 to numLeaders) yield {
+    val options = LeaderOptions.default.copy(
+      thriftySystem = ThriftySystem.Random,
+      phase2aMaxBufferSize = 2,
+      valueChosenMaxBufferSize = 2
+    )
+    new Leader[FakeTransport](FakeTransportAddress(s"Leader $i"),
+                              transport,
+                              logger,
+                              config,
+                              new AppendLog(),
+                              options,
+                              new LeaderMetrics(FakeCollectors))
+  }
+
+  // Acceptors.
+  val acceptors = for (i <- 1 to numAcceptors) yield {
+    val options = AcceptorOptions.default.copy(
+      waitPeriod = java.time.Duration.ofMillis(10),
+      waitStagger = java.time.Duration.ofMillis(10)
+    )
+    new Acceptor[FakeTransport](FakeTransportAddress(s"Acceptor $i"),
                                 transport,
                                 logger,
                                 config,
-                                new AppendLog(),
-                                LeaderOptions.default,
-                                new LeaderMetrics(FakeCollectors))
-
-  // Acceptors.
-  val acceptors = for (i <- 1 to numAcceptors)
-    yield
-      new Acceptor[FakeTransport](FakeTransportAddress(s"Acceptor $i"),
-                                  transport,
-                                  logger,
-                                  config,
-                                  AcceptorOptions.default,
-                                  new AcceptorMetrics(FakeCollectors))
+                                options,
+                                new AcceptorMetrics(FakeCollectors))
+  }
 }
 
 object SimulatedFastMultiPaxos {
@@ -73,49 +87,121 @@ object SimulatedFastMultiPaxos {
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
-class SimulatedFastMultiPaxos(val f: Int) extends SimulatedSystem {
+class SimulatedFastMultiPaxos(
+    val f: Int,
+    val roundSystem: RoundSystem
+) extends SimulatedSystem {
   import SimulatedFastMultiPaxos._
 
   type Slot = Int
   override type System = FastMultiPaxos
   // The state of FastMultiPaxos records the set of chosen entries for every
   // log slot. Every set should be empty or a singleton.
-  type Entry = Leader[FakeTransport]#Entry
-  override type State = collection.SortedMap[Slot, Set[Entry]]
+  override type State = collection.SortedMap[Slot, Set[Leader.Entry]]
   override type Command = SimulatedFastMultiPaxos.Command
 
-  override def newSystem(): System = new FastMultiPaxos(f)
+  var valueChosen: Boolean = false
+
+  override def newSystem(): System = new FastMultiPaxos(f, roundSystem)
 
   override def getState(fastMultiPaxos: System): State = {
     // Merge two States together, taking a pairwise union.
     def merge(lhs: State, rhs: State): State = {
-      lhs.map({
-        case (k, v) => k -> v.union(rhs.getOrElse(k, Set()))
-      })
+      val merged = for (k <- lhs.keys ++ rhs.keys)
+        yield {
+          k -> lhs.getOrElse(k, Set()).union(rhs.getOrElse(k, Set()))
+        }
+      collection.SortedMap(merged.toSeq: _*)
     }
 
     // We look at the commands recorded chosen by the leaders.
-    fastMultiPaxos.leaders
-      .map(leader => leader.log.mapValues(Set[Entry](_)))
-      .foldLeft(collection.SortedMap[Slot, Set[Entry]]())(merge(_, _))
+    val chosen = fastMultiPaxos.leaders
+      .map(leader => leader.log.mapValues(Set[Leader.Entry](_)))
+      .foldLeft(collection.SortedMap[Slot, Set[Leader.Entry]]())(merge(_, _))
+    if (chosen.size > 0) {
+      valueChosen = true
+    }
+    chosen
   }
 
   override def generateCommand(fastMultiPaxos: System): Option[Command] = {
-    val gen: Gen[Command] = Gen.frequency(
-      // Propose.
-      fastMultiPaxos.numClients -> {
-        for {
-          clientId <- Gen.choose(0, fastMultiPaxos.numClients - 1)
-          clientPseudonym <- Gen.choose(0, 1)
-          value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
-        } yield Propose(clientId, clientPseudonym, value)
-      },
-      // TransportCommand.
-      FakeTransport.frequency(fastMultiPaxos.transport) ->
-        FakeTransport
-          .generateCommand(fastMultiPaxos.transport)
-          .map(TransportCommand(_))
-    )
+    // Generating commands for Fast MultiPaxos can get a bit tricky. Fast
+    // MultiPaxos includes leader election and hearbeating. If we're not
+    // careful, the protocol runs those subprotocols too often and no real work
+    // gets done. Thus, we separate out the "good" messages and timers (i.e.
+    // the ones from clients, leaders, and acceptors) from the "bad" messages
+    // and timers (i.e. the ones from the leader election and heartbeat
+    // subprotocols.)
+    //
+    // We also weight message delivery more than everything else because we
+    // don't want too many timers triggering or too many proposes happening.
+    // Empirically, when this happens, the protocol doesn't choose very much
+    // stuff.
+
+    val goodAddresses = {
+      fastMultiPaxos.clients.map(_.address) ++
+        fastMultiPaxos.leaders.map(_.address) ++
+        fastMultiPaxos.acceptors.map(_.address)
+    }.toSet
+
+    def goodMessage(msg: FakeTransportMessage): Boolean =
+      goodAddresses.contains(msg.src) && goodAddresses.contains(msg.dst)
+
+    def goodTimer(address_and_name: (FakeTransportAddress, String)): Boolean = {
+      val (address, _) = address_and_name
+      goodAddresses.contains(address)
+    }
+
+    val transport = fastMultiPaxos.transport
+    val goodMessages = transport.messages.filter(goodMessage)
+    val badMessages = transport.messages.filter(!goodMessage(_))
+    val goodTimers = transport.runningTimers().filter(goodTimer)
+    val badTimers = transport.runningTimers().filter(!goodTimer(_))
+
+    val subgens = mutable.Buffer[(Int, Gen[Command])]()
+
+    // Propose.
+    subgens += fastMultiPaxos.numClients -> {
+      for {
+        clientId <- Gen.choose(0, fastMultiPaxos.numClients - 1)
+        clientPseudonym <- Gen.choose(0, 1)
+        value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
+      } yield Propose(clientId, clientPseudonym, value)
+    }
+
+    // Good messages.
+    if (goodMessages.size > 0) {
+      subgens += 50 * goodMessages.size ->
+        Gen
+          .oneOf(goodMessages)
+          .map(m => TransportCommand(FakeTransport.DeliverMessage(m)))
+    }
+
+    // Good timers.
+    if (goodTimers.size > 0) {
+      subgens += goodTimers.size ->
+        Gen
+          .oneOf(goodTimers.toSeq)
+          .map(t => TransportCommand(FakeTransport.TriggerTimer(t)))
+    }
+
+    // Bad messages and timers.
+    if (badMessages.size > 0) {
+      subgens += 1 ->
+        Gen
+          .oneOf(badMessages)
+          .map(m => TransportCommand(FakeTransport.DeliverMessage(m)))
+    }
+
+    // Bad timers.
+    if (badTimers.size > 0) {
+      subgens += 1 ->
+        Gen
+          .oneOf(badTimers.toSeq)
+          .map(t => TransportCommand(FakeTransport.TriggerTimer(t)))
+    }
+
+    val gen: Gen[Command] = Gen.frequency(subgens: _*)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
@@ -132,12 +218,9 @@ class SimulatedFastMultiPaxos(val f: Int) extends SimulatedSystem {
   override def stateInvariantHolds(
       state: State
   ): SimulatedSystem.InvariantResult = {
-    if (state.size > 0) {
-      println(state)
-    }
     for ((slot, chosen) <- state) {
-      if (chosen.size > 0) {
-        SimulatedSystem.InvariantViolated(
+      if (chosen.size > 1) {
+        return SimulatedSystem.InvariantViolated(
           s"Slot $slot has multiple chosen values: $chosen."
         )
       }
@@ -150,8 +233,8 @@ class SimulatedFastMultiPaxos(val f: Int) extends SimulatedSystem {
       newState: State
   ): SimulatedSystem.InvariantResult = {
     for (slot <- oldState.keys ++ newState.keys) {
-      val oldChosen = oldState.getOrElse(slot, Set[Entry]())
-      val newChosen = newState.getOrElse(slot, Set[Entry]())
+      val oldChosen = oldState.getOrElse(slot, Set[Leader.Entry]())
+      val newChosen = newState.getOrElse(slot, Set[Leader.Entry]())
       if (!oldChosen.subsetOf(newChosen)) {
         SimulatedSystem.InvariantViolated(
           s"Slot $slot was $oldChosen but now is $newChosen."
@@ -162,7 +245,7 @@ class SimulatedFastMultiPaxos(val f: Int) extends SimulatedSystem {
   }
 
   def commandToString(command: Command): String = {
-    val fastMultiPaxos = new FastMultiPaxos(f)
+    val fastMultiPaxos = newSystem()
     command match {
       case Propose(clientIndex, clientPseudonym, value) =>
         val clientAddress = fastMultiPaxos.clients(clientIndex).address.address

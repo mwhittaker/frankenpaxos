@@ -58,6 +58,7 @@ object RoundSystem {
   //                       | 5     | 2      | classic    |
   //                       | 6     | 0      | classic    |
   class ClassicRoundRobin(private val n: Int) extends RoundSystem {
+    override def toString(): String = s"ClassicRoundRobin($n)"
     override def numLeaders(): Int = n
     override def leader(round: Round): LeaderIndex = round % n
     override def roundType(round: Round): RoundType = ClassicRound
@@ -98,6 +99,7 @@ object RoundSystem {
   //                       | 5     | 2      | classic    |
   //                       | 6     | 0      | classic    |
   class RoundZeroFast(private val n: Int) extends RoundSystem {
+    override def toString(): String = s"RoundZeroFast($n)"
     override def numLeaders(): Int = n
     override def leader(round: Round): LeaderIndex = round % n
 
@@ -140,6 +142,7 @@ object RoundSystem {
   //                       | 8     | 1      | fast       |
   //                       | 9     | 1      | classic    |
   class MixedRoundRobin(private val n: Int) extends RoundSystem {
+    override def toString(): String = s"MixedRoundRobin($n)"
     override def numLeaders(): Int = n
     override def leader(round: Round): LeaderIndex = (round / 2) % n
 

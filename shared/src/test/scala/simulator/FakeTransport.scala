@@ -158,7 +158,7 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
     timer.run()
   }
 
-  private def runningTimers(): Set[(FakeTransport#Address, String)] = {
+  def runningTimers(): Set[(FakeTransport#Address, String)] = {
     timers
       .filter({ case (address_name, timer) => timer.running })
       .keySet

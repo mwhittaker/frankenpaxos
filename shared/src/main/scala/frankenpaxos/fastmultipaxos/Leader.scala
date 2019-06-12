@@ -27,11 +27,6 @@ object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
 }
 
 @JSExportAll
-object Leader {
-  val serializer = LeaderInboundSerializer
-}
-
-@JSExportAll
 case class LeaderOptions(
     thriftySystem: ThriftySystem,
     resendPhase1asTimerPeriod: java.time.Duration,
@@ -163,6 +158,15 @@ class LeaderMetrics(collectors: Collectors) {
 }
 
 @JSExportAll
+object Leader {
+  val serializer = LeaderInboundSerializer
+
+  sealed trait Entry
+  case class ECommand(command: Command) extends Entry
+  object ENoop extends Entry
+}
+
+@JSExportAll
 class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
@@ -173,6 +177,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     options: LeaderOptions = LeaderOptions.default,
     metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
+  import Leader._
+
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = LeaderInbound
   override val serializer = LeaderInboundSerializer
@@ -209,12 +215,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   protected var round: Round =
     if (config.roundSystem.leader(0) == leaderId) 0 else -1
 
-  // The log of chosen commands.
-  sealed trait Entry
-  case class ECommand(command: Command) extends Entry
-  case object ENoop extends Entry
-
-  // Public for testing.
+  // The log of chosen commands. Public for testing.
   val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
 
   // The client table records the response to the latest request from each

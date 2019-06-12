@@ -51,9 +51,13 @@ object Simulator {
     // will find a minimal subsequence of `run` that also violates the
     // invariant.
     val prop = Prop.forAll(Gen.someOf(run)) { subrun =>
-      val x = runOne[sim.type, sim.Command](sim, subrun).isSuccess
-      println(s"$subrun -> $x")
-      x
+      val x = runOne[sim.type, sim.Command](sim, subrun)
+      if (!x.isSuccess) {
+        println()
+        println(s"$subrun failed 1.")
+        println(s"result is $x")
+      }
+      x.isSuccess
     }
 
     val params = Test.Parameters.default
@@ -61,13 +65,15 @@ object Simulator {
       .withWorkers(Runtime.getRuntime().availableProcessors())
     Test.check(params, prop) match {
       case Test.Result(Test.Failed(arg :: _, _), _, _, _, _) => {
-        println("FAILED")
         val subrun = arg.arg.asInstanceOf[Seq[sim.Command]]
+        println(s"$subrun failed 2.")
+        println(
+          s"result is ${runOne[sim.type, sim.Command](sim, subrun)}"
+        )
         val throwable = runOne[sim.type, sim.Command](sim, subrun).failed.get
         Some(BadHistory(subrun, throwable))
       }
       case _ =>
-        println("NOT FAILED")
         None
     }
   }
