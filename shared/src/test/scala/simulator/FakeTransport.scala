@@ -70,9 +70,10 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
       actor: Actor[FakeTransport]
   ): Unit = {
     if (actors.contains(address)) {
-      logger.fatal(s"""Attempting to register an actor with address $address,
-                      |but this transport already has an actor bound to
-                      |$address.""".stripMargin.replaceAll("\n", " "))
+      logger.fatal(
+        s"Attempting to register an actor with address $address, but this " +
+          s"transport already has an actor bound to $address."
+      )
     }
     actors(address) = actor
   }
@@ -118,13 +119,6 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
     }
   }
 
-  def runningTimers(): Set[(FakeTransport#Address, String)] = {
-    timers
-      .filter({ case (address_name, timer) => timer.running })
-      .keySet
-      .to[Set]
-  }
-
   def deliverMessage(msg: FakeTransportMessage): Unit = {
     if (!messages.contains(msg)) {
       logger.warn(s"Attempted to deliver unsent message $msg.")
@@ -163,6 +157,13 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
 
     timer.run()
   }
+
+  private def runningTimers(): Set[(FakeTransport#Address, String)] = {
+    timers
+      .filter({ case (address_name, timer) => timer.running })
+      .keySet
+      .to[Set]
+  }
 }
 
 object FakeTransport {
@@ -177,22 +178,29 @@ object FakeTransport {
     if (fakeTransport.messages.size > 0) {
       subgens +=
         fakeTransport.messages.size ->
-          Gen
-            .oneOf(fakeTransport.messages)
-            .map(DeliverMessage(_))
+          Gen.oneOf(fakeTransport.messages).map(DeliverMessage(_))
     }
 
     if (fakeTransport.runningTimers().size > 0) {
-      subgens += (
-        (
-          fakeTransport.runningTimers().size,
+      subgens +=
+        fakeTransport.runningTimers().size ->
           Gen.oneOf(fakeTransport.runningTimers().to[Seq]).map(TriggerTimer(_))
-        )
-      )
     }
 
     Gen.frequency(subgens: _*)
   }
+
+  // frequency is useful when you want to decide between a transport command
+  // and some other type of command. For example,
+  //
+  //   Gen.frequency(
+  //     10 -> ...,
+  //     20 -> ...,
+  //     FakeTransport.frequency(fakeTransport) -> ...,
+  //   )
+  def frequency(fakeTransport: FakeTransport): Int =
+    fakeTransport.messages.size +
+      fakeTransport.runningTimers().size
 
   def runCommand(fakeTransport: FakeTransport, command: Command): Unit = {
     command match {

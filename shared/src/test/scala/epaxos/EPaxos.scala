@@ -62,26 +62,18 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   }
 
   override def generateCommand(epaxos: System): Option[Command] = {
-    var subgens = mutable.Buffer[(Int, Gen[Command])]()
-    subgens +=
+    val gen: Gen[Command] = Gen.frequency(
+      // Propose.
       epaxos.numClients -> {
         for {
           clientId <- Gen.choose(0, epaxos.numClients - 1)
           value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
         } yield Propose(clientId, value)
-      }
-
-    val numTransportItems = epaxos.transport.messages.size +
-      epaxos.transport.runningTimers().size
-    if (numTransportItems > 0) {
-      subgens +=
-        numTransportItems ->
-          FakeTransport
-            .generateCommand(epaxos.transport)
-            .map(TransportCommand(_))
-    }
-
-    val gen: Gen[Command] = Gen.frequency(subgens: _*)
+      },
+      // TransportCommand.
+      FakeTransport.frequency(epaxos.transport) ->
+        FakeTransport.generateCommand(epaxos.transport).map(TransportCommand(_))
+    )
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
