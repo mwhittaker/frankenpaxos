@@ -23,7 +23,10 @@ object FakeTransportAddressSerializer
 
 class FakeTransportTimer(
     val address: FakeTransport#Address,
+    // We don't name this parameter `name` because we don't want to override
+    // the `name` method in frankenpaxos.Timer with the same name.
     val the_name: String,
+    val id: Int,
     val f: () => Unit
 ) extends frankenpaxos.Timer {
   var running: Boolean = false
@@ -41,8 +44,10 @@ class FakeTransportTimer(
   }
 
   def run(): Unit = {
-    running = false
-    f()
+    if (running) {
+      running = false
+      f()
+    }
   }
 }
 
@@ -61,8 +66,11 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
   override val addressSerializer = FakeTransportAddressSerializer
   override type Timer = FakeTransportTimer
 
+  type TimerId = Int
+  var timerId: TimerId = 0
+
   val actors = mutable.Map[FakeTransport#Address, Actor[FakeTransport]]()
-  val timers = mutable.Map[(FakeTransport#Address, String), Timer]()
+  val timers = mutable.Map[TimerId, Timer]()
   var messages = mutable.Buffer[FakeTransportMessage]()
 
   override def register(
@@ -92,15 +100,11 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
       delay: java.time.Duration,
       f: () => Unit
   ): FakeTransport#Timer = {
-    if (timers.contains(address, name)) {
-      logger.fatal(
-        s"Attempted to register a timer named $name to an actor with address " +
-          s"$address, but this actor already has a timer with this name."
-      )
-    }
+    val id = timerId
+    timerId += 1
 
-    val timer = new FakeTransportTimer(address, name, f)
-    timers.put((address, name), timer)
+    val timer = new FakeTransportTimer(address, name, id, f)
+    timers.put(id, timer)
     timer
   }
 
@@ -138,20 +142,19 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
     }
   }
 
-  def triggerTimer(address_and_name: (FakeTransport#Address, String)): Unit = {
-    if (!timers.contains(address_and_name)) {
+  def triggerTimer(timerId: Int): Unit = {
+    if (!timers.contains(timerId)) {
       logger.warn(
-        s"Attempted to trigger timer $address_and_name, but no such timer " +
-          s"is registered."
+        s"Attempted to trigger timer $timerId, but no such timer is registered."
       )
       return
     }
 
-    val timer = timers(address_and_name)
+    val timer = timers(timerId)
     if (!timer.running) {
       logger.warn(
-        s"Attempted to trigger timer $address_and_name, but this timer " +
-          s"is not running."
+        s"Attempted to trigger timer $timerId (${timer.address}, " +
+          s"${timer.name()}), but this timer is not running."
       )
       return
     }
@@ -159,19 +162,18 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
     timer.run()
   }
 
-  def runningTimers(): Set[(FakeTransport#Address, String)] = {
-    timers
-      .filter({ case (address_name, timer) => timer.running })
-      .keySet
-      .to[Set]
-  }
+  def runningTimers(): Set[FakeTransport#Timer] =
+    timers.values.filter(_.running).to[Set]
 }
 
 object FakeTransport {
   sealed trait Command
   case class DeliverMessage(msg: FakeTransportMessage) extends Command
-  case class TriggerTimer(address_and_name: (FakeTransportAddress, String))
-      extends Command
+  case class TriggerTimer(
+      address: FakeTransportAddress,
+      name: String,
+      timerId: Int
+  ) extends Command
 
   // Generate a FakeTransport command. Every possible command (i.e. delivering
   // a message or triggering a running timer) has equal probability.
@@ -179,15 +181,19 @@ object FakeTransport {
     var subgens = mutable.Buffer[(Int, Gen[Command])]()
 
     if (fakeTransport.messages.size > 0) {
-      subgens +=
-        fakeTransport.messages.size ->
-          Gen.oneOf(fakeTransport.messages).map(DeliverMessage(_))
+      subgens += fakeTransport.messages.size ->
+        Gen.oneOf(fakeTransport.messages).map(DeliverMessage(_))
     }
 
     if (fakeTransport.runningTimers().size > 0) {
-      subgens +=
-        fakeTransport.runningTimers().size ->
-          Gen.oneOf(fakeTransport.runningTimers().to[Seq]).map(TriggerTimer(_))
+      subgens += fakeTransport.runningTimers().size ->
+        Gen
+          .oneOf(fakeTransport.runningTimers().to[Seq])
+          .map(timer => {
+            TriggerTimer(address = timer.address,
+                         name = timer.name(),
+                         timerId = timer.id)
+          })
     }
 
     if (subgens.size > 0) {
@@ -211,8 +217,8 @@ object FakeTransport {
     command match {
       case DeliverMessage(msg) =>
         fakeTransport.deliverMessage(msg)
-      case TriggerTimer(address_and_name) =>
-        fakeTransport.triggerTimer(address_and_name)
+      case TriggerTimer(address, name, timerId) =>
+        fakeTransport.triggerTimer(timerId)
     }
   }
 }

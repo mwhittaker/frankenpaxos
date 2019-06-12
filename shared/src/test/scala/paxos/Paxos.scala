@@ -156,8 +156,8 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem {
         )
         s"DeliverMessage(src=${msg.src.address}, dst=${msg.dst.address})\n$s"
 
-      case TransportCommand(FakeTransport.TriggerTimer((address, name))) =>
-        s"TriggerTimer(${address.address}:$name)"
+      case TransportCommand(FakeTransport.TriggerTimer(address, name, id)) =>
+        s"TriggerTimer(${address.address}:$name ($id))"
     }
   }
 

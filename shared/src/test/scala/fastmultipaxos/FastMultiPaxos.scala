@@ -147,10 +147,8 @@ class SimulatedFastMultiPaxos(
     def goodMessage(msg: FakeTransportMessage): Boolean =
       goodAddresses.contains(msg.src) && goodAddresses.contains(msg.dst)
 
-    def goodTimer(address_and_name: (FakeTransportAddress, String)): Boolean = {
-      val (address, _) = address_and_name
-      goodAddresses.contains(address)
-    }
+    def goodTimer(timer: FakeTransportTimer): Boolean =
+      goodAddresses.contains(timer.address)
 
     val transport = fastMultiPaxos.transport
     val goodMessages = transport.messages.filter(goodMessage)
@@ -182,7 +180,13 @@ class SimulatedFastMultiPaxos(
       subgens += goodTimers.size ->
         Gen
           .oneOf(goodTimers.toSeq)
-          .map(t => TransportCommand(FakeTransport.TriggerTimer(t)))
+          .map({ t =>
+            TransportCommand(
+              FakeTransport.TriggerTimer(address = t.address,
+                                         name = t.name(),
+                                         timerId = t.id)
+            )
+          })
     }
 
     // Bad messages and timers.
@@ -198,7 +202,13 @@ class SimulatedFastMultiPaxos(
       subgens += 1 ->
         Gen
           .oneOf(badTimers.toSeq)
-          .map(t => TransportCommand(FakeTransport.TriggerTimer(t)))
+          .map({ t =>
+            TransportCommand(
+              FakeTransport.TriggerTimer(address = t.address,
+                                         name = t.name(),
+                                         timerId = t.id)
+            )
+          })
     }
 
     val gen: Gen[Command] = Gen.frequency(subgens: _*)
@@ -258,8 +268,8 @@ class SimulatedFastMultiPaxos(
         )
         s"DeliverMessage(src=${msg.src.address}, dst=${msg.dst.address})\n$s"
 
-      case TransportCommand(FakeTransport.TriggerTimer((address, name))) =>
-        s"TriggerTimer(${address.address}:$name)"
+      case TransportCommand(FakeTransport.TriggerTimer(address, name, id)) =>
+        s"TriggerTimer(${address.address}:$name ($id))"
     }
   }
 

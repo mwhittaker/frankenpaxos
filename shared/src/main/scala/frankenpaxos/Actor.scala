@@ -32,6 +32,10 @@ abstract class Actor[Transport <: frankenpaxos.Transport[Transport]](
     transport.send(address, dst, bytes)
   }
 
+  // Creates a new Timer with the specified delay. The returned timer will not
+  // be started; you have to start it yourself. Also note that name does not
+  // uniquely identify a timer. Multiple timers can be created with the same
+  // name.
   def timer(
       name: String,
       delay: java.time.Duration,

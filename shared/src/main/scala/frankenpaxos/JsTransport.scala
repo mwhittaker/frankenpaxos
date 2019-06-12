@@ -25,6 +25,7 @@ class JsTransportTimer(
     // We don't name this parameter `name` because we don't want to override
     // the `name` method in frankenpaxos.Timer with the same name.
     val the_name: String,
+    val id: Int,
     val delay: java.time.Duration,
     val f: () => Unit
 ) extends frankenpaxos.Timer {
@@ -70,8 +71,14 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
 
   sealed trait Command
   case class DeliverMessage(msg: JsTransportMessage) extends Command
-  case class TriggerTimer(address_and_name: (JsTransportAddress, String))
-      extends Command
+  case class TriggerTimer(
+      address: JsTransport#Address,
+      name: String,
+      timerId: Int
+  ) extends Command
+
+  type TimerId = Int
+  var timerId: TimerId = 0
 
   val actors = mutable.Map[JsTransport#Address, Actor[JsTransport]]()
   var partitionedActors = Set[JsTransport#Address]()
@@ -127,11 +134,11 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
       delay: java.time.Duration,
       f: () => Unit
   ): JsTransport#Timer = {
-    // TODO(mwhittaker): If a timer already exists with the given name and it
-    // is stopped, delete it. We are replacing that timer with a new one.
-    val timer = new JsTransportTimer(address, name, delay, () => {
+    val id = timerId
+    timerId += 1
+    val timer = new JsTransportTimer(address, name, id, delay, () => {
       if (recordHistory) {
-        history += TriggerTimer((address, name))
+        history += TriggerTimer(address, name, id)
       }
       f()
     })
@@ -262,8 +269,8 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
           s")" +
           s")"
 
-      case TriggerTimer((address, name)) =>
-        s"""transport.triggerTimer((${toFakeAddress(address)}, "$name"))"""
+      case TriggerTimer(address, name, id) =>
+        s"""transport.triggerTimer(${toFakeAddress(address)}, "$name", $id)"""
     }
   }
 
