@@ -76,15 +76,28 @@ object SimulatedFastMultiPaxos {
 class SimulatedFastMultiPaxos(val f: Int) extends SimulatedSystem {
   import SimulatedFastMultiPaxos._
 
+  type Slot = Int
   override type System = FastMultiPaxos
-  // TODO(mwhittaker): Implement.
-  override type State = Unit
+  // The state of FastMultiPaxos records the set of chosen entries for every
+  // log slot. Every set should be empty or a singleton.
+  type Entry = Leader[FakeTransport]#Entry
+  override type State = collection.SortedMap[Slot, Set[Entry]]
   override type Command = SimulatedFastMultiPaxos.Command
 
   override def newSystem(): System = new FastMultiPaxos(f)
 
-  override def getState(system: System): State = {
-    // TODO(mwhittaker): Implement.
+  override def getState(fastMultiPaxos: System): State = {
+    // Merge two States together, taking a pairwise union.
+    def merge(lhs: State, rhs: State): State = {
+      lhs.map({
+        case (k, v) => k -> v.union(rhs.getOrElse(k, Set()))
+      })
+    }
+
+    // We look at the commands recorded chosen by the leaders.
+    fastMultiPaxos.leaders
+      .map(leader => leader.log.mapValues(Set[Entry](_)))
+      .foldLeft(collection.SortedMap[Slot, Set[Entry]]())(merge(_, _))
   }
 
   override def generateCommand(fastMultiPaxos: System): Option[Command] = {
@@ -116,7 +129,37 @@ class SimulatedFastMultiPaxos(val f: Int) extends SimulatedSystem {
     fastMultiPaxos
   }
 
-  // TODO(mwhittaker): Implement invariants.
+  override def stateInvariantHolds(
+      state: State
+  ): SimulatedSystem.InvariantResult = {
+    if (state.size > 0) {
+      println(state)
+    }
+    for ((slot, chosen) <- state) {
+      if (chosen.size > 0) {
+        SimulatedSystem.InvariantViolated(
+          s"Slot $slot has multiple chosen values: $chosen."
+        )
+      }
+    }
+    SimulatedSystem.InvariantHolds
+  }
+
+  override def stepInvariantHolds(
+      oldState: State,
+      newState: State
+  ): SimulatedSystem.InvariantResult = {
+    for (slot <- oldState.keys ++ newState.keys) {
+      val oldChosen = oldState.getOrElse(slot, Set[Entry]())
+      val newChosen = newState.getOrElse(slot, Set[Entry]())
+      if (!oldChosen.subsetOf(newChosen)) {
+        SimulatedSystem.InvariantViolated(
+          s"Slot $slot was $oldChosen but now is $newChosen."
+        )
+      }
+    }
+    SimulatedSystem.InvariantHolds
+  }
 
   def commandToString(command: Command): String = {
     val fastMultiPaxos = new FastMultiPaxos(f)

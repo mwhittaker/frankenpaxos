@@ -214,8 +214,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   case class ECommand(command: Command) extends Entry
   case object ENoop extends Entry
 
-  @JSExport
-  protected val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
+  // Public for testing.
+  val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
 
   // The client table records the response to the latest request from each
   // client. For example, if command c1 sends command x with id 2 to a leader
