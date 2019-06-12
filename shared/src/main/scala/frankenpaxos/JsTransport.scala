@@ -192,7 +192,9 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
 
     actors.get(msg.dst) match {
       case Some(actor) => {
-        actor.receiveImpl(msg.src, msg.bytes)
+        actor.receive(msg.src, actor.serializer.fromBytes(msg.bytes))
+
+        // actor.receiveImpl(msg.src, msg.bytes)
         if (recordHistory) {
           history += DeliverMessage(msg)
         }

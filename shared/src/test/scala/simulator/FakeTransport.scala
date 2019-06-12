@@ -128,7 +128,8 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
 
     actors.get(msg.dst) match {
       case Some(actor) =>
-        actor.receiveImpl(msg.src, msg.bytes.to[Array])
+        actor.receive(msg.src, actor.serializer.fromBytes(msg.bytes.to[Array]))
+      // actor.receiveImpl(msg.src, msg.bytes.to[Array])
       case None =>
         logger.warn(
           s"Attempted to deliver a message to an actor at address " +

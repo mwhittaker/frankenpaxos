@@ -117,7 +117,8 @@ class NettyTcpTransport(private val logger: Logger)
       val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress)
       msg match {
         case bytes: Array[Byte] => {
-          actor.receiveImpl(remoteAddress, bytes)
+          actor.receive(remoteAddress, actor.serializer.fromBytes(bytes))
+          // actor.receiveImpl(remoteAddress, bytes)
         }
         case _ =>
           logger.fatal(

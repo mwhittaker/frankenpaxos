@@ -1,11 +1,13 @@
 package frankenpaxos
 
-import scala.scalajs.js.annotation._
+import scala.scalajs.js.annotation.JSExportAll
 
+// TODO(mwhittaker): Document.
 @JSExportAll
 abstract class Actor[Transport <: frankenpaxos.Transport[Transport]](
     val address: Transport#Address,
     val transport: Transport,
+    // TODO(mwhittaker): Remove logger. It's not needed.
     val logger: Logger
 ) {
   // Interface.
@@ -14,11 +16,7 @@ abstract class Actor[Transport <: frankenpaxos.Transport[Transport]](
   def receive(src: Transport#Address, message: InboundMessage): Unit
 
   // Implementation.
-  transport.register(address, this);
-
-  def receiveImpl(src: Transport#Address, bytes: Array[Byte]): Unit = {
-    receive(src, serializer.fromBytes(bytes))
-  }
+  transport.register(address, this)
 
   type Chan[A <: frankenpaxos.Actor[Transport]] =
     frankenpaxos.Chan[Transport, A]
