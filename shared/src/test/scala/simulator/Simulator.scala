@@ -31,8 +31,10 @@ object Simulator {
   ): Option[BadHistory[Sim]] = {
     for (_ <- 1 to numRuns) {
       simulateOne(sim, runLength) match {
-        case badHistory @ Some(_) => badHistory
-        case None                 =>
+        case badHistory @ Some(_) =>
+          println(badHistory)
+          return badHistory
+        case None =>
       }
     }
 
@@ -49,7 +51,9 @@ object Simulator {
     // will find a minimal subsequence of `run` that also violates the
     // invariant.
     val prop = Prop.forAll(Gen.someOf(run)) { subrun =>
-      runOne[sim.type, sim.Command](sim, subrun).isSuccess
+      val x = runOne[sim.type, sim.Command](sim, subrun).isSuccess
+      println(s"$subrun -> $x")
+      x
     }
 
     val params = Test.Parameters.default
@@ -57,11 +61,14 @@ object Simulator {
       .withWorkers(Runtime.getRuntime().availableProcessors())
     Test.check(params, prop) match {
       case Test.Result(Test.Failed(arg :: _, _), _, _, _, _) => {
+        println("FAILED")
         val subrun = arg.arg.asInstanceOf[Seq[sim.Command]]
         val throwable = runOne[sim.type, sim.Command](sim, subrun).failed.get
         Some(BadHistory(subrun, throwable))
       }
-      case _ => None
+      case _ =>
+        println("NOT FAILED")
+        None
     }
   }
 
@@ -127,7 +134,16 @@ object Simulator {
       run: Seq[C]
   ): Unit = {
     var system = sim.newSystem()
-    var states = Seq[sim.State]()
+    var states = Seq[sim.State](sim.getState(system))
+
+    checkInvariants[sim.type, sim.State](sim, states) match {
+      case SimulatedSystem.InvariantViolated(explanation) =>
+        throw new IllegalStateException(explanation)
+
+      case SimulatedSystem.InvariantHolds =>
+        // Nothing to do.
+        ()
+    }
 
     for (command <- run) {
       system = sim.runCommand(system, command)
