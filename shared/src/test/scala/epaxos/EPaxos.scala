@@ -37,13 +37,14 @@ class EPaxos(val f: Int) {
                                  transport,
                                  logger,
                                  config,
-                                 new Register(),
+                                 new KeyValueStore(),
                                  new JgraphtDependencyGraph())
 }
 
 object SimulatedEPaxos {
   sealed trait Command
-  case class Propose(clientIndex: Int, value: String) extends Command
+  case class Propose(clientIndex: Int, value: KeyValueStoreInput)
+      extends Command
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
@@ -62,13 +63,23 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   }
 
   override def generateCommand(epaxos: System): Option[Command] = {
+    def get(key: String): KeyValueStoreInput =
+      KeyValueStoreInput().withGetRequest(GetRequest(key = Seq(key)))
+
+    def set(key: String, value: String): KeyValueStoreInput =
+      KeyValueStoreInput()
+        .withSetRequest(SetRequest(keyValue = Seq(SetKeyValuePair(key, value))))
+
+    val keys = Seq("a", "b", "c", "d")
+    val requests = keys.map(get(_)) ++ keys.map(set(_, "foo"))
+
     val subgens = mutable.Buffer[(Int, Gen[Command])](
       // Propose.
       epaxos.numClients -> {
         for {
           clientId <- Gen.choose(0, epaxos.numClients - 1)
-          value <- Gen.listOfN(10, Gen.alphaLowerChar).map(_.mkString(""))
-        } yield Propose(clientId, value)
+          request <- Gen.oneOf(requests)
+        } yield Propose(clientId, request)
       }
     )
     FakeTransport
@@ -84,8 +95,8 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
 
   override def runCommand(epaxos: System, command: Command): System = {
     command match {
-      case Propose(clientId, value) =>
-        epaxos.clients(clientId).propose("TODO")
+      case Propose(clientId, request) =>
+        epaxos.clients(clientId).propose(request.toByteArray)
       case TransportCommand(command) =>
         FakeTransport.runCommand(epaxos.transport, command)
     }
