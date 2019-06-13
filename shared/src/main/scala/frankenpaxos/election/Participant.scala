@@ -112,11 +112,6 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   // The current round.
   var round: Int = 0
 
-  // Ids for timers.
-  private var pingTimerId: Int = 0
-  private var noPingTimerId: Int = 0
-  private var notEnoughVotesTimerId: Int = 0
-
   // The current state.
   var state: LeaderElectionState = {
     leader match {
@@ -323,10 +318,9 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
   // Timers ////////////////////////////////////////////////////////////////////
   private def pingTimer(): Transport#Timer = {
-    pingTimerId += 1
     // We make `t` a lazy val to avoid the circular definition.
     lazy val t: Transport#Timer = timer(
-      s"pingTimer.$pingTimerId",
+      "pingTimer",
       options.pingPeriod,
       () => {
         for (address <- addresses) {
@@ -341,9 +335,8 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def noPingTimer(): Transport#Timer = {
-    noPingTimerId = noPingTimerId + 1
     timer(
-      s"noPingTimer.$noPingTimerId",
+      "noPingTimer",
       Util.randomDuration(options.noPingTimeoutMin, options.noPingTimeoutMax),
       () => {
         state match {
@@ -365,9 +358,8 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def notEnoughVotesTimer(): Transport#Timer = {
-    notEnoughVotesTimerId += 1
     timer(
-      s"notEnoughVotes.$notEnoughVotesTimerId",
+      "notEnoughVotes",
       Util.randomDuration(
         options.notEnoughVotesTimeoutMin,
         options.notEnoughVotesTimeoutMax
