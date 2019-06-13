@@ -331,8 +331,8 @@ function make_nodes(EPaxos, snap) {
     actor: EPaxos.replica2,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x + 50, 200, 20).attr(colored(flat_blue)),
-      snap.text(replica_x + 50, 200, '2').attr(number_style),
+      snap.circle(replica_x + 100, 200, 20).attr(colored(flat_blue)),
+      snap.text(replica_x + 100, 200, '2').attr(number_style),
     ],
     component: replica_info,
   };
@@ -340,8 +340,8 @@ function make_nodes(EPaxos, snap) {
     actor: EPaxos.replica3,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x + 100, 300, 20).attr(colored(flat_blue)),
-      snap.text(replica_x + 100, 300, '3').attr(number_style),
+      snap.circle(replica_x - 100, 300, 20).attr(colored(flat_blue)),
+      snap.text(replica_x - 100, 300, '3').attr(number_style),
     ],
     component: replica_info,
   };
@@ -349,8 +349,8 @@ function make_nodes(EPaxos, snap) {
     actor: EPaxos.replica4,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x + 50, 400, 20).attr(colored(flat_blue)),
-      snap.text(replica_x + 50, 400, '4').attr(number_style),
+      snap.circle(replica_x + 100, 400, 20).attr(colored(flat_blue)),
+      snap.text(replica_x + 100, 400, '4').attr(number_style),
     ],
     component: replica_info,
   };
@@ -385,10 +385,13 @@ function main() {
       nodes: nodes,
       node: nodes[EPaxos.client1.address],
       transport: EPaxos.transport,
-      time_scale: 1,
-      auto_deliver_messages: true,
-      auto_start_timers: true,
-      record_history_for_unit_tests: false,
+      test_bool: true,
+      settings: {
+        time_scale: 1,
+        auto_deliver_messages: true,
+        auto_start_timers: true,
+        record_history_for_unit_tests: false,
+      },
     },
 
     methods: {
@@ -416,12 +419,6 @@ function main() {
 
       unpartition: function(address) {
         nodes[address].svgs[0].attr({fill: nodes[address].color})
-      },
-    },
-
-    watch: {
-      record_history_for_unit_tests: function(b) {
-        this.transport.recordHistory = b;
       },
     },
   });

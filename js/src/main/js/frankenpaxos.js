@@ -505,6 +505,134 @@ Vue.component('frankenpaxos-unittest', {
   `
 });
 
+Vue.component('frankenpaxos-text-checkbox', {
+  props: {
+    text: String,
+    value: Boolean,
+  },
+
+  template: `
+    <div>
+      <span
+        v-on:click="$emit(!value)"
+        :style="{cursor: 'pointer'}">
+        {{text}}
+      </span>
+      <input
+        type="checkbox"
+        :checked="value"
+        v-on:input="$emit('input', $event.target.checked)"
+        :style="{cursor: 'pointer'}">
+    </div>
+  `
+});
+
+Vue.component('frankenpaxos-settings', {
+  props: {
+    transport: Object,
+    value: Object,
+  },
+
+  methods: {
+    emit: function(field, value) {
+      let copy = Object.assign({}, this.value);
+      copy[field] = value;
+      this.$emit('input', copy);
+    },
+  },
+
+  template: `
+    <div class="frankenpaxos-box">
+      <div>
+        Time scale:
+        <input
+          type="range"
+          min=0
+          max=2
+          step=0.1
+          value="value.time_scale"
+          v-on:input="emit('time_scale', parseFloat($event.target.value))">
+        {{value.time_scale}}x
+      </div>
+      <frankenpaxos-text-checkbox
+        :text="'Automatically deliver messages:'"
+        :value="value.auto_deliver_messages"
+        v-on:input="emit('auto_deliver_messages', $event)">
+      </frankenpaxos-text-checkbox>
+      <frankenpaxos-text-checkbox
+        :text="'Automatically start timers:'"
+        :value="value.auto_start_timers"
+        v-on:input="emit('auto_start_timers', $event)">
+      </frankenpaxos-text-checkbox>
+      <frankenpaxos-text-checkbox
+        :text="'Record history for unit tests:'"
+        :value="value.record_history_for_unit_tests"
+        v-on:input="transport.recordHistory = $event">
+      </frankenpaxos-text-checkbox>
+    </div>
+  `
+});
+
+Vue.component('frankenpaxos-actor', {
+  props: [
+    'transport',
+    'node',
+    // node.actor
+    // node.component
+    'timer_tweens',
+    // v-on:partition
+    // v-on:unpartition
+  ],
+
+  template: `
+    <div class="frankenpaxos-node">
+      <h2 :style="{ display: 'inline-block' }">{{node.actor.address.address}}</h2>
+      <frankenpaxos-partition
+        :transport=transport
+        :address=node.actor.address
+        v-on:partition="$emit('partition', $event)">
+        partition
+      </frankenpaxos-partition>
+      <frankenpaxos-unpartition
+        :transport=transport
+        :address=node.actor.address
+        v-on:unpartition="$emit('unpartition', $event)">
+        unpartition
+      </frankenpaxos-unpartition>
+
+      <div class="frankenpaxos-box">
+        <h3 class="frankenpaxos-box-title">Messages</h3>
+        <frankenpaxos-staged-messages
+          :transport="transport"
+          :actor="node.actor"
+          :messages="JsUtils.seqToJs(
+            transport.stagedMessagesForAddress(node.actor.address))">
+        </frankenpaxos-staged-messages>
+      </div>
+
+      <div class="frankenpaxos-box">
+        <h3 class="frankenpaxos-box-title">Timers</h3>
+        <div v-for="timer in timer_tweens[node.actor.address]">
+          <frankenpaxos-timer :timer="timer"></frankenpaxos-timer>
+        </div>
+      </div>
+
+      <div class="frankenpaxos-box">
+        <h3 class="frankenpaxos-box-title">Data</h3>
+        <keep-alive>
+          <component :is="node.component" :node="node"></component>
+        </keep-alive>
+      </div>
+
+      <div class="frankenpaxos-box">
+        <h3 class="frankenpaxos-box-title">Log</h3>
+        <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)">
+        </frankenpaxos-log>
+      </div>
+    </div>
+  `
+});
+
 // Data structure visualizations. //////////////////////////////////////////////
 Vue.component('fp-toggle', {
   props: {
