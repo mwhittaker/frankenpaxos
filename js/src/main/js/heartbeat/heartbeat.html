@@ -4,25 +4,9 @@
   <title>Heartbeat</title>
   <meta name=viewport content="width=device-width, initial-scale=1">
   <link href="../frankenpaxos.css" rel="stylesheet">
+  <link href="../style.css" rel="stylesheet">
   <style type="text/css">
-    html {
-      font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
-    }
-
-    #container {
-      font-size: 18px;
-      background: #FEFEFE;
-      padding-left: 1em;
-      padding-right: 1em;
-      max-width: 44em;
-      line-height: 27px;
-      padding-top: 20px;
-      padding-bottom: 20px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    .animation {
+    #animation {
       display: block;
       margin-left: auto;
       margin-right: auto;
@@ -35,92 +19,28 @@
   <div id="container">
     <h1>Heartbeat</h1>
 
-    <svg id="tweened_animation" class="animation" viewBox="0 0 400 300"></svg>
+    <svg id="animation" viewBox="0 0 400 300"></svg>
 
-    <div id="tweened_app">
-      <frankenpaxos-tweened-app
+    <frankenpaxos-tweened-app
+      id="app"
+      :transport="transport"
+      :send_message="send_message"
+      :settings="settings"
+      v-slot="{timer_tweens: timer_tweens}">
+      <frankenpaxos-settings
         :transport="transport"
-        :time_scale="time_scale"
-        :auto_deliver_messages="auto_deliver_messages"
-        :auto_start_timers="auto_start_timers"
-        :send_message="send_message">
-      <template v-slot:default="slotProps">
-        <div class="frankenpaxos-box">
-          <div>
-            Time scale:
-            <input type="range" v-model="time_scale" min="0" max="2" step=0.1>
-            {{time_scale}}x
-          </div>
-          <div>
-            Automatically deliver messages:
-            <input type="checkbox" v-model="auto_deliver_messages">
-          </div>
-          <div>
-            Automatically start timers:
-            <input type="checkbox" v-model="auto_start_timers">
-          </div>
-        </div>
+        v-model="settings">
+      </frankenpaxos-settings>
 
-        <div class="frankenpaxos-node">
-          <h2>{{node.actor.address.address}}</h2>
+      <frankenpaxos-actor
+        :transport="transport"
+        :node="node"
+        :timer_tweens="timer_tweens"
+        v-on:partition="partition"
+        v-on:unpartition="unpartition">
+      </frankenpaxos-actor>
 
-          <div class="frankenpaxos-box">
-            <frankenpaxos-partition :transport=transport
-                                    :address=node.actor.address
-                                    v-on:partition=partition>
-            partition
-            </frankenpaxos-partition>
-            <frankenpaxos-unpartition :transport=transport
-                                    :address=node.actor.address
-                                    v-on:unpartition=unpartition>
-            unpartition
-            </frankenpaxos-unpartition>
-          </div>
-
-          <div class="frankenpaxos-box">
-            <h3 class="frankenpaxos-box-title">Data</h3>
-            <div><strong>name</strong>: {{node.actor.address.address}}</div>
-
-            <strong>numRetries</strong>:
-            <frankenpaxos-map :map="node.actor.numRetries"></frankenpaxos-map>
-
-            <strong>networkDelayNanos</strong>:
-            <frankenpaxos-map :map="node.actor.networkDelayNanos"></frankenpaxos-map>
-
-            <strong>alive</strong>:
-            <frankenpaxos-set :set="node.actor.alive"></frankenpaxos-set>
-          </div>
-
-          <div class="frankenpaxos-box">
-            <h3 class="frankenpaxos-box-title">Timers</h3>
-            <div v-for="timer in slotProps.timer_tweens[node.actor.address]">
-              <frankenpaxos-timer :timer="timer"></frankenpaxos-timer>
-            </div>
-          </div>
-
-          <div class="frankenpaxos-box">
-            <h3 class="frankenpaxos-box-title">Messages</h3>
-            <frankenpaxos-staged-messages
-              :transport="transport"
-              :actor="node.actor"
-              :messages="JsUtils.seqToJs(
-                transport.stagedMessagesForAddress(node.actor.address))">
-            </frankenpaxos-staged-messages>
-          </div>
-
-          <div class="frankenpaxos-box">
-            <h3 class="frankenpaxos-box-title">Log</h3>
-            <frankenpaxos-log :log="JsUtils.seqToJs(node.actor.logger.log)">
-            </frankenpaxos-log>
-          </div>
-        </div>
-
-        <div class="frankenpaxos-box">
-          <h3 class="frankenpaxos-box-title">Unit Test</h3>
-          <frankenpaxos-unittest :transport="transport">
-          </frankenpaxos-unittest>
-        </div>
-      </template>
+      <frankenpaxos-unittest :transport="transport"></frankenpaxos-unittest>
     </frankenpaxos-tweened-app>
   </div>
 
@@ -131,6 +51,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.0.2/plugins/AttrPlugin.min.js"></script>
   <script type="text/javascript" src="../../../../target/scala-2.12/frankenpaxos-fastopt.js"></script>
   <script type="text/javascript" src="../frankenpaxos.js"></script>
-  <script type="text/javascript" src="../heartbeat/heartbeat.js"></script>
+  <script type="text/javascript" src="./heartbeat.js"></script>
 </body>
 </html>

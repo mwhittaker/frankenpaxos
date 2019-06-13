@@ -3,6 +3,23 @@ let exponential = function(mean) {
   return -Math.log(Math.random() + Number.EPSILON) * mean
 }
 
+let participant_info = {
+  props: ['node'],
+
+  template: `
+    <div>
+      numRetries =
+      <frankenpaxos-map :map="node.actor.numRetries"></frankenpaxos-map>
+
+      networkDelayNanos =
+      <frankenpaxos-map :map="node.actor.networkDelayNanos"></frankenpaxos-map>
+
+      alive =
+      <frankenpaxos-set :set="node.actor.alive"></frankenpaxos-set>
+    </div>
+  `,
+};
+
 function make_nodes(Heartbeat, snap) {
   // https://flatuicolors.com/palette/defo
   let colored = (color) => {
@@ -36,43 +53,48 @@ function make_nodes(Heartbeat, snap) {
 
   nodes[Heartbeat.a.address] = {
     actor: Heartbeat.a,
+    color: flat_red,
+    component: participant_info,
     svgs: [
       snap.circle(ax, ay, 20).attr(colored(flat_red)),
       snap.text(ax, ay, 'a').attr(title_attr),
     ],
-    color: flat_red,
   };
   nodes[Heartbeat.b.address] = {
     actor: Heartbeat.b,
+    color: flat_red,
+    component: participant_info,
     svgs: [
       snap.circle(bx, by, 20).attr(colored(flat_red)),
       snap.text(bx, by, 'b').attr(title_attr),
     ],
-    color: flat_red,
   };
   nodes[Heartbeat.c.address] = {
     actor: Heartbeat.c,
+    color: flat_red,
+    component: participant_info,
     svgs: [
       snap.circle(cx, cy, 20).attr(colored(flat_red)),
       snap.text(cx, cy, 'c').attr(title_attr),
     ],
-    color: flat_red,
   };
   nodes[Heartbeat.d.address] = {
     actor: Heartbeat.d,
+    color: flat_red,
+    component: participant_info,
     svgs: [
       snap.circle(dx, dy, 20).attr(colored(flat_red)),
       snap.text(dx, dy, 'd').attr(title_attr),
     ],
-    color: flat_red,
   };
   nodes[Heartbeat.e.address] = {
     actor: Heartbeat.e,
+    color: flat_red,
+    component: participant_info,
     svgs: [
       snap.circle(ex, ey, 20).attr(colored(flat_red)),
       snap.text(ex, ey, 'e').attr(title_attr),
     ],
-    color: flat_red,
   };
 
   return nodes
@@ -80,21 +102,23 @@ function make_nodes(Heartbeat, snap) {
 
 function main() {
   let Heartbeat = frankenpaxos.heartbeat.TweenedHeartbeat.Heartbeat;
-  let snap = Snap('#tweened_animation');
+  let snap = Snap('#animation');
   let nodes = make_nodes(Heartbeat, snap);
   let serializer = nodes[Heartbeat.a.address].actor.serializer;
 
   // Create the vue app.
   let vue_app = new Vue({
-    el: '#tweened_app',
+    el: '#app',
 
     data: {
       nodes: nodes,
       node: nodes[Heartbeat.a.address],
       transport: Heartbeat.transport,
-      time_scale: 1,
-      auto_deliver_messages: true,
-      auto_start_timers: true,
+      settings: {
+        time_scale: 1,
+        auto_deliver_messages: true,
+        auto_start_timers: true,
+      },
     },
 
     methods: {

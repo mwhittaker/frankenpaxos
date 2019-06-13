@@ -186,12 +186,12 @@ function make_nodes(Paxos, snap) {
 
 function main() {
   let Paxos = frankenpaxos.paxos.TweenedPaxos.Paxos;
-  let snap = Snap('#tweened_animation');
+  let snap = Snap('#animation');
   let nodes = make_nodes(Paxos, snap);
 
   // Create the vue app.
   let vue_app = new Vue({
-    el: '#tweened_app',
+    el: '#app',
 
     components: {
       'abbreviated-acceptor-info': abbreviated_acceptor_info,
@@ -201,13 +201,15 @@ function main() {
       JsUtils: frankenpaxos.JsUtils,
       nodes: nodes,
       node: nodes[Paxos.client1.address],
+      transport: Paxos.transport,
+      settings: {
+        time_scale: 1,
+        auto_deliver_messages: true,
+        auto_start_timers: true,
+      },
       acceptor1: nodes[Paxos.acceptor1.address],
       acceptor2: nodes[Paxos.acceptor2.address],
       acceptor3: nodes[Paxos.acceptor3.address],
-      transport: Paxos.transport,
-      time_scale: 1,
-      auto_deliver_messages: true,
-      auto_start_timers: true,
     },
 
     methods: {

@@ -330,21 +330,22 @@ function make_nodes(FastMultiPaxos, snap) {
 function main() {
   let FastMultiPaxos =
     frankenpaxos.fastmultipaxos.TweenedFastMultiPaxos.FastMultiPaxos;
-  let snap = Snap('#tweened_animation');
+  let snap = Snap('#animation');
   let nodes = make_nodes(FastMultiPaxos, snap);
 
   // Create the vue app.
   let vue_app = new Vue({
-    el: '#tweened_app',
+    el: '#app',
 
     data: {
       nodes: nodes,
       node: nodes[FastMultiPaxos.client1.address],
       transport: FastMultiPaxos.transport,
-      time_scale: 1,
-      auto_deliver_messages: true,
-      auto_start_timers: true,
-      record_history_for_unit_tests: false,
+      settings: {
+        time_scale: 1,
+        auto_deliver_messages: true,
+        auto_start_timers: true,
+      },
     },
 
     methods: {

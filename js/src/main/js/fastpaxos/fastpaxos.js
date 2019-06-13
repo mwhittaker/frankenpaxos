@@ -187,11 +187,11 @@ function make_nodes(FastPaxos, snap) {
 
 function main() {
   let FastPaxos = frankenpaxos.fastpaxos.TweenedFastPaxos.FastPaxos;
-  let snap = Snap('#tweened_animation');
+  let snap = Snap('#animation');
   let nodes = make_nodes(FastPaxos, snap);
 
   let vue_app = new Vue({
-    el: '#tweened_app',
+    el: '#app',
 
     components: {
       'abbreviated-acceptor-info': abbreviated_acceptor_info,
@@ -200,13 +200,15 @@ function main() {
     data: {
       nodes: nodes,
       node: nodes[FastPaxos.client1.address],
+      transport: FastPaxos.transport,
+      settings: {
+        time_scale: 1,
+        auto_deliver_messages: true,
+        auto_start_timers: true,
+      },
       acceptor1: nodes[FastPaxos.acceptor1.address],
       acceptor2: nodes[FastPaxos.acceptor2.address],
       acceptor3: nodes[FastPaxos.acceptor3.address],
-      transport: FastPaxos.transport,
-      time_scale: 1,
-      auto_deliver_messages: true,
-      auto_start_timers: true,
     },
 
     methods: {
