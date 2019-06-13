@@ -94,7 +94,7 @@ function make_nodes(LeaderElection, snap) {
 function main() {
   let LeaderElection =
     frankenpaxos.election.TweenedLeaderElection.LeaderElection;
-  let snap = Snap('#tweened_animation');
+  let snap = Snap('#animation');
   let nodes = make_nodes(LeaderElection, snap);
 
   let state_to_color = function(state) {
@@ -122,15 +122,17 @@ function main() {
 
   // Create the vue app.
   let vue_app = new Vue({
-    el: '#tweened_app',
+    el: '#app',
 
     data: {
       nodes: nodes,
       node: nodes[LeaderElection.a.address],
       transport: LeaderElection.transport,
-      time_scale: 1,
-      auto_deliver_messages: true,
-      auto_start_timers: true,
+      settings: {
+          time_scale: 1,
+          auto_deliver_messages: true,
+          auto_start_timers: true,
+      },
       a: nodes[LeaderElection.a.address],
       b: nodes[LeaderElection.b.address],
       c: nodes[LeaderElection.c.address],

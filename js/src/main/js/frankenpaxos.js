@@ -55,7 +55,10 @@ frankenpaxosjs.frankenpaxos_transport_timers = {
 
   template: `
     <div>
-      <div v-for="t in js_timers" :key="t.address + t.name()">
+      <div v-for="t in js_timers" :key="t.id">
+        {{t.address}}
+        {{t.name()}}
+        {{t.id}}
         <frankenpaxos-transport-timer
           :timer="t"
           v-on:timer_started="timer_started"
@@ -211,39 +214,31 @@ Vue.component('frankenpaxos-transport', {
 
 // Applications. ///////////////////////////////////////////////////////////////
 Vue.component('frankenpaxos-tweened-app', {
-  props: [
+  props: {
     // A JsTransport.
-    'transport',
+    transport: Object,
 
     // A function of type JsTransportMessage -> TweenMax. Typically,
     // send_message would animate the sending of a message.
-    'send_message',
+    send_message: Function,
 
-    // The time scale, or play rate, of the timeline. 2 is 2x real-time, and
-    // 0.5 is half real-time for example.
-    'time_scale',
-
-    // TODO(mwhittaker): Document.
-    'auto_deliver_messages',
-    'auto_start_timers',
-  ],
-
-  template: `
-    <div>
-      <frankenpaxos-transport
-        :transport="transport"
-        :callbacks="callbacks">
-      </frankenpaxos-transport>
-      <slot :timer_tweens="timer_tweens"></slot>
-    </div>
-  `,
+    // An object with the following fields:
+    //
+    //   - time_scale: the time scale, or play rate, of the timeline. 2 is 2x
+    //     real-time, and 0.5 is half real-time for example.
+    //   - auto_deliver_messages: whether messages are automatically delivered
+    //     to actors (true) or buffered (false).
+    //   - auto_start_timers: whether actor message timers are started
+    //   automatically.
+    settings: Object,
+  },
 
   data: function() {
     return {
       // This timeline sequences all timers and messages.
-      timeline: new TimelineMax().timeScale(this.time_scale),
+      timeline: new TimelineMax().timeScale(this.settings.time_scale),
 
-      // timer_tweens[address][timer_name] = tween
+      // timer_tweens[id] = TweenMax
       timer_tweens: {},
 
       callbacks: {
@@ -253,15 +248,11 @@ Vue.component('frankenpaxos-tweened-app', {
           // for the stopping and starting of the timer. It usually just
           // triggers an event for the starting. Thus, if we start a timer that
           // is already started, we should cancel it first.
-          if (!(timer.address in this.timer_tweens)) {
-            Vue.set(this.timer_tweens, timer.address, {});
-          }
-
-          if (timer.name() in this.timer_tweens[timer.address]) {
-            let tween = this.timer_tweens[timer.address][timer.name()];
+          if (timer.id in this.timer_tweens) {
+            let tween = this.timer_tweens[timer.id];
             this.timeline.remove(tween);
             tween.kill()
-            delete this.timer_tweens[timer.address][timer.name()];
+            delete this.timer_tweens[timer.id];
           }
 
           let vm = this;
@@ -270,35 +261,29 @@ Vue.component('frankenpaxos-tweened-app', {
             progress: 0,
             timer: timer,
           }
-          // TODO(mwhittaker): If auto-start timer is not on, then don't start
-          // this guy. Figure out how to make that work.
           let tween = TweenMax.to(data, timer.delayMilliseconds() / 1000, {
             time_elapsed: timer.delayMilliseconds() / 1000,
             progress: 1,
-            paused: !vm.auto_start_timers,
+            paused: !vm.settings.auto_start_timers,
             data: data,
             onComplete: function() {
               vm.timeline.remove(this);
               this.kill();
-              delete vm.timer_tweens[timer.address][timer.name()];
+              delete vm.timer_tweens[timer.id];
               timer.run();
             },
             ease: Linear.easeNone,
           });
           this.timeline.add(tween, this.timeline.time());
-          Vue.set(this.timer_tweens[timer.address], timer.name(), tween);
+          Vue.set(this.timer_tweens, timer.id, tween);
         },
 
         timer_stopped: (timer) => {
-          if (!(timer.address in this.timer_tweens)) {
-            Vue.set(this.timer_tweens, timer.address, {});
-          }
-
-          if (timer.name() in this.timer_tweens[timer.address]) {
-            let tween = this.timer_tweens[timer.address][timer.name()];
+          if (timer.id in this.timer_tweens) {
+            let tween = this.timer_tweens[timer.id];
             this.timeline.remove(tween);
             tween.kill()
-            Vue.delete(this.timer_tweens[timer.address], timer.name());
+            Vue.delete(this.timer_tweens, timer.id);
           }
         },
 
@@ -319,7 +304,7 @@ Vue.component('frankenpaxos-tweened-app', {
         },
 
         message_staged: (message) => {
-          if (this.auto_deliver_messages) {
+          if (this.settings.auto_deliver_messages) {
             this.transport.deliverMessage(message);
           }
         },
@@ -327,18 +312,34 @@ Vue.component('frankenpaxos-tweened-app', {
     }
   },
 
+  computed: {
+    time_scale: function() {
+      return this.settings.time_scale;
+    },
+  },
+
   watch: {
     time_scale: function() {
-      if (this.time_scale <= 0) {
+      if (this.settings.time_scale <= 0) {
         this.timeline.pause();
       } else {
-        this.timeline.timeScale(this.time_scale);
+        this.timeline.timeScale(this.settings.time_scale);
         if (this.timeline.paused()) {
           this.timeline.play();
         }
       }
     }
-  }
+  },
+
+  template: `
+    <div>
+      <frankenpaxos-transport
+        :transport="transport"
+        :callbacks="callbacks">
+      </frankenpaxos-transport>
+      <slot :timer_tweens="timer_tweens"></slot>
+    </div>
+  `,
 });
 
 
@@ -584,6 +585,13 @@ Vue.component('frankenpaxos-actor', {
     // v-on:unpartition
   ],
 
+  methods: {
+    timer_tweens_for: function(address) {
+      return Object.values(this.timer_tweens).filter(
+        tween => tween.data.timer.address === address);
+    },
+  },
+
   template: `
     <div class="frankenpaxos-node">
       <h2 :style="{ display: 'inline-block' }">{{node.actor.address.address}}</h2>
@@ -612,7 +620,7 @@ Vue.component('frankenpaxos-actor', {
 
       <div class="frankenpaxos-box">
         <h3 class="frankenpaxos-box-title">Timers</h3>
-        <div v-for="timer in timer_tweens[node.actor.address]">
+        <div v-for="timer in timer_tweens_for(node.actor.address)">
           <frankenpaxos-timer :timer="timer"></frankenpaxos-timer>
         </div>
       </div>

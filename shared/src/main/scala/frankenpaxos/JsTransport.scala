@@ -31,17 +31,10 @@ class JsTransportTimer(
 ) extends frankenpaxos.Timer {
   var running: Boolean = false
 
-  override def name(): String = {
-    the_name
-  }
-
-  override def start(): Unit = {
-    running = true
-  }
-
-  override def stop(): Unit = {
-    running = false
-  }
+  override def toString(): String = s"$address:${name()} ($id)"
+  override def name(): String = the_name
+  override def start(): Unit = running = true
+  override def stop(): Unit = running = false
 
   def run(): Unit = {
     if (running) {

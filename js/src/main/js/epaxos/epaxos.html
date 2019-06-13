@@ -4,38 +4,9 @@
   <title>EPaxos</title>
   <meta name=viewport content="width=device-width, initial-scale=1">
   <link href="../frankenpaxos.css" rel="stylesheet">
+  <link href="../style.css" rel="stylesheet">
   <style type="text/css">
-    html {
-      font-family: "Helvetica Neue",Helvetica,Arial,sans-serif;
-    }
-
-    #container {
-      font-size: 18px;
-      background: #FEFEFE;
-      padding-left: 1em;
-      padding-right: 1em;
-      max-width: 44em;
-      line-height: 27px;
-      padding-top: 20px;
-      padding-bottom: 20px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    .app {
-      margin-top: 16pt;
-      margin-bottom: 16pt;
-    }
-
-    .app button {
-      font-size: inherit;
-    }
-
-    .app input {
-      font-size: inherit;
-    }
-
-    .animation {
+    #animation {
       display: block;
       margin-left: auto;
       margin-right: auto;
@@ -48,30 +19,28 @@
   <div id="container">
     <h1>EPaxos</h1>
 
-    <svg id="tweened_animation" class="animation" viewBox="0 0 400 600"></svg>
+    <svg id="animation" viewBox="0 0 400 600"></svg>
 
-    <div id="tweened_app" class="app">
-      <frankenpaxos-tweened-app
+    <frankenpaxos-tweened-app
+      id="app"
+      :transport="transport"
+      :send_message="send_message"
+      :settings="settings"
+      v-slot="{timer_tweens: timer_tweens}">
+      <frankenpaxos-settings
         :transport="transport"
-        :time_scale="settings.time_scale"
-        :auto_deliver_messages="settings.auto_deliver_messages"
-        :auto_start_timers="settings.auto_start_timers"
-        :send_message="send_message"
-        v-slot="{timer_tweens: timer_tweens}">
-        <frankenpaxos-settings
-          :transport="transport"
-          v-model="settings">
-        </frankenpaxos-settings>
+        v-model="settings">
+      </frankenpaxos-settings>
 
-        <frankenpaxos-actor
-          :transport="transport"
-          :node="node"
-          :timer_tweens="timer_tweens"
-          v-on:partition="partition"
-          v-on:unpartition="unpartition">
-        </frankenpaxos-actor>
+      <frankenpaxos-actor
+        :transport="transport"
+        :node="node"
+        :timer_tweens="timer_tweens"
+        v-on:partition="partition"
+        v-on:unpartition="unpartition">
+      </frankenpaxos-actor>
 
-        <frankenpaxos-unittest :transport="transport"></frankenpaxos-unittest>
+      <frankenpaxos-unittest :transport="transport"></frankenpaxos-unittest>
     </frankenpaxos-tweened-app>
   </div>
 
@@ -82,6 +51,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.0.2/plugins/AttrPlugin.min.js"></script>
   <script type="text/javascript" src="../../../../target/scala-2.12/frankenpaxos-fastopt.js"></script>
   <script type="text/javascript" src="../frankenpaxos.js"></script>
-  <script type="text/javascript" src="../epaxos/epaxos.js"></script>
+  <script type="text/javascript" src="./epaxos.js"></script>
 </body>
 </html>
