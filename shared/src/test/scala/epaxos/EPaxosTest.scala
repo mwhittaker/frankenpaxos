@@ -8,6 +8,7 @@ class EPaxosTest extends FlatSpec {
   "An EPaxos instance" should "work correctly" in {
     for (f <- 1 to 3) {
       val sim = new SimulatedEPaxos(f)
+
       Simulator
         .simulate(sim, runLength = 50, numRuns = 2000)
         .flatMap(b => Simulator.minimize(sim, b.history)) match {
@@ -21,6 +22,13 @@ class EPaxosTest extends FlatSpec {
           fail(s"$sw\n${sim.historyToString(history)}")
         }
         case None => {}
+      }
+
+      val suffix = s"f=$f"
+      if (sim.valueChosen) {
+        info(s"Value chosen ($suffix)")
+      } else {
+        info(s"No value chosen ($suffix)")
       }
     }
   }

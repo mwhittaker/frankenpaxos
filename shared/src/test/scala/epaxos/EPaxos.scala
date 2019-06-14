@@ -56,6 +56,9 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   override type State = Map[Instance, Set[Replica.CommandTriple]]
   override type Command = SimulatedEPaxos.Command
 
+  // True if some value has been chosen in some execution of the system.
+  var valueChosen: Boolean = false
+
   override def newSystem(): System = new EPaxos(f)
 
   override def getState(epaxos: System): State = {
@@ -69,7 +72,7 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
     }
 
     // We look at the commands recorded chosen by the replicas.
-    epaxos.replicas
+    val chosen = epaxos.replicas
       .map(replica => Map() ++ replica.cmdLog)
       .map(cmdLog => {
         cmdLog.flatMap({
@@ -79,6 +82,10 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
       })
       .map(cmdLog => cmdLog.mapValues(Set[Replica.CommandTriple](_)))
       .foldLeft(Map[Instance, Set[Replica.CommandTriple]]())(merge(_, _))
+    if (chosen.size > 0) {
+      valueChosen = true
+    }
+    chosen
   }
 
   override def generateCommand(epaxos: System): Option[Command] = {
