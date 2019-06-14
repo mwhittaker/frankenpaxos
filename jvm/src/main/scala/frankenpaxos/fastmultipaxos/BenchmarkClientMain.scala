@@ -4,9 +4,11 @@ import com.github.tototoshi.csv.CSVWriter
 import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.FileLogger
+import frankenpaxos.Flags.durationRead
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
+import frankenpaxos.PrometheusUtil
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.statemachine.SleepRequest
 import frankenpaxos.statemachine.SleeperInput
@@ -25,12 +27,10 @@ object BenchmarkClientMain extends App {
       // Basic flags.
       host: String = "localhost",
       port: Int = 9000,
-      paxosConfigFile: File = new File("."),
+      paxosConfig: File = new File("."),
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
-      // Options.
-      options: ClientOptions = ClientOptions.default,
       // Benchmark flags.
       duration: Duration = 5 seconds,
       timeout: Duration = 10 seconds,
@@ -39,16 +39,23 @@ object BenchmarkClientMain extends App {
       commandSizeBytesStddev: Int = 0,
       sleepTimeNanosMean: Int = 1,
       sleepTimeNanosStddev: Int = 0,
-      outputFilePrefix: String = ""
+      outputFilePrefix: String = "",
+      // Options.
+      options: ClientOptions = ClientOptions.default
   )
+
+  implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def optionAction(
+        f: (A, ClientOptions) => ClientOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => flags.copy(options = f(x, flags.options)))
+  }
 
   val parser = new scopt.OptionParser[Flags]("") {
     // Basic flags.
-    opt[String]('h', "host").required().action((x, f) => f.copy(host = x))
-    opt[Int]('p', "port").required().action((x, f) => f.copy(port = x))
-    opt[File]('c', "config")
-      .required()
-      .action((x, f) => f.copy(paxosConfigFile = x))
+    opt[String]("host").required().action((x, f) => f.copy(host = x))
+    opt[Int]("port").required().action((x, f) => f.copy(port = x))
+    opt[File]("config").required().action((x, f) => f.copy(paxosConfig = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
@@ -57,20 +64,13 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(prometheusPort = x))
       .text(s"Prometheus port; -1 to disable")
 
-    // Options.
-    opt[Duration]("options.reproposePeriod")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            reproposePeriod = java.time.Duration.ofNanos(x.toNanos)
-          )
-        )
-      })
-
     // Benchmark flags.
-    opt[Duration]("duration").action((x, f) => f.copy(duration = x))
-    opt[Duration]("timeout").action((x, f) => f.copy(timeout = x))
-    opt[Int]("num_clients").action((x, f) => f.copy(numClients = x))
+    opt[Duration]("duration")
+      .action((x, f) => f.copy(duration = x))
+    opt[Duration]("timeout")
+      .action((x, f) => f.copy(timeout = x))
+    opt[Int]("num_clients")
+      .action((x, f) => f.copy(numClients = x))
     opt[Int]("command_size_bytes_mean")
       .action((x, f) => f.copy(commandSizeBytesMean = x))
     opt[Int]("command_size_bytes_stddev")
@@ -81,6 +81,10 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(sleepTimeNanosStddev = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
+
+    // Options.
+    opt[java.time.Duration]("options.reproposePeriod")
+      .optionAction((x, o) => o.copy(reproposePeriod = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
@@ -110,24 +114,13 @@ object BenchmarkClientMain extends App {
   }
 
   // Start prometheus.
-  val logger = new PrintLogger()
-  val prometheusServer = if (flags.prometheusPort != -1) {
-    DefaultExports.initialize()
-    logger.info(
-      s"Prometheus server running on ${flags.prometheusHost}:" +
-        s"${flags.prometheusPort}"
-    )
-    Some(new HTTPServer(flags.prometheusHost, flags.prometheusPort))
-  } else {
-    logger.info(
-      s"Prometheus server not running because a port of -1 was given."
-    )
-    None
-  }
+  val prometheusServer =
+    PrometheusUtil.server(flags.prometheusHost, flags.prometheusPort)
 
   // Construct client.
+  val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger);
-  val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
+  val config = ConfigUtil.fromFile(flags.paxosConfig.getAbsolutePath())
   val metrics = new ClientMetrics(PrometheusCollectors)
   val client = new Client[NettyTcpTransport](
     NettyTcpAddress(new InetSocketAddress(flags.host, flags.port)),

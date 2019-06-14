@@ -3,6 +3,7 @@ package frankenpaxos.epaxos
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
+import frankenpaxos.monitoring.FakeCollectors
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -31,7 +32,12 @@ class EPaxos {
       reproposePeriod = java.time.Duration.ofSeconds(10)
     )
     val client =
-      new Client[JsTransport](address, transport, logger, config, options)
+      new Client[JsTransport](address,
+                              transport,
+                              logger,
+                              config,
+                              options,
+                              new ClientMetrics(FakeCollectors))
     (logger, client)
   }
   val (client1logger, client1) = clients(0)
@@ -56,7 +62,8 @@ class EPaxos {
                                            config,
                                            new Register(),
                                            new ScalaGraphDependencyGraph(),
-                                           options)
+                                           options,
+                                           new ReplicaMetrics(FakeCollectors))
     (logger, replica)
   }
   val (replica1logger, replica1) = replicas(0)

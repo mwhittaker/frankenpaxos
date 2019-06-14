@@ -1,10 +1,13 @@
 package frankenpaxos.fastmultipaxos
 
-import ThriftySystem.Flags.thriftySystemTypeRead
 import frankenpaxos.Actor
+import frankenpaxos.Flags.durationRead
+import frankenpaxos.LogLevel
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
+import frankenpaxos.election.LeaderElectionOptions
+import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.statemachine
 import frankenpaxos.statemachine.Sleeper
 import io.prometheus.client.exporter.HTTPServer
@@ -16,7 +19,7 @@ object LeaderMain extends App {
   case class Flags(
       // Basic flags.
       index: Int = -1,
-      configFilename: File = new File("."),
+      configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
@@ -25,202 +28,89 @@ object LeaderMain extends App {
       options: LeaderOptions = LeaderOptions.default
   )
 
+  implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def optionAction(
+        f: (A, LeaderOptions) => LeaderOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => flags.copy(options = f(x, flags.options)))
+  }
+
+  implicit class ElectionWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def electionAction(
+        f: (A, LeaderElectionOptions) => LeaderElectionOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => {
+        flags.copy(
+          options = flags.options.copy(
+            leaderElectionOptions = f(x, flags.options.leaderElectionOptions)
+          )
+        )
+      })
+  }
+
+  implicit class HeartbeatWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def heartbeatAction(
+        f: (A, HeartbeatOptions) => HeartbeatOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => {
+        flags.copy(
+          options = flags.options.copy(
+            heartbeatOptions = f(x, flags.options.heartbeatOptions)
+          )
+        )
+      })
+  }
+
   val parser = new scopt.OptionParser[Flags]("") {
     help("help")
 
     // Basic flags.
-    opt[Int]("index")
-      .required()
-      .action((x, f) => f.copy(index = x))
-
-    opt[File]('c', "config")
-      .required()
-      .action((x, f) => f.copy(configFilename = x))
-
-    opt[String]("log_level")
-      .valueName("<debug | info | warn | error | fatal>")
-      .validate(x => {
-        x match {
-          case "debug" | "info" | "warn" | "error" | "fatal" => success
-          case _ =>
-            failure(s"$x is not debug, info, warn, error, or fatal.")
-        }
-      })
-      .action((x, f) => {
-        x match {
-          case "debug" => f.copy(logLevel = frankenpaxos.LogDebug)
-          case "info"  => f.copy(logLevel = frankenpaxos.LogInfo)
-          case "warn"  => f.copy(logLevel = frankenpaxos.LogWarn)
-          case "error" => f.copy(logLevel = frankenpaxos.LogError)
-          case "fatal" => f.copy(logLevel = frankenpaxos.LogFatal)
-          case _       => ???
-        }
-      })
+    opt[Int]("index").required().action((x, f) => f.copy(index = x))
+    opt[File]('c', "config").required().action((x, f) => f.copy(configFile = x))
+    opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
       .action((x, f) => f.copy(prometheusHost = x))
-
     opt[Int]("prometheus_port")
       .action((x, f) => f.copy(prometheusPort = x))
       .text("-1 to disable")
 
     // Options.
-    opt[ThriftySystem.Flags.ThriftySystemType]("options.thriftySystem")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            thriftySystem = ThriftySystem.Flags.make(x)
-          )
-        )
-      })
-      .valueName(ThriftySystem.Flags.valueName)
-
-    opt[duration.Duration]("options.resendPhase1asTimerPeriod")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            resendPhase1asTimerPeriod = java.time.Duration.ofNanos(x.toNanos)
-          )
-        )
-      })
-
-    opt[duration.Duration]("options.resendPhase2asTimerPeriod")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            resendPhase2asTimerPeriod = java.time.Duration.ofNanos(x.toNanos)
-          )
-        )
-      })
-
+    opt[ThriftySystem]("options.thriftySystem")
+      .optionAction((x, o) => o.copy(thriftySystem = x))
+    opt[java.time.Duration]("options.resendPhase1asTimerPeriod")
+      .optionAction((x, o) => o.copy(resendPhase1asTimerPeriod = x))
+    opt[java.time.Duration]("options.resendPhase2asTimerPeriod")
+      .optionAction((x, o) => o.copy(resendPhase2asTimerPeriod = x))
     opt[Int]("options.phase2aMaxBufferSize")
-      .action((x, f) => {
-        f.copy(options = f.options.copy(phase2aMaxBufferSize = x))
-      })
-
-    opt[duration.Duration]("options.phase2aBufferFlushPeriod")
-      .action((x, f) => {
-        f.copy(
-          options = f.options
-            .copy(
-              phase2aBufferFlushPeriod = java.time.Duration.ofNanos(x.toNanos)
-            )
-        )
-      })
-
+      .optionAction((x, o) => o.copy(phase2aMaxBufferSize = x))
+    opt[java.time.Duration]("options.phase2aBufferFlushPeriod")
+      .optionAction((x, o) => o.copy(phase2aBufferFlushPeriod = x))
     opt[Int]("options.valueChosenMaxBufferSize")
-      .action((x, f) => {
-        f.copy(options = f.options.copy(valueChosenMaxBufferSize = x))
-      })
+      .optionAction((x, o) => o.copy(valueChosenMaxBufferSize = x))
+    opt[java.time.Duration]("options.valueChosenBufferFlushPeriod")
+      .optionAction((x, o) => o.copy(valueChosenBufferFlushPeriod = x))
 
-    opt[duration.Duration]("options.valueChosenBufferFlushPeriod")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            valueChosenBufferFlushPeriod = java.time.Duration.ofNanos(x.toNanos)
-          )
-        )
-      })
+    opt[java.time.Duration]("options.election.pingPeriod")
+      .electionAction((x, e) => e.copy(pingPeriod = x))
+    opt[java.time.Duration]("options.election.noPingTimeoutMin")
+      .electionAction((x, e) => e.copy(noPingTimeoutMin = x))
+    opt[java.time.Duration]("options.election.noPingTimeoutMax")
+      .electionAction((x, e) => e.copy(noPingTimeoutMax = x))
+    opt[java.time.Duration]("options.election.notEnoughVotesTimeoutMin")
+      .electionAction((x, e) => e.copy(notEnoughVotesTimeoutMin = x))
+    opt[java.time.Duration]("options.election.notEnoughVotesTimeoutMax")
+      .electionAction((x, e) => e.copy(notEnoughVotesTimeoutMax = x))
 
-    opt[duration.Duration]("options.election.pingPeriod")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            leaderElectionOptions = f.options.leaderElectionOptions.copy(
-              pingPeriod = java.time.Duration.ofNanos(x.toNanos)
-            )
-          )
-        )
-      })
-
-    opt[duration.Duration]("options.election.noPingTimeoutMin")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            leaderElectionOptions = f.options.leaderElectionOptions.copy(
-              noPingTimeoutMin = java.time.Duration.ofNanos(x.toNanos)
-            )
-          )
-        )
-      })
-
-    opt[duration.Duration]("options.election.noPingTimeoutMax")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            leaderElectionOptions = f.options.leaderElectionOptions.copy(
-              noPingTimeoutMax = java.time.Duration.ofNanos(x.toNanos)
-            )
-          )
-        )
-      })
-
-    opt[duration.Duration]("options.election.notEnoughVotesTimeoutMin")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            leaderElectionOptions = f.options.leaderElectionOptions.copy(
-              notEnoughVotesTimeoutMin = java.time.Duration.ofNanos(x.toNanos)
-            )
-          )
-        )
-      })
-
-    opt[duration.Duration]("options.election.notEnoughVotesTimeoutMax")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            leaderElectionOptions = f.options.leaderElectionOptions.copy(
-              notEnoughVotesTimeoutMax = java.time.Duration.ofNanos(x.toNanos)
-            )
-          )
-        )
-      })
-
-    opt[duration.Duration]("options.heartbeat.failPeriod")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            heartbeatOptions = f.options.heartbeatOptions.copy(
-              failPeriod = java.time.Duration.ofNanos(x.toNanos)
-            )
-          )
-        )
-      })
-
-    opt[duration.Duration]("options.heartbeat.successPeriod")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            heartbeatOptions = f.options.heartbeatOptions.copy(
-              successPeriod = java.time.Duration.ofNanos(x.toNanos)
-            )
-          )
-        )
-      })
-
+    opt[java.time.Duration]("options.heartbeat.failPeriod")
+      .heartbeatAction((x, h) => h.copy(failPeriod = x))
+    opt[java.time.Duration]("options.heartbeat.successPeriod")
+      .heartbeatAction((x, h) => h.copy(successPeriod = x))
     opt[Int]("options.heartbeat.numRetries")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            heartbeatOptions = f.options.heartbeatOptions.copy(
-              numRetries = x
-            )
-          )
-        )
-      })
-
+      .heartbeatAction((x, h) => h.copy(numRetries = x))
     opt[Double]("options.heartbeat.networkDelayAlpha")
-      .action((x, f) => {
-        f.copy(
-          options = f.options.copy(
-            heartbeatOptions = f.options.heartbeatOptions.copy(
-              networkDelayAlpha = x
-            )
-          )
-        )
-      })
+      .heartbeatAction((x, h) => h.copy(networkDelayAlpha = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
@@ -232,7 +122,7 @@ object LeaderMain extends App {
 
   val logger = new PrintLogger(flags.logLevel)
   val transport = new NettyTcpTransport(logger)
-  val config = ConfigUtil.fromFile(flags.configFilename.getAbsolutePath())
+  val config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath())
   val address = config.leaderAddresses(flags.index)
   // This benchmark hard codes the use of the sleeper state machine.
   val stateMachine = new Sleeper()

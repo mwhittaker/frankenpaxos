@@ -9,6 +9,20 @@ object LogWarn extends LogLevel
 object LogError extends LogLevel
 object LogFatal extends LogLevel
 
+object LogLevel {
+  implicit val read: scopt.Read[LogLevel] = scopt.Read.reads({
+    case "debug" => LogDebug
+    case "info"  => LogInfo
+    case "warn"  => LogWarn
+    case "error" => LogError
+    case "fatal" => LogFatal
+    case x =>
+      throw new IllegalArgumentException(
+        s"$x is not one of debug, info, warn, error, or fatal."
+      )
+  })
+}
+
 abstract class Logger(logLevel: LogLevel) {
   // Logging.
   def fatal(message: String): Nothing = {

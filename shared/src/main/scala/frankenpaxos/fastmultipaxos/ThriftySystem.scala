@@ -64,44 +64,13 @@ object ThriftySystem {
     }
   }
 
-  object Flags {
-    sealed trait ThriftySystemType
-    case object TNotThrifty extends ThriftySystemType
-    case object TRandom extends ThriftySystemType
-    case object TClosest extends ThriftySystemType
-
-    // This implicit value allows us to write scopt code like this:
-    //
-    //     opt[ThriftySystemType]("thrifty_system_type")
-    //       .valueName(valueName)
-    //       .action((x, f) => f.copy(thriftySystemType = x))
-    //       .text("Thrifty sysetm type")
-    //
-    // See [1] and [2] for more information.
-    //
-    // [1]: https://github.com/scopt/scopt
-    // [2]: http://scopt.github.io/scopt/3.5.0/api/index.html#scopt.Read
-    implicit val thriftySystemTypeRead: scopt.Read[ThriftySystemType] =
-      scopt.Read.reads({
-        case "NotThrifty" => TNotThrifty
-        case "Random"     => TRandom
-        case "Closest"    => TClosest
-        case s =>
-          throw new IllegalArgumentException(
-            s"$s is not one of NotThrifty, Random, or Closest."
-          )
-      })
-
-    // `valueName` can be passed to scopt's valueName method. See above for an
-    // example.
-    val valueName: String = "<NotThrifty, Random, Closest>"
-
-    def make(t: ThriftySystemType): ThriftySystem = {
-      t match {
-        case TNotThrifty => ThriftySystem.NotThrifty
-        case TRandom     => ThriftySystem.Random
-        case TClosest    => ThriftySystem.Closest
-      }
-    }
-  }
+  implicit val read: scopt.Read[ThriftySystem] = scopt.Read.reads({
+    case "NotThrifty" => NotThrifty
+    case "Random"     => Random
+    case "Closest"    => Closest
+    case x =>
+      throw new IllegalArgumentException(
+        s"$x is not one of NotThrifty, Random, or Closest."
+      )
+  })
 }
