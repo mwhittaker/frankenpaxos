@@ -5,6 +5,9 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.PrometheusCollectors
 import java.util.Random
 import scala.collection.mutable
 import scala.collection.mutable.Buffer
@@ -36,12 +39,34 @@ object ClientOptions {
 }
 
 @JSExportAll
+class ClientMetrics(collectors: Collectors) {
+  val responsesTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_client_responses_total")
+    .help("Total number of successful client responses.")
+    .register()
+
+  val unpendingResponsesTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_client_unpending_responses_total")
+    .help("Total number of unpending client responses.")
+    .register()
+
+  val reproposeTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_client_repropose_total")
+    .help("Total number of times a client reproposes a value..")
+    .register()
+}
+
+@JSExportAll
 class Client[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
-    options: ClientOptions = ClientOptions.default
+    options: ClientOptions = ClientOptions.default,
+    metrics: ClientMetrics = new ClientMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   override type InboundMessage = ClientInbound
   override val serializer = ClientInboundSerializer
@@ -71,19 +96,21 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var pendingCommand: Option[PendingCommand] = None
 
-// Replica channels.
+  // Replica channels.
   private val replicas: Map[Int, Chan[Replica[Transport]]] = {
     for ((address, i) <- config.replicaAddresses.zipWithIndex)
       yield i -> chan[Replica[Transport]](address, Replica.serializer)
   }.toMap
 
-// Timers ////////////////////////////////////////////////////////////////////
-// A timer to resend a proposed value. If a client doesn't hear back from a
-// replica quickly enough, it resends its proposal to all of the replicas.
+  // Timers ////////////////////////////////////////////////////////////////////
+  // A timer to resend a proposed value. If a client doesn't hear back from a
+  // replica quickly enough, it resends its proposal to all of the replicas.
   private val reproposeTimer: Transport#Timer = timer(
     "reproposeTimer",
     options.reproposePeriod,
     () => {
+      metrics.reproposeTotal.inc()
+
       pendingCommand match {
         case None =>
           logger.fatal("Attempting to repropose, but no value was proposed.")
@@ -98,7 +125,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     }
   )
 
-// Methods ///////////////////////////////////////////////////////////////////
+  // Methods ///////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
     inbound.request match {
@@ -137,11 +164,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           pendingCommand = None
           reproposeTimer.stop()
           promise.success(clientReply.result.toByteArray)
+          metrics.responsesTotal.inc()
         } else {
           logger.warn(
             s"Received a reply for unpending command with id " +
               s"'${clientReply.clientId}'."
           )
+          metrics.unpendingResponsesTotal.inc()
         }
 
       case None =>
@@ -149,6 +178,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           s"Received a reply for unpending command with id " +
             s"'${clientReply.clientId}'."
         )
+        metrics.unpendingResponsesTotal.inc()
     }
   }
 
