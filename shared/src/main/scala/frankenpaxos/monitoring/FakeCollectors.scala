@@ -1,9 +1,11 @@
 package frankenpaxos.monitoring
 
 object FakeCollectors extends Collectors {
-  type CounterBuilder = FakeCounterBuilder
-  type GaugeBuilder = FakeGaugeBuilder
+  override type CounterBuilder = FakeCounterBuilder
+  override type GaugeBuilder = FakeGaugeBuilder
+  override type SummaryBuilder = FakeSummaryBuilder
 
-  val counter = FakeCounterCollector
-  val gauge = FakeGaugeCollector
+  override val counter = FakeCounterCollector
+  override val gauge = FakeGaugeCollector
+  override val summary = FakeSummaryCollector
 }

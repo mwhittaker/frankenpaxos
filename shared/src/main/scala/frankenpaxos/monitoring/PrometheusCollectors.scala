@@ -1,9 +1,11 @@
 package frankenpaxos.monitoring
 
 object PrometheusCollectors extends Collectors {
-  type CounterBuilder = PrometheusCounterBuilder
-  type GaugeBuilder = PrometheusGaugeBuilder
+  override type CounterBuilder = PrometheusCounterBuilder
+  override type GaugeBuilder = PrometheusGaugeBuilder
+  override type SummaryBuilder = PrometheusSummaryBuilder
 
-  val counter = PrometheusCounterCollector
-  val gauge = PrometheusGaugeCollector
+  override val counter = PrometheusCounterCollector
+  override val gauge = PrometheusGaugeCollector
+  override val summary = PrometheusSummaryCollector
 }
