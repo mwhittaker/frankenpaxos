@@ -9,6 +9,10 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -40,6 +44,80 @@ object ReplicaOptions {
     recoverInstanceTimerMinPeriod = java.time.Duration.ofMillis(500),
     recoverInstanceTimerMaxPeriod = java.time.Duration.ofMillis(1500)
   )
+}
+
+@JSExportAll
+class ReplicaMetrics(collectors: Collectors) {
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val executedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_executed_commands_total")
+    .help("Total number of executed state machine commands.")
+    .register()
+
+  val executedNoopsTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_executed_noops_total")
+    .help("Total number of \"executed\" noops.")
+    .register()
+
+  val repeatedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_repeated_commands_total")
+    .help("Total number of commands that were redundantly chosen.")
+    .register()
+
+  val committedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_committed_commands_total")
+    .help(
+      "Total number of commands that were committed (with potential " +
+        "duplicates)."
+    )
+    .register()
+
+  val preparePhasesStartedTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_prepare_phases_started_total")
+    .labelNames("type") // "fast" or "classic".
+    .help("Total number of prepare phases started.")
+    .register()
+
+  val resendPreAcceptsTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_resend_pre_accepts_total")
+    .help("Total number of times the leader resent PreAccept messages.")
+    .register()
+
+  val resendAcceptsTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_resend_accepts_total")
+    .help("Total number of times the leader resent Accept messages.")
+    .register()
+
+  val resendPreparesTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_resend_prepares_total")
+    .help("Total number of times the leader resent Prepare messages.")
+    .register()
+
+  val defaultToSlowPathTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_default_to_slow_path_total")
+    .help("Total number of times the leader defaulted to the slow path.")
+    .register()
+
+  val dependencies: Summary = collectors.summary
+    .build()
+    .name("epaxos_replica_dependencies")
+    .help("The number of dependencies that a command has.")
+    .register()
 }
 
 // Note that there are a couple of types (e.g., CmdLogEntry, LeaderState) that
@@ -228,7 +306,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
     // Public for the JS visualizations.
     val dependencyGraph: DependencyGraph = new JgraphtDependencyGraph(),
-    options: ReplicaOptions = ReplicaOptions.default
+    options: ReplicaOptions = ReplicaOptions.default,
+    metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = ReplicaInbound
@@ -337,6 +416,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       .getOrElse(Set[Instance]())
     val sequenceNumber =
       (dependencies.flatMap(instanceSequenceNumber) + 0).max + 1
+
+    metrics.dependencies.observe(dependencies.size)
     (sequenceNumber, dependencies)
   }
 
@@ -554,6 +635,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       triple: CommandTriple,
       informOthers: Boolean
   ): Unit = {
+    metrics.committedCommandsTotal.inc()
+
     // Stop any currently running timers.
     stopTimers(instance)
 
@@ -616,7 +699,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               logger.fatal("Empty CommandOrNoop.")
 
             case Value.Noop(Noop()) =>
-            // Noop.
+              // Noop.
+              metrics.executedNoopsTotal.inc()
 
             case Value.Command(
                 Command(clientAddressBytes, clientId, command)
@@ -626,11 +710,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               )
               clientTable.executed(clientAddress, clientId) match {
                 case ClientTable.Executed(_) =>
-                // Don't execute the same command twice.
+                  // Don't execute the same command twice.
+                  metrics.repeatedCommandsTotal.inc()
 
                 case ClientTable.NotExecuted =>
                   val output = stateMachine.run(command.toByteArray)
                   clientTable.execute(clientAddress, clientId, output)
+                  metrics.executedCommandsTotal.inc()
 
                   // The leader of the command instance returns the response to
                   // the client. If the leader is dead, then the client will
@@ -654,6 +740,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def transitionToPreparePhase(instance: Instance): Unit = {
+    metrics.preparePhasesStartedTotal.inc()
+
     // Stop any currently running timers.
     stopTimers(instance)
 
@@ -686,6 +774,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       s"resendPreAccepts ${preAccept.instance} ${preAccept.ballot}",
       options.resendPreAcceptsTimerPeriod,
       () => {
+        metrics.resendPreAcceptsTotal.inc()
         otherReplicas.foreach(_.send(ReplicaInbound().withPreAccept(preAccept)))
         t.start()
       }
@@ -701,6 +790,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       s"defaultToSlowPath ${instance}",
       options.defaultToSlowPathTimerPeriod,
       () => {
+        metrics.defaultToSlowPathTotal.inc()
         leaderStates.get(instance) match {
           case None | Some(_: Accepting) | Some(_: Preparing) =>
             logger.fatal(
@@ -721,6 +811,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       s"resendAccepts ${accept.instance} ${accept.ballot}",
       options.resendAcceptsTimerPeriod,
       () => {
+        metrics.resendAcceptsTotal.inc()
         otherReplicas.foreach(_.send(ReplicaInbound().withAccept(accept)))
         t.start()
       }
@@ -734,6 +825,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       s"resendPrepares ${prepare.instance} ${prepare.ballot}",
       options.resendPreparesTimerPeriod,
       () => {
+        metrics.resendPreparesTotal.inc()
         replicas.foreach(_.send(ReplicaInbound().withPrepare(prepare)))
         t.start()
       }
@@ -782,6 +874,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       request: ClientRequest
   ): Unit = {
+    metrics.requestsTotal.labels("ClientRequest").inc()
+
     // If we already have a response to this request in the client table, we
     // simply return it.
     clientTable.executed(src, request.command.clientId) match {
@@ -816,6 +910,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       preAccept: PreAccept
   ): Unit = {
+    metrics.requestsTotal.labels("PreAccept").inc()
+
     // Make sure we should be processing this message at all. For example,
     // sometimes we nack it, sometimes we ignore it, sometimes we re-send
     // replies that we previously sent because of it.
@@ -948,6 +1044,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       preAcceptOk: PreAcceptOk
   ): Unit = {
+    metrics.requestsTotal.labels("PreAcceptOk").inc()
+
     leaderStates.get(preAcceptOk.instance) match {
       case None =>
         logger.warn(
@@ -1064,6 +1162,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleAccept(src: Transport#Address, accept: Accept): Unit = {
+    metrics.requestsTotal.labels("Accept").inc()
+
     // Make sure we should be processing this message at all.
     val replica = chan[Replica[Transport]](src, Replica.serializer)
     val nack = ReplicaInbound().withNack(Nack(accept.instance, largestBallot))
@@ -1158,6 +1258,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       acceptOk: AcceptOk
   ): Unit = {
+    metrics.requestsTotal.labels("AcceptOk").inc()
+
     leaderStates.get(acceptOk.instance) match {
       case None =>
         logger.warn(
@@ -1208,6 +1310,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleCommit(src: Transport#Address, c: Commit): Unit = {
+    metrics.requestsTotal.labels("Commit").inc()
+
     commit(
       c.instance,
       CommandTriple(c.commandOrNoop, c.sequenceNumber, c.dependencies.toSet),
@@ -1216,6 +1320,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleNack(src: Transport#Address, nack: Nack): Unit = {
+    metrics.requestsTotal.labels("Nack").inc()
+
     // If we get a Nack, it's possible there's another replica trying to
     // recover this instance. To avoid dueling replicas, we wait a bit to
     // recover.
@@ -1234,6 +1340,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       prepare: Prepare
   ): Unit = {
+    metrics.requestsTotal.labels("Prepare").inc()
+
     // Update largestBallot.
     largestBallot = BallotHelpers.max(largestBallot, prepare.ballot)
 
@@ -1361,6 +1469,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       prepareOk: PrepareOk
   ): Unit = {
+    metrics.requestsTotal.labels("PrepareOk").inc()
+
     leaderStates.get(prepareOk.instance) match {
       case None =>
         logger.warn(
