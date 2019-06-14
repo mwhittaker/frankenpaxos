@@ -53,13 +53,32 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
 
   override type System = EPaxos
   // TODO(mwhittaker): Implement.
-  override type State = Unit
+  override type State = Map[Instance, Set[Replica.CommandTriple]]
   override type Command = SimulatedEPaxos.Command
 
   override def newSystem(): System = new EPaxos(f)
 
-  override def getState(system: System): State = {
-    // TODO(mwhittaker): Implement.
+  override def getState(epaxos: System): State = {
+    // Merge two States together, taking a pairwise union.
+    def merge(lhs: State, rhs: State): State = {
+      val merged = for (k <- lhs.keys ++ rhs.keys)
+        yield {
+          k -> lhs.getOrElse(k, Set()).union(rhs.getOrElse(k, Set()))
+        }
+      Map(merged.toSeq: _*)
+    }
+
+    // We look at the commands recorded chosen by the replicas.
+    epaxos.replicas
+      .map(replica => Map() ++ replica.cmdLog)
+      .map(cmdLog => {
+        cmdLog.flatMap({
+          case (i, Replica.CommittedEntry(triple)) => Some(i -> triple)
+          case _                                   => None
+        })
+      })
+      .map(cmdLog => cmdLog.mapValues(Set[Replica.CommandTriple](_)))
+      .foldLeft(Map[Instance, Set[Replica.CommandTriple]]())(merge(_, _))
   }
 
   override def generateCommand(epaxos: System): Option[Command] = {
@@ -103,7 +122,70 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
     epaxos
   }
 
-  // TODO(mwhittaker): Implement invariants.
+  override def stateInvariantHolds(
+      state: State
+  ): SimulatedSystem.InvariantResult = {
+    // Every instance has a single committed entry.
+    for ((instance, chosen) <- state) {
+      if (chosen.size > 1) {
+        return SimulatedSystem.InvariantViolated(
+          s"Instance $instance has multiple chosen values: $chosen."
+        )
+      }
+    }
+
+    // Every pair of conflicting instances has a dependency on each other.
+    for ((instanceA, chosenA) <- state if chosenA.size > 0) {
+      for {
+        (instanceB, chosenB) <- state
+        if instanceA != instanceB
+        if chosenB.size > 0
+      } {
+        val Replica.CommandTriple(commandOrNoopA, _, depsA) = chosenA.head
+        val Replica.CommandTriple(commandOrNoopB, _, depsB) = chosenB.head
+
+        import CommandOrNoop.Value
+        (commandOrNoopA.value, commandOrNoopB.value) match {
+          case (Value.Command(commandA), Value.Command(commandB)) =>
+            if (new KeyValueStore().conflicts(commandA.command.toByteArray,
+                                              commandB.command.toByteArray) &&
+                !depsA.contains(instanceB) &&
+                !depsB.contains(instanceA)) {
+              return SimulatedSystem.InvariantViolated(
+                s"Instances $instanceA and $instanceB conflict but do not " +
+                  s"depend on each other (dependencies $depsA and $depsB)."
+              )
+            }
+
+          case (Value.Empty, _) | (_, Value.Empty) =>
+            return SimulatedSystem.InvariantViolated(
+              s"Empty CommandOrNoop found."
+            )
+
+          case (Value.Noop(_), _) | (_, Value.Noop(_)) =>
+          // Nothing to check.
+        }
+      }
+    }
+
+    SimulatedSystem.InvariantHolds
+  }
+
+  override def stepInvariantHolds(
+      oldState: State,
+      newState: State
+  ): SimulatedSystem.InvariantResult = {
+    for (instance <- oldState.keys ++ newState.keys) {
+      val oldChosen = oldState.getOrElse(instance, Set[Replica.CommandTriple]())
+      val newChosen = newState.getOrElse(instance, Set[Replica.CommandTriple]())
+      if (!oldChosen.subsetOf(newChosen)) {
+        SimulatedSystem.InvariantViolated(
+          s"Instance $instance was $oldChosen but now is $newChosen."
+        )
+      }
+    }
+    SimulatedSystem.InvariantHolds
+  }
 
   def commandToString(command: Command): String = {
     val epaxos = newSystem()

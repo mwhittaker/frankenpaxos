@@ -259,8 +259,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     for (a <- config.replicaAddresses if a != address)
       yield chan[Replica[Transport]](a, Replica.serializer)
 
-  @JSExport
-  protected val cmdLog: mutable.Map[Instance, CmdLogEntry] =
+  // Public for testing.
+  val cmdLog: mutable.Map[Instance, CmdLogEntry] =
     mutable.Map[Instance, CmdLogEntry]()
 
   // Every replica maintains a local instance number i, initially 0. When a

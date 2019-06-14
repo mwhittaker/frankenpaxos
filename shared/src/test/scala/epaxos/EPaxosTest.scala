@@ -6,12 +6,10 @@ import org.scalatest.FlatSpec
 
 class EPaxosTest extends FlatSpec {
   "An EPaxos instance" should "work correctly" in {
-    // TODO(mwhittaker): If a test case fails, show the log.
-    // TODO(mwhittaker): Uniquely id each message.
-    for (f <- 1 to 2) {
+    for (f <- 1 to 3) {
       val sim = new SimulatedEPaxos(f)
       Simulator
-        .simulate(sim, runLength = 100, numRuns = 1000)
+        .simulate(sim, runLength = 50, numRuns = 2000)
         .flatMap(b => Simulator.minimize(sim, b.history)) match {
         case Some(BadHistory(history, throwable)) => {
           // https://stackoverflow.com/a/1149712/3187068
