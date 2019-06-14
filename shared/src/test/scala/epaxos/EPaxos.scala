@@ -1,5 +1,6 @@
 package frankenpaxos.epaxos
 
+import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator.FakeLogger
 import frankenpaxos.simulator.FakeTransport
 import frankenpaxos.simulator.FakeTransportAddress
@@ -28,7 +29,10 @@ class EPaxos(val f: Int) {
       new Client[FakeTransport](FakeTransportAddress(s"Client $i"),
                                 transport,
                                 logger,
-                                config)
+                                config,
+                                options = ClientOptions.default,
+                                metrics = new ClientMetrics(FakeCollectors)
+      )
 
   // Replicas
   val replicas = for (i <- 1 to numReplicas)
@@ -37,8 +41,11 @@ class EPaxos(val f: Int) {
                                  transport,
                                  logger,
                                  config,
-                                 new KeyValueStore(),
-                                 new JgraphtDependencyGraph())
+                                 stateMachine = new KeyValueStore(),
+                                 dependencyGraph = new JgraphtDependencyGraph(),
+                                 options = ReplicaOptions.default,
+                                 metrics = new ReplicaMetrics(FakeCollectors)
+      )
 }
 
 object SimulatedEPaxos {
