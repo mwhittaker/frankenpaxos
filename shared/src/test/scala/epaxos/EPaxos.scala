@@ -31,8 +31,7 @@ class EPaxos(val f: Int) {
                                 logger,
                                 config,
                                 options = ClientOptions.default,
-                                metrics = new ClientMetrics(FakeCollectors)
-      )
+                                metrics = new ClientMetrics(FakeCollectors))
 
   // Replicas
   val replicas = for (i <- 1 to numReplicas)
@@ -44,14 +43,16 @@ class EPaxos(val f: Int) {
                                  stateMachine = new KeyValueStore(),
                                  dependencyGraph = new JgraphtDependencyGraph(),
                                  options = ReplicaOptions.default,
-                                 metrics = new ReplicaMetrics(FakeCollectors)
-      )
+                                 metrics = new ReplicaMetrics(FakeCollectors))
 }
 
 object SimulatedEPaxos {
   sealed trait Command
-  case class Propose(clientIndex: Int, value: KeyValueStoreInput)
-      extends Command
+  case class Propose(
+      clientIndex: Int,
+      clientPseudonym: Int,
+      value: KeyValueStoreInput
+  ) extends Command
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
@@ -111,8 +112,9 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
       epaxos.numClients -> {
         for {
           clientId <- Gen.choose(0, epaxos.numClients - 1)
+          clientPseudonym <- Gen.choose(0, 2)
           request <- Gen.oneOf(requests)
-        } yield Propose(clientId, request)
+        } yield Propose(clientId, clientPseudonym, request)
       }
     )
     FakeTransport
@@ -128,8 +130,8 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
 
   override def runCommand(epaxos: System, command: Command): System = {
     command match {
-      case Propose(clientId, request) =>
-        epaxos.clients(clientId).propose(request.toByteArray)
+      case Propose(clientId, clientPseudonym, request) =>
+        epaxos.clients(clientId).propose(clientPseudonym, request.toByteArray)
       case TransportCommand(command) =>
         FakeTransport.runCommand(epaxos.transport, command)
     }
@@ -204,9 +206,9 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   def commandToString(command: Command): String = {
     val epaxos = newSystem()
     command match {
-      case Propose(clientIndex, value) =>
+      case Propose(clientIndex, clientPseudonym, value) =>
         val clientAddress = epaxos.clients(clientIndex).address.address
-        s"Propose($clientAddress, $value)"
+        s"Propose($clientAddress, $clientPseudonym, $value)"
 
       case TransportCommand(FakeTransport.DeliverMessage(msg)) =>
         val dstActor = epaxos.transport.actors(msg.dst)

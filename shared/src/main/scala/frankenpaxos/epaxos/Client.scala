@@ -24,11 +24,6 @@ object ClientInboundSerializer extends ProtoSerializer[ClientInbound] {
 }
 
 @JSExportAll
-object Client {
-  val serializer = ClientInboundSerializer
-}
-
-@JSExportAll
 case class ClientOptions(reproposePeriod: java.time.Duration)
 
 @JSExportAll
@@ -58,6 +53,25 @@ class ClientMetrics(collectors: Collectors) {
     .help("Total number of times a client reproposes a value..")
     .register()
 }
+@JSExportAll
+object Client {
+  val serializer = ClientInboundSerializer
+
+  type Pseudonym = Int
+  type Id = Int
+
+  // A pending command. Clients can only propose one request at a time, so if
+  // there is a pending command, no other command can be proposed. This
+  // restriction hurts performance a bit---a single client cannot pipeline
+  // requests---but it simplifies the design of the protocol.
+  @JSExportAll
+  case class PendingCommand(
+      pseudonym: Pseudonym,
+      id: Int,
+      command: Array[Byte],
+      result: Promise[Array[Byte]]
+  )
+}
 
 @JSExportAll
 class Client[Transport <: frankenpaxos.Transport[Transport]](
@@ -68,6 +82,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     options: ClientOptions = ClientOptions.default,
     metrics: ClientMetrics = new ClientMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
+  import Client._
+
   override type InboundMessage = ClientInbound
   override val serializer = ClientInboundSerializer
 
@@ -80,21 +96,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // from failure, we would have to implement some mechanism to ensure that
   // client ids increase over time, even after crashes and restarts.
   @JSExport
-  protected var id: Int = 0
-
-  // A pending command. Clients can only propose one request at a time, so if
-  // there is a pending command, no other command can be proposed. This
-  // restriction hurts performance a bit---a single client cannot pipeline
-  // requests---but it simplifies the design of the protocol.
-  @JSExportAll
-  case class PendingCommand(
-      id: Int,
-      command: Array[Byte],
-      result: Promise[Array[Byte]]
-  )
+  protected var ids = mutable.Map[Pseudonym, Id]()
 
   @JSExport
-  protected var pendingCommand: Option[PendingCommand] = None
+  protected var pendingCommands = mutable.Map[Pseudonym, PendingCommand]()
 
   // Replica channels.
   private val replicas: Map[Int, Chan[Replica[Transport]]] = {
@@ -102,43 +107,16 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       yield i -> chan[Replica[Transport]](address, Replica.serializer)
   }.toMap
 
-  // Timers ////////////////////////////////////////////////////////////////////
-  // A timer to resend a proposed value. If a client doesn't hear back from a
-  // replica quickly enough, it resends its proposal to all of the replicas.
-  private val reproposeTimer: Transport#Timer = timer(
-    "reproposeTimer",
-    options.reproposePeriod,
-    () => {
-      metrics.reproposeTotal.inc()
+  // Timers to resend a proposed value. If a client doesn't hear back from a
+  // replica quickly enough, it resends its proposal.
+  private val reproposeTimers = mutable.Map[Pseudonym, Transport#Timer]()
 
-      pendingCommand match {
-        case None =>
-          logger.fatal("Attempting to repropose, but no value was proposed.")
-
-        case Some(pendingCommand) =>
-          // Ideally, we would re-send our request to all replicas. But, since
-          // EPaxos doesn't have a mechanism to prevent dueling leaders, we
-          // send to one leader at a time.
-          sendProposeRequest(pendingCommand)
-      }
-      reproposeTimer.start()
-    }
-  )
-
-  // Methods ///////////////////////////////////////////////////////////////////
-  override def receive(src: Transport#Address, inbound: InboundMessage) = {
-    import ClientInbound.Request
-    inbound.request match {
-      case Request.ClientReply(r) => handleClientReply(src, r)
-      case Request.Empty =>
-        logger.fatal("Empty ClientInbound encountered.")
-    }
-  }
-
+  // Helpers ///////////////////////////////////////////////////////////////////
   private def toClientRequest(pendingCommand: PendingCommand): ClientRequest = {
-    val PendingCommand(id, command, _) = pendingCommand
+    val PendingCommand(pseudonym, id, command, _) = pendingCommand
     ClientRequest(
-      Command(clientAddress = addressAsBytes,
+      Command(clientPseudonym = pseudonym,
+              clientAddress = addressAsBytes,
               clientId = id,
               command = ByteString.copyFrom(command))
     )
@@ -154,66 +132,120 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     replica.send(ReplicaInbound().withClientRequest(request))
   }
 
+  private def reproposeTimer(pseudonym: Pseudonym): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"reproposeTimer (pseudonym $pseudonym)",
+      options.reproposePeriod,
+      () => {
+        metrics.reproposeTotal.inc()
+        pendingCommands.get(pseudonym) match {
+          case None =>
+            logger.fatal(
+              s"Attempting to repropose pending command for pseudonym " +
+                s"$pseudonym, but there is no pending command."
+            )
+
+          case Some(pendingCommand) =>
+            // Ideally, we would re-send our request to all replicas. But, since
+            // EPaxos doesn't have a mechanism to prevent dueling leaders, we
+            // send to one leader at a time.
+            sendProposeRequest(pendingCommand)
+        }
+        t.start()
+      }
+    )
+    t
+  }
+
+  private def proposeImpl(
+      pseudonym: Pseudonym,
+      command: Array[Byte],
+      promise: Promise[Array[Byte]]
+  ): Unit = {
+    pendingCommands.get(pseudonym) match {
+      case Some(_) =>
+        promise.failure(
+          new IllegalStateException(
+            s"You attempted to propose a value with pseudonym $pseudonym, " +
+              s"but this pseudonym already has a command pending. A client " +
+              s"can only have one pending request at a time. Try waiting or s" +
+              s"use a different pseudonym."
+          )
+        )
+
+      case None =>
+        // Send the command.
+        val id = ids.getOrElse(pseudonym, 0)
+        val pendingCommand = PendingCommand(pseudonym, id, command, promise)
+        sendProposeRequest(pendingCommand)
+
+        // Update our metadata.
+        pendingCommands(pseudonym) = pendingCommand
+        reproposeTimers
+          .getOrElseUpdate(pseudonym, reproposeTimer(pseudonym))
+          .start()
+        ids(pseudonym) = id + 1
+    }
+  }
+
+  // Handlers //////////////////////////////////////////////////////////////////
+  override def receive(src: Transport#Address, inbound: InboundMessage) = {
+    import ClientInbound.Request
+    inbound.request match {
+      case Request.ClientReply(r) => handleClientReply(src, r)
+      case Request.Empty =>
+        logger.fatal("Empty ClientInbound encountered.")
+    }
+  }
+
   private def handleClientReply(
       src: Transport#Address,
       clientReply: ClientReply
   ): Unit = {
-    pendingCommand match {
-      case Some(PendingCommand(id, command, promise)) =>
+    pendingCommands.get(clientReply.clientPseudonym) match {
+      case Some(PendingCommand(pseudonym, id, command, promise)) =>
+        logger.check_eq(clientReply.clientPseudonym, pseudonym)
         if (clientReply.clientId == id) {
-          pendingCommand = None
-          reproposeTimer.stop()
+          pendingCommands -= pseudonym
+          reproposeTimers(pseudonym).stop()
           promise.success(clientReply.result.toByteArray)
           metrics.responsesTotal.inc()
         } else {
           logger.warn(
-            s"Received a reply for unpending command with id " +
-              s"'${clientReply.clientId}'."
+            s"Received a reply for unpending command with pseudonym " +
+              s"${clientReply.clientPseudonym} and id ${clientReply.clientId}."
           )
           metrics.unpendingResponsesTotal.inc()
         }
 
       case None =>
         logger.warn(
-          s"Received a reply for unpending command with id " +
-            s"'${clientReply.clientId}'."
+          s"Received a reply for unpending command with pseudonym " +
+            s"${clientReply.clientPseudonym} and id ${clientReply.clientId}."
         )
         metrics.unpendingResponsesTotal.inc()
     }
   }
 
-  private def _propose(
-      command: Array[Byte],
-      promise: Promise[Array[Byte]]
-  ): Unit = {
-    pendingCommand match {
-      case Some(_) =>
-        promise.failure(
-          new IllegalStateException(
-            "You cannot propose a command while one is pending."
-          )
-        )
-
-      case None =>
-        pendingCommand = Some(PendingCommand(id, command, promise))
-        sendProposeRequest(pendingCommand.get)
-        reproposeTimer.start()
-        id += 1
-    }
-  }
-
-// Interface /////////////////////////////////////////////////////////////////
-  def propose(command: Array[Byte]): Future[Array[Byte]] = {
-    val promise = Promise[Array[Byte]]()
-    transport.executionContext.execute(() => _propose(command, promise))
-    promise.future
-  }
-
-  def propose(command: String): Future[Array[Byte]] = {
+  // Interface /////////////////////////////////////////////////////////////////
+  def propose(
+      pseudonym: Pseudonym,
+      command: Array[Byte]
+  ): Future[Array[Byte]] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => _propose(command.getBytes(), promise)
+      () => proposeImpl(pseudonym, command, promise)
     )
     promise.future
+  }
+
+  def propose(pseudonym: Pseudonym, command: String): Future[String] = {
+    val promise = Promise[Array[Byte]]()
+    transport.executionContext.execute(
+      () => proposeImpl(pseudonym, command.getBytes(), promise)
+    )
+    promise.future.map(new String(_))(
+      concurrent.ExecutionContext.Implicits.global
+    )
   }
 }

@@ -157,6 +157,7 @@ object Replica {
   val serializer = ReplicaInboundSerializer
 
   type ReplicaIndex = Int
+  type ClientPseudonym = Int
   type ClientId = Int
 
   // The special null ballot. Replicas set their vote ballot to nullBallot to
@@ -309,17 +310,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     options: ReplicaOptions = ReplicaOptions.default,
     metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
+  import Replica._
+
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = ReplicaInbound
   override def serializer = Replica.serializer
-  import Replica.ReplicaIndex
-  import Replica.ClientId
-  import Replica.CommandTriple
-  import Replica.CmdLogEntry
-  import Replica.NoCommandEntry
-  import Replica.PreAcceptedEntry
-  import Replica.AcceptedEntry
-  import Replica.CommittedEntry
   type LeaderState = Replica.LeaderState[Transport]
   type PreAccepting = Replica.PreAccepting[Transport]
   type Accepting = Replica.Accepting[Transport]
@@ -363,7 +358,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // and the leader later executes x yielding response y, then c1 maps to (2,
   // y) in the client table.
   @JSExport
-  protected val clientTable = new ClientTable[Transport#Address, Array[Byte]]()
+  protected val clientTable =
+    new ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
 
   @JSExport
   protected val leaderStates = mutable.Map[Instance, LeaderState]()
@@ -703,19 +699,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               metrics.executedNoopsTotal.inc()
 
             case Value.Command(
-                Command(clientAddressBytes, clientId, command)
+                Command(clientAddressBytes, clientPseudonym, clientId, command)
                 ) =>
               val clientAddress = transport.addressSerializer.fromBytes(
                 clientAddressBytes.toByteArray
               )
-              clientTable.executed(clientAddress, clientId) match {
+              val clientIdentity = (clientAddress, clientPseudonym)
+              clientTable.executed(clientIdentity, clientId) match {
                 case ClientTable.Executed(_) =>
                   // Don't execute the same command twice.
                   metrics.repeatedCommandsTotal.inc()
 
                 case ClientTable.NotExecuted =>
                   val output = stateMachine.run(command.toByteArray)
-                  clientTable.execute(clientAddress, clientId, output)
+                  clientTable.execute(clientIdentity, clientId, output)
                   metrics.executedCommandsTotal.inc()
 
                   // The leader of the command instance returns the response to
@@ -728,7 +725,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                       chan[Client[Transport]](clientAddress, Client.serializer)
                     client.send(
                       ClientInbound().withClientReply(
-                        ClientReply(clientId, ByteString.copyFrom(output))
+                        ClientReply(clientPseudonym = clientPseudonym,
+                                    clientId = clientId,
+                                    result = ByteString.copyFrom(output))
                       )
                     )
                   }
@@ -878,7 +877,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // If we already have a response to this request in the client table, we
     // simply return it.
-    clientTable.executed(src, request.command.clientId) match {
+    val clientIdentity = (src, request.command.clientPseudonym)
+    clientTable.executed(clientIdentity, request.command.clientId) match {
       case ClientTable.NotExecuted =>
       // Not executed yet, we'll have to get it chosen.
 
@@ -892,7 +892,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         client.send(
           ClientInbound()
             .withClientReply(
-              ClientReply(request.command.clientId, ByteString.copyFrom(output))
+              ClientReply(clientPseudonym = request.command.clientPseudonym,
+                          clientId = request.command.clientId,
+                          result = ByteString.copyFrom(output))
             )
         )
         return

@@ -64,12 +64,16 @@ message Command {
   // The client's address.
   required bytes client_address = 1;
 
+  // Clients use pseudonyms to simulate multiple clients. See Fast MultiPaxos
+  // for more explanation.
+  required int32 client_pseudonym = 2;
+
   // Clients annotate every command with a unique and monotonically increasing
   // id. The pair of (client address, client id) uniquely identify a command.
-  required int32 client_id = 2;
+  required int32 client_id = 3;
 
   // The actual command.
-  required bytes command = 3;
+  required bytes command = 4;
 }
 
 message CommandOrNoop {
@@ -156,9 +160,10 @@ message ClientReply {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 client_id = 1;
+  required int32 client_pseudonym = 1;
+  required int32 client_id = 2;
   // The result of executing the command.
-  required bytes result = 2;
+  required bytes result = 3;
 }
 
 message Prepare {

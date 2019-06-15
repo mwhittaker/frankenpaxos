@@ -52,7 +52,8 @@ message Command {
   required int32 client_pseudonym = 2;
 
   // Clients annotate every command with a unique and monotonically increasing
-  // id. The pair of (client address, client id) uniquely identify a command.
+  // id. The pair of (client address, client pseudonym, client id) uniquely
+  // identify a command.
   required int32 client_id = 3;
 
   required bytes command = 4;

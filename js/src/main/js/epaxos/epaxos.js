@@ -81,33 +81,35 @@ let client_info = {
     };
   },
 
-  computed: {
-    pendingCommand: function() {
-      return this.JsUtils.optionToJs(this.node.actor.pendingCommand);
-    },
-  },
-
   methods: {
     propose: function() {
       if (this.proposal === "") {
         return;
       }
-      this.node.actor.propose(this.proposal);
+      this.node.actor.propose(0, this.proposal);
       this.proposal = "";
-    }
+    },
   },
 
   template: `
     <div>
-      <div v-if="pendingCommand === undefined">pendingCommand = None</div>
-      <div v-else>
-        pendingCommand =
-        <fp-object v-slot="{let: pc}" :value="pendingCommand">
-          <fp-field :name="'id'" :value="pc.id"></fp-field>
-          <fp-field :name="'command'" :value="pc.command"></fp-field>
-          <fp-field :name="'result'" :value="pc.result"></fp-field>
-        </fp-object>
-      </div>
+      pendingCommands =
+      <frankenpaxos-map
+        :map="node.actor.pendingCommands"
+        v-slot="{value: pendingCommand}">
+        <div v-if="pendingCommand === undefined">
+          None
+        </div>
+
+        <div v-else>
+          pendingCommand =
+          <fp-object v-slot="{let: pc}" :value="pendingCommand">
+            <fp-field :name="'id'" :value="pc.id"></fp-field>
+            <fp-field :name="'command'" :value="pc.command"></fp-field>
+            <fp-field :name="'result'" :value="pc.result"></fp-field>
+          </fp-object>
+        </div>
+      </frankenpaxos-map>
       <button v-on:click="propose">Propose</button>
       <input v-model="proposal" v-on:keyup.enter="propose"></input>
     </div>
