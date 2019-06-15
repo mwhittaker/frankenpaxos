@@ -168,7 +168,9 @@ object BenchmarkClientMain extends App {
   transport.shutdown()
   logger.debug("Transport shut down.")
 
-  logger.info("Stopping prometheus.")
-  prometheusServer.foreach(_.stop())
-  logger.info("Prometheus stopped.")
+  prometheusServer.foreach(server => {
+    logger.info("Stopping prometheus.")
+    server.stop()
+    logger.info("Prometheus stopped.")
+  })
 }

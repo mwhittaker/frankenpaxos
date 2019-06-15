@@ -2,15 +2,21 @@ package frankenpaxos.epaxos
 
 import com.github.tototoshi.csv.CSVWriter
 import frankenpaxos.Actor
+import frankenpaxos.BenchmarkUtil
 import frankenpaxos.FileLogger
 import frankenpaxos.Flags.durationRead
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
+import frankenpaxos.PrintLogger
+import frankenpaxos.PrometheusUtil
+import frankenpaxos.monitoring.PrometheusCollectors
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration._
+import scala.util.Random
 
 object BenchmarkClientMain extends App {
 
@@ -18,8 +24,15 @@ object BenchmarkClientMain extends App {
       // Basic flags.
       host: String = "localhost",
       port: Int = 9000,
-      paxosConfig: File = new File("."),
-      duration: Duration = 5 seconds,
+      configFile: File = new File("."),
+      // Monitoring.
+      prometheusHost: String = "0.0.0.0",
+      prometheusPort: Int = 8009,
+      // Benchmark flags.
+      duration: java.time.Duration = java.time.Duration.ofSeconds(5),
+      timeout: Duration = 10 seconds,
+      numClients: Int = 1,
+      numKeys: Int = 1,
       outputFilePrefix: String = "",
       // Options.
       options: ClientOptions = ClientOptions.default
@@ -33,85 +46,110 @@ object BenchmarkClientMain extends App {
   }
 
   val parser = new scopt.OptionParser[Flags]("") {
-    opt[String]('h', "host")
-      .required()
-      .action((x, f) => f.copy(host = x))
+    // Basic flags.
+    opt[String]("host").required().action((x, f) => f.copy(host = x))
+    opt[Int]("port").required().action((x, f) => f.copy(port = x))
+    opt[File]("config").required().action((x, f) => f.copy(configFile = x))
 
-    opt[Int]('p', "port")
-      .required()
-      .action((x, f) => f.copy(port = x))
+    // Monitoring.
+    opt[String]("prometheus_host")
+      .action((x, f) => f.copy(prometheusHost = x))
+    opt[Int]("prometheus_port")
+      .action((x, f) => f.copy(prometheusPort = x))
+      .text(s"Prometheus port; -1 to disable")
 
-    opt[File]('c', "config")
-      .required()
-      .action((x, f) => f.copy(paxosConfig = x))
-
-    opt[Duration]('d', "duration")
+    // Benchmark flags.
+    opt[java.time.Duration]("duration")
       .action((x, f) => f.copy(duration = x))
-
-    opt[String]('o', "output_file_prefix")
+    opt[Duration]("timeout")
+      .action((x, f) => f.copy(timeout = x))
+    opt[Int]("num_clients")
+      .action((x, f) => f.copy(numClients = x))
+    opt[Int]("num_keys")
+      .action((x, f) => f.copy(numKeys = x))
+    opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
-
-    opt[java.time.Duration]("options.repropose_period")
-      .optionAction((x, o) => o.copy(reproposePeriod = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
-    case Some(flags) => flags
-    case None        => ???
+    case Some(flags) =>
+      flags
+    case None =>
+      throw new IllegalArgumentException("Could not parse flags.")
   }
 
-  // val startTime = java.time.Instant.now()
-  // val stopTime =
-  //   startTime.plus(java.time.Duration.ofNanos(flags.duration.toNanos))
-  // val threads = for (i <- 0 until flags.numThreads) yield {
-  //   val thread = new Thread {
-  //     override def run() {
-  //       val logger = new FileLogger(s"${flags.outputFilePrefix}_$i.txt")
-  //       logger.debug(s"Client $i started.")
-  //       val transport = new NettyTcpTransport(logger);
-  //       val address = NettyTcpAddress(
-  //         new InetSocketAddress(flags.host, flags.port + i)
-  //       )
-  //       val config =
-  //         ConfigUtil.fromFile(flags.paxosConfig.getAbsolutePath())
-  //       val latency_writer =
-  //         CSVWriter.open(new File(s"${flags.outputFilePrefix}_$i.csv"))
-  //       latency_writer.writeRow(
-  //         Seq("host", "port", "start", "stop", "latency_nanos")
-  //       )
-  //       val paxosClient =
-  //         new Client[NettyTcpTransport](address, transport, logger, config)
-  //
-  //       while (java.time.Instant.now().isBefore(stopTime)) {
-  //         // Note that this client will only work for some state machine (e.g.,
-  //         // Register and AppendLog) and won't work for others (e.g.,
-  //         // KeyValueStore).
-  //         val cmdStart = java.time.Instant.now()
-  //         val cmdStartNanos = System.nanoTime()
-  //         concurrent.Await
-  //           .result(paxosClient.propose("."), concurrent.duration.Duration.Inf)
-  //         val cmdStopNanos = System.nanoTime()
-  //         val cmdStop = java.time.Instant.now()
-  //         latency_writer.writeRow(
-  //           Seq(
-  //             flags.host,
-  //             (flags.port + i).toString(),
-  //             cmdStart.toString(),
-  //             cmdStop.toString(),
-  //             (cmdStopNanos - cmdStartNanos).toString()
-  //           )
-  //         )
-  //       }
-  //       transport.shutdown()
-  //     }
-  //   }
-  //   thread.start()
-  //   // Sleep slightly to stagger clients.
-  //   Thread.sleep(100 /*ms*/ )
-  //   thread
-  // }
-  //
-  // for (thread <- threads) {
-  //   thread.join()
-  // }
+  // Start prometheus.
+  val prometheusServer =
+    PrometheusUtil.server(flags.prometheusHost, flags.prometheusPort)
+
+  // Construct client.
+  val logger = new PrintLogger()
+  val transport = new NettyTcpTransport(logger);
+  val client = new Client[NettyTcpTransport](
+    address = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port)),
+    transport = transport,
+    logger = new FileLogger(s"${flags.outputFilePrefix}.txt"),
+    config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath()),
+    options = flags.options,
+    metrics = new ClientMetrics(PrometheusCollectors)
+  )
+
+  // Helper function to generate command.
+  def randomProposal(): KeyValueStoreInput = {
+    val key = Random.nextInt(flags.numKeys).toString()
+    val isGet = Random.nextBoolean()
+    if (isGet) {
+      KeyValueStoreInput().withGetRequest(GetRequest(key = Seq(key)))
+    } else {
+      KeyValueStoreInput().withSetRequest(
+        SetRequest(
+          keyValue = Seq(SetKeyValuePair(key = key, value = "doesnt_matter"))
+        )
+      )
+    }
+  }
+
+  // Run clients.
+  val latencyWriter =
+    CSVWriter.open(new File(s"${flags.outputFilePrefix}_data.csv"))
+  latencyWriter.writeRow(Seq("start", "stop", "latency_nanos", "host", "port"))
+
+  def run(pseudonym: Int): Future[Unit] = {
+    implicit val context = transport.executionContext
+    BenchmarkUtil
+      .timed(() => client.propose(pseudonym, randomProposal().toByteArray))
+      .transformWith({
+        case scala.util.Failure(_) =>
+          logger.debug("EPaxos request failed.")
+          Future.successful(())
+
+        case scala.util.Success((_, timing)) =>
+          latencyWriter.writeRow(
+            Seq(timing.startTime.toString(),
+                timing.stopTime.toString(),
+                timing.durationNanos.toString(),
+                flags.host,
+                flags.port)
+          )
+          Future.successful(())
+      })
+  }
+
+  implicit val context = transport.executionContext
+  val futures = for (pseudonym <- 0 to flags.numClients)
+    yield BenchmarkUtil.runFor(() => run(pseudonym), flags.duration)
+
+  // Wait for the benchmark to finish.
+  concurrent.Await.result(Future.sequence(futures), flags.timeout)
+
+  // Shut everything down.
+  logger.debug("Shutting down transport.")
+  transport.shutdown()
+  logger.debug("Transport shut down.")
+
+  prometheusServer.foreach(server => {
+    logger.info("Stopping prometheus.")
+    server.stop()
+    logger.info("Prometheus stopped.")
+  })
 }
