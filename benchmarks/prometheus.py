@@ -6,6 +6,7 @@ import subprocess
 import time
 
 
+# TODO(mwhittaker): Make scrape_interval_ms a datetime.time_interval.
 def prometheus_config(scrape_interval_ms: int, jobs: Dict[str, List[str]]):
     """
     prometheus_config returns a JSON representation of a prometheus.yml

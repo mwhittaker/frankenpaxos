@@ -49,8 +49,8 @@ object ReplicaMain extends App {
       .text(s"-1 to disable")
 
     // Options.
-    opt[java.time.Duration]("options.resendPreparesTimerPeriod")
-      .optionAction((x, o) => o.copy(resendPreparesTimerPeriod = x))
+    opt[java.time.Duration]("options.resendPreAcceptsTimerPeriod")
+      .optionAction((x, o) => o.copy(resendPreAcceptsTimerPeriod = x))
     opt[java.time.Duration]("options.defaultToSlowPathTimerPeriod")
       .optionAction((x, o) => o.copy(defaultToSlowPathTimerPeriod = x))
     opt[java.time.Duration]("options.resendAcceptsTimerPeriod")

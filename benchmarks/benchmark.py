@@ -88,7 +88,7 @@ class SuiteDirectory(object):
         return self.abspath(filename)
 
     def write_dict(self, filename: str, d: Dict) -> str:
-        self.write_string(filename, json.dumps(d, indent=4))
+        self.write_string(filename, json.dumps(d, indent=4, default=str))
         return self.abspath(filename)
 
     def benchmark_directory(self, name: str = None) -> 'BenchmarkDirectory':
@@ -142,7 +142,7 @@ class BenchmarkDirectory(object):
         return self.abspath(filename)
 
     def write_dict(self, filename: str, d: Dict) -> str:
-        self.write_string(filename, json.dumps(d, indent=4))
+        self.write_string(filename, json.dumps(d, indent=4, default=str))
         return self.abspath(filename)
 
     def log(self, s: str) -> None:

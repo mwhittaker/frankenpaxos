@@ -5,6 +5,7 @@ import frankenpaxos.Actor
 import frankenpaxos.BenchmarkUtil
 import frankenpaxos.FileLogger
 import frankenpaxos.Flags.durationRead
+import frankenpaxos.LogLevel
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
@@ -19,12 +20,12 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 object BenchmarkClientMain extends App {
-
   case class Flags(
       // Basic flags.
       host: String = "localhost",
       port: Int = 9000,
       configFile: File = new File("."),
+      logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
@@ -50,6 +51,7 @@ object BenchmarkClientMain extends App {
     opt[String]("host").required().action((x, f) => f.copy(host = x))
     opt[Int]("port").required().action((x, f) => f.copy(port = x))
     opt[File]("config").required().action((x, f) => f.copy(configFile = x))
+    opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
@@ -69,6 +71,10 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(numKeys = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
+
+    // Options.
+    opt[java.time.Duration]("options.reproposePeriod")
+      .optionAction((x, o) => o.copy(reproposePeriod = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
@@ -83,12 +89,12 @@ object BenchmarkClientMain extends App {
     PrometheusUtil.server(flags.prometheusHost, flags.prometheusPort)
 
   // Construct client.
-  val logger = new PrintLogger()
+  val logger = new PrintLogger(flags.logLevel)
   val transport = new NettyTcpTransport(logger);
   val client = new Client[NettyTcpTransport](
     address = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port)),
     transport = transport,
-    logger = new FileLogger(s"${flags.outputFilePrefix}.txt"),
+    logger = logger,
     config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath()),
     options = flags.options,
     metrics = new ClientMetrics(PrometheusCollectors)

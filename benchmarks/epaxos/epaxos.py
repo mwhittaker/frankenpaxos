@@ -1,12 +1,14 @@
 from .. import benchmark
 from .. import parser_util
 from .. import pd_util
+from .. import prometheus
 from .. import proto_util
 from .. import util
 from mininet.net import Mininet
 from typing import Callable, Dict, List, NamedTuple
 import argparse
 import csv
+import datetime
 import enum
 import mininet
 import os
@@ -14,22 +16,62 @@ import pandas as pd
 import subprocess
 import time
 import tqdm
+import yaml
+
+
+class ReplicaOptions(NamedTuple):
+    resend_pre_accepts_timer_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
+    default_to_slow_path_timer_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
+    resend_accepts_timer_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
+    resend_prepares_timer_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
+    recover_instance_timer_min_period: datetime.timedelta = \
+        datetime.timedelta(milliseconds=500)
+    recover_instance_timer_max_period: datetime.timedelta = \
+        datetime.timedelta(milliseconds=1500)
+
+
+class ClientOptions(NamedTuple):
+    repropose_period: datetime.timedelta = datetime.timedelta(milliseconds=100)
 
 
 class Input(NamedTuple):
-    # System-wide parameters.
+    # System-wide parameters. ##################################################
+    # The name of the mininet network.
     net_name: str
+    # The maximum number of tolerated faults.
     f: int
-    num_clients: int
-    num_threads_per_client: int
-    conflict_rate: int
+    # The number of benchmark client processes launched.
+    num_client_procs: int
+    # The number of clients run on each benchmark client process.
+    num_clients_per_proc: int
 
-    # Benchmark parameters.
-    duration_seconds: float
-    client_lag_seconds: float
+    # Benchmark parameters. ####################################################
+    # The (rough) duration of the benchmark.
+    duration: datetime.timedelta
+    # Global timeout.
+    timeout: datetime.timedelta
+    # Delay between starting replicas and clients.
+    client_lag: datetime.timedelta
+    # Profile the code with perf.
+    profiled: bool
+    # Monitor the code with prometheus.
+    monitored: bool
+    # The interval between Prometheus scrapes. This field is only relevant if
+    # monitoring is enabled.
+    prometheus_scrape_interval: datetime.timedelta
+
+    # Replica options. #########################################################
+    replica_options: ReplicaOptions
+    replica_log_level: str
 
     # Client parameters.
-    client_repropose_period_seconds: float
+    client_options: ClientOptions
+    client_log_level: str
+    client_num_keys: int
 
 
 class Output(NamedTuple):
@@ -85,7 +127,7 @@ class EPaxosNet(object):
 class SingleSwitchNet(EPaxosNet):
     def __init__(self,
                  f: int,
-                 num_clients: int) -> None:
+                 num_client_procs: int) -> None:
         self.f = f
         self._clients: List[mininet.node.Node] = []
         self._replicas: List[mininet.node.Node] = []
@@ -94,14 +136,14 @@ class SingleSwitchNet(EPaxosNet):
         switch = self._net.addSwitch('s1')
         self._net.addController('c')
 
-        for i in range(num_clients):
+        for i in range(num_client_procs):
             client = self._net.addHost(f'c{i}')
             self._net.addLink(client, switch)
             self._clients.append(client)
 
         num_replicas = 2*f + 1
         for i in range(num_replicas):
-            replica = self._net.addHost(f'a{i}')
+            replica = self._net.addHost(f'r{i}')
             self._net.addLink(replica, switch)
             self._replicas.append(replica)
 
@@ -118,7 +160,7 @@ class SingleSwitchNet(EPaxosNet):
         return {
             'f': self.f,
             'replicaAddress': [
-                {'host': a.IP(), 'port': 10000}
+                {'host': a.IP(), 'port': 9000}
                 for (i, a) in enumerate(self.replicas())
             ],
         }
@@ -146,14 +188,62 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 'frankenpaxos.epaxos.ReplicaMain',
                 '--index', str(i),
                 '--config', config_filename,
+                '--log_level', input.replica_log_level,
+                '--prometheus_host', host.IP(),
+                '--prometheus_port', '12345' if input.monitored else '-1',
+                '--options.resendPreAcceptsTimerPeriod', '{}ms'.format(
+                    input.replica_options
+                         .resend_pre_accepts_timer_period
+                         .total_seconds() * 1000),
+                '--options.defaultToSlowPathTimerPeriod', '{}ms'.format(
+                    input.replica_options
+                         .default_to_slow_path_timer_period
+                         .total_seconds() * 1000),
+                '--options.resendAcceptsTimerPeriod', '{}ms'.format(
+                    input.replica_options
+                         .resend_accepts_timer_period
+                         .total_seconds() * 1000),
+                '--options.resendPreparesTimerPeriod', '{}ms'.format(
+                    input.replica_options
+                         .resend_prepares_timer_period
+                         .total_seconds() * 1000),
+                '--options.recoverInstanceTimerMinPeriod', '{}ms'.format(
+                    input.replica_options
+                         .recover_instance_timer_min_period
+                         .total_seconds() * 1000),
+                '--options.recoverInstanceTimerMaxPeriod', '{}ms'.format(
+                    input.replica_options
+                         .recover_instance_timer_max_period
+                         .total_seconds() * 1000),
             ],
             profile=args.profile,
         )
         replica_procs.append(proc)
     bench.log('Replicas started.')
 
+    # Launch Prometheus.
+    if input.monitored:
+        prometheus_config = prometheus.prometheus_config(
+            int(input.prometheus_scrape_interval.total_seconds() * 1000),
+            {
+              'epaxos_replica': [f'{r.IP()}:12345' for r in net.replicas()],
+              'epaxos_client': [f'{c.IP()}:12345' for c in net.clients()],
+            }
+        )
+        bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
+        prometheus_server = bench.popen(
+            f=net.replicas()[0].popen,
+            label='prometheus',
+            cmd = [
+                'prometheus',
+                f'--config.file={bench.abspath("prometheus.yml")}',
+                f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
+            ],
+        )
+        bench.log('Prometheus started.')
 
-    time.sleep(input.client_lag_seconds)
+    # Lag clients.
+    time.sleep(input.client_lag.total_seconds())
     bench.log('Client lag ended.')
 
     # Launch clients.
@@ -167,18 +257,22 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
                 '-cp', os.path.abspath(args.jar),
                 'frankenpaxos.epaxos.BenchmarkClientMain',
                 '--host', host.IP(),
-                '--port', str(11000),
+                '--port', str(10000),
                 '--config', config_filename,
-                '--repropose_period',
-                    f'{input.client_repropose_period_seconds}s',
-                '--duration', f'{input.duration_seconds}s',
-                # '--conflict_rate', f'{input.conflict_rate}',
-                '--num_threads', str(input.num_threads_per_client),
+                '--log_level', input.client_log_level,
+                '--prometheus_host', host.IP(),
+                '--prometheus_port', '12345' if input.monitored else '-1',
+                '--duration', f'{input.duration.total_seconds()}s',
+                '--timeout', f'{input.timeout.total_seconds()}s',
+                '--num_clients', f'{input.num_clients_per_proc}',
+                '--num_keys', f'{input.client_num_keys}',
                 '--output_file_prefix', bench.abspath(f'client_{i}'),
+                '--options.reproposePeriod',
+                    f'{input.client_options.repropose_period.total_seconds()}s',
             ]
         )
         client_procs.append(proc)
-    bench.log('Clients started.')
+    bench.log(f'Clients started and running for {input.duration}.')
 
     # Wait for clients to finish and then terminate leaders and acceptors.
     for proc in client_procs:
@@ -187,11 +281,10 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
         proc.terminate()
     bench.log('Clients finished and processes terminated.')
 
-    # Every client thread j on client i writes results to `client_i_j.csv`.
-    # We concatenate these results into a single CSV file.
-    client_csvs = [bench.abspath(f'client_{i}_{j}.csv')
-                   for i in range(input.num_clients)
-                   for j in range(input.num_threads_per_client)]
+    # Client i writes results to `client_i_data.csv`. We concatenate these
+    # results into a single CSV file.
+    client_csvs = [bench.abspath(f'client_{i}_data.csv')
+                   for i in range(input.num_client_procs)]
     df = pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
     bench.log('Data read.')
     df = df.set_index('start')
@@ -242,24 +335,28 @@ def run_benchmark(bench: benchmark.BenchmarkDirectory,
 
 def run_suite(args: argparse.Namespace,
               inputs: List[Input],
-              make_net: Callable[[Input], EPaxosNet]) -> None:
+              make_net: Callable[[Input], EPaxosNet],
+              name: str = None) -> None:
     assert len(inputs) > 0, inputs
 
-    with benchmark.SuiteDirectory(args.suite_directory, 'epaxos') as suite:
+
+    suite_name = 'epaxos' + (f'_{name}' if name else '')
+    with benchmark.SuiteDirectory(args.suite_directory, suite_name) as suite:
         print(f'Running benchmark suite in {suite.path}.')
         suite.write_dict('args.json', vars(args))
         suite.write_string('inputs.txt', '\n'.join(str(i) for i in inputs))
 
         results_file = suite.create_file('results.csv')
         results_writer = csv.writer(results_file)
-        results_writer.writerow(Input._fields + Output._fields)
+        results_writer.writerow(util.flatten_tuple_fields(inputs[0]) +
+                                list(Output._fields))
         results_file.flush()
 
         for input in tqdm.tqdm(inputs):
             with suite.benchmark_directory() as bench:
                 with make_net(input) as net:
                     bench.write_string('input.txt', str(input))
-                    bench.write_dict('input.json', input._asdict())
+                    bench.write_dict('input.json', util.tuple_to_dict(input))
                     output = run_benchmark(bench, args, input, net)
                     row = util.flatten_tuple(input) + list(output)
                     results_writer.writerow([str(x) for x in row])
@@ -269,20 +366,28 @@ def run_suite(args: argparse.Namespace,
 def _main(args) -> None:
     inputs = [
         Input(
-            net_name='SingleSwitchNet',
-            f=1,
-            num_clients=num_clients,
-            num_threads_per_client=1,
-            duration_seconds=15,
-            conflict_rate=0,
-            client_lag_seconds=3,
-            client_repropose_period_seconds=10,
+            net_name = 'SingleSwitchNet',
+            f = 1,
+            num_client_procs = num_client_procs,
+            num_clients_per_proc = 1,
+            duration = datetime.timedelta(seconds=20),
+            timeout = datetime.timedelta(seconds=60),
+            client_lag = datetime.timedelta(seconds=0),
+            profiled = args.profile,
+            monitored = args.monitor,
+            prometheus_scrape_interval = datetime.timedelta(milliseconds=200),
+            replica_options = ReplicaOptions(),
+            replica_log_level = 'debug',
+            client_options = ClientOptions(),
+            client_log_level = 'debug',
+            client_num_keys = 100,
         )
-        for num_clients in [1, 2]
+        for num_client_procs in [1, 2]
     ] * 2
 
     def make_net(input) -> EPaxosNet:
-        return SingleSwitchNet(f=input.f, num_clients=input.num_clients)
+        return SingleSwitchNet(f=input.f,
+                               num_client_procs=input.num_client_procs)
 
     run_suite(args, inputs, make_net)
 
