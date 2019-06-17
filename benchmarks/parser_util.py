@@ -4,6 +4,7 @@ import argparse
 import os
 import pandas as pd
 
+
 def get_benchmark_parser() -> argparse.ArgumentParser:
     """
     get_benchmark_parser returns an argument parser with the flags most
@@ -36,5 +37,21 @@ def get_benchmark_parser() -> argparse.ArgumentParser:
         '-m', '--monitor',
         action='store_true',
         help='Monitor code using prometheus'
+    )
+    return parser
+
+
+def get_plot_parser(default_output_filename: str) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        'results',
+        type=argparse.FileType('r'),
+        help='results.csv file'
+    )
+    parser.add_argument(
+        '-o', '--output',
+        type=str,
+        default=default_output_filename,
+        help='Output filename'
     )
     return parser
