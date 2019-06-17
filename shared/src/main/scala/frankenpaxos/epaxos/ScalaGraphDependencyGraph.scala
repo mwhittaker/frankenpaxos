@@ -1,6 +1,7 @@
 package frankenpaxos.epaxos
 
 import scala.collection.mutable
+import scala.scalajs.js.annotation.JSExportAll
 import scalax.collection.GraphEdge.DiEdge
 import scalax.collection.GraphPredef._
 import scalax.collection.mutable.Graph
@@ -13,6 +14,7 @@ import scalax.collection.mutable.Graph
 // can use it in the JS visualizations.
 //
 // [1]: http://www.scala-graph.org/
+@JSExportAll
 class ScalaGraphDependencyGraph extends DependencyGraph {
   // We implement ScalaGraphDependencyGraph the same way we implement
   // JgraphtDependencyGraph. See JgraphtDependencyGraph for documentation.
@@ -120,4 +122,14 @@ class ScalaGraphDependencyGraph extends DependencyGraph {
 
     executable
   }
+
+  // Returns the current set of nodes. This method is really only useful for
+  // the Javascript visualizations.
+  def nodes: Set[Instance] =
+    graph.nodes.map(_.toOuter).toSet
+
+  // Returns the current set of edges. This method is really only useful for
+  // the Javascript visualizations.
+  def edges: Set[(Instance, Instance)] =
+    graph.edges.map(edge => (edge.head.toOuter, edge.tail.head.toOuter)).toSet
 }

@@ -126,12 +126,58 @@ let replica_info = {
     'prepare-ok': prepare_ok,
   },
 
+  data: function() {
+    return {
+      options: {
+        edges: {
+          arrows: 'to',
+        },
+      },
+    };
+  },
+
+  methods: {
+    instance_to_string: function(instance) {
+      return instance.replicaIndex + "." + instance.instanceNumber;
+    },
+
+    nodes: function() {
+      let ns = this.JsUtils.setToJs(this.node.actor.dependencyGraph.nodes);
+      return ns.map(instance => {
+        return {
+          id: this.instance_to_string(instance),
+          label: this.instance_to_string(instance),
+        };
+      });
+    },
+
+    edges: function() {
+      let es = this.JsUtils.setToJs(this.node.actor.dependencyGraph.edges);
+      es = es.map(t => this.JsUtils.tupleToJs(t));
+      es = es.map(t => {
+        return {
+          from: this.instance_to_string(t[0]),
+          to: this.instance_to_string(t[1]),
+        };
+      });
+      return es;
+    },
+  },
+
   template: `
     <div>
       <div>nextAvailableInstance = {{node.actor.nextAvailableInstance}}</div>
       <div>largestBallot = {{node.actor.largestBallot}}</div>
       <div>stateMachine = {{node.actor.stateMachine}}</div>
-      <div>dependencyGraph = {{node.actor.dependencyGraph}}</div>
+      <div>
+        dependencyGraph =
+        <frankenpaxos-graph
+          style="height: 200px; border: 1pt solid black;"
+          :nodes="nodes()"
+          :edges="edges()"
+          :options="options">
+        </frankenpaxos-graph>
+      </div>
 
       <!-- recoveryInstanceTimers -->
       <div>

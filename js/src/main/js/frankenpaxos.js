@@ -515,7 +515,7 @@ Vue.component('frankenpaxos-text-checkbox', {
   template: `
     <div>
       <span
-        v-on:click="$emit(!value)"
+        v-on:click="$emit('input', !value)"
         :style="{cursor: 'pointer'}">
         {{text}}
       </span>
@@ -845,4 +845,86 @@ Vue.component('fp-field', {
       </td>
     </tr>
   `
+});
+
+// This is taken directly from https://github.com/alexcode/vue2vis.
+const arrayDiff = (arr1, arr2) => arr1.filter(x => arr2.indexOf(x) === -1);
+
+const mountVisData = (vm, propName) => {
+  let data = vm[propName];
+  // If data is DataSet or DataView we return early without attaching our own events
+  if (!(vm[propName] instanceof vis.DataSet ||
+        vm[propName] instanceof vis.DataView)) {
+    data = new vis.DataSet(vm[propName]);
+    // Rethrow all events
+    data.on('*', (event, properties, senderId) =>
+      vm.$emit(`${propName}-${event}`, { event, properties, senderId }));
+    // We attach deep watcher on the prop to propagate changes in the DataSet
+    const callback = (value) => {
+      if (Array.isArray(value)) {
+        const newIds = new vis.DataSet(value).getIds();
+        const diff = arrayDiff(vm.visData[propName].getIds(), newIds);
+        vm.visData[propName].update(value);
+        vm.visData[propName].remove(diff);
+      }
+    };
+
+    vm.$watch(propName, callback, {
+      deep: true,
+    });
+  }
+
+  // Emitting DataSets back
+  vm.$emit(`${propName}-mounted`, data);
+
+  return data;
+};
+
+Vue.component('frankenpaxos-graph', {
+  props: [
+    'edges',
+    'nodes',
+    'options',
+  ],
+  data: () => ({
+    visData: {
+      nodes: null,
+      edges: null
+    }
+  }),
+  watch: {
+    options: {
+      deep: true,
+      handler(o) {
+        this.network.setOptions(o);
+      }
+    }
+  },
+  methods: {
+    setData(n, e) {
+      this.visData.nodes = Array.isArray(n) ? new vis.DataSet(n) : n;
+      this.visData.edges =  Array.isArray(e) ? new vis.DataSet(e) : e;
+      this.network.setData(this.visData);
+    },
+    destroy() {
+      this.network.destroy();
+    },
+  },
+  created() {
+    // This should be a Vue data property, but Vue reactivity kinda bugs Vis.
+    // See here for more: https://github.com/almende/vis/issues/2524
+    this.network = null;
+  },
+  mounted() {
+    const container = this.$refs.visualization;
+    this.visData.nodes = mountVisData(this, 'nodes');
+    this.visData.edges = mountVisData(this, 'edges');
+    this.network = new vis.Network(container, this.visData, this.options);
+  },
+  beforeDestroy() {
+    this.network.destroy();
+  },
+  template: `
+    <div ref="visualization"></div>
+  `,
 });
