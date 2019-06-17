@@ -146,7 +146,13 @@ object BenchmarkClientMain extends App {
     yield BenchmarkUtil.runFor(() => run(pseudonym), flags.duration)
 
   // Wait for the benchmark to finish.
-  concurrent.Await.result(Future.sequence(futures), flags.timeout)
+  try {
+    concurrent.Await.result(Future.sequence(futures), flags.timeout)
+  } catch {
+    case e: java.util.concurrent.TimeoutException =>
+      logger.warn("Client futures timed out!")
+      logger.warn(e.toString())
+  }
 
   // Shut everything down.
   logger.debug("Shutting down transport.")
