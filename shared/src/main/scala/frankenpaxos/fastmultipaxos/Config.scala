@@ -1,5 +1,7 @@
 package frankenpaxos.fastmultipaxos
 
+import frankenpaxos.roundsystem.RoundSystem
+
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     leaderAddresses: Seq[Transport#Address],

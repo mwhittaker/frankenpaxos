@@ -2,6 +2,7 @@ package frankenpaxos.fastmultipaxos
 
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
+import frankenpaxos.roundsystem.RoundSystem
 import java.net.InetSocketAddress
 
 object ConfigUtil {

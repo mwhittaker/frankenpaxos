@@ -1,4 +1,4 @@
-package frankenpaxos.fastmultipaxos
+package frankenpaxos.roundsystem
 
 // Every Fast Paxos instance is associated with a set of integer-valued rounds.
 // For every round r, we must asign r a unique leader, and we must classify r

@@ -7,6 +7,7 @@ import frankenpaxos.JsTransportAddress
 import frankenpaxos.election.LeaderElectionOptions
 import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.monitoring.FakeCollectors
+import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.statemachine.AppendLog
 import scala.collection.mutable
 import scala.scalajs.js.annotation._

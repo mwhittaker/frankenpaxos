@@ -14,6 +14,9 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.roundsystem.ClassicRound
+import frankenpaxos.roundsystem.FastRound
+import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.statemachine.StateMachine
 import scala.collection.breakOut
 import scala.scalajs.js.annotation._

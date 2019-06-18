@@ -10,6 +10,7 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.roundsystem.RoundSystem
 import scala.scalajs.js.annotation._
 
 @JSExportAll

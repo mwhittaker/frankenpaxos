@@ -1,5 +1,6 @@
 package frankenpaxos.fastmultipaxos
 
+import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.simulator.BadHistory
 import frankenpaxos.simulator.Simulator
 import org.scalatest.FlatSpec

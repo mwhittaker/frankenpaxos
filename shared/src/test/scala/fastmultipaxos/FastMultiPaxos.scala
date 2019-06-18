@@ -1,6 +1,7 @@
 package frankenpaxos.fastmultipaxos
 
 import frankenpaxos.monitoring.FakeCollectors
+import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.simulator.FakeLogger
 import frankenpaxos.simulator.FakeTransport
 import frankenpaxos.simulator.FakeTransportAddress
