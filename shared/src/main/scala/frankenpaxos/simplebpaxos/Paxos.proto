@@ -21,8 +21,8 @@ option (scalapb.options) = {
 };
 
 // Helper messages. ////////////////////////////////////////////////////////////
-message VoteValue {
-  required CommandOrNoop vote_value = 1;
+message VoteValueProto {
+  required CommandOrNoop commandOrNoop = 1;
   repeated VertexId dependency = 2;
 }
 
@@ -43,7 +43,7 @@ message Phase1b {
   required int32 acceptor_id = 2;
   required int32 round = 3;
   required int32 vote_round = 4;
-  optional VoteValue vote_value = 5;
+  optional VoteValueProto vote_value = 5;
 }
 
 message Phase2a {
@@ -52,7 +52,7 @@ message Phase2a {
 
   required VertexId vertex_id = 1;
   required int32 round = 2;
-  required VoteValue vote_value = 3;
+  required VoteValueProto vote_value = 3;
 }
 
 message Phase2b {
