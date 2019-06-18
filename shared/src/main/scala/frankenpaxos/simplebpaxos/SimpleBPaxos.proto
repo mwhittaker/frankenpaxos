@@ -1,0 +1,144 @@
+// A protocol cheatsheet, similar to [1].
+//
+//                                           Dependency
+//                                            Service
+//   Client              Leader                 Node
+//      | ---------------> |                     |  ClientRequest
+//      |                  | ------------------> |  DependencyRequest
+//      |                  | <------------------ |  DependencyReply
+//      | <--------------- |                     |  ClientReply
+//      |                  | --------.           |  Commit
+//      |                  | <-------'           |
+//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+
+syntax = "proto2";
+
+package frankenpaxos.simplebpaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.simplebpaxos"
+  flat_package: true
+};
+
+
+// Helper messages. ////////////////////////////////////////////////////////////
+message VertexId {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 leader_index = 1;
+  required int32 id = 2;
+}
+
+// A special noop command that does not affect the state machine.
+message Noop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+// A client issued command.
+message Command {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The client's address.
+  required bytes client_address = 1;
+
+  // Clients use pseudonyms to simulate multiple clients. See Fast MultiPaxos
+  // for more explanation.
+  required int32 client_pseudonym = 2;
+
+  // Clients annotate every command with a unique and monotonically increasing
+  // id. The pair of (client address, client id) uniquely identify a command.
+  required int32 client_id = 3;
+
+  // The actual command.
+  required bytes command = 4;
+}
+
+message CommandOrNoop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    Command command = 1;
+    Noop noop = 2;
+  }
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 leader_index = 1;
+  required Command command = 2;
+}
+
+message DependencyRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required Command command = 2;
+}
+
+message DependencyReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  repeated VertexId dependency = 2;
+}
+
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The client pseudonym and id of the command.
+  required int32 client_pseudonym = 1;
+  required int32 client_id = 2;
+  required bytes result = 3;
+}
+
+message Commit {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required CommandOrNoop command_or_noop = 2;
+  repeated VertexId dependency = 3;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message LeaderInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientRequest client_request = 1;
+    DependencyReply dependency_reply = 2;
+    Commit commit = 3;
+  }
+}
+
+message DepServiceNodeInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    DependencyRequest dependency_request = 1;
+  }
+}
+
+message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientReply client_reply = 1;
+  }
+}

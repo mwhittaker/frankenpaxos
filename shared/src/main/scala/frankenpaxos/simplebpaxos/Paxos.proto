@@ -1,0 +1,86 @@
+// A protocol cheatsheet, similar to [1].
+//
+//   Proposer           Acceptor
+//      | ---------------> |      Phase1a
+//      | <--------------- |      Phase1b
+//      | ---------------> |      Phase2a
+//      | <--------------- |      Phase2b
+//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+
+syntax = "proto2";
+
+package frankenpaxos.simplebpaxos;
+
+import "frankenpaxos/simplebpaxos/SimpleBPaxos.proto";
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.simplebpaxos"
+  flat_package: true
+};
+
+// Helper messages. ////////////////////////////////////////////////////////////
+message VoteValue {
+  required CommandOrNoop vote_value = 1;
+  repeated VertexId dependency = 2;
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message Phase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 round = 2;
+}
+
+message Phase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 acceptor_id = 2;
+  required int32 round = 3;
+  required int32 vote_round = 4;
+  optional VoteValue vote_value = 5;
+}
+
+message Phase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 round = 2;
+  required VoteValue vote_value = 3;
+}
+
+message Phase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 acceptor_id = 2;
+  required int32 round = 3;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ProposerInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Phase1b phase1b = 1;
+    Phase2b phase2b = 2;
+  }
+}
+
+message AcceptorInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Phase1a phase1a = 1;
+    Phase2a phase2a = 2;
+  }
+}
