@@ -41,9 +41,9 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
       scalapb.gen() -> (sourceManaged in Compile).value
     ),
     PB.protoSources in Compile := Seq(
-      file("shared/src/main"),
-      file("jvm/src/main")
-    )
+      file("shared/src/main/scala"),
+      file("jvm/src/main/scala")
+    ),
   )
   .jsSettings(
     libraryDependencies += "org.scala-js" %%% "scalajs-java-time" % "0.2.5"
