@@ -86,6 +86,88 @@ object RoundSystem {
     ): Option[Round] = None
   }
 
+  // A RotatedClassicRoundRobin round system is like a ClassicRoundRobin round
+  // system except that the leader of round 0 may not be leader 0. Instead, we
+  // are allowed to rotate the round robin ordering so that some other leader
+  // owns round 0. In particular, `firstLeader` is the leader index of the
+  // leader of round 0. Here's an example with n = 3 and firstLeader = 1:
+  //
+  //                       | Round | Leader | Round Type |
+  //                       +-------+--------+------------+
+  //                       | 0     | 1      | classic    |
+  //                       | 1     | 2      | classic    |
+  //                       | 2     | 0      | classic    |
+  //                       | 3     | 1      | classic    |
+  //                       | 4     | 2      | classic    |
+  //                       | 5     | 0      | classic    |
+  //                       | 6     | 1      | classic    |
+  //
+  // Here's an example with n = 3 and firstLeader = 2:
+  //
+  //                       | Round | Leader | Round Type |
+  //                       +-------+--------+------------+
+  //                       | 0     | 2      | classic    |
+  //                       | 1     | 0      | classic    |
+  //                       | 2     | 1      | classic    |
+  //                       | 3     | 2      | classic    |
+  //                       | 4     | 0      | classic    |
+  //                       | 5     | 1      | classic    |
+  //                       | 6     | 2      | classic    |
+  class RotatedClassicRoundRobin(
+      private val n: Int,
+      private val firstLeader: Int
+  ) extends RoundSystem {
+    // We can view a rotated round robin scheme as an unrotated round robin
+    // scheme in which the identities of the leaders has been rotated. For
+    // example, in an unrotated scheme begining in round 0, the leaders are:
+    //
+    //   0, 1, 2, 0, 1, 2, 0, 1, 2, ...
+    //
+    // If we set the first leader to 2, then we have
+    //
+    //   2, 0, 1, 2, 0, 1, 2, 0, 1, ...
+    //
+    // These two are the same if just rename leader 0 to 2, 1 to 0, and 2 to 1.
+    // In other words, we rotate the identities of the scheme up by 2. We use
+    // the toUnrotated and fromUnrotated helpers to perform these conversions.
+    private val unrotated = new ClassicRoundRobin(n)
+
+    private def toUnrotated(index: LeaderIndex): LeaderIndex = {
+      // Scala allows % to be negative, so we cannot use mod.
+      var unrotated = (index - firstLeader) % n
+      if (unrotated < 0) {
+        unrotated + n
+      } else {
+        unrotated
+      }
+    }
+
+    private def fromUnrotated(index: LeaderIndex): LeaderIndex =
+      (index + firstLeader) % n
+
+    override def toString(): String =
+      s"RotatedClassicRoundRobin(n=$n, firstLeader=$firstLeader)"
+
+    override def numLeaders(): Int = n
+
+    override def leader(round: Round): LeaderIndex =
+      fromUnrotated(unrotated.leader(round))
+
+    override def roundType(round: Round): RoundType = ClassicRound
+
+    override def nextClassicRound(
+        leaderIndex: LeaderIndex,
+        round: Round
+    ): Round = {
+      unrotated.nextClassicRound(toUnrotated(leaderIndex), round)
+    }
+
+    override def nextFastRound(
+        leaderIndex: LeaderIndex,
+        round: Round
+    ): Option[Round] = None
+  }
+
   // A RoundZeroFast round system assigns rounds round-robin. Round 0 is fast,
   // and all other rounds are classic. Here's an example with n = 3:
   //
