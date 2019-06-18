@@ -1,8 +1,5 @@
-package frankenpaxos.fastmultipaxos
+package frankenpaxos.roundsystem
 
-import frankenpaxos.roundsystem.ClassicRound
-import frankenpaxos.roundsystem.FastRound
-import frankenpaxos.roundsystem.RoundSystem
 import org.scalatest._
 
 class RoundSystemSpec extends FlatSpec {
