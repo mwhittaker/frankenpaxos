@@ -13,6 +13,7 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
+import frankenpaxos.statemachine.StateMachine
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 

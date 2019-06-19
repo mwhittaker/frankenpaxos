@@ -18,6 +18,8 @@ class Sleeper extends TypedStateMachine[SleeperInput, SleeperOutput] {
     import SleeperInput.Request
     input.request match {
       case Request.SleepRequest(r) =>
+        // TODO(mwhittaker): Re-implement. Thread.sleep doesn't have small
+        // enough granularity.
         if (r.sleepNanos > 0) {
           Thread.sleep(r.sleepNanos / 1000000, (r.sleepNanos % 1000000).toInt)
         }
@@ -30,7 +32,18 @@ class Sleeper extends TypedStateMachine[SleeperInput, SleeperOutput] {
   override def typedConflicts(
       firstCommand: SleeperInput,
       secondCommand: SleeperInput
-  ): Boolean = {
-    true
+  ): Boolean =
+    false
+
+  override def typedConflictIndex[Key](): ConflictIndex[Key, SleeperInput] = {
+    new ConflictIndex[Key, SleeperInput] {
+      private val inputs = mutable.Map[Key, SleeperInput]()
+      override def put(key: Key, command: SleeperInput): Option[SleeperInput] =
+        inputs.put(key, command)
+      override def get(key: Key): Option[SleeperInput] = inputs.get(key)
+      override def remove(key: Key): Option[SleeperInput] = inputs.remove(key)
+      override def getConflicts(key: Key, command: SleeperInput): Set[Key] =
+        Set()
+    }
   }
 }

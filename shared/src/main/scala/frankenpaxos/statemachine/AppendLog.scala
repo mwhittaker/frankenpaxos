@@ -1,6 +1,6 @@
 package frankenpaxos.statemachine
 
-import collection.mutable
+import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -18,4 +18,15 @@ class AppendLog extends StateMachine {
       firstCommand: Array[Byte],
       secondCommand: Array[Byte]
   ): Boolean = true
+
+  override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
+    new ConflictIndex[Key, Array[Byte]] {
+      private val xs = mutable.Map[Key, Array[Byte]]()
+      override def put(key: Key, command: Array[Byte]): Option[Array[Byte]] =
+        xs.put(key, command)
+      override def get(key: Key): Option[Array[Byte]] = xs.get(key)
+      override def remove(key: Key): Option[Array[Byte]] = xs.remove(key)
+      override def getConflicts(key: Key, command: Array[Byte]): Set[Key] =
+        xs.keys.toSet - key
+    }
 }

@@ -7,8 +7,11 @@ package frankenpaxos.statemachine
 // TODO(mwhittaker): If we implement speculative execution, the state machine
 // abstraction should support undo.
 trait StateMachine {
+  // Abstract value members.
   def run(input: Array[Byte]): Array[Byte]
-
-  // TODO(mwhittaker): Re-think whether this API is the one we want.
   def conflicts(firstCommand: Array[Byte], secondCommand: Array[Byte]): Boolean
+
+  // Concrete value members.
+  def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
+    new NaiveConflictIndex(conflicts)
 }

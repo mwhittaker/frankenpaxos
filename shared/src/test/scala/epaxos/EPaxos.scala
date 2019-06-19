@@ -5,6 +5,7 @@ import frankenpaxos.simulator.FakeLogger
 import frankenpaxos.simulator.FakeTransport
 import frankenpaxos.simulator.FakeTransportAddress
 import frankenpaxos.simulator.SimulatedSystem
+import frankenpaxos.statemachine.KeyValueStore
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
