@@ -1,10 +1,13 @@
 package frankenpaxos.simplebpaxos
 
+import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.statemachine.StateMachine
+import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -42,10 +45,8 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    // TODO(mwhittaker): Add config.
-    // config: Config[Transport],
-    // TODO(mwhittaker): Add state machine.
-    // TODO(mwhittaker): Add dependency graph.
+    config: Config[Transport],
+    stateMachine: StateMachine,
     options: DepServiceNodeOptions = DepServiceNodeOptions.default,
     metrics: DepServiceNodeMetrics = new DepServiceNodeMetrics(
       PrometheusCollectors
@@ -56,6 +57,19 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = DepServiceNodeInbound
   override def serializer = DepServiceNode.serializer
+
+  // Fields ////////////////////////////////////////////////////////////////////
+  // This conflict index stores all of the commands seen so far. When a
+  // dependency service node receives a new command, it uses the conflict index
+  // to efficiently compute dependencies.
+  @JSExport
+  protected val conflictIndex = stateMachine.conflictIndex[VertexId]()
+
+  // dependencies caches the dependencies computed by the conflict index. If a
+  // dependency service node receives a command more than once, it returns the
+  // same set of dependencies.
+  @JSExport
+  protected val dependenciesCache = mutable.Map[VertexId, Set[VertexId]]()
 
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
@@ -74,5 +88,25 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   private def handleDependencyRequest(
       src: Transport#Address,
       dependencyRequest: DependencyRequest
-  ): Unit = ???
+  ): Unit = {
+    val vertexId = dependencyRequest.vertexId
+    val dependencies = dependenciesCache.get(vertexId) match {
+      case Some(dependencies) => dependencies
+
+      case None =>
+        val command = dependencyRequest.command.command.toByteArray
+        conflictIndex.put(vertexId, command)
+        val dependencies = conflictIndex.getConflicts(vertexId, command)
+        dependenciesCache(vertexId) = dependencies
+        dependencies
+    }
+
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
+    leader.send(
+      LeaderInbound().withDependencyReply(
+        DependencyReply(vertexId = dependencyRequest.vertexId,
+                        dependency = dependencies.toSeq)
+      )
+    )
+  }
 }
