@@ -1,4 +1,4 @@
-package frankenpaxos.epaxos
+package frankenpaxos.depgraph
 
 import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExportAll
@@ -15,37 +15,40 @@ import scalax.collection.mutable.Graph
 //
 // [1]: http://www.scala-graph.org/
 @JSExportAll
-class ScalaGraphDependencyGraph extends DependencyGraph {
+class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
+    implicit override val keyOrdering: Ordering[Key],
+    implicit override val sequenceNumberOrdering: Ordering[SequenceNumber]
+) extends DependencyGraph[Key, SequenceNumber] {
   // We implement ScalaGraphDependencyGraph the same way we implement
   // JgraphtDependencyGraph. See JgraphtDependencyGraph for documentation.
-  private val graph = Graph[Instance, DiEdge]()
-  private val committed = mutable.Set[Instance]()
-  private val sequenceNumbers = mutable.Map[Instance, Int]()
-  private val executed = mutable.Set[Instance]()
+  private val graph = Graph[Key, DiEdge]()
+  private val committed = mutable.Set[Key]()
+  private val sequenceNumbers = mutable.Map[Key, SequenceNumber]()
+  private val executed = mutable.Set[Key]()
 
   override def toString(): String = graph.toString
 
   override def commit(
-      instance: Instance,
-      sequenceNumber: Int,
-      dependencies: Set[Instance]
-  ): Seq[Instance] = {
+      key: Key,
+      sequenceNumber: SequenceNumber,
+      dependencies: Set[Key]
+  ): Seq[Key] = {
     // Ignore commands that have already been committed.
-    if (committed.contains(instance) || executed.contains(instance)) {
+    if (committed.contains(key) || executed.contains(key)) {
       return Seq()
     }
 
     // Update our bookkeeping.
-    committed += instance
-    sequenceNumbers(instance) = sequenceNumber
+    committed += key
+    sequenceNumbers(key) = sequenceNumber
 
     // Update the graph.
-    graph.add(instance)
+    graph.add(key)
     for (dependency <- dependencies) {
       // If a dependency has already been executed, we don't add an edge to it.
       if (!executed.contains(dependency)) {
         graph.add(dependency)
-        graph.add(instance ~> dependency)
+        graph.add(key ~> dependency)
       }
     }
 
@@ -53,18 +56,18 @@ class ScalaGraphDependencyGraph extends DependencyGraph {
     execute()
   }
 
-  private def isEligible(instance: Instance): Boolean = {
-    committed.contains(instance) &&
-    graph.outerNodeTraverser(graph.get(instance)).forall(committed.contains(_))
+  private def isEligible(key: Key): Boolean = {
+    committed.contains(key) &&
+    graph.outerNodeTraverser(graph.get(key)).forall(committed.contains(_))
   }
 
-  private def execute(): Seq[Instance] = {
+  private def execute(): Seq[Key] = {
     // Filter out all vertices that are not eligible.
     val eligibleGraph = graph.filter(isEligible)
 
     // Condense the graph.
     val components = eligibleGraph.strongComponentTraverser()
-    val componentIndex: Map[Instance, eligibleGraph.Component] = {
+    val componentIndex: Map[Key, eligibleGraph.Component] = {
       for {
         component <- components
         node <- component.nodes
@@ -94,7 +97,7 @@ class ScalaGraphDependencyGraph extends DependencyGraph {
     // Iterate through the graph in topological order. topologicalSort returns
     // either a node that is part of a cycle (Left) or the topological order.
     // Condensations are acyclic, so we should always get Right.
-    val executable: Seq[Instance] = condensation.topologicalSort match {
+    val executable: Seq[Key] = condensation.topologicalSort match {
       case Left(node) =>
         throw new IllegalStateException(
           s"Condensation $condensation has a cycle."
@@ -105,31 +108,28 @@ class ScalaGraphDependencyGraph extends DependencyGraph {
             component.nodes
               .map(_.toOuter)
               .toSeq
-              .sortBy({
-                case instance @ Instance(replicaIndex, instanceNumber) =>
-                  (sequenceNumbers(instance), replicaIndex, instanceNumber)
-              })
+              .sortBy(key => (sequenceNumbers(key), key))
           })
           .toSeq
     }
 
-    for (instance <- executable) {
-      graph.remove(instance)
-      committed -= instance
-      sequenceNumbers -= instance
-      executed += instance
+    for (key <- executable) {
+      graph.remove(key)
+      committed -= key
+      sequenceNumbers -= key
+      executed += key
     }
 
     executable
   }
 
-  // Returns the current set of nodes. This method is really only useful for
-  // the Javascript visualizations.
-  def nodes: Set[Instance] =
+// Returns the current set of nodes. This method is really only useful for
+// the Javascript visualizations.
+  def nodes: Set[Key] =
     graph.nodes.map(_.toOuter).toSet
 
-  // Returns the current set of edges. This method is really only useful for
-  // the Javascript visualizations.
-  def edges: Set[(Instance, Instance)] =
+// Returns the current set of edges. This method is really only useful for
+// the Javascript visualizations.
+  def edges: Set[(Key, Key)] =
     graph.edges.map(edge => (edge.head.toOuter, edge.tail.head.toOuter)).toSet
 }

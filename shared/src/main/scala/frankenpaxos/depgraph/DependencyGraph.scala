@@ -1,4 +1,4 @@
-package frankenpaxos.epaxos
+package frankenpaxos.depgraph
 
 import scala.scalajs.js.annotation.JSExportAll
 
@@ -39,13 +39,14 @@ import scala.scalajs.js.annotation.JSExportAll
 //     | X | X | X |   |   |   |
 //     +---+---+---+---+---+---+
 //
-// Log entry 1 and 2 are now eligible and can be executed (in order).
+// Log entries 1 and 2 are now eligible and can be executed (in order).
 //
-// # EPaxos
-// Instead of agreeing on a log one entry at a time, EPaxos replicas agree on a
-// graph one vertex at a time. Initially, the graph is empty. Over time,
-// vertices are committed and added to the graph. For example, imagine vertex B
-// is committed with an edge to vertex A. That looks like this.
+// # EPaxos, BPaxos, etc.
+// Instead of agreeing on a _log_ one _entry_ at a time, some state machine
+// replication protocols (like EPaxos and BPaxos) agree on a _graph_ one
+// _vertex_ at a time. Initially, the graph is empty. Over time, vertices are
+// committed and added to the graph. For example, imagine vertex B is committed
+// with an edge to vertex A. That looks like this.
 //
 //
 //       +---+
@@ -87,17 +88,17 @@ import scala.scalajs.js.annotation.JSExportAll
 //       +---+
 //
 // Now, all three vertices are eligible. Like how MultiPaxos executes log
-// entries in prefix order, EPaxos executes commands in "prefix order". More
-// carefully, it executes strongly connected components of eligible commands in
-// reverse topological order.
+// entries in prefix order, protocols like EPaxos and BPaxos execute commands
+// in "prefix order". More carefully, they executes strongly connected
+// components of eligible commands in reverse topological order.
 //
 // In the example above, vertices A and B form a strongly connected component
-// and vertex C forms a strongly connected component. Thus, EPaxos executes the
-// A,B component and then the C component. Within a component, EPaxos is free
-// to execute commands in an arbitrary order that respects sequence numbers (we
-// ommitted sequence numbers in this example to keep things simple). For
-// example, if both A and B have the same sequence number, then EPaxos can
-// execute commands in either of the following orders:
+// and vertex C forms a strongly connected component. Thus, the protocol
+// executes the A,B component and then the C component. Within a component, the
+// protocol is free to execute commands in an arbitrary order that respects
+// sequence numbers (we omitted sequence numbers in this example to keep things
+// simple). For example, if both A and B have the same sequence number, then
+// EPaxos can execute commands in either of the following orders:
 //
 //   - A, B, C
 //   - B, A, C
@@ -110,12 +111,12 @@ import scala.scalajs.js.annotation.JSExportAll
 //   - B, C, A
 //
 // # API
-// DependencyGraph represents the dependency graphs maintained by EPaxos. A
-// DependencyGraph has a single method, `commit`, to commit a vertex
-// (identified by an instance), its sequence number, and its dependencies.
-// `commit` returns a set of instances that can be executed, arranged in the
-// order that they should be executed. For example, we can replicate the
-// example above like this:
+// DependencyGraph represents the dependency graphs maintained by protocols
+// like EPaxos and BPaxos. A DependencyGraph has a single method, `commit`, to
+// commit a vertex (identified by an instance), its sequence number, and its
+// dependencies. `commit` returns a set of instances that can be executed,
+// arranged in the order that they should be executed. For example, we can
+// replicate the example above like this:
 //
 //   val A = Instance(...)
 //   val B = Instance(...)
@@ -126,15 +127,19 @@ import scala.scalajs.js.annotation.JSExportAll
 //   g.commit(C, 0, Set(A)) // Evaluates to Seq()
 //   g.commit(B, 0, Set(A)) // Evaluates to Seq(A, B, C) or Seq(B, A, C)
 //
-// TODO(mwhittaker): Abstract and pull out DependencyGraph from the epaxos
-// package so that we can use it for BPaxos as well.
+// Note that vertex identifiers and sequence numbers are both generic. This is
+// because EPaxos and BPaxos use different types of vertex identifiers, and
+// BPaxos doesn't even use sequence numbers.
 @JSExportAll
-trait DependencyGraph {
+abstract class DependencyGraph[Key, SequenceNumber](
+    implicit val keyOrdering: Ordering[Key],
+    implicit val sequenceNumberOrdering: Ordering[SequenceNumber]
+) {
   // See above. If an instance is committed after it has already been
   // committed, then `commit` ignores it and returns an empty sequence.
   def commit(
-      instance: Instance,
-      sequenceNumber: Int,
-      dependencies: Set[Instance]
-  ): Seq[Instance]
+      key: Key,
+      sequenceNumber: SequenceNumber,
+      dependencies: Set[Key]
+  ): Seq[Key]
 }

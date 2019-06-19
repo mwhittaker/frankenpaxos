@@ -5,6 +5,7 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.statemachine.StateMachine
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -41,9 +42,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    // TODO(mwhittaker): Add config.
-    // config: Config[Transport],
-    // TODO(mwhittaker): Add state machine.
+    config: Config[Transport],
+    stateMachine: StateMachine,
     // TODO(mwhittaker): Add dependency graph.
     options: LeaderOptions = LeaderOptions.default,
     metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)

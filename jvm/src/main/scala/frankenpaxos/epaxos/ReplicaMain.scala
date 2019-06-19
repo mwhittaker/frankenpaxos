@@ -1,11 +1,13 @@
 package frankenpaxos.epaxos
 
+import InstanceHelpers.instanceOrdering
 import frankenpaxos.Actor
 import frankenpaxos.Flags.durationRead
 import frankenpaxos.LogLevel
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
+import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.statemachine.KeyValueStore
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports

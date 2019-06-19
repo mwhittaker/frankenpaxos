@@ -1,4 +1,4 @@
-package frankenpaxos.epaxos
+package frankenpaxos.depgraph
 
 import org.jgrapht.Graph
 import org.jgrapht.alg.KosarajuStrongConnectivityInspector
@@ -19,53 +19,55 @@ import scala.scalajs.js.annotation.JSExportAll
 // JS visualizations.
 //
 // [1]: https://jgrapht.org/
-class JgraphtDependencyGraph extends DependencyGraph {
+class JgraphtDependencyGraph[Key, SequenceNumber]()(
+    implicit override val keyOrdering: Ordering[Key],
+    implicit override val sequenceNumberOrdering: Ordering[SequenceNumber]
+) extends DependencyGraph[Key, SequenceNumber] {
   // The underlying graph. When a strongly connected component is "executed"
   // (i.e., returned by the `commit` method), it is removed from the graph.
   // This keeps the graph small.
   //
-  // Note that just because an instance exists in the graph doesn't mean it is
+  // Note that just because an key exists in the graph doesn't mean it is
   // committed. For example, imagine we start with an empty graph and commit
-  // instance A with a dependency on instance B. We create vertices for both A
-  // and B and draw an edge from A to B, even though B is not committed. See
-  // `committed` for the set of committed instances.
-  private val graph: SimpleDirectedGraph[Instance, DefaultEdge] =
+  // key A with a dependency on key B. We create vertices for both A and B and
+  // draw an edge from A to B, even though B is not committed. See `committed`
+  // for the set of committed keys.
+  private val graph: SimpleDirectedGraph[Key, DefaultEdge] =
     new SimpleDirectedGraph(classOf[DefaultEdge])
 
-  // The set of instances that have been committed but not yet executed.
-  // Vertices in `graph` that are not in `committed` have not yet been
-  // committed.
-  private val committed = mutable.Set[Instance]()
+  // The set of keys that have been committed but not yet executed.  Vertices
+  // in `graph` that are not in `committed` have not yet been committed.
+  private val committed = mutable.Set[Key]()
 
-  // The sequence numbers of the instances in `committed`.
-  private val sequenceNumbers = mutable.Map[Instance, Int]()
+  // The sequence numbers of the keys in `committed`.
+  private val sequenceNumbers = mutable.Map[Key, SequenceNumber]()
 
-  // The instances that have already been executed and removed from the graph.
-  private val executed = mutable.Set[Instance]()
+  // The keys that have already been executed and removed from the graph.
+  private val executed = mutable.Set[Key]()
 
   override def toString(): String = graph.toString
 
   override def commit(
-      instance: Instance,
-      sequenceNumber: Int,
-      dependencies: Set[Instance]
-  ): Seq[Instance] = {
+      key: Key,
+      sequenceNumber: SequenceNumber,
+      dependencies: Set[Key]
+  ): Seq[Key] = {
     // Ignore commands that have already been committed.
-    if (committed.contains(instance) || executed.contains(instance)) {
+    if (committed.contains(key) || executed.contains(key)) {
       return Seq()
     }
 
     // Update our bookkeeping.
-    committed += instance
-    sequenceNumbers(instance) = sequenceNumber
+    committed += key
+    sequenceNumbers(key) = sequenceNumber
 
     // Update the graph.
-    graph.addVertex(instance)
+    graph.addVertex(key)
     for (dependency <- dependencies) {
       // If a dependency has already been executed, we don't add an edge to it.
       if (!executed.contains(dependency)) {
         graph.addVertex(dependency)
-        graph.addEdge(instance, dependency)
+        graph.addEdge(key, dependency)
       }
     }
 
@@ -73,21 +75,21 @@ class JgraphtDependencyGraph extends DependencyGraph {
     execute()
   }
 
-  // Returns whether an instance is eligible. An instance is eligible if all
-  // commands reachable from the instance (including itself) are committed.
+  // Returns whether an key is eligible. An key is eligible if all commands
+  // reachable from the key (including itself) are committed.
   //
-  // If an instance has dependencies to commands that have already been
-  // executed, then the edges to those dependencies will be absent because
-  // executed commands are pruned. This doesn't affect the correctness of
-  // isEligible though.
-  private def isEligible(instance: Instance): Boolean = {
-    val iterator = new BreadthFirstIterator(graph, instance)
-    committed.contains(instance) &&
+  // If an key has dependencies to commands that have already been executed,
+  // then the edges to those dependencies will be absent because executed
+  // commands are pruned. This doesn't affect the correctness of isEligible
+  // though.
+  private def isEligible(key: Key): Boolean = {
+    val iterator = new BreadthFirstIterator(graph, key)
+    committed.contains(key) &&
     iterator.asScala.forall(committed.contains(_))
   }
 
   // Try to execute as much of the graph as possible.
-  private def execute(): Seq[Instance] = {
+  private def execute(): Seq[Key] = {
     // 1. Filter out all vertices that are not eligible.
     // 2. Condense the graph.
     // 3. Execute the graph in reverse topological order, sorting by sequence
@@ -98,21 +100,18 @@ class JgraphtDependencyGraph extends DependencyGraph {
     val condensation = components.getCondensation()
     val reversed = new EdgeReversedGraph(condensation)
     val iterator = new TopologicalOrderIterator(reversed)
-    val executable: Seq[Instance] = iterator.asScala
+    val executable: Seq[Key] = iterator.asScala
       .flatMap(component => {
         component.vertexSet.asScala.toSeq
-          .sortBy({
-            case instance @ Instance(replicaIndex, instanceNumber) =>
-              (sequenceNumbers(instance), replicaIndex, instanceNumber)
-          })
+          .sortBy(key => (sequenceNumbers(key), key))
       })
       .toSeq
 
-    for (instance <- executable) {
-      graph.removeVertex(instance)
-      committed -= instance
-      sequenceNumbers -= instance
-      executed += instance
+    for (key <- executable) {
+      graph.removeVertex(key)
+      committed -= key
+      sequenceNumbers -= key
+      executed += key
     }
 
     executable

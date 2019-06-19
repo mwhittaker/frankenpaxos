@@ -1,8 +1,10 @@
 package frankenpaxos.epaxos
 
+import InstanceHelpers.instanceOrdering
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
+import frankenpaxos.depgraph.ScalaGraphDependencyGraph
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.Register
 import scala.scalajs.js.annotation._

@@ -2,6 +2,7 @@ package frankenpaxos.epaxos
 
 import BallotHelpers.BallotImplicits
 import CommandOrNoopHelpers.CommandOrNoopImplicits
+import InstanceHelpers.instanceOrdering
 import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.Chan
@@ -9,6 +10,8 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
+import frankenpaxos.depgraph.DependencyGraph
+import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
@@ -307,7 +310,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // An empty dependency graph. This is a constructor argument so that
     // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
     // Public for the JS visualizations.
-    val dependencyGraph: DependencyGraph = new JgraphtDependencyGraph(),
+    val dependencyGraph: DependencyGraph[Instance, Int] =
+      new JgraphtDependencyGraph(),
     options: ReplicaOptions = ReplicaOptions.default,
     metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
