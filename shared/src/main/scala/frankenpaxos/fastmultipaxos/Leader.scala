@@ -693,6 +693,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             s"Leader running phase 1 in round $round got nack in round " +
               s"${nack.round} from $src. Increasing round."
           )
+          // TODO(mwhittaker): Check that the nack is not out of date.
+          // TODO(mwhittaker): Change to a round that we own!
           leaderChange(address, nack.round)
         }
     }

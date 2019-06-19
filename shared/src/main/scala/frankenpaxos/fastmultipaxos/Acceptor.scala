@@ -260,6 +260,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2aBuffer: Phase2aBuffer
   ): Unit = {
+    // TODO(mwhittaker): Add phase 2 nack.
     metrics.requestsTotal.labels("Phase2aBuffer").inc()
     val buffer = Phase2bBuffer(phase2aBuffer.phase2A.flatMap(processPhase2a))
     val leader = leaders(config.roundSystem.leader(round))

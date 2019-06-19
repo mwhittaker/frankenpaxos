@@ -1324,6 +1324,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private def handleNack(src: Transport#Address, nack: Nack): Unit = {
     metrics.requestsTotal.labels("Nack").inc()
 
+    // TODO(mwhittaker): Check that the nack is not out of date.
+
     // If we get a Nack, it's possible there's another replica trying to
     // recover this instance. To avoid dueling replicas, we wait a bit to
     // recover.

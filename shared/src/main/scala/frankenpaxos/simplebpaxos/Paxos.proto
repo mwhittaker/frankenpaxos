@@ -5,6 +5,7 @@
 //      | <--------------- |      Phase1b
 //      | ---------------> |      Phase2a
 //      | <--------------- |      Phase2b
+//      | <--------------- |      Nack
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
@@ -64,6 +65,14 @@ message Phase2b {
   required int32 round = 3;
 }
 
+message Nack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 higher_round = 3;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ProposerInbound {
   option (scalapb.message).annotations =
@@ -72,6 +81,7 @@ message ProposerInbound {
   oneof request {
     Phase1b phase1b = 1;
     Phase2b phase2b = 2;
+    Nack nack = 3;
   }
 }
 
