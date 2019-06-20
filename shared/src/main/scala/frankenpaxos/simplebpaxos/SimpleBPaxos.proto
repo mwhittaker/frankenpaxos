@@ -91,7 +91,8 @@ message DependencyReply {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required VertexId vertex_id = 1;
-  repeated VertexId dependency = 2;
+  required int32 dep_service_node_index = 2;
+  repeated VertexId dependency = 3;
 }
 
 message ClientReply {

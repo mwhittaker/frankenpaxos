@@ -59,6 +59,11 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   override def serializer = DepServiceNode.serializer
 
   // Fields ////////////////////////////////////////////////////////////////////
+  // Sanity check the configuration and get our index.
+  logger.check(config.valid())
+  logger.check(config.acceptorAddresses.contains(address))
+  private val index = config.acceptorAddresses.indexOf(address)
+
   // This conflict index stores all of the commands seen so far. When a
   // dependency service node receives a new command, it uses the conflict index
   // to efficiently compute dependencies.
@@ -105,6 +110,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
     leader.send(
       LeaderInbound().withDependencyReply(
         DependencyReply(vertexId = dependencyRequest.vertexId,
+                        depServiceNodeIndex = index,
                         dependency = dependencies.toSeq)
       )
     )
