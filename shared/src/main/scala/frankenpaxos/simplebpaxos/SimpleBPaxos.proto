@@ -74,8 +74,7 @@ message ClientRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 leader_index = 1;
-  required Command command = 2;
+  required Command command = 1;
 }
 
 message DependencyRequest {

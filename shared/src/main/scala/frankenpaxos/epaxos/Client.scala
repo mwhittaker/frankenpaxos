@@ -53,6 +53,7 @@ class ClientMetrics(collectors: Collectors) {
     .help("Total number of times a client reproposes a value..")
     .register()
 }
+
 @JSExportAll
 object Client {
   val serializer = ClientInboundSerializer
@@ -125,9 +126,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
     // TODO(mwhittaker): Abstract out the policy of which replica to send to.
     val rand = new Random(System.currentTimeMillis())
-    val random_index = rand.nextInt(replicas.size)
-    val replica = replicas(random_index)
-
+    val randomIndex = rand.nextInt(replicas.size)
+    val replica = replicas(randomIndex)
     val request = toClientRequest(pendingCommand)
     replica.send(ReplicaInbound().withClientRequest(request))
   }
