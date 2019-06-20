@@ -92,13 +92,15 @@ object ClientTable {
 class ClientTable[ClientAddress, Output] {
   type ClientId = Int
 
+  @JSExportAll
   case class ClientState(
       largestId: ClientId,
       largestOutput: Output,
       executedIds: PrefixSet
   )
 
-  val table = mutable.Map[ClientAddress, ClientState]()
+  @JSExport
+  protected val table = mutable.Map[ClientAddress, ClientState]()
 
   def executed(
       clientAddress: ClientAddress,

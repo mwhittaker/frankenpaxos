@@ -61,8 +61,8 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   // Fields ////////////////////////////////////////////////////////////////////
   // Sanity check the configuration and get our index.
   logger.check(config.valid())
-  logger.check(config.acceptorAddresses.contains(address))
-  private val index = config.acceptorAddresses.indexOf(address)
+  logger.check(config.depServiceNodeAddresses.contains(address))
+  private val index = config.depServiceNodeAddresses.indexOf(address)
 
   // This conflict index stores all of the commands seen so far. When a
   // dependency service node receives a new command, it uses the conflict index

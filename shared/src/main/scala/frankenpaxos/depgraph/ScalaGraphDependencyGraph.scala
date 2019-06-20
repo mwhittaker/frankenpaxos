@@ -123,13 +123,13 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
     executable
   }
 
-// Returns the current set of nodes. This method is really only useful for
-// the Javascript visualizations.
+  // Returns the current set of nodes. This method is really only useful for
+  // the Javascript visualizations.
   def nodes: Set[Key] =
     graph.nodes.map(_.toOuter).toSet
 
-// Returns the current set of edges. This method is really only useful for
-// the Javascript visualizations.
+  // Returns the current set of edges. This method is really only useful for
+  // the Javascript visualizations.
   def edges: Set[(Key, Key)] =
     graph.edges.map(edge => (edge.head.toOuter, edge.tail.head.toOuter)).toSet
 }

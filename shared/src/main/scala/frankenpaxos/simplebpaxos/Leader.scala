@@ -85,8 +85,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
-    stateMachine: StateMachine,
-    dependencyGraph: DependencyGraph[VertexId, Unit] =
+    // Public for Javascript visualizations.
+    val stateMachine: StateMachine,
+    // Public for Javascript visualizations.
+    val dependencyGraph: DependencyGraph[VertexId, Unit] =
       new JgraphtDependencyGraph(),
     options: LeaderOptions = LeaderOptions.default,
     metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors),
@@ -134,7 +136,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   protected val recoverVertexTimers = mutable.Map[VertexId, Transport#Timer]()
 
   // The colocated Paxos proposer used to propose to the consensus service.
-  private val proposer = new Proposer[Transport](
+  @JSExport
+  protected val proposer = new Proposer[Transport](
     address = config.proposerAddresses(index),
     transport = transport,
     logger = logger,

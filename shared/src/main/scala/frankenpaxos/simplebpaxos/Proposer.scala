@@ -137,20 +137,6 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // directly to phase 2. Otherwise, we have to execute phase 1 before
         // phase 2.
         if (round == 0) {
-          // Send phase1a to all acceptors.
-          // TODO(mwhittaker): Add thriftiness.
-          val phase1a = Phase1a(vertexId = vertexId, round = round)
-          acceptors.foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
-
-          // Update our state.
-          states(vertexId) = Phase1(
-            promise = promise,
-            round = round,
-            value = value,
-            phase1bs = mutable.Map[AcceptorId, Phase1b](),
-            resendPhase1as = makeResendPhase1asTimer(phase1a)
-          )
-        } else {
           // Send phase2a to all acceptors.
           // TODO(mwhittaker): Add thriftiness.
           val phase2a = Phase2a(vertexId = vertexId,
@@ -165,6 +151,20 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
             value = value,
             phase2bs = mutable.Map[AcceptorId, Phase2b](),
             resendPhase2as = makeResendPhase2asTimer(phase2a)
+          )
+        } else {
+          // Send phase1a to all acceptors.
+          // TODO(mwhittaker): Add thriftiness.
+          val phase1a = Phase1a(vertexId = vertexId, round = round)
+          acceptors.foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
+
+          // Update our state.
+          states(vertexId) = Phase1(
+            promise = promise,
+            round = round,
+            value = value,
+            phase1bs = mutable.Map[AcceptorId, Phase1b](),
+            resendPhase1as = makeResendPhase1asTimer(phase1a)
           )
         }
     }

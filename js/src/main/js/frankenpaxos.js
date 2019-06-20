@@ -492,7 +492,8 @@ Vue.component('frankenpaxos-unittest', {
     }
   },
   template: `
-    <div>
+    <details>
+      <summary>Unit test</summary>
       <button class="frankenpaxos-button"
                v-on:click="copy">Copy to clipboard</button>
       <div class="frankenpaxos-unittest">
@@ -502,7 +503,7 @@ Vue.component('frankenpaxos-unittest', {
           </span>
         </div>
       </div>
-    </div>
+    </details>
   `
 });
 
@@ -817,7 +818,11 @@ Vue.component('frankenpaxos-tuple', {
 });
 
 Vue.component('fp-object', {
-  props: ['value'],
+  props: {
+    value: {
+      default: null,
+    }
+  },
 
   template: `
     <div>
@@ -831,7 +836,9 @@ Vue.component('fp-object', {
 Vue.component('fp-field', {
   props: {
     name: String,
-    value: null,
+    value: {
+      default: null,
+    },
     show_at_start: {default: true},
   },
 
@@ -844,6 +851,26 @@ Vue.component('fp-field', {
         </fp-toggle>
       </td>
     </tr>
+  `
+});
+
+// Client table.
+Vue.component('frankenpaxos-client-table', {
+  props: {
+    clientTable: Object,
+  },
+
+  template: `
+    <frankenpaxos-map :map="clientTable.table" v-slot="{value: clientState}">
+      <fp-object :value="clientState">
+        <fp-field :name="'largestId'" :value="clientState.largestId">
+        </fp-field>
+        <fp-field :name="'largestOutput'" :value="clientState.largestOutput">
+        </fp-field>
+        <fp-field :name="'executedIds'" :value="clientState.executedIds">
+        </fp-field>
+      </fp-object>
+    </frankenpaxos-map>
   `
 });
 

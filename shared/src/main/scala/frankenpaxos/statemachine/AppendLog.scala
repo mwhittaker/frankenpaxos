@@ -22,6 +22,7 @@ class AppendLog extends StateMachine {
   override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
     new ConflictIndex[Key, Array[Byte]] {
       private val xs = mutable.Map[Key, Array[Byte]]()
+      override def toString(): String = xs.toString()
       override def put(key: Key, command: Array[Byte]): Option[Array[Byte]] =
         xs.put(key, command)
       override def get(key: Key): Option[Array[Byte]] = xs.get(key)

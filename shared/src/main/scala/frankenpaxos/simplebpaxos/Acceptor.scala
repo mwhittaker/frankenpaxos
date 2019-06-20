@@ -38,6 +38,7 @@ object Acceptor {
 
   type Round = Int
 
+  @JSExportAll
   case class VoteValue(
       commandOrNoop: CommandOrNoop,
       dependencies: Set[VertexId]
@@ -53,6 +54,7 @@ object Acceptor {
               dependencies = voteValueProto.dependency.toSet)
   }
 
+  @JSExportAll
   case class State(
       round: Round,
       voteRound: Round,
@@ -142,7 +144,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     )
 
     // Ignore messages from previous rounds.
-    if (phase2a.round <= state.round) {
+    if (phase2a.round < state.round) {
       logger.info(
         s"An acceptor received a phase 2a message in ${phase2a.vertexId} for " +
           s"round ${phase2a.round} but is in round ${state.round}."
