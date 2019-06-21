@@ -6,11 +6,15 @@ import org.scalatest.FlatSpec
 
 class EPaxosTest extends FlatSpec {
   "An EPaxos instance" should "work correctly" in {
+    val runLength = 100
+    val numRuns = 500
+    info(s"runLength = $runLength, numRuns = $numRuns")
+
     for (f <- 1 to 3) {
       val sim = new SimulatedEPaxos(f)
 
       Simulator
-        .simulate(sim, runLength = 50, numRuns = 2000)
+        .simulate(sim, runLength = runLength, numRuns = numRuns)
         .flatMap(b => Simulator.minimize(sim, b.history)) match {
         case Some(BadHistory(history, throwable)) => {
           // https://stackoverflow.com/a/1149712/3187068

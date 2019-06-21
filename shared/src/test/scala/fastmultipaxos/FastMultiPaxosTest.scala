@@ -7,7 +7,7 @@ import org.scalatest.FlatSpec
 
 class FastMultiPaxosSpec extends FlatSpec {
   val runLength = 100
-  val numRuns = 250
+  val numRuns = 500
 
   def test(sim: SimulatedFastMultiPaxos): Unit = {
     Simulator
