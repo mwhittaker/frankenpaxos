@@ -132,4 +132,7 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
   // the Javascript visualizations.
   def edges: Set[(Key, Key)] =
     graph.edges.map(edge => (edge.head.toOuter, edge.tail.head.toOuter)).toSet
+
+  override def numNodes: Int = nodes.size
+  override def numEdges: Int = edges.size
 }

@@ -10,7 +10,10 @@ import frankenpaxos.clienttable.ClientTable
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
+import frankenpaxos.monitoring.Gauge
 import frankenpaxos.statemachine.StateMachine
 import scala.collection.mutable
 import scala.concurrent.Future
@@ -44,7 +47,63 @@ object LeaderOptions {
 
 @JSExportAll
 class LeaderMetrics(collectors: Collectors) {
-  // TODO(mwhittaker): Add metrics.
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_leader_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val executedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_leader_executed_commands_total")
+    .help("Total number of executed state machine commands.")
+    .register()
+
+  val executedNoopsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_leader_executed_noops_total")
+    .help("Total number of \"executed\" noops.")
+    .register()
+
+  val repeatedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_leader_repeated_commands_total")
+    .help("Total number of commands that were redundantly chosen.")
+    .register()
+
+  val committedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_leader_committed_commands_total")
+    .help(
+      "Total number of commands that were committed (with potential " +
+        "duplicates)."
+    )
+    .register()
+
+  val resendDependencyRequestsTotalTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_leader_resend_dependency_requests_total")
+    .help("Total number of times the leader resent DependencyRequest messages.")
+    .register()
+
+  val dependencyGraphNumVertices: Gauge = collectors.gauge
+    .build()
+    .name("simple_bpaxos_leader_dependency_graph_num_vertices")
+    .help("The number of vertices in the dependency graph.")
+    .register()
+
+  val dependencyGraphNumEdges: Gauge = collectors.gauge
+    .build()
+    .name("simple_bpaxos_leader_dependency_graph_num_edges")
+    .help("The number of edges in the dependency graph.")
+    .register()
+
+  val dependencies: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_leader_dependencies")
+    .help("The number of dependencies that a command has.")
+    .register()
 }
 
 @JSExportAll
@@ -196,6 +255,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       dependencies: Set[VertexId],
       informOthers: Boolean
   ): Unit = {
+    metrics.committedCommandsTotal.inc()
+
     // Update the leader state.
     states(vertexId) = Committed(commandOrNoop, dependencies)
 
@@ -227,6 +288,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // Execute commands.
     val executable: Seq[VertexId] =
       dependencyGraph.commit(vertexId, (), dependencies)
+    metrics.dependencyGraphNumVertices.set(dependencyGraph.numNodes)
+    metrics.dependencyGraphNumEdges.set(dependencyGraph.numEdges)
 
     for (v <- executable) {
       import CommandOrNoop.Value
@@ -244,7 +307,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               logger.fatal("Empty CommandOrNoop.")
 
             case Value.Noop(Noop()) =>
-            // Noop.
+              // Noop.
+              metrics.executedNoopsTotal.inc()
 
             case Value.Command(command: Command) =>
               val clientAddress = transport.addressSerializer.fromBytes(
@@ -253,11 +317,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               val clientIdentity = (clientAddress, command.clientPseudonym)
               clientTable.executed(clientIdentity, command.clientId) match {
                 case ClientTable.Executed(_) =>
-                // Don't execute the same command twice.
+                  // Don't execute the same command twice.
+                  metrics.repeatedCommandsTotal.inc()
 
                 case ClientTable.NotExecuted =>
                   val output = stateMachine.run(command.command.toByteArray)
                   clientTable.execute(clientIdentity, command.clientId, output)
+                  metrics.executedCommandsTotal.inc()
 
                   // The leader of the command instance returns the response to
                   // the client. If the leader is dead, then the client will
@@ -290,6 +356,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       s"resendDependencyRequests [${dependencyRequest.vertexId}]",
       options.resendDependencyRequestsTimerPeriod,
       () => {
+        metrics.resendDependencyRequestsTotalTotal.inc()
         for (depServiceNode <- depServiceNodes) {
           depServiceNode.send(
             DepServiceNodeInbound().withDependencyRequest(dependencyRequest)
@@ -360,6 +427,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       clientRequest: ClientRequest
   ): Unit = {
+    metrics.requestsTotal.labels("ClientRequest").inc()
+
     // If we already have a response to this request in the client table, we
     // simply return it.
     val clientIdentity = (src, clientRequest.command.clientPseudonym)
@@ -413,6 +482,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       dependencyReply: DependencyReply
   ): Unit = {
+    metrics.requestsTotal.labels("DependencyReply").inc()
+
     states.get(dependencyReply.vertexId) match {
       case None | Some(_: WaitingForConsensus[_]) | Some(_: Committed[_]) =>
         logger.warn(
@@ -435,6 +506,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           waitingForDeps.dependencyReplies.values.toSet
         val dependencies: Set[VertexId] =
           dependencyReplies.map(_.dependency.toSet).flatten
+        metrics.dependencies.observe(dependencies.size)
 
         // Stop the running timers.
         waitingForDeps.resendDependencyRequestsTimer.stop()
@@ -463,6 +535,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       c: Commit
   ): Unit = {
+    metrics.requestsTotal.labels("Commit").inc()
     commit(c.vertexId,
            c.commandOrNoop,
            c.dependency.toSet,

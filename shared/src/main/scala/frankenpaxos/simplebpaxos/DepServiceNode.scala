@@ -5,7 +5,9 @@ import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import frankenpaxos.statemachine.StateMachine
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
@@ -32,7 +34,18 @@ object DepServiceNodeOptions {
 
 @JSExportAll
 class DepServiceNodeMetrics(collectors: Collectors) {
-  // TODO(mwhittaker): Add metrics.
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_dep_service_node_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val dependencies: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_dep_service_node_dependencies")
+    .help("The number of dependencies that a command has.")
+    .register()
 }
 
 @JSExportAll
@@ -94,6 +107,8 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       dependencyRequest: DependencyRequest
   ): Unit = {
+    metrics.requestsTotal.labels("DependencyRequest").inc()
+
     val vertexId = dependencyRequest.vertexId
     val dependencies = dependenciesCache.get(vertexId) match {
       case Some(dependencies) => dependencies
@@ -103,6 +118,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
         conflictIndex.put(vertexId, command)
         val dependencies = conflictIndex.getConflicts(vertexId, command)
         dependenciesCache(vertexId) = dependencies
+        metrics.dependencies.observe(dependencies.size)
         dependencies
     }
 

@@ -142,4 +142,9 @@ abstract class DependencyGraph[Key, SequenceNumber](
       sequenceNumber: SequenceNumber,
       dependencies: Set[Key]
   ): Seq[Key]
+
+  // Returns the current number of vertices and edges in the graph. This is
+  // used mainly for monitoring.
+  def numNodes: Int
+  def numEdges: Int
 }

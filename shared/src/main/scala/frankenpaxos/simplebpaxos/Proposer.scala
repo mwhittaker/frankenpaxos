@@ -4,6 +4,7 @@ import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.roundsystem.RoundSystem
 import scala.collection.mutable
@@ -37,7 +38,36 @@ object ProposerOptions {
 
 @JSExportAll
 class ProposerMetrics(collectors: Collectors) {
-  // TODO(mwhittaker): Add metrics.
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_proposer_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val proposeTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_proposer_propose_total")
+    .help("Total number of proposed state machine commands.")
+    .register()
+
+  val chosenCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_proposer_chosen_commands_total")
+    .help("Total number of chosen state machine commands.")
+    .register()
+
+  val resendPhase1asTotalTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_proposer_resend_phase1a_total")
+    .help("Total number of times the leader resent Phase1a messages.")
+    .register()
+
+  val resendPhase2asTotalTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_proposer_resend_phase2a_total")
+    .help("Total number of times the leader resent Phase2a messages.")
+    .register()
 }
 
 @JSExportAll
@@ -178,6 +208,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       s"resendPhase1a [vertexId=${phase1a.vertexId}, round=${phase1a.round}]",
       options.resendPhase1asTimerPeriod,
       () => {
+        metrics.resendPhase1asTotalTotal.inc()
         acceptors.foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
         t.start()
       }
@@ -193,6 +224,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       s"resendPhase2a [vertexId=${phase2a.vertexId}, round=${phase2a.round}]",
       options.resendPhase2asTimerPeriod,
       () => {
+        metrics.resendPhase2asTotalTotal.inc()
         acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
         t.start()
       }
@@ -221,6 +253,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1b: Phase1b
   ): Unit = {
+    metrics.requestsTotal.labels("Phase1b").inc()
+
     states.get(phase1b.vertexId) match {
       case state @ (None | Some(_: Phase2[_]) | Some(_: Chosen[_])) =>
         logger.warn(
@@ -289,6 +323,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2b: Phase2b
   ): Unit = {
+    metrics.requestsTotal.labels("Phase2b").inc()
+
     states.get(phase2b.vertexId) match {
       case state @ (None | Some(_: Phase1[_]) | Some(_: Chosen[_])) =>
         logger.warn(
@@ -324,11 +360,12 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  // TODO(mwhittaker): Add a random timer to avoid dueling proposers.
   private def handleNack(
       src: Transport#Address,
       nack: Nack
   ): Unit = {
-    // TODO(mwhittaker): Add a random timer to avoid dueling proposers.
+    metrics.requestsTotal.labels("Nack").inc()
 
     val round =
       roundSystem(nack.vertexId).nextClassicRound(index, nack.higherRound)
@@ -403,6 +440,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       commandOrNoop: CommandOrNoop,
       dependencies: Set[VertexId]
   ): Future[Acceptor.VoteValue] = {
+    metrics.proposeTotal.inc()
     val promise = Promise[Acceptor.VoteValue]()
     proposeImpl(vertexId, commandOrNoop, dependencies, promise)
     promise.future
