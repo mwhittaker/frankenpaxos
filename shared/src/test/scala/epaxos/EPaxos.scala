@@ -7,7 +7,11 @@ import frankenpaxos.simulator.FakeLogger
 import frankenpaxos.simulator.FakeTransport
 import frankenpaxos.simulator.FakeTransportAddress
 import frankenpaxos.simulator.SimulatedSystem
+import frankenpaxos.statemachine.GetRequest
 import frankenpaxos.statemachine.KeyValueStore
+import frankenpaxos.statemachine.KeyValueStoreInput
+import frankenpaxos.statemachine.SetKeyValuePair
+import frankenpaxos.statemachine.SetRequest
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -102,15 +106,8 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   }
 
   override def generateCommand(epaxos: System): Option[Command] = {
-    def get(key: String): KeyValueStoreInput =
-      KeyValueStoreInput().withGetRequest(GetRequest(key = Seq(key)))
-
-    def set(key: String, value: String): KeyValueStoreInput =
-      KeyValueStoreInput()
-        .withSetRequest(SetRequest(keyValue = Seq(SetKeyValuePair(key, value))))
-
     val keys = Seq("a", "b", "c", "d")
-    val requests = keys.map(get(_)) ++ keys.map(set(_, "foo"))
+    val keyValues = keys.map((_, "value"))
 
     val subgens = mutable.Buffer[(Int, Gen[Command])](
       // Propose.
@@ -118,7 +115,8 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
         for {
           clientId <- Gen.choose(0, epaxos.numClients - 1)
           clientPseudonym <- Gen.choose(0, 2)
-          request <- Gen.oneOf(requests)
+          request <- Gen.oneOf(KeyValueStore.getOneOf(keys),
+                               KeyValueStore.setOneOf(keyValues))
         } yield Propose(clientId, clientPseudonym, request)
       }
     )

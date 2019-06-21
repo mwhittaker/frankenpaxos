@@ -1,0 +1,35 @@
+package frankenpaxos.simplebpaxos
+
+import frankenpaxos.simulator.BadHistory
+import frankenpaxos.simulator.Simulator
+import org.scalatest.FlatSpec
+
+class SimpleBPaxosTest extends FlatSpec {
+  "A SimpleBPaxos instance" should "work correctly" in {
+    for (f <- 1 to 3) {
+      val sim = new SimulatedSimpleBPaxos(f)
+
+      Simulator
+        .simulate(sim, runLength = 50, numRuns = 2000)
+        .flatMap(b => Simulator.minimize(sim, b.history)) match {
+        case Some(BadHistory(history, throwable)) => {
+          // https://stackoverflow.com/a/1149712/3187068
+          val sw = new java.io.StringWriter()
+          val pw = new java.io.PrintWriter(sw)
+          throwable.printStackTrace(pw)
+
+          val formatted_history = history.map(_.toString).mkString("\n")
+          fail(s"$sw\n${sim.historyToString(history)}")
+        }
+        case None => {}
+      }
+
+      val suffix = s"f=$f"
+      if (sim.valueChosen) {
+        info(s"Value chosen ($suffix)")
+      } else {
+        info(s"No value chosen ($suffix)")
+      }
+    }
+  }
+}

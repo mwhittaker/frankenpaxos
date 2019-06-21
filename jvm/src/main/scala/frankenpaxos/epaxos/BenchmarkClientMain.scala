@@ -11,6 +11,10 @@ import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.statemachine.GetRequest
+import frankenpaxos.statemachine.KeyValueStoreInput
+import frankenpaxos.statemachine.SetKeyValuePair
+import frankenpaxos.statemachine.SetRequest
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress

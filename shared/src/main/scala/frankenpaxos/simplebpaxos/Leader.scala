@@ -71,7 +71,7 @@ object Leader {
       future: Future[Acceptor.VoteValue]
   ) extends State[Transport]
 
-// TODO(mwhittaker): Decide whether we need a Committed entry.
+  // TODO(mwhittaker): Decide whether we need a Committed entry.
   @JSExportAll
   case class Committed[Transport <: frankenpaxos.Transport[Transport]](
       commandOrNoop: CommandOrNoop,
@@ -334,8 +334,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           dependencies = deps,
           future = future
         )
-
-        t.start()
       }
     )
     t.start()
@@ -440,6 +438,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Stop the running timers.
         waitingForDeps.resendDependencyRequestsTimer.stop()
+        recoverVertexTimers.get(dependencyReply.vertexId).foreach(_.stop())
+        recoverVertexTimers -= dependencyReply.vertexId
 
         // Propose our command and dependencies to the consensus service.
         val commandOrNoop = CommandOrNoop().withCommand(waitingForDeps.command)

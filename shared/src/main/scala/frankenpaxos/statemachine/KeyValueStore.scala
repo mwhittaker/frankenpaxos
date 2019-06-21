@@ -1,6 +1,7 @@
 package frankenpaxos.statemachine
 
 import collection.mutable
+import org.scalacheck.Gen
 import scala.scalajs.js.annotation._
 
 object KeyValueStoreInputSerializer
@@ -8,6 +9,27 @@ object KeyValueStoreInputSerializer
 
 object KeyValueStoreOutputSerializer
     extends frankenpaxos.ProtoSerializer[KeyValueStoreOutput]
+
+@JSExportAll
+object KeyValueStore {
+  def getOneOf(keys: Seq[String]): Gen[KeyValueStoreInput] = {
+    for {
+      key <- Gen.oneOf(keys)
+    } yield {
+      KeyValueStoreInput().withGetRequest(GetRequest(key = Seq(key)))
+    }
+  }
+
+  def setOneOf(keyValues: Seq[(String, String)]): Gen[KeyValueStoreInput] = {
+    for {
+      (key, value) <- Gen.oneOf(keyValues)
+    } yield {
+      KeyValueStoreInput().withSetRequest(
+        SetRequest(keyValue = Seq(SetKeyValuePair(key, value)))
+      )
+    }
+  }
+}
 
 @JSExportAll
 class KeyValueStore
