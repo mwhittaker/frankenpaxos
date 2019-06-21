@@ -1,4 +1,0 @@
-f: 1
-replicaAddress { host: "localhost" port: 9003}
-replicaAddress { host: "localhost" port: 9004}
-replicaAddress { host: "localhost" port: 9005}

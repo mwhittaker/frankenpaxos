@@ -1,5 +1,6 @@
 package frankenpaxos
 
+import com.github.tototoshi.csv.CSVWriter
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Try
@@ -40,6 +41,12 @@ object BenchmarkUtil {
 
   // timed(f) augments f to return timing information about how long it took f
   // to become determined.
+  case class Timing(
+      startTime: java.time.Instant,
+      stopTime: java.time.Instant,
+      durationNanos: Long
+  )
+
   def timed[T](
       f: () => Future[T]
   )(implicit execution: ExecutionContext): Future[(T, Timing)] = {
@@ -57,9 +64,28 @@ object BenchmarkUtil {
     })
   }
 
-  case class Timing(
-      startTime: java.time.Instant,
-      stopTime: java.time.Instant,
-      durationNanos: Long
-  )
+  // Benchmark clients repeatedly issue requests to a service and record the
+  // latency of each request. Aggregating these latency measurements, we can
+  // compute statistics like average latency. Computing the rate of the
+  // requests, we can compute statistics like average throughput.
+  class Recorder(filename: String) {
+    val writer = CSVWriter.open(new java.io.File(filename))
+    writer.writeRow(Seq("start", "stop", "latency_nanos", "host", "port"))
+
+    def record(
+        start: java.time.Instant,
+        stop: java.time.Instant,
+        latencyNanos: Long,
+        host: String,
+        port: Int
+    ): Unit = {
+      writer.writeRow(
+        Seq(start.toString(),
+            stop.toString(),
+            latencyNanos.toString(),
+            host,
+            port)
+      )
+    }
+  }
 }
