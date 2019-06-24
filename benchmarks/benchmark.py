@@ -1,5 +1,25 @@
-from typing import Any, Dict, IO, List, Optional, Union
+# This file contains utilities for running benchmarks and collections of
+# benchmarks (called benchmark suites).
+#
+# We view a benchmark as a function `f(input) -> output` that takes in some
+# inputs and spits out some ouputs. For example, a prime factorization
+# benchmark might take in a number `x` and output the time it takes to prime
+# factorize `x`.
+#
+# A benchmark suite is a collection of inputs that are all passed to the same
+# benchmark. For example, we might have one benchmark suite that passes small
+# prime numbers to the prime factorization benchmark, and we might have another
+# suite that passes large prime numbers to the prime factorization benchmark.
+#
+# This file contains utilities for running and organizing benchmarks suites.
+
+from . import util
+from typing import (Any, Collection, Dict, Generic, IO, List, Optional, TypeVar,
+                    Union)
+import colorful
 import contextlib
+import csv
+import datetime
 import datetime
 import json
 import os
@@ -8,51 +28,10 @@ import string
 import subprocess
 
 
-def _random_string(n: int) -> str:
-    return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
-
-
-def _now_string() -> str:
-    return str(datetime.datetime.now()).replace(' ', '_')
-
-
-def _pretty_now_string() -> str:
-    return datetime.datetime.now().strftime('%A %B %d, %H:%M:%S.%f')
-
-
-class _Reaped(object):
-    """
-    Imagine you have the following python code in a file called sleep.py. The
-    code creates a subprocess and waits for it to terminate.
-
-      p = subprocess.Popen(['sleep', '100'])
-      p.wait()
-
-    If you run `python sleep.py` and then kill the process before it terminates,
-    sometimes the subprocess lives on. The _Reaped context manager ensures that
-    the process is killed, even if an exception is thrown. Moreover, the return
-    code of the process is written to a file.
-    """
-    def __init__(self, p: subprocess.Popen, returncode_file: str) -> None:
-        self.p = p
-        self.returncode_file = returncode_file
-
-    def __enter__(self) -> subprocess.Popen:
-        return self.p
-
-    def __exit__(self, cls, exn, traceback) -> None:
-        self.p.terminate()
-
-        # Terminate the process and wait 1 second for its return code.
-        returncode: Optional[int] = None
-        try:
-            returncode = self.p.wait(1)
-        except subprocess.TimeoutExpired:
-            pass
-        with open(self.returncode_file, 'w') as f:
-            f.write(str(returncode) + '\n')
-
-
+# A SuiteDirectory is a directory in which you can run a suite. It has
+# convenient methods to record information within the directory (e.g., the
+# start time, the set of inputs). It also contains methods to create
+# subdirectories for each benchmark in the suite.
 class SuiteDirectory(object):
     def __init__(self, path: str, name: str = None) -> None:
         assert os.path.exists(path)
@@ -74,7 +53,7 @@ class SuiteDirectory(object):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.write_string('end_time.txt', str(datetime.datetime.now()))
+        self.write_string('stop_time.txt', str(datetime.datetime.now()))
 
     def abspath(self, filename: str) -> str:
         return os.path.join(self.path, filename)
@@ -100,6 +79,10 @@ class SuiteDirectory(object):
         return BenchmarkDirectory(path)
 
 
+# A BenchmarkDirectory is like a SuiteDirectory. It provides methods to record
+# information about a benchmark as well as other helpful methods. For example,
+# the popen method allows you to run an executable and record its standard out,
+# standard error, and return code within a benchmark directory.
 class BenchmarkDirectory(object):
     def __init__(self, path: str) -> None:
         assert not os.path.exists(path)
@@ -128,7 +111,7 @@ class BenchmarkDirectory(object):
     def __exit__(self, cls, exn, trace):
         self.process_stack.__exit__(cls, exn, trace)
         self.write_dict('pids.json', self.pids)
-        self.write_string('end_time.txt', str(datetime.datetime.now()))
+        self.write_string('stop_time.txt', str(datetime.datetime.now()))
 
     def abspath(self, filename: str) -> str:
         return os.path.join(self.path, filename)
@@ -201,6 +184,138 @@ class BenchmarkDirectory(object):
         returncode_file = self.abspath(f'{label}_returncode.txt')
         self.process_stack.enter_context(_Reaped(proc, returncode_file))
         return proc
+
+
+# A Suite represents a benchmark suite. A suite is parameterized on an input
+# type Input and output type Output. A suite must provide
+#
+#  - a set of global suite arguments using the method `args`,
+#  - a list of benchmark inputs using the method `inputs`,
+#  - a `summary` function to summarize a benchmark results for printing, and
+#  - a `run_benchmark` function to run a benchmark.
+Input = TypeVar('Input')
+Output = TypeVar('Output')
+class Suite(Generic[Input, Output]):
+    def args(self) -> Dict[Any, Any]:
+        raise NotImplementedError("")
+
+    def inputs(self) -> Collection[Input]:
+        raise NotImplementedError("")
+
+    def summary(self, input: Input, output: Output) -> str:
+        raise NotImplementedError("")
+
+    def run_benchmark(self,
+                      bench: BenchmarkDirectory,
+                      args: Dict[Any, Any],
+                      input: Input) -> Output:
+        raise NotImplementedError("")
+
+    def run_suite(self, suite_dir: SuiteDirectory) -> None:
+        print(f'Running suite in {suite_dir.path}.')
+
+        # Sanity check args and inputs.
+        args = self.args()
+        inputs = self.inputs()
+        assert len(inputs) > 0, inputs
+
+        # Record args and inputs.
+        suite_dir.write_dict('args.json', args)
+        suite_dir.write_string('inputs.txt', '\n'.join(str(i) for i in inputs))
+
+        # Create file to record suite results.
+        results_file = suite_dir.create_file('results.csv')
+        results_writer = csv.writer(results_file)
+
+        suite_start_time = datetime.datetime.now()
+        for (i, input) in enumerate(inputs, 1):
+            bench_start_time = datetime.datetime.now()
+            with suite_dir.benchmark_directory() as bench:
+                # Run the benchmark.
+                bench.write_string('input.txt', str(input))
+                bench.write_dict('input.json', util.tuple_to_dict(input))
+                output = self.run_benchmark(bench, args, input)
+
+                # Write the header if needed.
+                if i == 1:
+                    results_writer.writerow(util.flatten_tuple_fields(input) +
+                                            util.flatten_tuple_fields(output))
+
+                # Write the results.
+                row = util.flatten_tuple(input) + util.flatten_tuple(output)
+                results_writer.writerow([str(x) for x in row])
+                results_file.flush()
+
+            # Display some information about the benchmark.
+            colorful.use_style('monokai')
+
+            #First, we show the progress of the suite.
+            n = len(inputs)
+            percent = (i / n) * 100
+            info = f'{colorful.bold}[{i:03}/{n:03}{colorful.reset}; '
+            info += f'{percent:#.4}%] '
+
+            # Next, we show the time taken to run this benchmark, the total
+            # elapsed time, and the estimated time left.
+            current_time = datetime.datetime.now()
+            bench_duration = current_time - bench_start_time
+            suite_duration = current_time - suite_start_time
+            duration_per_iteration = suite_duration / i
+            remaining_duration = (n - i) * duration_per_iteration
+            def round_timedelta(d):
+                return datetime.timedelta(seconds=int(d.total_seconds()))
+            info += f'{colorful.blue(round_timedelta(bench_duration))} / '
+            info += f'{colorful.green(round_timedelta(suite_duration))} + '
+            info += f'{colorful.magenta(round_timedelta(remaining_duration))}? '
+
+            # Finally, we display a summary of the benchmark.
+            info += f'{colorful.lightGray(self.summary(input, output))}'
+            print(info)
+
+
+def _random_string(n: int) -> str:
+    return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
+
+
+def _now_string() -> str:
+    return str(datetime.datetime.now()).replace(' ', '_')
+
+
+def _pretty_now_string() -> str:
+    return datetime.datetime.now().strftime('%A %B %d, %H:%M:%S.%f')
+
+
+class _Reaped(object):
+    """
+    Imagine you have the following python code in a file called sleep.py. The
+    code creates a subprocess and waits for it to terminate.
+
+      p = subprocess.Popen(['sleep', '100'])
+      p.wait()
+
+    If you run `python sleep.py` and then kill the process before it terminates,
+    sometimes the subprocess lives on. The _Reaped context manager ensures that
+    the process is killed, even if an exception is thrown. Moreover, the return
+    code of the process is written to a file.
+    """
+    def __init__(self, p: subprocess.Popen, returncode_file: str) -> None:
+        self.p = p
+        self.returncode_file = returncode_file
+
+    def __enter__(self) -> subprocess.Popen:
+        return self.p
+
+    def __exit__(self, cls, exn, traceback) -> None:
+        self.p.terminate()
+
+        # Terminate the process and wait 1 second for its return code.
+        returncode: Optional[int] = None
+        try:
+            returncode = self.p.wait(1)
+        except subprocess.TimeoutExpired:
+            pass
+        with open(self.returncode_file, 'w') as f:
+            f.write(str(returncode) + '\n')
 
 
 class _ProfiledPopen(object):

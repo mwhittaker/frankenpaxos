@@ -23,7 +23,7 @@ def flatten_tuple_fields(t: Any, prefixes = None) -> List[str]:
     return _flatten_tuple_fields(t, [])
 
 
-def flatten_tuple(t: Tuple) -> List[Any]:
+def flatten_tuple(t: Any) -> List[Any]:
     """
     flatten_tuple recursively flattens a nested tuple.
 
