@@ -49,5 +49,5 @@ def main(args) -> None:
 
 
 if __name__ == '__main__':
-    parser = parser_util.get_plot_parser('epaxos_num_keys.pdf')
+    parser = parser_util.get_plot_parser('simplebpaxos_num_keys.pdf')
     main(parser.parse_args())

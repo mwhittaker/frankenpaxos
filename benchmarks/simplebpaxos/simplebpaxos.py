@@ -410,8 +410,7 @@ def _main(args) -> None:
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'num_client_procs': input.num_client_procs,
-                'output.throughput_1s.p90':
-                    f'{output.throughput_1s.p90}'
+                'output.throughput_1s.p90': f'{output.throughput_1s.p90}',
             })
 
     suite = ExampleSimpleBPaxosSuite()

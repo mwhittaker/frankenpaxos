@@ -81,10 +81,16 @@ class LeaderMetrics(collectors: Collectors) {
     )
     .register()
 
-  val resendDependencyRequestsTotalTotal: Counter = collectors.counter
+  val resendDependencyRequestsTotal: Counter = collectors.counter
     .build()
     .name("simple_bpaxos_leader_resend_dependency_requests_total")
     .help("Total number of times the leader resent DependencyRequest messages.")
+    .register()
+
+  val recoverVertexTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_leader_recover_vertex_total")
+    .help("Total number of times the leader recovered an instance.")
     .register()
 
   val dependencyGraphNumVertices: Gauge = collectors.gauge
@@ -356,7 +362,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       s"resendDependencyRequests [${dependencyRequest.vertexId}]",
       options.resendDependencyRequestsTimerPeriod,
       () => {
-        metrics.resendDependencyRequestsTotalTotal.inc()
+        metrics.resendDependencyRequestsTotal.inc()
         for (depServiceNode <- depServiceNodes) {
           depServiceNode.send(
             DepServiceNodeInbound().withDependencyRequest(dependencyRequest)
@@ -375,6 +381,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       Util.randomDuration(options.recoverVertexTimerMinPeriod,
                           options.recoverVertexTimerMaxPeriod),
       () => {
+        metrics.recoverVertexTotal.inc()
+
         // Sanity check and stop timers.
         states.get(vertexId) match {
           case None =>

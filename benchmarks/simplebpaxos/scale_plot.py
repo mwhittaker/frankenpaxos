@@ -17,19 +17,18 @@ def wrapped(s: str, width: int = 60) -> str:
 
 def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
     for (f, group) in df.groupby(['f']):
-        stats = group.groupby(['client_num_keys'])[column].agg([np.mean,np.std])
+        stats = group.groupby(['num_clients'])[column].agg([np.mean, np.std])
         mean = stats['mean']
         std = stats['std'].fillna(0)
 
-        line = ax.semilogx(mean, '.-', label=f'f={f}')[0]
+        line = ax.plot(mean, '.-', label=f'f={f}')[0]
         color = line.get_color()
         ax.fill_between(stats.index, mean - std, mean + std,
                         color=color, alpha=0.25)
 
-    ax.set_title(wrapped(f'{pretty_column} vs number of keys', 100))
-    ax.set_xlabel('Number of keys')
+    ax.set_title(wrapped(f'{pretty_column} vs number of clients', 100))
+    ax.set_xlabel('Number of clients')
     ax.set_ylabel(pretty_column)
-    ax.legend()
     ax.grid()
 
 
@@ -39,7 +38,6 @@ def main(args) -> None:
 
     num_plots = 2
     fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8))
-
     plot(df, ax[0], 'latency.median_ms', 'Median latency (ms)')
     plot(df, ax[1], 'throughput_1s.p90', 'P90 throughput (1 second windows)')
 
@@ -49,5 +47,5 @@ def main(args) -> None:
 
 
 if __name__ == '__main__':
-    parser = parser_util.get_plot_parser('epaxos_num_keys.pdf')
+    parser = parser_util.get_plot_parser('simplebpaxos_scale.pdf')
     main(parser.parse_args())
