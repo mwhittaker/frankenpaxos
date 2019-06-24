@@ -109,13 +109,16 @@ object BenchmarkClientMain extends App {
   // Helper function to generate command.
   val keys = for (i <- 0 until flags.numKeys) yield i.toString()
   val keyValues = keys.map((_, "unimportant_value"))
-  val seed = Seed.random()
+  var seed = Seed.random()
   val gen = Gen.oneOf(
     KeyValueStore.getOneOf(keys),
     KeyValueStore.setOneOf(keyValues)
   )
-  def randomProposal(): KeyValueStoreInput =
-    gen.apply(Gen.Parameters.default, seed).get
+  def randomProposal(): KeyValueStoreInput = {
+    val proposal = gen.apply(Gen.Parameters.default, seed).get
+    seed = seed.next
+    proposal
+  }
 
   // Run clients.
   val recorder =

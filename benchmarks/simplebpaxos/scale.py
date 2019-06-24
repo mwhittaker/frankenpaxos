@@ -32,11 +32,12 @@ def _main(args) -> None:
                 )
                 for f in [1, 2]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1), (1, 10), (2, 10), (3, 10), (4, 10)]
+                    [(1, 1)] + [(i, 15) for i in range(1, 8)]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
+                'f': input.f,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'output.throughput_1s.p90': f'{output.throughput_1s.p90:.6}'

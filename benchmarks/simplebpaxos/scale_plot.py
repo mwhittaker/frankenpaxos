@@ -29,6 +29,7 @@ def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
     ax.set_title(wrapped(f'{pretty_column} vs number of clients', 100))
     ax.set_xlabel('Number of clients')
     ax.set_ylabel(pretty_column)
+    ax.legend()
     ax.grid()
 
 

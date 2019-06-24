@@ -115,8 +115,8 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
 
       case None =>
         val command = dependencyRequest.command.command.toByteArray
-        conflictIndex.put(vertexId, command)
         val dependencies = conflictIndex.getConflicts(vertexId, command)
+        conflictIndex.put(vertexId, command)
         dependenciesCache(vertexId) = dependencies
         metrics.dependencies.observe(dependencies.size)
         dependencies
