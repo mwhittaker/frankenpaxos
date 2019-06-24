@@ -12,12 +12,15 @@ import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.statemachine.GetRequest
+import frankenpaxos.statemachine.KeyValueStore
 import frankenpaxos.statemachine.KeyValueStoreInput
 import frankenpaxos.statemachine.SetKeyValuePair
 import frankenpaxos.statemachine.SetRequest
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import org.scalacheck.Gen
+import org.scalacheck.rng.Seed
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration._
@@ -105,18 +108,17 @@ object BenchmarkClientMain extends App {
   )
 
   // Helper function to generate command.
+  val keys = for (i <- 0 until flags.numKeys) yield i.toString()
+  val keyValues = keys.map((_, "unimportant_value"))
+  var seed = Seed.random()
+  val gen = Gen.oneOf(
+    KeyValueStore.getOneOf(keys),
+    KeyValueStore.setOneOf(keyValues)
+  )
   def randomProposal(): KeyValueStoreInput = {
-    val key = Random.nextInt(flags.numKeys).toString()
-    val isGet = Random.nextBoolean()
-    if (isGet) {
-      KeyValueStoreInput().withGetRequest(GetRequest(key = Seq(key)))
-    } else {
-      KeyValueStoreInput().withSetRequest(
-        SetRequest(
-          keyValue = Seq(SetKeyValuePair(key = key, value = "doesnt_matter"))
-        )
-      )
-    }
+    val proposal = gen.apply(Gen.Parameters.default, seed).get
+    seed = seed.next
+    proposal
   }
 
   // Run clients.
