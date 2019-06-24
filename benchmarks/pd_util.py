@@ -1,9 +1,9 @@
-from typing import List
+from typing import Iterable, List
 import numpy as np
 import pandas as pd
 
 
-def read_csvs(filenames: List[str], **kwargs) -> pd.DataFrame:
+def read_csvs(filenames: Iterable[str], **kwargs) -> pd.DataFrame:
     """
     pd.read_csv reads in a _single_ CSV file and converts it to a dataframe.
     read_csvs reads in a _set_ of CSVs, concatenates them together, and

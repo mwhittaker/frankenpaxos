@@ -13,9 +13,10 @@
 #
 # This file contains utilities for running and organizing benchmarks suites.
 
+from . import pd_util
 from . import util
-from typing import (Any, Collection, Dict, Generic, IO, List, Optional, TypeVar,
-                    Union)
+from typing import (Any, Collection, Dict, Generic, Iterable, IO, List,
+                    NamedTuple, Optional, TypeVar, Union)
 import colorful
 import contextlib
 import csv
@@ -271,6 +272,99 @@ class Suite(Generic[Input, Output]):
             # Finally, we display a summary of the benchmark.
             info += f'{colorful.lightGray(self.summary(input, output))}'
             print(info)
+
+
+class LatencyOutput(NamedTuple):
+    mean_ms: float
+    median_ms: float
+    min_ms: float
+    max_ms: float
+    p90_ms: float
+    p95_ms: float
+    p99_ms: float
+
+class ThroughputOutput(NamedTuple):
+    mean: float
+    median: float
+    min: float
+    max: float
+    p90: float
+    p95: float
+    p99: float
+
+class RecorderOutput(NamedTuple):
+    latency: LatencyOutput
+    throughput_1s: ThroughputOutput
+    throughput_2s: ThroughputOutput
+    throughput_5s: ThroughputOutput
+
+# parse_recorder_data parses and summarizes data written by a
+# frankenpaxos.BenchmarkUtil.Recorder.
+#
+# TODO(mwhittaker): Drop the first couple of seconds from the data since it
+# takes a while for the JVM to fully ramp up.
+def parse_recorder_data(bench: BenchmarkDirectory,
+                        filenames: Iterable[str]) -> RecorderOutput:
+    df = pd_util.read_csvs(filenames, parse_dates=['start', 'stop'])
+    bench.log('Aggregate recorder data read.')
+    df = df.set_index('start')
+    bench.log('Aggregate recorder data index set.')
+    df = df.sort_index(0)
+    bench.log('Aggregate recorder data index sorted.')
+    df.to_csv(bench.abspath('data.csv'))
+    bench.log('Aggregate recorder data written.')
+
+    # Since we concatenate and save the file, we can throw away the originals.
+    for filename in filenames:
+        os.remove(filename)
+    bench.log('Individual recorder data removed.')
+
+    # We also compress the output data since it can get big.
+    subprocess.call(['gzip', bench.abspath('data.csv')])
+    bench.log('Aggregate recorder data compressed.')
+
+    latency_ms = df['latency_nanos'] / 1e6
+    throughput_1s = pd_util.throughput(df, 1000)
+    throughput_2s = pd_util.throughput(df, 2000)
+    throughput_5s = pd_util.throughput(df, 5000)
+    return RecorderOutput(
+        latency = LatencyOutput(
+            mean_ms = latency_ms.mean(),
+            median_ms = latency_ms.median(),
+            min_ms = latency_ms.min(),
+            max_ms = latency_ms.max(),
+            p90_ms = latency_ms.quantile(.90),
+            p95_ms = latency_ms.quantile(.95),
+            p99_ms = latency_ms.quantile(.99),
+        ),
+        throughput_1s = ThroughputOutput(
+            mean = throughput_1s.mean(),
+            median = throughput_1s.median(),
+            min = throughput_1s.min(),
+            max = throughput_1s.max(),
+            p90 = throughput_1s.quantile(.90),
+            p95 = throughput_1s.quantile(.95),
+            p99 = throughput_1s.quantile(.99),
+        ),
+        throughput_2s = ThroughputOutput(
+            mean = throughput_2s.mean(),
+            median = throughput_2s.median(),
+            min = throughput_2s.min(),
+            max = throughput_2s.max(),
+            p90 = throughput_2s.quantile(.90),
+            p95 = throughput_2s.quantile(.95),
+            p99 = throughput_2s.quantile(.99),
+        ),
+        throughput_5s = ThroughputOutput(
+            mean = throughput_5s.mean(),
+            median = throughput_5s.median(),
+            min = throughput_5s.min(),
+            max = throughput_5s.max(),
+            p90 = throughput_5s.quantile(.90),
+            p95 = throughput_5s.quantile(.95),
+            p99 = throughput_5s.quantile(.99),
+        ),
+    )
 
 
 def _random_string(n: int) -> str:

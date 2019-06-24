@@ -92,30 +92,7 @@ class Input(NamedTuple):
     client_num_keys: int
 
 
-class Output(NamedTuple):
-    mean_latency_ms: float
-    median_latency_ms: float
-    p90_latency_ms: float
-    p95_latency_ms: float
-    p99_latency_ms: float
-
-    mean_1_second_throughput: float
-    median_1_second_throughput: float
-    p90_1_second_throughput: float
-    p95_1_second_throughput: float
-    p99_1_second_throughput: float
-
-    mean_2_second_throughput: float
-    median_2_second_throughput: float
-    p90_2_second_throughput: float
-    p95_2_second_throughput: float
-    p99_2_second_throughput: float
-
-    mean_5_second_throughput: float
-    median_5_second_throughput: float
-    p90_5_second_throughput: float
-    p95_5_second_throughput: float
-    p99_5_second_throughput: float
+Output = benchmark.RecorderOutput
 
 
 class SimpleBPaxosNet(object):
@@ -384,56 +361,10 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             proc.terminate()
         bench.log('Clients finished and processes terminated.')
 
-        # Client i writes results to `client_i_data.csv`. We concatenate these
-        # results into a single CSV file.
+        # Client i writes results to `client_i_data.csv`.
         client_csvs = [bench.abspath(f'client_{i}_data.csv')
                        for i in range(input.num_client_procs)]
-        df = pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
-        bench.log('Data read.')
-        df = df.set_index('start')
-        bench.log('Data index set.')
-        df = df.sort_index(0)
-        bench.log('Data index sorted.')
-        df.to_csv(bench.abspath('data.csv'))
-        bench.log('Data written.')
-
-        # Since we concatenate and save the file, we can throw away the originals.
-        for client_csv in client_csvs:
-            os.remove(client_csv)
-
-        # We also compress the output data since it can get big.
-        subprocess.call(['gzip', bench.abspath('data.csv')])
-        bench.log('Data compressed.')
-
-        latency_ms = df['latency_nanos'] / 1e6
-        throughput_1s = pd_util.throughput(df, 1000)
-        throughput_2s = pd_util.throughput(df, 2000)
-        throughput_5s = pd_util.throughput(df, 5000)
-        return Output(
-            mean_latency_ms = latency_ms.mean(),
-            median_latency_ms = latency_ms.median(),
-            p90_latency_ms = latency_ms.quantile(.90),
-            p95_latency_ms = latency_ms.quantile(.95),
-            p99_latency_ms = latency_ms.quantile(.99),
-
-            mean_1_second_throughput = throughput_1s.mean(),
-            median_1_second_throughput = throughput_1s.median(),
-            p90_1_second_throughput = throughput_1s.quantile(.90),
-            p95_1_second_throughput = throughput_1s.quantile(.95),
-            p99_1_second_throughput = throughput_1s.quantile(.99),
-
-            mean_2_second_throughput = throughput_2s.mean(),
-            median_2_second_throughput = throughput_2s.median(),
-            p90_2_second_throughput = throughput_2s.quantile(.90),
-            p95_2_second_throughput = throughput_2s.quantile(.95),
-            p99_2_second_throughput = throughput_2s.quantile(.99),
-
-            mean_5_second_throughput = throughput_5s.mean(),
-            median_5_second_throughput = throughput_5s.median(),
-            p90_5_second_throughput = throughput_5s.quantile(.90),
-            p95_5_second_throughput = throughput_5s.quantile(.95),
-            p99_5_second_throughput = throughput_5s.quantile(.99),
-        )
+        return benchmark.parse_recorder_data(bench, client_csvs)
 
     def run_benchmark(self,
                       bench: benchmark.BenchmarkDirectory,
@@ -479,8 +410,8 @@ def _main(args) -> None:
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'num_client_procs': input.num_client_procs,
-                'p90_1_second_throughput':
-                    f'{output.p90_1_second_throughput:.6}'
+                'output.throughput_1s.p90':
+                    f'{output.throughput_1s.p90}'
             })
 
     suite = ExampleSimpleBPaxosSuite()
