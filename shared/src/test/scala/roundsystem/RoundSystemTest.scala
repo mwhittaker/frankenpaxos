@@ -231,14 +231,14 @@ class RoundSystemSpec extends FlatSpec with Matchers {
   it should "implement leader correctly" in {
     val rs = new RoundSystem.RoundZeroFast(3)
     rs.leader(0) shouldBe 0
-    rs.leader(1) shouldBe 1
-    rs.leader(2) shouldBe 2
-    rs.leader(3) shouldBe 0
-    rs.leader(4) shouldBe 1
-    rs.leader(5) shouldBe 2
-    rs.leader(6) shouldBe 0
-    rs.leader(7) shouldBe 1
-    rs.leader(8) shouldBe 2
+    rs.leader(1) shouldBe 0
+    rs.leader(2) shouldBe 1
+    rs.leader(3) shouldBe 2
+    rs.leader(4) shouldBe 0
+    rs.leader(5) shouldBe 1
+    rs.leader(6) shouldBe 2
+    rs.leader(7) shouldBe 0
+    rs.leader(8) shouldBe 1
   }
 
   it should "implement roundType correctly" in {
@@ -252,32 +252,32 @@ class RoundSystemSpec extends FlatSpec with Matchers {
   it should "implement nextClassicRound correctly" in {
     val rs = new RoundSystem.RoundZeroFast(3)
 
-    rs.nextClassicRound(leaderIndex = 0, round = -1) shouldBe 3
-    rs.nextClassicRound(leaderIndex = 0, round = 0) shouldBe 3
-    rs.nextClassicRound(leaderIndex = 0, round = 1) shouldBe 3
-    rs.nextClassicRound(leaderIndex = 0, round = 2) shouldBe 3
-    rs.nextClassicRound(leaderIndex = 0, round = 3) shouldBe 6
-    rs.nextClassicRound(leaderIndex = 0, round = 4) shouldBe 6
-    rs.nextClassicRound(leaderIndex = 0, round = 5) shouldBe 6
-    rs.nextClassicRound(leaderIndex = 0, round = 6) shouldBe 9
+    rs.nextClassicRound(leaderIndex = 0, round = -1) shouldBe 1
+    rs.nextClassicRound(leaderIndex = 0, round = 0) shouldBe 1
+    rs.nextClassicRound(leaderIndex = 0, round = 1) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 0, round = 2) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 0, round = 3) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 0, round = 4) shouldBe 7
+    rs.nextClassicRound(leaderIndex = 0, round = 5) shouldBe 7
+    rs.nextClassicRound(leaderIndex = 0, round = 6) shouldBe 7
 
-    rs.nextClassicRound(leaderIndex = 1, round = -1) shouldBe 1
-    rs.nextClassicRound(leaderIndex = 1, round = 0) shouldBe 1
-    rs.nextClassicRound(leaderIndex = 1, round = 1) shouldBe 4
-    rs.nextClassicRound(leaderIndex = 1, round = 2) shouldBe 4
-    rs.nextClassicRound(leaderIndex = 1, round = 3) shouldBe 4
-    rs.nextClassicRound(leaderIndex = 1, round = 4) shouldBe 7
-    rs.nextClassicRound(leaderIndex = 1, round = 5) shouldBe 7
-    rs.nextClassicRound(leaderIndex = 1, round = 6) shouldBe 7
+    rs.nextClassicRound(leaderIndex = 1, round = -1) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 1, round = 0) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 1, round = 1) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 1, round = 2) shouldBe 5
+    rs.nextClassicRound(leaderIndex = 1, round = 3) shouldBe 5
+    rs.nextClassicRound(leaderIndex = 1, round = 4) shouldBe 5
+    rs.nextClassicRound(leaderIndex = 1, round = 5) shouldBe 8
+    rs.nextClassicRound(leaderIndex = 1, round = 6) shouldBe 8
 
-    rs.nextClassicRound(leaderIndex = 2, round = -1) shouldBe 2
-    rs.nextClassicRound(leaderIndex = 2, round = 0) shouldBe 2
-    rs.nextClassicRound(leaderIndex = 2, round = 1) shouldBe 2
-    rs.nextClassicRound(leaderIndex = 2, round = 2) shouldBe 5
-    rs.nextClassicRound(leaderIndex = 2, round = 3) shouldBe 5
-    rs.nextClassicRound(leaderIndex = 2, round = 4) shouldBe 5
-    rs.nextClassicRound(leaderIndex = 2, round = 5) shouldBe 8
-    rs.nextClassicRound(leaderIndex = 2, round = 6) shouldBe 8
+    rs.nextClassicRound(leaderIndex = 2, round = -1) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 2, round = 0) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 2, round = 1) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 2, round = 2) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 2, round = 3) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 4) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 5) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 6) shouldBe 9
   }
 
   it should "implement nextFastRound correctly" in {

@@ -168,22 +168,31 @@ object RoundSystem {
     ): Option[Round] = None
   }
 
-  // A RoundZeroFast round system assigns rounds round-robin. Round 0 is fast,
-  // and all other rounds are classic. Here's an example with n = 3:
+  // A RoundZeroFast round system assigns round 0 to leader 0 and then assigns
+  // rounds round-robin. Round 0 is fast, and all other rounds are classic.
+  // This round system is used in BPaxos (and implicitly in EPaxos). Here's an
+  // example with n = 3:
   //
   //                       | Round | Leader | Round Type |
   //                       +-------+--------+------------+
   //                       | 0     | 0      | fast       |
-  //                       | 1     | 1      | classic    |
-  //                       | 2     | 2      | classic    |
-  //                       | 3     | 0      | classic    |
-  //                       | 4     | 1      | classic    |
-  //                       | 5     | 2      | classic    |
-  //                       | 6     | 0      | classic    |
+  //                       | 1     | 0      | classic    |
+  //                       | 2     | 1      | classic    |
+  //                       | 3     | 2      | classic    |
+  //                       | 4     | 0      | classic    |
+  //                       | 5     | 1      | classic    |
+  //                       | 6     | 2      | classic    |
   class RoundZeroFast(private val n: Int) extends RoundSystem {
     override def toString(): String = s"RoundZeroFast($n)"
     override def numLeaders(): Int = n
-    override def leader(round: Round): LeaderIndex = round % n
+
+    override def leader(round: Round): LeaderIndex = {
+      if (round == 0) {
+        0
+      } else {
+        (round - 1) % n
+      }
+    }
 
     override def roundType(round: Round): RoundType = {
       if (round == 0) FastRound else ClassicRound
@@ -193,11 +202,7 @@ object RoundSystem {
         leaderIndex: LeaderIndex,
         round: Round
     ): Round = {
-      if (leaderIndex == 0 && round < 0) {
-        n
-      } else {
-        new ClassicRoundRobin(n).nextClassicRound(leaderIndex, round)
-      }
+      1 + new ClassicRoundRobin(n).nextClassicRound(leaderIndex, round - 1)
     }
 
     override def nextFastRound(
