@@ -888,7 +888,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       // Not executed yet, we'll have to get it chosen.
 
       case ClientTable.Executed(None) =>
-      // Executed already but a stale command. We ignore this request.
+        // Executed already but a stale command. We ignore this request.
+        return
 
       case ClientTable.Executed(Some(output)) =>
         // Executed already and is the most recent command. We relay the

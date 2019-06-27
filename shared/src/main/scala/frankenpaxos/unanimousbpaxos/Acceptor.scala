@@ -1,4 +1,4 @@
-package frankenpaxos.simplebpaxos
+package frankenpaxos.unanimousbpaxos
 
 import frankenpaxos.Actor
 import frankenpaxos.Logger
@@ -32,7 +32,7 @@ object AcceptorOptions {
 class AcceptorMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_acceptor_requests_total")
+    .name("unanimous_bpaxos_acceptor_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
@@ -62,8 +62,13 @@ object Acceptor {
 
   @JSExportAll
   case class State(
+      // round is the largest round that this acceptor has heard of.
       round: Round,
+      // voteRound the largest round in which this acceptor has voted, or -1 if
+      // the acceptor has not yet voted.
       voteRound: Round,
+      // voteValue is Some(x) if the acceptor voted for value x in voteRound or
+      // None if voteRound is -1.
       voteValue: Option[VoteValue]
   )
 }
@@ -79,16 +84,21 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 ) extends Actor(address, transport, logger) {
   import Acceptor._
 
-  // Sanity check the configuration and get our index.
-  logger.check(config.valid())
-  logger.check(config.acceptorAddresses.contains(address))
-  private val index = config.acceptorAddresses.indexOf(address)
-
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = AcceptorInbound
   override def serializer = Acceptor.serializer
 
   // Fields ////////////////////////////////////////////////////////////////////
+  // Sanity check the configuration and get our index.
+  logger.check(config.valid())
+  logger.check(config.acceptorAddresses.contains(address))
+  private val index = config.acceptorAddresses.indexOf(address)
+
+  // Leader channels.
+  val leaders: Seq[Chan[Leader[Transport]]] = for (a <- config.leaderAddresses)
+    yield chan[Leader[Transport]](a, Leader.serializer)
+
+  // The state for each vertex.
   val states = mutable.Map[VertexId, State]()
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -98,11 +108,51 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import AcceptorInbound.Request
     inbound.request match {
-      case Request.Phase1A(r) => handlePhase1a(src, r)
-      case Request.Phase2A(r) => handlePhase2a(src, r)
+      case Request.FastProposal(r) => handleFastProposal(src, r)
+      case Request.Phase1A(r)      => handlePhase1a(src, r)
+      case Request.Phase2A(r)      => handlePhase2a(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
+    }
+  }
+
+  private def handleFastProposal(
+      src: Transport#Address,
+      fastProposal: FastProposal
+  ): Unit = {
+    metrics.requestsTotal.labels("FastProposal").inc()
+
+    states.get(fastProposal.vertexId) match {
+      case None =>
+        // Typically with Fast Paxos, we have to receive an "any" command from
+        // a proposer before we can process a client request. Here, we perform
+        // an optimization and use an implicit any on round 0.
+        states(fastProposal.vertexId) = State(
+          round = 0,
+          voteRound = 0,
+          voteValue = Some(fromProto(fastProposal.value))
+        )
+
+        leaders(fastProposal.vertexId.leaderIndex).send(
+          LeaderInbound().withPhase2BFast(
+            Phase2bFast(
+              vertexId = fastProposal.vertexId,
+              acceptorId = index,
+              voteValue = fastProposal.value
+            )
+          )
+        )
+
+      case Some(_) =>
+        logger.debug(
+          s"Acceptor received a FastProposal for vertex " +
+            s"${fastProposal.vertexId}, but already has state information " +
+            s"for this vertex. This means either (a) the acceptor has " +
+            s"already proceeded to a round larger than 0, or (b) the " +
+            s"acceptor has already voted in round 0. In either case, we " +
+            s"ignore the fast proposal."
+        )
     }
   }
 
@@ -118,7 +168,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     )
 
     // Ignore messages from previous rounds. Note that we have < instead of <=
-    // here. This is critical for liveness. If the proposer re-sends its
+    // here. This is critical for liveness. If the leader re-sends its
     // Phase1a message to us, we want to re-send our reply.
     if (phase1a.round < state.round) {
       logger.debug(
@@ -130,9 +180,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     // Bump our round and send the proposer our vote round and vote value.
     states(phase1a.vertexId) = state.copy(round = phase1a.round)
-    val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
-    proposer.send(
-      ProposerInbound().withPhase1B(
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
+    leader.send(
+      LeaderInbound().withPhase1B(
         Phase1b(
           vertexId = phase1a.vertexId,
           acceptorId = index,
@@ -174,12 +224,12 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       voteRound = phase2a.round,
       voteValue = Some(fromProto(phase2a.voteValue))
     )
-    val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
-    proposer.send(
-      ProposerInbound().withPhase2B(
-        Phase2b(vertexId = phase2a.vertexId,
-                acceptorId = index,
-                round = phase2a.round)
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
+    leader.send(
+      LeaderInbound().withPhase2BClassic(
+        Phase2bClassic(vertexId = phase2a.vertexId,
+                       acceptorId = index,
+                       round = phase2a.round)
       )
     )
   }
