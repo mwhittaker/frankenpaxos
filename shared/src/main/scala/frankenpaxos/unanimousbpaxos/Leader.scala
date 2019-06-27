@@ -272,41 +272,36 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  //   private def onCommitted(
-  //       vertexId: VertexId,
-  //       value: scala.util.Try[Acceptor.VoteValue]
-  //   ): Unit = {
-  //     (value, states.get(vertexId)) match {
-  //       case (scala.util.Failure(e), _) =>
-  //         logger.fatal(
-  //           s"Leader was unable to get a command chosen in vertex $vertexId. " +
-  //             s"Error: $e."
-  //         )
-  //
-  //       case (_, None) =>
-  //         logger.fatal(
-  //           s"Leader got a value chosen in vertex $vertexId, but is not " +
-  //             s"leading the vertex at all."
-  //         )
-  //
-  //       case (_, Some(_: WaitingForDeps[_])) =>
-  //         logger.fatal(
-  //           s"Leader got a value chosen in vertex $vertexId, but is " +
-  //             s"waiting for dependencies."
-  //         )
-  //
-  //       case (_, Some(_: Committed[_])) =>
-  //         logger.debug(
-  //           s"Leader got a value chosen in vertex $vertexId, but a value was " +
-  //             s"already chosen."
-  //         )
-  //
-  //       case (scala.util.Success(Acceptor.VoteValue(commandOrNoop, dependencies)),
-  //             Some(_: WaitingForConsensus[_])) =>
-  //         commit(vertexId, commandOrNoop, dependencies, informOthers = true)
-  //     }
-  //   }
-  //
+  private def recover(vertexId: VertexId, nackRound: Int): Unit = {
+    // We'll start recovery in a round higher than any we've used before.
+    val rs = roundSystem(vertexId)
+    val currentRound = states.get(vertexId) match {
+      case None                                  => 0
+      case Some(state: Phase2Fast[Transport])    => 0
+      case Some(state: Phase1[Transport])        => state.round
+      case Some(state: Phase2Classic[Transport]) => state.round
+      case Some(_: Committed[Transport])         =>
+        // Nothing to recover.
+        return
+    }
+    val round = rs.nextClassicRound(index, Math.max(nackRound, currentRound))
+
+    // Stop any currently running timers.
+    stopTimers(vertexId)
+
+    // Send phase1s to acceptors.
+    // TODO(mwhittaker): Implement thriftiness.
+    val phase1a = Phase1a(vertexId = vertexId, round = round)
+    acceptors.foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
+
+    // Update our state.
+    states(vertexId) = Phase1(
+      round = round,
+      phase1bs = mutable.Map[AcceptorIndex, Phase1b](),
+      resendPhase1as = makeResendPhase1asTimer(phase1a)
+    )
+  }
+
   private def commit(
       vertexId: VertexId,
       commandOrNoop: CommandOrNoop,
@@ -466,36 +461,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                           options.recoverVertexTimerMaxPeriod),
       () => {
         metrics.recoverVertexTotal.inc()
-        // TODO(mwhittaker): Implement.
-        ???
-        //
-        // // Sanity check and stop timers.
-        // states.get(vertexId) match {
-        //   case None =>
-        //   case Some(waitingForDeps: WaitingForDeps[_]) =>
-        //     waitingForDeps.resendDependencyRequestsTimer.stop()
-        //
-        //   case Some(_: WaitingForConsensus[_]) | Some(_: Committed[_]) =>
-        //     logger.fatal(
-        //       s"Leader recovering vertex $vertexId, but is either waiting " +
-        //         s"for that vertex to be chosen, or that vertex has already " +
-        //         s"been chosen."
-        //     )
-        // }
-        //
-        // // Propose a noop to the consensus service.
-        // val noop = CommandOrNoop().withNoop(Noop())
-        // val deps = Set[VertexId]()
-        // val future = proposer.propose(vertexId, noop, deps)
-        // future.onComplete(onCommitted(vertexId, _))(transport.executionContext)
-        //
-        // // Update our state.
-        // states(vertexId) = WaitingForConsensus(
-        //   commandOrNoop = noop,
-        //   dependencies = deps,
-        //   future = future
-        // )
-        t.start()
+        // We shouldn't be recovering an vertex if we're already recovering it.
+        logger.check(!willBeCommitted(vertexId))
+        recover(vertexId, nackRound = -1)
       }
     )
     t.start()
@@ -647,8 +615,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             resendPhase2as = makeResendPhase2asTimer(phase2a)
           )
 
-          // Stop the recovery timer for this instance. At this point,
-          // something will get committed.
+          // Stop the recovery timer for this vertex. At this point, something
+          // will get committed.
           recoverVertexTimers -= phase2bFast.vertexId
         }
     }
@@ -745,41 +713,42 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     metrics.requestsTotal.labels("Phase2bClassic").inc()
 
-    // metrics.requestsTotal.labels("Phase2b").inc()
-    //
-    // states.get(phase2b.vertexId) match {
-    //   case state @ (None | Some(_: Phase1[_]) | Some(_: Chosen[_])) =>
-    //     logger.debug(
-    //       s"Proposer received a phase2b in ${phase2b.vertexId}, but is not " +
-    //         s"currently in phase 2 for this vertex id. The state is $state."
-    //     )
-    //
-    //   case Some(phase2: Phase2[Transport]) =>
-    //     // Ignore phase2bs from old rounds.
-    //     if (phase2b.round != phase2.round) {
-    //       // We know that phase2b.round is less than phase2.round because if it
-    //       // were higher, we would have received a Nack instead of a Phase2b.
-    //       logger.check_lt(phase2b.round, phase2.round)
-    //       logger.debug(
-    //         s"Proposer received a phase2b in round ${phase2b.round} in " +
-    //           s"${phase2b.vertexId} but is in round ${phase2b.round}."
-    //       )
-    //       return
-    //     }
-    //
-    //     // Wait until we have a quorum of responses.
-    //     phase2.phase2bs(phase2b.acceptorId) = phase2b
-    //     if (phase2.phase2bs.size < config.quorumSize) {
-    //       return
-    //     }
-    //
-    //     // Once we have a quorum of responses, the value is chosen!
-    //     phase2.promise.success(phase2.value)
-    //
-    //     // Stop existing timers and update our state.
-    //     phase2.resendPhase2as.stop()
-    //     states(phase2b.vertexId) = Chosen[Transport]()
-    // }
+    states.get(phase2bClassic.vertexId) match {
+      case state @ (None | Some(_: Phase2Fast[_]) | Some(_: Phase1[_]) |
+          Some(_: Committed[_])) =>
+        logger.debug(
+          s"Leader received a Phase2bClassic for vertex " +
+            s"${phase2bClassic.vertexId}, but is not currently in phase 2 " +
+            s"for this vertex id. The state is $state."
+        )
+
+      case Some(state: Phase2Classic[Transport]) =>
+        // Ignore phase2bs from old rounds.
+        if (phase2bClassic.round != state.round) {
+          // We know that phase2bClassic.round is less than state.round because
+          // if it were higher, we would have received a Nack instead of a
+          // Phase2b.
+          logger.check_lt(phase2bClassic.round, state.round)
+          logger.debug(
+            s"Proposer received a phase2bClassic in round " +
+              s"${phase2bClassic.round} in ${phase2bClassic.vertexId} but is " +
+              s"in round ${phase2bClassic.round}."
+          )
+          return
+        }
+
+        // Wait until we have a quorum of responses.
+        state.phase2bClassics(phase2bClassic.acceptorId) = phase2bClassic
+        if (state.phase2bClassics.size < config.classicQuorumSize) {
+          return
+        }
+
+        // Stop existing timers and update our state.
+        commit(phase2bClassic.vertexId,
+               commandOrNoop = state.value.commandOrNoop,
+               dependencies = state.value.dependencies,
+               informOthers = true)
+    }
   }
 
   private def handleNack(
@@ -787,7 +756,30 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       nack: Nack
   ): Unit = {
     metrics.requestsTotal.labels("Nack").inc()
-    ???
+
+    val round = states.get(nack.vertexId) match {
+      case None =>
+        logger.fatal(
+          s"Leader received a Nack for vertex ${nack.vertexId}, but is not " +
+            s"leading the vertex."
+        )
+      case Some(state: Phase2Fast[_])    => 0
+      case Some(state: Phase1[_])        => state.round
+      case Some(state: Phase2Classic[_]) => state.round
+      case Some(state: Committed[_])     =>
+        // Ignore nacks if we're already committed.
+        return
+    }
+
+    if (nack.higherRound <= round) {
+      logger.debug(
+        s"Leader received a Nack in round ${nack.higherRound} but is " +
+          s"already in round $round."
+      )
+      return
+    }
+
+    recover(nack.vertexId, nackRound = nack.higherRound)
   }
 
   private def handleCommit(

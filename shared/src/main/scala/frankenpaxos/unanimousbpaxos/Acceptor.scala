@@ -144,15 +144,25 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
 
-      case Some(_) =>
-        logger.debug(
-          s"Acceptor received a FastProposal for vertex " +
-            s"${fastProposal.vertexId}, but already has state information " +
-            s"for this vertex. This means either (a) the acceptor has " +
-            s"already proceeded to a round larger than 0, or (b) the " +
-            s"acceptor has already voted in round 0. In either case, we " +
-            s"ignore the fast proposal."
-        )
+      case Some(state) =>
+        if (state.round == 0) {
+          logger.check_eq(state.voteRound, 0)
+          logger.debug(
+            s"Acceptor received a FastProposal for vertex " +
+              s"${fastProposal.vertexId} and is in round 0 and voted in " +
+              s"round 0. We're ignoring the request since we've already voted."
+          )
+        } else {
+          // We've seen a higher round. We should send a nack.
+          leaders(fastProposal.vertexId.leaderIndex).send(
+            LeaderInbound().withNack(
+              Nack(
+                vertexId = fastProposal.vertexId,
+                higherRound = state.round
+              )
+            )
+          )
+        }
     }
   }
 
