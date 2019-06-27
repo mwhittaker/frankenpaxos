@@ -170,17 +170,22 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // Ignore messages from previous rounds. Note that we have < instead of <=
     // here. This is critical for liveness. If the leader re-sends its
     // Phase1a message to us, we want to re-send our reply.
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
     if (phase1a.round < state.round) {
       logger.debug(
         s"An acceptor received a phase 1a message in ${phase1a.vertexId} for " +
           s"round ${phase1a.round} and is in round ${state.round}."
+      )
+      leader.send(
+        LeaderInbound().withNack(
+          Nack(vertexId = phase1a.vertexId, higherRound = state.round)
+        )
       )
       return
     }
 
     // Bump our round and send the proposer our vote round and vote value.
     states(phase1a.vertexId) = state.copy(round = phase1a.round)
-    val leader = chan[Leader[Transport]](src, Leader.serializer)
     leader.send(
       LeaderInbound().withPhase1B(
         Phase1b(
@@ -210,10 +215,16 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // a value in the same round that it heard during phase 1. But, this is
     // critical for liveness in another way as well. If the proposer re-sends
     // its Phase2a message to us, we want to re-send our reply.
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
     if (phase2a.round < state.round) {
       logger.debug(
         s"An acceptor received a phase 2a message in ${phase2a.vertexId} for " +
           s"round ${phase2a.round} but is in round ${state.round}."
+      )
+      leader.send(
+        LeaderInbound().withNack(
+          Nack(vertexId = phase2a.vertexId, higherRound = state.round)
+        )
       )
       return
     }
@@ -224,7 +235,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       voteRound = phase2a.round,
       voteValue = Some(fromProto(phase2a.voteValue))
     )
-    val leader = chan[Leader[Transport]](src, Leader.serializer)
     leader.send(
       LeaderInbound().withPhase2BClassic(
         Phase2bClassic(vertexId = phase2a.vertexId,
