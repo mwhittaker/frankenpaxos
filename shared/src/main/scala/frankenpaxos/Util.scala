@@ -3,6 +3,7 @@ package frankenpaxos
 import collection.mutable
 
 object Util {
+  // histogram(xs) returns a count of every element in xs.
   def histogram[T](xs: Iterable[T]): mutable.Map[T, Int] = {
     val counts = mutable.Map[T, Int]()
     for (x <- xs) {
@@ -35,5 +36,26 @@ object Util {
     val rand = java.util.concurrent.ThreadLocalRandom.current()
     val delta = max.minus(min)
     min.plus(java.time.Duration.ofNanos(rand.nextLong(0, delta.toNanos() + 1)))
+  }
+
+  sealed trait MergeResult[L, R]
+  case class Left[L, R](left: L) extends MergeResult[L, R]
+  case class Both[L, R](left: L, right: R) extends MergeResult[L, R]
+  case class Right[L, R](right: R) extends MergeResult[L, R]
+
+  implicit class MapHelpers[K, L](left: Map[K, L]) {
+    def merge[R, T](
+        right: Map[K, R]
+    )(f: (K, MergeResult[L, R]) => T): Map[K, T] = {
+      val kvs = for (k <- left.keys ++ right.keys) yield {
+        (left.get(k), right.get(k)) match {
+          case (Some(l), None)    => k -> f(k, Left(l))
+          case (Some(l), Some(r)) => k -> f(k, Both(l, r))
+          case (None, Some(r))    => k -> f(k, Right(r))
+          case (None, None)       => throw new IllegalStateException()
+        }
+      }
+      kvs.toMap
+    }
   }
 }
