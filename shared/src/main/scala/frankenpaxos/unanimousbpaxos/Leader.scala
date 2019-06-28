@@ -141,8 +141,8 @@ object Leader {
   @JSExportAll
   case class Phase2Fast[Transport <: frankenpaxos.Transport[Transport]](
       command: Command,
-      phase2bFastReplies: mutable.Map[AcceptorIndex, Phase2bFast],
-      resendDependencyRequestsTimer: Transport#Timer
+      phase2bFasts: mutable.Map[AcceptorIndex, Phase2bFast],
+      resendDependencyRequests: Transport#Timer
   ) extends State[Transport]
 
   @JSExportAll
@@ -243,7 +243,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     states.get(vertexId) match {
       case None =>
       case Some(state: Phase2Fast[Transport]) =>
-        state.resendDependencyRequestsTimer.stop()
+        state.resendDependencyRequests.stop()
       case Some(state: Phase1[Transport]) =>
         state.resendPhase1as.stop()
       case Some(state: Phase2Classic[Transport]) =>
@@ -264,7 +264,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // be chosen because a fast quorum of nodes is unavailable.
         false
       case Some(_: Phase1[_]) | Some(_: Phase2Classic[_]) =>
-        // If the leader is on the classic path of Paxos, something will eventually get chosen.
+        // If the leader is on the classic path of Paxos, something will
+        // eventually get chosen.
         true
       case Some(_: Committed[_]) =>
         // If something is already chosen, well, it's chosen.
@@ -300,6 +301,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase1bs = mutable.Map[AcceptorIndex, Phase1b](),
       resendPhase1as = makeResendPhase1asTimer(phase1a)
     )
+
+    // Stop the recovery timer for this vertex. At this point, something
+    // will get committed.
+    recoverVertexTimers.get(vertexId).foreach(_.stop())
+    recoverVertexTimers -= vertexId
   }
 
   private def commit(
@@ -309,6 +315,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       informOthers: Boolean
   ): Unit = {
     metrics.committedCommandsTotal.inc()
+
+    // Stop any currently running timers.
+    stopTimers(vertexId)
 
     // Update the leader state.
     states(vertexId) = Committed(commandOrNoop, dependencies)
@@ -539,8 +548,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // Update our state.
     states(vertexId) = Phase2Fast(
       command = clientRequest.command,
-      phase2bFastReplies = mutable.Map[AcceptorIndex, Phase2bFast](),
-      resendDependencyRequestsTimer =
+      phase2bFasts = mutable.Map[AcceptorIndex, Phase2bFast](),
+      resendDependencyRequests =
         makeResendDependencyRequestsTimer(dependencyRequest)
     )
 
@@ -563,16 +572,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case Some(state: Phase2Fast[Transport]) =>
         // Wait until we have a fast quorum of responses.
-        state.phase2bFastReplies(phase2bFast.acceptorId) = phase2bFast
-        if (state.phase2bFastReplies.size < config.fastQuorumSize) {
+        state.phase2bFasts(phase2bFast.acceptorId) = phase2bFast
+        if (state.phase2bFasts.size < config.fastQuorumSize) {
           return
         }
 
         // Pull out the set of commands and dependencies.
         val commandSet: Set[CommandOrNoop] =
-          state.phase2bFastReplies.values.map(_.voteValue.commandOrNoop).toSet
+          state.phase2bFasts.values.map(_.voteValue.commandOrNoop).toSet
         val dependenciesSet: Set[Set[VertexId]] =
-          state.phase2bFastReplies.values
+          state.phase2bFasts.values
             .map(_.voteValue.dependency.toSet)
             .toSet
 
@@ -599,7 +608,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                                          dependencies = dependencies)
 
           // Stop timers.
-          state.resendDependencyRequestsTimer.stop()
+          state.resendDependencyRequests.stop()
 
           // Send Phase2s.
           val phase2a = Phase2a(vertexId = phase2bFast.vertexId,
@@ -617,6 +626,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
           // Stop the recovery timer for this vertex. At this point, something
           // will get committed.
+          recoverVertexTimers.get(phase2bFast.vertexId).foreach(_.stop())
           recoverVertexTimers -= phase2bFast.vertexId
         }
     }
