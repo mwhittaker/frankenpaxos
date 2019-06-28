@@ -685,7 +685,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             .map((x: Phase1b) => x.voteValue.get)
             .toSet
           if (maxVoteRound > 0) {
-            logger.checkEq(voteValues.size, 0)
+            logger.checkEq(voteValues.size, 1)
             Acceptor.fromProto(voteValues.head)
           } else if (voteValues.size == 1) {
             Acceptor.fromProto(voteValues.head)
