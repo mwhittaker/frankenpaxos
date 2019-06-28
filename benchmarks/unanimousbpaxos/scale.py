@@ -32,7 +32,9 @@ def _main(args) -> None:
                 )
                 for f in [1, 2]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1)] + [(i, 15) for i in range(1, 8)]
+                    [(1, 1)] +
+                    [(i, 10) for i in range(1, 5) if f == 1] +
+                    [(i, 10) for i in range(1, 8) if f == 2]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:

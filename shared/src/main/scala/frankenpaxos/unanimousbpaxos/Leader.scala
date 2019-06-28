@@ -94,7 +94,8 @@ class LeaderMetrics(collectors: Collectors) {
     .build()
     .name("unanimous_bpaxos_leader_fast_path_fail_total")
     .help(
-      "Total number of times a leader failed to take the fast path successfully."
+      "Total number of times a leader failed to take the fast path " +
+        "successfully."
     )
     .register()
 
@@ -142,13 +143,13 @@ class LeaderMetrics(collectors: Collectors) {
 
   val resendPhase1asTotal: Counter = collectors.counter
     .build()
-    .name("unanimous_bpaxos_proposer_resend_phase1a_total")
+    .name("unanimous_bpaxos_leader_resend_phase1a_total")
     .help("Total number of times the leader resent Phase1a messages.")
     .register()
 
   val resendPhase2asTotal: Counter = collectors.counter
     .build()
-    .name("unanimous_bpaxos_proposer_resend_phase2a_total")
+    .name("unanimous_bpaxos_leader_resend_phase2a_total")
     .help("Total number of times the leader resent Phase2a messages.")
     .register()
 
@@ -611,6 +612,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2bFast: Phase2bFast
   ): Unit = {
+    metrics.requestsTotal.labels("Phase2bFast").inc()
+
     states.get(phase2bFast.vertexId) match {
       case state @ (None | Some(_: Phase1[_]) | Some(_: Phase2Classic[_]) |
           Some(_: Committed[_])) =>
