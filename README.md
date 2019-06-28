@@ -66,3 +66,13 @@ following:
 
 ## Running Benchmarks
 See the `benchmarks/` directory for information on running benchmarks.
+
+## Updating Github Pages
+```bash
+git checkout master
+git branch -f gh-pages master
+git checkout gh-pages
+git add -f js/target/scala-2.12/frankenpaxos-fastopt.js*
+git commit
+git push -f origin gh-pages
+```
