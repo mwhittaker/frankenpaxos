@@ -84,6 +84,56 @@ class LeaderMetrics(collectors: Collectors) {
     )
     .register()
 
+  val fastPathSuccessTotal: Counter = collectors.counter
+    .build()
+    .name("unanimous_bpaxos_leader_fast_path_success_total")
+    .help("Total number of times a leader took the fast path successfully.")
+    .register()
+
+  val fastPathFailTotal: Counter = collectors.counter
+    .build()
+    .name("unanimous_bpaxos_leader_fast_path_fail_total")
+    .help(
+      "Total number of times a leader failed to take the fast path successfully."
+    )
+    .register()
+
+  val recoverWithNoVotesTotal: Counter = collectors.counter
+    .build()
+    .name("unanimous_bpaxos_leader_recover_with_no_votes_total")
+    .help(
+      "Total number of times a leader recovering in phase1 got no votes from " +
+        "acceptors (i.e. k == -1)."
+    )
+    .register()
+
+  val recoverFromClassicRoundTotal: Counter = collectors.counter
+    .build()
+    .name("unanimous_bpaxos_leader_recover_from_classic_round_total")
+    .help(
+      "Total number of times a leader recovering in phase1 recovered from " +
+        "another classic round (i.e. k > 0)."
+    )
+    .register()
+
+  val recoverCommandFromFastRoundTotal: Counter = collectors.counter
+    .build()
+    .name("unanimous_bpaxos_leader_recover_command_from_fast_round_total")
+    .help(
+      "Total number of times a leader recovering in phase1 recovered from " +
+        "round 0 and had a unanimous command."
+    )
+    .register()
+
+  val recoverNoopFromFastRoundTotal: Counter = collectors.counter
+    .build()
+    .name("unanimous_bpaxos_leader_recover_noop_from_fast_round_total")
+    .help(
+      "Total number of times a leader recovering in phase1 recovered from " +
+        "round 0 and had to propose noop."
+    )
+    .register()
+
   val resendDependencyRequestsTotal: Counter = collectors.counter
     .build()
     .name("unanimous_bpaxos_leader_resend_dependency_requests_total")
@@ -592,6 +642,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // If all of the dependencies are the same, we can take the fast path.
         // Otherwise, have to take the slow path.
         if (dependenciesSet.size == 1) {
+          metrics.fastPathSuccessTotal.inc()
           commit(phase2bFast.vertexId,
                  commandOrNoop,
                  dependenciesSet.head,
@@ -602,6 +653,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           // full two rounds of Paxos. However, we can perform the coordinated
           // recovery optimization of Fast Paxos and skip phase 1. Thus, we
           // proceed directly to phase 2.
+          metrics.fastPathFailTotal.inc()
           logger.checkEq(roundSystem(phase2bFast.vertexId).leader(1), index)
           val dependencies: Set[VertexId] = dependenciesSet.flatten
           val value = Acceptor.VoteValue(commandOrNoop = commandOrNoop,
@@ -675,6 +727,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         //     we are safe to propose a noop.
         val maxVoteRound = state.phase1bs.values.map(_.voteRound).max
         val proposal: Acceptor.VoteValue = if (maxVoteRound == -1) {
+          metrics.recoverWithNoVotesTotal.inc()
           Acceptor.VoteValue(
             commandOrNoop = CommandOrNoop().withNoop(Noop()),
             dependencies = Set[VertexId]()
@@ -685,11 +738,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             .map((x: Phase1b) => x.voteValue.get)
             .toSet
           if (maxVoteRound > 0) {
+            metrics.recoverFromClassicRoundTotal.inc()
             logger.checkEq(voteValues.size, 1)
             Acceptor.fromProto(voteValues.head)
           } else if (voteValues.size == 1) {
+            metrics.recoverCommandFromFastRoundTotal.inc()
             Acceptor.fromProto(voteValues.head)
           } else {
+            metrics.recoverNoopFromFastRoundTotal.inc()
             Acceptor.VoteValue(
               commandOrNoop = CommandOrNoop().withNoop(Noop()),
               dependencies = Set[VertexId]()

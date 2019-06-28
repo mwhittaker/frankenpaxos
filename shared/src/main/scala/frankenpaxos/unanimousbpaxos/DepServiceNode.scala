@@ -41,6 +41,15 @@ class DepServiceNodeMetrics(collectors: Collectors) {
     .help("Total number of processed requests.")
     .register()
 
+  val duplicateRequestTotal: Counter = collectors.counter
+    .build()
+    .name("unanimous_bpaxos_dep_service_node_duplicate_request_total")
+    .help(
+      "Total number of requests for a command that the dependency service " +
+        "node has already processed."
+    )
+    .register()
+
   val dependencies: Summary = collectors.summary
     .build()
     .name("unanimous_bpaxos_dep_service_node_dependencies")
@@ -117,7 +126,9 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
 
     val vertexId = dependencyRequest.vertexId
     val dependencies = dependenciesCache.get(vertexId) match {
-      case Some(dependencies) => dependencies
+      case Some(dependencies) =>
+        metrics.duplicateRequestTotal.inc()
+        dependencies
 
       case None =>
         val command = dependencyRequest.command.command.toByteArray
