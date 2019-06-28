@@ -8,8 +8,8 @@ class DieHardSpec extends FlatSpec {
     val sim = new SimulatedDieHard()
     Simulator
       .simulate(sim, runLength = 10, numRuns = 100)
-      .flatMap(b => Simulator.minimize(sim, b.history)) match {
-      case Some(BadHistory(history, error)) =>
+      .flatMap(b => Simulator.minimize(sim, b.seed, b.history)) match {
+      case Some(BadHistory(seed, history, error)) =>
         fail(s"Error: $error\n$history")
       case None => {}
     }

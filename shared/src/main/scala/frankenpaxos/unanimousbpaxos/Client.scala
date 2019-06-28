@@ -81,7 +81,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     logger: Logger,
     config: Config[Transport],
     options: ClientOptions = ClientOptions.default,
-    metrics: ClientMetrics = new ClientMetrics(PrometheusCollectors)
+    metrics: ClientMetrics = new ClientMetrics(PrometheusCollectors),
+    seed: Long = System.currentTimeMillis()
 ) extends Actor(address, transport, logger) {
   import Client._
 
@@ -92,6 +93,9 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // Fields ////////////////////////////////////////////////////////////////////
   val addressAsBytes: ByteString =
     ByteString.copyFrom(transport.addressSerializer.toBytes(address))
+
+  // Random number generator.
+  private val rand = new Random(seed)
 
   // Every request that a client sends is annotated with a monotonically
   // increasing client id. Here, we assume that if a client fails, it does not
@@ -127,7 +131,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
     // TODO(mwhittaker): Abstract out the policy of which leader to send to.
-    val rand = new Random(System.currentTimeMillis())
     val randomIndex = rand.nextInt(leaders.size)
     val leader = leaders(randomIndex)
     val request = toClientRequest(pendingCommand)

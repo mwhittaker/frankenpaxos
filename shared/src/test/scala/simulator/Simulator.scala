@@ -10,6 +10,7 @@ import org.scalacheck.Test
 // violated or an exception will be thrown. A BadHistory also includes a
 // Throwable that explains what went wrong.
 case class BadHistory[+Sim <: SimulatedSystem](
+    seed: Long,
     history: Seq[Sim#Command],
     throwable: Throwable
 )
@@ -41,6 +42,7 @@ object Simulator {
 
   def minimize[Sim <: SimulatedSystem { type Command = C }, C](
       sim: Sim,
+      seed: Long,
       run: Seq[C]
   ): Option[BadHistory[Sim]] = {
     // We check that every subrun of `run` is a good history (i.e. a history
@@ -49,7 +51,7 @@ object Simulator {
     // will find a minimal subsequence of `run` that also violates the
     // invariant.
     val prop = Prop.forAll(Gen.someOf(run)) { subrun =>
-      runOne[sim.type, sim.Command](sim, subrun).isSuccess
+      runOne[sim.type, sim.Command](sim, seed, subrun).isSuccess
     }
 
     val params = Test.Parameters.default
@@ -58,8 +60,9 @@ object Simulator {
     Test.check(params, prop) match {
       case Test.Result(Test.Failed(arg :: _, _), _, _, _, _) => {
         val subrun = arg.arg.asInstanceOf[Seq[sim.Command]]
-        val throwable = runOne[sim.type, sim.Command](sim, subrun).failed.get
-        Some(BadHistory(subrun, throwable))
+        val throwable =
+          runOne[sim.type, sim.Command](sim, seed, subrun).failed.get
+        Some(BadHistory(seed, subrun, throwable))
       }
       case _ =>
         None
@@ -71,12 +74,15 @@ object Simulator {
       runLength: Int
   ): Option[BadHistory[Sim]] = {
     var history = Seq[sim.Command]()
-    var system = sim.newSystem()
+    val seed = System.currentTimeMillis()
+    var system = sim.newSystem(seed)
     var states = Seq[sim.State](sim.getState(system))
 
     checkInvariants[sim.type, sim.State](sim, states) match {
       case SimulatedSystem.InvariantViolated(explanation) =>
-        return Some(BadHistory(history, new IllegalStateException(explanation)))
+        return Some(
+          BadHistory(seed, history, new IllegalStateException(explanation))
+        )
 
       case SimulatedSystem.InvariantHolds =>
         // Nothing to do.
@@ -92,14 +98,14 @@ object Simulator {
       system = util.Try(sim.runCommand(system, command)) match {
         case util.Success(system) => system
         case util.Failure(throwable) =>
-          return Some(BadHistory(history, throwable))
+          return Some(BadHistory(seed, history, throwable))
       }
       states = states :+ sim.getState(system)
 
       checkInvariants[sim.type, sim.State](sim, states) match {
         case SimulatedSystem.InvariantViolated(explanation) =>
           return Some(
-            BadHistory(history, new IllegalStateException(explanation))
+            BadHistory(seed, history, new IllegalStateException(explanation))
           )
 
         case SimulatedSystem.InvariantHolds =>
@@ -117,17 +123,19 @@ object Simulator {
   // returned.
   private def runOne[Sim <: SimulatedSystem { type Command = C }, C](
       sim: Sim,
+      seed: Long,
       run: Seq[C]
   ): util.Try[Unit] = {
-    util.Try(runOneImpl[sim.type, C](sim, run))
+    util.Try(runOneImpl[sim.type, C](sim, seed, run))
   }
 
   // Same as runOne, but throws an exception if an invariant is violated.
   private def runOneImpl[Sim <: SimulatedSystem { type Command = C }, C](
       sim: Sim,
+      seed: Long,
       run: Seq[C]
   ): Unit = {
-    var system = sim.newSystem()
+    var system = sim.newSystem(seed)
     var states = Seq[sim.State](sim.getState(system))
 
     checkInvariants[sim.type, sim.State](sim, states) match {

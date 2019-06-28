@@ -29,7 +29,7 @@ class SimulatedBankAccount extends SimulatedSystem {
   override type State = Int
   override type Command = BankAccountCommand
 
-  override def newSystem(): System = new BankAccount()
+  override def newSystem(seed: Long): System = new BankAccount()
 
   override def getState(system: System): State = system.balance
 

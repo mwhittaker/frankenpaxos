@@ -83,7 +83,7 @@ class SimulatedMultiPaxos(val f: Int) extends SimulatedSystem {
   override type State = Unit
   override type Command = SimulatedMultiPaxos.Command
 
-  override def newSystem(): System = new MultiPaxos(f)
+  override def newSystem(seed: Long): System = new MultiPaxos(f)
 
   override def getState(system: System): State = {
     // TODO(mwhittaker): Implement.

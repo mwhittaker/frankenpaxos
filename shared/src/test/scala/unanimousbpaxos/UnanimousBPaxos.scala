@@ -111,7 +111,7 @@ class SimulatedUnanimousBPaxos(val f: Int) extends SimulatedSystem {
   // True if some value has been chosen in some execution of the system.
   var valueChosen: Boolean = false
 
-  override def newSystem(): System = new UnanimousBPaxos(f)
+  override def newSystem(seed: Long): System = new UnanimousBPaxos(f)
 
   override def getState(bpaxos: System): State = {
     // Merge two States together, taking a pairwise union.
@@ -243,7 +243,7 @@ class SimulatedUnanimousBPaxos(val f: Int) extends SimulatedSystem {
   }
 
   def commandToString(command: Command): String = {
-    val bpaxos = newSystem()
+    val bpaxos = newSystem(System.currentTimeMillis())
     command match {
       case Propose(clientIndex, clientPseudonym, value) =>
         val clientAddress = bpaxos.clients(clientIndex).address.address

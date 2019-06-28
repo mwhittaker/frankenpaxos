@@ -75,7 +75,7 @@ package frankenpaxos.simulator
 //     override type Command = BankAccountCommand
 //
 //     // newSystem returns a new instantiation of our system.
-//     override def newSystem(): System = new BankAccount()
+//     override def newSystem(seed: Int): System = new BankAccount()
 //
 //     // getState extracts the state from our system.
 //     override def getState(system: System): State = system.balance
@@ -165,10 +165,12 @@ trait SimulatedSystem {
   // The commands fed to a System.
   type Command
 
-  // newSystem generates a new system.
-  def newSystem(): System
+  // newSystem generates a new system. Systems are allowed to have randomness,
+  // but should use the seed for all randomness to ensure that they are
+  // deterministic.
+  def newSystem(seed: Long): System
 
-  // getState extracts the relevant state from a sytem.
+  // getState extracts the relevant state from a system.
   def getState(system: System): State
 
   // generateCommand generates a command to run against the system. If there

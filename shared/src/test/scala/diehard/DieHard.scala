@@ -65,7 +65,7 @@ class SimulatedDieHard extends SimulatedSystem {
   override type State = (Int, Int)
   override type Command = DieHardCommand
 
-  override def newSystem(): System = {
+  override def newSystem(seed: Long): System = {
     new DieHard()
   }
 

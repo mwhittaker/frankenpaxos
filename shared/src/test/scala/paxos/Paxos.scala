@@ -71,7 +71,7 @@ class SimulatedPaxos(val f: Int) extends SimulatedSystem {
   override type State = Set[String]
   override type Command = SimulatedPaxos.Command
 
-  override def newSystem(): System = new Paxos(f)
+  override def newSystem(seed: Long): System = new Paxos(f)
 
   override def getState(paxos: System): State = {
     val clientChosen = paxos.clients.flatMap(_.chosenValue).to[Set]

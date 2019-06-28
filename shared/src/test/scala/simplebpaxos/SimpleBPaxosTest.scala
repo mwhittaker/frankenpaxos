@@ -15,15 +15,15 @@ class SimpleBPaxosTest extends FlatSpec {
 
       Simulator
         .simulate(sim, runLength = runLength, numRuns = numRuns)
-        .flatMap(b => Simulator.minimize(sim, b.history)) match {
-        case Some(BadHistory(history, throwable)) => {
+        .flatMap(b => Simulator.minimize(sim, b.seed, b.history)) match {
+        case Some(BadHistory(seed, history, throwable)) => {
           // https://stackoverflow.com/a/1149712/3187068
           val sw = new java.io.StringWriter()
           val pw = new java.io.PrintWriter(sw)
           throwable.printStackTrace(pw)
 
           val formatted_history = history.map(_.toString).mkString("\n")
-          fail(s"$sw\n${sim.historyToString(history)}")
+          fail(s"Seed: $seed\n$sw\n${sim.historyToString(history)}")
         }
         case None => {}
       }

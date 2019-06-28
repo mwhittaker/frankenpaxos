@@ -76,7 +76,7 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   // True if some value has been chosen in some execution of the system.
   var valueChosen: Boolean = false
 
-  override def newSystem(): System = new EPaxos(f)
+  override def newSystem(seed: Long): System = new EPaxos(f)
 
   override def getState(epaxos: System): State = {
     // Merge two States together, taking a pairwise union.
@@ -207,7 +207,7 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
   }
 
   def commandToString(command: Command): String = {
-    val epaxos = newSystem()
+    val epaxos = newSystem(System.currentTimeMillis())
     command match {
       case Propose(clientIndex, clientPseudonym, value) =>
         val clientAddress = epaxos.clients(clientIndex).address.address

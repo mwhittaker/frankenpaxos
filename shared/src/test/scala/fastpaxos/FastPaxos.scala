@@ -64,7 +64,7 @@ class SimulatedFastPaxos(val f: Int) extends SimulatedSystem {
   override type State = Set[String]
   override type Command = SimulatedFastPaxos.Command
 
-  override def newSystem(): System = new FastPaxos(f)
+  override def newSystem(seed: Long): System = new FastPaxos(f)
 
   override def getState(fastPaxos: System): State = {
     // TODO(mwhittaker): Add values chosen by acceptors.

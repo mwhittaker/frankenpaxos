@@ -103,7 +103,7 @@ class SimulatedFastMultiPaxos(
 
   var valueChosen: Boolean = false
 
-  override def newSystem(): System = new FastMultiPaxos(f, roundSystem)
+  override def newSystem(seed: Long): System = new FastMultiPaxos(f, roundSystem)
 
   override def getState(fastMultiPaxos: System): State = {
     // Merge two States together, taking a pairwise union.
@@ -256,7 +256,7 @@ class SimulatedFastMultiPaxos(
   }
 
   def commandToString(command: Command): String = {
-    val fastMultiPaxos = newSystem()
+    val fastMultiPaxos = newSystem(System.currentTimeMillis())
     command match {
       case Propose(clientIndex, clientPseudonym, value) =>
         val clientAddress = fastMultiPaxos.clients(clientIndex).address.address
