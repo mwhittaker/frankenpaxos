@@ -335,7 +335,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // Ignore messages from our current round if we've already voted. Though,
     // we do relay our vote again to the leader for liveness.
     if (phase2a.round == voteRound) {
-      logger.check_gt(voteRound, -1)
+      logger.checkGt(voteRound, -1)
       logger.debug(
         s"An acceptor received a phase 2a message for round " +
           s"${phase2a.round} but has already voted in round $round. The " +

@@ -146,7 +146,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
       case Some(state) =>
         if (state.round == 0) {
-          logger.check_eq(state.voteRound, 0)
+          logger.checkEq(state.voteRound, 0)
           logger.debug(
             s"Acceptor received a FastProposal for vertex " +
               s"${fastProposal.vertexId} and is in round 0 and voted in " +

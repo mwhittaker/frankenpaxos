@@ -101,7 +101,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Update our state and send back an ack to the leader.
-    logger.check_ge(phase2a.round, round)
+    logger.checkGe(phase2a.round, round)
     round = phase2a.round
     voteRound = phase2a.round
     voteValue = Some(phase2a.value)

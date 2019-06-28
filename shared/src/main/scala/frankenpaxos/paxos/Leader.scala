@@ -99,7 +99,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // acceptors. We can return directly to the client.
     chosenValue match {
       case Some(chosen) => {
-        logger.check_eq(status, Chosen)
+        logger.checkEq(status, Chosen)
         val client = chan[Client[Transport]](
           src,
           Client.serializer
@@ -156,8 +156,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    logger.check_eq(status, Phase1)
-    logger.check_eq(request.round, round)
+    logger.checkEq(status, Phase1)
+    logger.checkEq(request.round, round)
     phase1bResponses += request
 
     // Wait until we have a quorum of phase1b messages.
@@ -176,7 +176,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       } else {
         val vs =
           phase1bResponses.filter(_.voteRound == k).map(_.voteValue.get)
-        logger.check_eq(vs.size, 1)
+        logger.checkEq(vs.size, 1)
         vs.iterator.next()
       }
     }
@@ -210,8 +210,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    logger.check_eq(status, Phase2)
-    logger.check_eq(request.round, round)
+    logger.checkEq(status, Phase2)
+    logger.checkEq(request.round, round)
     phase2bResponses += request
 
     // Wait until we have a quorum of phase2b messages.
@@ -227,7 +227,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // value.
     chosenValue match {
       case Some(oldChosen) => {
-        logger.check_eq(oldChosen, chosen)
+        logger.checkEq(oldChosen, chosen)
       }
       case None => {}
     }

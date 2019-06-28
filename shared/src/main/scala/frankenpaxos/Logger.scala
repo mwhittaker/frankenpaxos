@@ -71,37 +71,37 @@ abstract class Logger(logLevel: LogLevel) {
     }
   }
 
-  def check_eq[A](lhs: A, rhs: A): Unit = {
+  def checkEq[A](lhs: A, rhs: A): Unit = {
     if (lhs != rhs) {
       fatal(s"Check failed: $lhs != $rhs.")
     }
   }
 
-  def check_ne[A](lhs: A, rhs: A): Unit = {
+  def checkNe[A](lhs: A, rhs: A): Unit = {
     if (lhs == rhs) {
       fatal(s"Check failed: $lhs == $rhs.")
     }
   }
 
-  def check_lt[A: Ordering](lhs: A, rhs: A): Unit = {
+  def checkLt[A: Ordering](lhs: A, rhs: A): Unit = {
     if (lhs >= rhs) {
       fatal(s"Check failed: $lhs >= $rhs.")
     }
   }
 
-  def check_le[A: Ordering](lhs: A, rhs: A): Unit = {
+  def checkLe[A: Ordering](lhs: A, rhs: A): Unit = {
     if (lhs > rhs) {
       fatal(s"Check failed: $lhs > $rhs.")
     }
   }
 
-  def check_gt[A: Ordering](lhs: A, rhs: A): Unit = {
+  def checkGt[A: Ordering](lhs: A, rhs: A): Unit = {
     if (lhs <= rhs) {
       fatal(s"Check failed: $lhs <= $rhs.")
     }
   }
 
-  def check_ge[A: Ordering](lhs: A, rhs: A): Unit = {
+  def checkGe[A: Ordering](lhs: A, rhs: A): Unit = {
     if (lhs < rhs) {
       fatal(s"Check failed: $lhs < $rhs.")
     }

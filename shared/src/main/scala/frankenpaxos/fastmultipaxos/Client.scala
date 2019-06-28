@@ -150,7 +150,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     pendingCommands.get(proposeReply.clientPseudonym) match {
       case Some(PendingCommand(pseudonym, id, command, promise)) =>
-        logger.check_eq(proposeReply.clientPseudonym, pseudonym)
+        logger.checkEq(proposeReply.clientPseudonym, pseudonym)
         if (proposeReply.clientId == id) {
           pendingCommands -= pseudonym
           reproposeTimers(pseudonym).stop()

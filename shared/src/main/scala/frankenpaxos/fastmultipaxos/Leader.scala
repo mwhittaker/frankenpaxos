@@ -725,7 +725,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       log.get(valueChosen.slot) match {
         case Some(existingEntry) =>
-          leaderLogger.check_eq(entry, existingEntry)
+          leaderLogger.checkEq(entry, existingEntry)
         case None =>
           log(valueChosen.slot) = entry
       }
@@ -817,7 +817,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // If there exists a v in V such that O4(v), then we must propose it.
     val o4vs = frankenpaxos.Util.popularItems(V, config.quorumMajoritySize)
     if (o4vs.size > 0) {
-      leaderLogger.check_eq(o4vs.size, 1)
+      leaderLogger.checkEq(o4vs.size, 1)
       return (phase1bVoteValueToEntry(o4vs.head.get), Set())
     }
 
@@ -1105,7 +1105,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // Switch over to a new leader. If the new leader is ourselves, then we
   // increase our round and enter a new round larger than `higherThanRound`.
   def leaderChange(leader: Transport#Address, higherThanRound: Int): Unit = {
-    leaderLogger.check_ge(higherThanRound, round)
+    leaderLogger.checkGe(higherThanRound, round)
     metrics.leaderChangesTotal.inc()
 
     // Try to go to a fast round if we think that a fast quorum of acceptors

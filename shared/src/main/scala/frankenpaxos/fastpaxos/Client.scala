@@ -97,7 +97,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     logger.info(s"Value '${chosen}' was chosen.")
     chosenValue match {
       case Some(oldChosen) =>
-        logger.check_eq(chosen, oldChosen)
+        logger.checkEq(chosen, oldChosen)
       case None =>
     }
 
@@ -122,7 +122,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     // In this implementation of Fast Paxos, we assume that round 0 is the only
     // fast round. Thus, an acceptor responds to a client only in round 0.
-    logger.check_eq(reply.round, 0)
+    logger.checkEq(reply.round, 0)
 
     phase2bResponses += reply
 

@@ -578,7 +578,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Sanity check that all the commands agree.
         val commandOrNoop = CommandOrNoop().withCommand(state.command)
-        commandSet.foreach(logger.check_eq(_, commandOrNoop))
+        commandSet.foreach(logger.checkEq(_, commandOrNoop))
 
         // If all of the dependencies are the same, we can take the fast path.
         // Otherwise, have to take the slow path.
@@ -593,7 +593,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           // full two rounds of Paxos. However, we can perform the coordinated
           // recovery optimization of Fast Paxos and skip phase 1. Thus, we
           // proceed directly to phase 2.
-          logger.check_eq(roundSystem(phase2bFast.vertexId).leader(1), index)
+          logger.checkEq(roundSystem(phase2bFast.vertexId).leader(1), index)
           val dependencies: Set[VertexId] = dependenciesSet.flatten
           val value = Acceptor.VoteValue(commandOrNoop = commandOrNoop,
                                          dependencies = dependencies)
@@ -638,7 +638,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         if (phase1b.round != state.round) {
           // We know that phase1b.round is less than state.round because if it
           // were higher, we would have received a Nack instead of a Phase1b.
-          logger.check_lt(phase1b.round, state.round)
+          logger.checkLt(phase1b.round, state.round)
           logger.debug(
             s"Leader received a phase1b in round ${phase1b.round} in " +
               s"${phase1b.vertexId} but is in round ${phase1b.round}."
@@ -675,7 +675,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             .map((x: Phase1b) => x.voteValue.get)
             .toSet
           if (maxVoteRound > 0) {
-            logger.check_eq(voteValues.size, 0)
+            logger.checkEq(voteValues.size, 0)
             Acceptor.fromProto(voteValues.head)
           } else if (voteValues.size == 1) {
             Acceptor.fromProto(voteValues.head)
@@ -728,7 +728,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           // We know that phase2bClassic.round is less than state.round because
           // if it were higher, we would have received a Nack instead of a
           // Phase2b.
-          logger.check_lt(phase2bClassic.round, state.round)
+          logger.checkLt(phase2bClassic.round, state.round)
           logger.debug(
             s"Proposer received a phase2bClassic in round " +
               s"${phase2bClassic.round} in ${phase2bClassic.vertexId} but is " +

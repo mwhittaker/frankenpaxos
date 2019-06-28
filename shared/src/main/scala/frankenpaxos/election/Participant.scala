@@ -92,8 +92,8 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
   // Sanity check arguments.
   logger.check(addresses.contains(address))
-  logger.check_le(options.noPingTimeoutMin, options.noPingTimeoutMax)
-  logger.check_le(options.notEnoughVotesTimeoutMin,
+  logger.checkLe(options.noPingTimeoutMin, options.noPingTimeoutMax)
+  logger.checkLe(options.notEnoughVotesTimeoutMin,
                   options.notEnoughVotesTimeoutMax)
   leader match {
     case Some(address) => logger.check(addresses.contains(address))

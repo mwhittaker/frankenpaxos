@@ -77,8 +77,8 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     options: HeartbeatOptions = HeartbeatOptions.default
 ) extends Actor(address, transport, logger) {
   // Sanity check options.
-  logger.check_le(0, options.networkDelayAlpha)
-  logger.check_le(options.networkDelayAlpha, 1)
+  logger.checkLe(0, options.networkDelayAlpha)
+  logger.checkLe(options.networkDelayAlpha, 1)
 
   override type InboundMessage = ParticipantInbound
   override val serializer = ParticipantInboundSerializer

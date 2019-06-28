@@ -490,15 +490,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       // No checks to do.
 
       case Some(noCommand: NoCommandEntry) =>
-        logger.check_le(noCommand.ballot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(noCommand.ballot, ballot)(BallotHelpers.Ordering)
 
       case Some(accepted: AcceptedEntry) =>
-        logger.check_le(accepted.ballot, ballot)(BallotHelpers.Ordering)
-        logger.check_le(accepted.voteBallot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(accepted.ballot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(accepted.voteBallot, ballot)(BallotHelpers.Ordering)
 
       case Some(preAccepted: PreAcceptedEntry) =>
-        logger.check_le(preAccepted.ballot, ballot)(BallotHelpers.Ordering)
-        logger.check_le(preAccepted.voteBallot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(preAccepted.ballot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(preAccepted.voteBallot, ballot)(BallotHelpers.Ordering)
     }
 
     cmdLog -= instance
@@ -568,15 +568,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       // No checks to do.
 
       case Some(noCommand: NoCommandEntry) =>
-        logger.check_le(noCommand.ballot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(noCommand.ballot, ballot)(BallotHelpers.Ordering)
 
       case Some(accepted: AcceptedEntry) =>
-        logger.check_le(accepted.ballot, ballot)(BallotHelpers.Ordering)
-        logger.check_le(accepted.voteBallot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(accepted.ballot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(accepted.voteBallot, ballot)(BallotHelpers.Ordering)
 
       case Some(preAccepted: PreAcceptedEntry) =>
-        logger.check_le(preAccepted.ballot, ballot)(BallotHelpers.Ordering)
-        logger.check_le(preAccepted.voteBallot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(preAccepted.ballot, ballot)(BallotHelpers.Ordering)
+        logger.checkLe(preAccepted.voteBallot, ballot)(BallotHelpers.Ordering)
     }
     cmdLog -= instance
     cmdLog(instance) =
@@ -1092,7 +1092,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
           // If preAcceptOk.ballot were larger, then we would have received a
           // Nack instead of a PreAcceptOk.
-          logger.check_lt(preAcceptOk.ballot, ballot)(BallotHelpers.Ordering)
+          logger.checkLt(preAcceptOk.ballot, ballot)(BallotHelpers.Ordering)
           return
         }
 
@@ -1152,7 +1152,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           // and transition directly into the commit phase. If we don't have
           // N-2 matching responses, then we take the slow path.
           if (candidates.size > 0) {
-            logger.check_eq(candidates.size, 1)
+            logger.checkEq(candidates.size, 1)
             val (sequenceNumber, dependencies) = candidates.head
             commit(
               preAcceptOk.instance,
@@ -1300,7 +1300,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
           // If acceptOk.ballot were larger, then we would have received a
           // Nack instead of an AcceptOk.
-          logger.check_lt(acceptOk.ballot, ballot)(BallotHelpers.Ordering)
+          logger.checkLt(acceptOk.ballot, ballot)(BallotHelpers.Ordering)
           return
         }
 
@@ -1510,7 +1510,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
           // If prepareOk.ballot were larger, then we would have received a
           // Nack instead of a PrepareOk.
-          logger.check_lt(prepareOk.ballot, ballot)(BallotHelpers.Ordering)
+          logger.checkLt(prepareOk.ballot, ballot)(BallotHelpers.Ordering)
           return
         }
 
@@ -1561,7 +1561,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         val candidates =
           Util.popularItems(preAcceptsInDefaultBallotNotFromLeader, config.f)
         if (candidates.size > 0) {
-          logger.check_eq(candidates.size, 1)
+          logger.checkEq(candidates.size, 1)
           transitionToAcceptPhase(prepareOk.instance, ballot, candidates.head)
           return
         }

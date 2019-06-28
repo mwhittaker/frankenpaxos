@@ -103,7 +103,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // acceptors. We can return directly to the client.
     chosenValue match {
       case Some(chosen) =>
-        logger.check_eq(status, Chosen)
+        logger.checkEq(status, Chosen)
         val client = chan[Client[Transport]](src, Client.serializer)
         client.send(ClientInbound().withProposeReply(ProposeReply(chosen)))
         return
@@ -162,7 +162,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       } else if (k > 0) {
         // Classic round.
         val vs = phase1bResponses.filter(_.voteRound == k).map(_.voteValue.get)
-        logger.check_eq(vs.size, 1)
+        logger.checkEq(vs.size, 1)
         val v = vs.iterator.next()
         proposedValue = Some(v)
         proposedValue
@@ -175,7 +175,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         if (vs.size == 0) {
           None
         } else {
-          logger.check_eq(vs.size, 1)
+          logger.checkEq(vs.size, 1)
           val v = vs.iterator.next()
           proposedValue = Some(v)
           proposedValue
@@ -196,7 +196,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // All rounds besides round 0 are classic rounds. In this implementation,
     // we assume that acceptors do not send phase 2b messages to leaders in a
     // fast round. Thus, request.round must be greater than 0.
-    logger.check_gt(request.round, 0)
+    logger.checkGt(request.round, 0)
 
     // If we're not in phase 2, don't respond to phase 2b responses.
     if (status != Phase2) {
@@ -231,7 +231,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // value.
     chosenValue match {
       case Some(oldChosen) =>
-        logger.check_eq(oldChosen, chosen)
+        logger.checkEq(oldChosen, chosen)
       case None =>
     }
     chosenValue = Some(chosen)

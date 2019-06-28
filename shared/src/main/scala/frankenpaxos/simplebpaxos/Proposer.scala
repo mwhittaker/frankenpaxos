@@ -267,7 +267,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         if (phase1b.round != phase1.round) {
           // We know that phase1b.round is less than phase1.round because if it
           // were higher, we would have received a Nack instead of a Phase1b.
-          logger.check_lt(phase1b.round, phase1.round)
+          logger.checkLt(phase1b.round, phase1.round)
           logger.warn(
             s"Proposer received a phase1b in round ${phase1b.round} in " +
               s"${phase1b.vertexId} but is in round ${phase1b.round}."
@@ -337,7 +337,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         if (phase2b.round != phase2.round) {
           // We know that phase2b.round is less than phase2.round because if it
           // were higher, we would have received a Nack instead of a Phase2b.
-          logger.check_lt(phase2b.round, phase2.round)
+          logger.checkLt(phase2b.round, phase2.round)
           logger.warn(
             s"Proposer received a phase2b in round ${phase2b.round} in " +
               s"${phase2b.vertexId} but is in round ${phase2b.round}."
