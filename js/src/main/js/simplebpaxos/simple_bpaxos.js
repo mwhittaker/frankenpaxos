@@ -218,55 +218,9 @@ let leader_info = {
     };
   },
 
-  methods: {
-    vertex_id_to_string: function(vertex_id) {
-      return vertex_id.leaderIndex + "." + vertex_id.id;
-    },
-
-    nodes: function() {
-      let ns = this.JsUtils.setToJs(this.node.actor.dependencyGraph.nodes);
-      return ns.map(vertex_id => {
-        return {
-          id: this.vertex_id_to_string(vertex_id),
-          label: this.vertex_id_to_string(vertex_id),
-        };
-      });
-    },
-
-    edges: function() {
-      let es = this.JsUtils.setToJs(this.node.actor.dependencyGraph.edges);
-      es = es.map(t => this.JsUtils.tupleToJs(t));
-      es = es.map(t => {
-        return {
-          from: this.vertex_id_to_string(t[0]),
-          to: this.vertex_id_to_string(t[1]),
-        };
-      });
-      return es;
-    },
-  },
-
   template: `
     <div>
       <div>nextVertexId = {{node.actor.nextVertexId}}</div>
-
-      <div>stateMachine = {{node.actor.stateMachine}}</div>
-
-      <div>
-        clientTable =
-        <frankenpaxos-client-table :clientTable="node.actor.clientTable">
-        </frankenpaxos-client-table>
-      </div>
-
-      <div>
-        dependencyGraph =
-        <frankenpaxos-graph
-          style="height: 200px; border: 1pt solid black;"
-          :nodes="nodes()"
-          :edges="edges()"
-          :options="options">
-        </frankenpaxos-graph>
-      </div>
 
       <div>
         states =
@@ -438,6 +392,90 @@ let acceptor_info = {
   `,
 };
 
+let replica_info = {
+  props: {
+    node: Object,
+  },
+
+  components: {
+    'command-or-noop': command_or_noop_component,
+  },
+
+  data: function() {
+    return {
+      options: {
+        edges: {
+          arrows: 'to',
+        },
+      },
+    };
+  },
+
+  methods: {
+    vertex_id_to_string: function(vertex_id) {
+      return vertex_id.leaderIndex + "." + vertex_id.id;
+    },
+
+    nodes: function() {
+      let ns = this.JsUtils.setToJs(this.node.actor.dependencyGraph.nodes);
+      return ns.map(vertex_id => {
+        return {
+          id: this.vertex_id_to_string(vertex_id),
+          label: this.vertex_id_to_string(vertex_id),
+        };
+      });
+    },
+
+    edges: function() {
+      let es = this.JsUtils.setToJs(this.node.actor.dependencyGraph.edges);
+      es = es.map(t => this.JsUtils.tupleToJs(t));
+      es = es.map(t => {
+        return {
+          from: this.vertex_id_to_string(t[0]),
+          to: this.vertex_id_to_string(t[1]),
+        };
+      });
+      return es;
+    },
+  },
+
+  template: `
+    <div>
+      <div>stateMachine = {{node.actor.stateMachine}}</div>
+
+      <div>
+        clientTable =
+        <frankenpaxos-client-table :clientTable="node.actor.clientTable">
+        </frankenpaxos-client-table>
+      </div>
+
+      <div>
+        dependencyGraph =
+        <frankenpaxos-graph
+          style="height: 200px; border: 1pt solid black;"
+          :nodes="nodes()"
+          :edges="edges()"
+          :options="options">
+        </frankenpaxos-graph>
+      </div>
+
+      <div>
+        commands =
+        <frankenpaxos-map :map="node.actor.commands" v-slot="{value: cmd}">
+          <fp-object>
+            <fp-field :name="'commandOrNoop'">
+              <command-or-noop :value="cmd.commandOrNoop"></command-or-noop>
+            </fp-field>
+            <fp-field :name="'dependencies'">
+              <frankenpaxos-set :set="cmd.dependencies"></frankenpaxos-set>
+            </fp-field>
+          </fp-object>
+        </frankenpaxos-map>
+      </div>
+    </div>
+  `,
+};
+
 // Main app ////////////////////////////////////////////////////////////////////
 function make_nodes(SimpleBPaxos, snap) {
   // https://flatuicolors.com/palette/defo
@@ -446,6 +484,8 @@ function make_nodes(SimpleBPaxos, snap) {
   let flat_orange = '#f39c12';
   let flat_green = '#2ecc71';
   let flat_purple = '#9b59b6';
+  let flat_dark_blue = '#2c3e50';
+
   let colored = (color) => {
     return {
       'fill': color,
@@ -463,16 +503,20 @@ function make_nodes(SimpleBPaxos, snap) {
     'stroke-width': '1px',
   }
 
-  let client_x = 125;
-  let replica_x = 275;
+  const client_x = 100;
+  const leader_x = 300;
+  const proposer_x = 335;
+  const dep_service_x = 500;
+  const acceptor_x = 500;
+  const replica_y = 800;
 
   let nodes = {};
 
   // Clients.
   const clients = [
-    {actor: SimpleBPaxos.client1, x: 150},
-    {actor: SimpleBPaxos.client2, x: 300},
-    {actor: SimpleBPaxos.client3, x: 450},
+    {actor: SimpleBPaxos.client1, y: 200},
+    {actor: SimpleBPaxos.client2, y: 400},
+    {actor: SimpleBPaxos.client3, y: 600},
   ]
   for (const [index, client] of clients.entries()) {
     nodes[client.actor.address] = {
@@ -480,16 +524,19 @@ function make_nodes(SimpleBPaxos, snap) {
       color: flat_red,
       component: client_info,
       svgs: [
-        snap.circle(client.x, 350, 20).attr(colored(flat_red)),
-        snap.text(client.x, 350, (index + 1).toString()).attr(number_style),
+        snap.circle(client_x, client.y, 20).attr(colored(flat_red)),
+        snap.text(client_x, client.y, (index + 1).toString()).attr(number_style),
       ],
     };
   }
 
   // Leaders and proposers.
   const leaders = [
-    {actor: SimpleBPaxos.leader1, x: 200},
-    {actor: SimpleBPaxos.leader2, x: 400},
+    {actor: SimpleBPaxos.leader1, y: 200},
+    {actor: SimpleBPaxos.leader2, y: 300},
+    {actor: SimpleBPaxos.leader3, y: 400},
+    {actor: SimpleBPaxos.leader4, y: 500},
+    {actor: SimpleBPaxos.leader5, y: 600},
   ]
   for (const [index, leader] of leaders.entries()) {
     nodes[leader.actor.address] = {
@@ -497,8 +544,8 @@ function make_nodes(SimpleBPaxos, snap) {
       color: flat_blue,
       component: leader_info,
       svgs: [
-        snap.circle(leader.x, 200, 20).attr(colored(flat_blue)),
-        snap.text(leader.x, 200, (index + 1).toString()).attr(number_style),
+        snap.circle(leader_x, leader.y, 20).attr(colored(flat_blue)),
+        snap.text(leader_x, leader.y, (index + 1).toString()).attr(number_style),
       ],
     };
     nodes[leader.actor.proposer.address] = {
@@ -506,17 +553,17 @@ function make_nodes(SimpleBPaxos, snap) {
       color: flat_green,
       component: proposer_info,
       svgs: [
-        snap.circle(leader.x + 50, 250, 20).attr(colored(flat_green)),
-        snap.text(leader.x + 50, 250, (index + 1).toString()).attr(number_style),
+        snap.circle(proposer_x, leader.y + 35, 20).attr(colored(flat_green)),
+        snap.text(proposer_x, leader.y + 35, (index + 1).toString()).attr(number_style),
       ],
     };
   }
 
   // Dependency service nodes.
   const dep_nodes = [
-    {actor: SimpleBPaxos.depServiceNode1, x: 50},
-    {actor: SimpleBPaxos.depServiceNode2, x: 125},
-    {actor: SimpleBPaxos.depServiceNode3, x: 200},
+    {actor: SimpleBPaxos.depServiceNode1, y: 100},
+    {actor: SimpleBPaxos.depServiceNode2, y: 200},
+    {actor: SimpleBPaxos.depServiceNode3, y: 300},
   ]
   for (const [index, dep_node] of dep_nodes.entries()) {
     nodes[dep_node.actor.address] = {
@@ -524,17 +571,17 @@ function make_nodes(SimpleBPaxos, snap) {
       color: flat_purple,
       component: dep_node_info,
       svgs: [
-        snap.circle(dep_node.x, 50, 20).attr(colored(flat_purple)),
-        snap.text(dep_node.x, 50, (index + 1).toString()).attr(number_style),
+        snap.circle(dep_service_x, dep_node.y, 20).attr(colored(flat_purple)),
+        snap.text(dep_service_x, dep_node.y, (index + 1).toString()).attr(number_style),
       ],
     };
   }
 
   // Acceptors.
   const acceptors = [
-    {actor: SimpleBPaxos.acceptor1, x: 400},
-    {actor: SimpleBPaxos.acceptor2, x: 475},
-    {actor: SimpleBPaxos.acceptor3, x: 550},
+    {actor: SimpleBPaxos.acceptor1, y: 500},
+    {actor: SimpleBPaxos.acceptor2, y: 600},
+    {actor: SimpleBPaxos.acceptor3, y: 700},
   ]
   for (const [index, acceptor] of acceptors.entries()) {
     nodes[acceptor.actor.address] = {
@@ -542,17 +589,35 @@ function make_nodes(SimpleBPaxos, snap) {
       color: flat_orange,
       component: acceptor_info,
       svgs: [
-        snap.circle(acceptor.x, 50, 20).attr(colored(flat_orange)),
-        snap.text(acceptor.x, 50, (index + 1).toString()).attr(number_style),
+        snap.circle(acceptor_x, acceptor.y, 20).attr(colored(flat_orange)),
+        snap.text(acceptor_x, acceptor.y, (index + 1).toString()).attr(number_style),
+      ],
+    };
+  }
+
+  // Replicas.
+  const replicas = [
+    {actor: SimpleBPaxos.replica1, x: 200},
+    {actor: SimpleBPaxos.replica2, x: 400},
+  ]
+  for (const [index, replica] of replicas.entries()) {
+    nodes[replica.actor.address] = {
+      actor: replica.actor,
+      color: flat_dark_blue,
+      component: replica_info,
+      svgs: [
+        snap.circle(replica.x, replica_y, 20).attr(colored(flat_dark_blue)),
+        snap.text(replica.x, replica_y, (index + 1).toString()).attr(number_style),
       ],
     };
   }
 
   // Node titles.
-  snap.text(50, 350, 'Clients').attr({'text-anchor': 'middle'});
-  snap.text(50, 200, 'Leaders').attr({'text-anchor': 'middle'});
-  snap.text(125, 15, 'Dependency Service').attr({'text-anchor': 'middle'});
-  snap.text(475, 15, 'Acceptors').attr({'text-anchor': 'middle'});
+  snap.text(100, 50, 'Clients').attr({'text-anchor': 'middle'});
+  snap.text(300, 50, 'Leaders').attr({'text-anchor': 'middle'});
+  snap.text(500, 40, 'Dep Service /').attr({'text-anchor': 'middle'});
+  snap.text(500, 60, 'Acceptors').attr({'text-anchor': 'middle'});
+  snap.text(300, 850, 'Replicas').attr({'text-anchor': 'middle'});
 
   return nodes;
 }
@@ -578,6 +643,12 @@ function main() {
     },
 
     methods: {
+      distance: function(x1, y1, x2, y2) {
+        const dx = x1 - x2;
+        const dy = y1 - y2;
+        return Math.sqrt(dx*dx + dy*dy);
+      },
+
       send_message: function(message) {
         let src = nodes[message.src];
         let dst = nodes[message.dst];
@@ -585,10 +656,12 @@ function main() {
         let src_y = src.svgs[0].attr("cy");
         let dst_x = dst.svgs[0].attr("cx");
         let dst_y = dst.svgs[0].attr("cy");
+        let d = this.distance(src_x, src_y, dst_x, dst_y);
+        let speed = 400 + (Math.random() * 50); // px per second.
 
         let svg_message = snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
         snap.prepend(svg_message);
-        let duration = (1000 + Math.random() * 200) / 1000;
+        let duration = d / speed;
         return TweenMax.to(svg_message.node, duration, {
           attr: { cx: dst_x, cy: dst_y },
           ease: Linear.easeNone,

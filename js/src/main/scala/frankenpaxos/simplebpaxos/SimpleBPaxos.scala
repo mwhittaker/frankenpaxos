@@ -131,17 +131,14 @@ class SimpleBPaxos {
       stateMachine = new AppendLog(),
       dependencyGraph = new ScalaGraphDependencyGraph(),
       options = ReplicaOptions.default.copy(
-        recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(1),
-        recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(5)
+        recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
+        recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(15)
       ),
       metrics = new ReplicaMetrics(FakeCollectors)
     )
   }
   val replica1 = replicas(0)
   val replica2 = replicas(1)
-  val replica3 = replicas(2)
-  val replica4 = replicas(3)
-  val replica5 = replicas(4)
 }
 
 @JSExportAll
