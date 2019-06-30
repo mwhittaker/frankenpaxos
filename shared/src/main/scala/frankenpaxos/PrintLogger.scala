@@ -17,7 +17,7 @@ class PrintLogger(logLevel: LogLevel = LogDebug) extends Logger(logLevel) {
 
   override def fatalImpl(message: String): Nothing = {
     def show(s: String): Unit = {
-      println(
+      System.err.println(
         colored(Console.WHITE + Console.RED_B, s"$time [FATAL] $threadId") + s
       )
     }

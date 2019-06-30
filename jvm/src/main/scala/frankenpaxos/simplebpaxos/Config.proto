@@ -20,4 +20,5 @@ message NettyConfigProto {
   repeated HostPortProto depServiceNodeAddress = 3;
   repeated HostPortProto proposerAddress = 4;
   repeated HostPortProto acceptorAddress = 5;
+  repeated HostPortProto replicaAddress = 6;
 }
