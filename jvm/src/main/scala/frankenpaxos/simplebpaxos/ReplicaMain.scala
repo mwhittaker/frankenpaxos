@@ -17,7 +17,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import scala.concurrent.duration
 
-object LeaderMain extends App {
+object ReplicaMain extends App {
   case class Flags(
       // Basic flags.
       index: Int = -1,
@@ -27,27 +27,14 @@ object LeaderMain extends App {
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
       // Options.
-      options: LeaderOptions = LeaderOptions.default
+      options: ReplicaOptions = ReplicaOptions.default
   )
 
   implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def optionAction(
-        f: (A, LeaderOptions) => LeaderOptions
+        f: (A, ReplicaOptions) => ReplicaOptions
     ): scopt.OptionDef[A, Flags] =
       o.action((x, flags) => flags.copy(options = f(x, flags.options)))
-  }
-
-  implicit class ProposerWrapper[A](o: scopt.OptionDef[A, Flags]) {
-    def proposerAction(
-        f: (A, ProposerOptions) => ProposerOptions
-    ): scopt.OptionDef[A, Flags] =
-      o.action(
-        (x, flags) =>
-          flags.copy(
-            options = flags.options
-              .copy(proposerOptions = f(x, flags.options.proposerOptions))
-          )
-      )
   }
 
   val parser = new scopt.OptionParser[Flags]("") {
@@ -66,12 +53,10 @@ object LeaderMain extends App {
       .text(s"-1 to disable")
 
     // Options.
-    opt[java.time.Duration]("options.resendDependencyRequestsTimerPeriod")
-      .optionAction((x, o) => o.copy(resendDependencyRequestsTimerPeriod = x))
-    opt[java.time.Duration]("options.proposer.resendPhase1asTimerPeriod")
-      .proposerAction((x, o) => o.copy(resendPhase1asTimerPeriod = x))
-    opt[java.time.Duration]("options.proposer.resendPhase2asTimerPeriod")
-      .proposerAction((x, o) => o.copy(resendPhase2asTimerPeriod = x))
+    opt[java.time.Duration]("options.recoverVertexTimerMinPeriod")
+      .optionAction((x, o) => o.copy(recoverVertexTimerMinPeriod = x))
+    opt[java.time.Duration]("options.recoverVertexTimerMaxPeriod")
+      .optionAction((x, o) => o.copy(recoverVertexTimerMaxPeriod = x))
   }
 
   // Parse flags.
@@ -82,14 +67,16 @@ object LeaderMain extends App {
       throw new IllegalArgumentException("Could not parse flags.")
   }
 
-  // Construct leader.
+  // Construct replica.
   val logger = new PrintLogger(flags.logLevel)
   val config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath())
-  val leader = new Leader[NettyTcpTransport](
-    address = config.leaderAddresses(flags.index),
+  val replica = new Replica[NettyTcpTransport](
+    address = config.replicaAddresses(flags.index),
     transport = new NettyTcpTransport(logger),
     logger = logger,
     config = config,
+    stateMachine = new KeyValueStore(),
+    dependencyGraph = new JgraphtDependencyGraph(),
     options = flags.options
   )
 

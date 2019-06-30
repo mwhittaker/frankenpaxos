@@ -1,6 +1,8 @@
 package frankenpaxos.simplebpaxos
 
 import VertexIdHelpers.vertexIdOrdering
+import frankenpaxos.Util
+import frankenpaxos.Util.MapHelpers
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator.FakeLogger
@@ -20,9 +22,10 @@ class SimpleBPaxos(val f: Int) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = 2 * f + 1
-  val numLeaders = f + 1
+  val numLeaders = f + 2
   val numDepServiceNodes = 2 * f + 1
   val numAcceptors = 2 * f + 1
+  val numReplicas = f + 1
 
   // Configuration.
   val config = Config[FakeTransport](
@@ -34,7 +37,9 @@ class SimpleBPaxos(val f: Int) {
     proposerAddresses = for (i <- 1 to numLeaders)
       yield FakeTransportAddress(s"Proposer $i"),
     acceptorAddresses = for (i <- 1 to numAcceptors)
-      yield FakeTransportAddress(s"Acceptor $i")
+      yield FakeTransportAddress(s"Acceptor $i"),
+    replicaAddresses = for (i <- 1 to numReplicas)
+      yield FakeTransportAddress(s"Replica $i")
   )
 
   // Clients.
@@ -58,12 +63,8 @@ class SimpleBPaxos(val f: Int) {
       transport = transport,
       logger = new FakeLogger(),
       config = config,
-      stateMachine = new KeyValueStore(),
-      dependencyGraph = new JgraphtDependencyGraph(),
       options = LeaderOptions.default.copy(
         resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(3),
-        recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
-        recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(20),
         proposerOptions = ProposerOptions(
           resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(3),
           resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(3)
@@ -98,6 +99,23 @@ class SimpleBPaxos(val f: Int) {
       metrics = new AcceptorMetrics(FakeCollectors)
     )
   }
+
+  // Replicas.
+  val replicas = for (i <- 1 to numReplicas) yield {
+    new Replica[FakeTransport](
+      address = FakeTransportAddress(s"Replica $i"),
+      transport = transport,
+      logger = new FakeLogger(),
+      config = config,
+      stateMachine = new KeyValueStore(),
+      dependencyGraph = new JgraphtDependencyGraph(),
+      options = ReplicaOptions.default.copy(
+        recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
+        recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(20)
+      ),
+      metrics = new ReplicaMetrics(FakeCollectors)
+    )
+  }
 }
 
 object SimulatedSimpleBPaxos {
@@ -127,28 +145,21 @@ class SimulatedSimpleBPaxos(val f: Int) extends SimulatedSystem {
   override def getState(bpaxos: System): State = {
     // Merge two States together, taking a pairwise union.
     def merge(lhs: State, rhs: State): State = {
-      val merged = for (k <- lhs.keys ++ rhs.keys)
-        yield {
-          k -> lhs.getOrElse(k, Set()).union(rhs.getOrElse(k, Set()))
-        }
-      Map(merged.toSeq: _*)
+      lhs.merge(rhs) {
+        case (_, Util.Left(l))    => l
+        case (_, Util.Both(l, r)) => l.union(r)
+        case (_, Util.Right(r))   => r
+      }
     }
 
-    // We look at the commands recorded chosen by the leaders.
-    val chosen = bpaxos.leaders
-      .map(leader => Map() ++ leader.states)
-      .map(states => {
-        states.flatMap({
-          case (i, committed: Leader.Committed[_]) =>
-            Some(
-              i -> Acceptor.VoteValue(committed.commandOrNoop,
-                                      committed.dependencies)
-            )
-          case _ =>
-            None
-        })
+    // We look at the commands recorded chosen by the replicas.
+    val chosen = bpaxos.replicas
+      .map(replica => Map() ++ replica.commands)
+      .map(commands => {
+        commands.mapValues(
+          c => Set(Acceptor.VoteValue(c.commandOrNoop, c.dependencies))
+        )
       })
-      .map(states => states.mapValues(Set[Acceptor.VoteValue](_)))
       .foldLeft(Map[VertexId, Set[Acceptor.VoteValue]]())(merge(_, _))
 
     if (chosen.size > 0) {

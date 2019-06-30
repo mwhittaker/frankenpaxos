@@ -20,7 +20,10 @@ class SimpleBPaxos {
     f = 1,
     leaderAddresses = Seq(
       JsTransportAddress("Leader 1"),
-      JsTransportAddress("Leader 2")
+      JsTransportAddress("Leader 2"),
+      JsTransportAddress("Leader 3"),
+      JsTransportAddress("Leader 4"),
+      JsTransportAddress("Leader 5")
     ),
     depServiceNodeAddresses = Seq(
       JsTransportAddress("Dep Service Node 1"),
@@ -29,12 +32,19 @@ class SimpleBPaxos {
     ),
     proposerAddresses = Seq(
       JsTransportAddress("Proposer 1"),
-      JsTransportAddress("Proposer 2")
+      JsTransportAddress("Proposer 2"),
+      JsTransportAddress("Proposer 3"),
+      JsTransportAddress("Proposer 4"),
+      JsTransportAddress("Proposer 5")
     ),
     acceptorAddresses = Seq(
       JsTransportAddress("Acceptor 1"),
       JsTransportAddress("Acceptor 2"),
       JsTransportAddress("Acceptor 3")
+    ),
+    replicaAddresses = Seq(
+      JsTransportAddress("Replica 1"),
+      JsTransportAddress("Replica 2")
     )
   )
 
@@ -56,18 +66,14 @@ class SimpleBPaxos {
   val client3 = clients(2)
 
   // Leaders.
-  val leaders = for (i <- 1 to 2) yield {
+  val leaders = for (i <- 1 to config.leaderAddresses.size) yield {
     new Leader[JsTransport](
       address = JsTransportAddress(s"Leader $i"),
       transport = transport,
       logger = new JsLogger(),
       config = config,
-      stateMachine = new AppendLog(),
-      dependencyGraph = new ScalaGraphDependencyGraph(),
       options = LeaderOptions.default.copy(
         resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(3),
-        recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
-        recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(20),
         proposerOptions = ProposerOptions(
           resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(3),
           resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(3)
@@ -79,25 +85,29 @@ class SimpleBPaxos {
   }
   val leader1 = leaders(0)
   val leader2 = leaders(1)
+  val leader3 = leaders(2)
+  val leader4 = leaders(3)
+  val leader5 = leaders(4)
 
   // DepServiceNodes.
-  val depServiceNodes = for (i <- 1 to 3) yield {
-    new DepServiceNode[JsTransport](
-      address = JsTransportAddress(s"Dep Service Node $i"),
-      transport = transport,
-      logger = new JsLogger(),
-      config = config,
-      stateMachine = new AppendLog(),
-      options = DepServiceNodeOptions.default.copy(),
-      metrics = new DepServiceNodeMetrics(FakeCollectors)
-    )
-  }
+  val depServiceNodes = for (i <- 1 to config.depServiceNodeAddresses.size)
+    yield {
+      new DepServiceNode[JsTransport](
+        address = JsTransportAddress(s"Dep Service Node $i"),
+        transport = transport,
+        logger = new JsLogger(),
+        config = config,
+        stateMachine = new AppendLog(),
+        options = DepServiceNodeOptions.default.copy(),
+        metrics = new DepServiceNodeMetrics(FakeCollectors)
+      )
+    }
   val depServiceNode1 = depServiceNodes(0)
   val depServiceNode2 = depServiceNodes(1)
   val depServiceNode3 = depServiceNodes(2)
 
   // Acceptors.
-  val acceptors = for (i <- 1 to 3) yield {
+  val acceptors = for (i <- 1 to config.acceptorAddresses.size) yield {
     new Acceptor[JsTransport](
       address = JsTransportAddress(s"Acceptor $i"),
       transport = transport,
@@ -110,6 +120,28 @@ class SimpleBPaxos {
   val acceptor1 = acceptors(0)
   val acceptor2 = acceptors(1)
   val acceptor3 = acceptors(2)
+
+  // Replicas.
+  val replicas = for (i <- 1 to config.replicaAddresses.size) yield {
+    new Replica[JsTransport](
+      address = JsTransportAddress(s"Replica $i"),
+      transport = transport,
+      logger = new JsLogger(),
+      config = config,
+      stateMachine = new AppendLog(),
+      dependencyGraph = new ScalaGraphDependencyGraph(),
+      options = ReplicaOptions.default.copy(
+        recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(1),
+        recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(5)
+      ),
+      metrics = new ReplicaMetrics(FakeCollectors)
+    )
+  }
+  val replica1 = replicas(0)
+  val replica2 = replicas(1)
+  val replica3 = replicas(2)
+  val replica4 = replicas(3)
+  val replica5 = replicas(4)
 }
 
 @JSExportAll
