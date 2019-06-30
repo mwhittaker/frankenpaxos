@@ -262,9 +262,23 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
           val clientIdentity = (clientAddress, command.clientPseudonym)
           clientTable.executed(clientIdentity, command.clientId) match {
-            case ClientTable.Executed(_) =>
+            case ClientTable.Executed(None) =>
               // Don't execute the same command twice.
               metrics.repeatedCommandsTotal.inc()
+
+            case ClientTable.Executed(Some(output)) =>
+              // Don't execute the same command twice. Also, replay the output
+              // to the client.
+              metrics.repeatedCommandsTotal.inc()
+              val client =
+                chan[Client[Transport]](clientAddress, Client.serializer)
+              client.send(
+                ClientInbound().withClientReply(
+                  ClientReply(clientPseudonym = command.clientPseudonym,
+                              clientId = command.clientId,
+                              result = ByteString.copyFrom(output))
+                )
+              )
 
             case ClientTable.NotExecuted =>
               val output = stateMachine.run(command.command.toByteArray)

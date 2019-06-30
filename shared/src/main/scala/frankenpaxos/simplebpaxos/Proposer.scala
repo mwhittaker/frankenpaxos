@@ -143,7 +143,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   // Helpers ///////////////////////////////////////////////////////////////////
   def roundSystem(vertexId: VertexId): RoundSystem =
-    new RoundSystem.RotatedClassicRoundRobin(config.n, vertexId.leaderIndex)
+    new RoundSystem.RotatedClassicRoundRobin(config.leaderAddresses.size,
+                                             vertexId.leaderIndex)
 
   def proposeImpl(
       vertexId: VertexId,

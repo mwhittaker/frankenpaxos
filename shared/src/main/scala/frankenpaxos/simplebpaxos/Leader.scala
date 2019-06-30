@@ -197,7 +197,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Update our state.
-        states -= vertexId
+        states(vertexId) = Committed(
+          commandOrNoop = commandOrNoop,
+          dependencies = dependencies
+        )
     }
   }
 
@@ -341,14 +344,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // it has nothing to recover. A value will eventually be committed.
         return
 
-      case Some(Committed(commandOrNoop, dependencies)) =>
+      case Some(committed: Committed[_]) =>
         // We've already committed this instance. We can reply back immediately.
         val replica = chan[Replica[Transport]](src, Replica.serializer)
         replica.send(
           ReplicaInbound().withCommit(
             Commit(vertexId = recover.vertexId,
-                   commandOrNoop = commandOrNoop,
-                   dependency = dependencies.toSeq)
+                   commandOrNoop = committed.commandOrNoop,
+                   dependency = committed.dependencies.toSeq)
           )
         )
         return
