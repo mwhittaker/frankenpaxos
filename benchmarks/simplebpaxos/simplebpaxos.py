@@ -33,10 +33,6 @@ class ProposerOptions(NamedTuple):
 class LeaderOptions(NamedTuple):
     resend_dependency_requests_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
-    recover_vertex_timer_min_period: datetime.timedelta = \
-        datetime.timedelta(seconds=1)
-    recover_vertex_timer_max_period: datetime.timedelta = \
-        datetime.timedelta(seconds=1)
     proposer_options: ProposerOptions = ProposerOptions()
 
 
@@ -46,6 +42,13 @@ class DepServiceNodeOptions(NamedTuple):
 
 class AcceptorOptions(NamedTuple):
     pass
+
+
+class ReplicaOptions(NamedTuple):
+    recover_vertex_timer_min_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
+    recover_vertex_timer_max_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
 
 
 class Input(NamedTuple):
@@ -58,6 +61,8 @@ class Input(NamedTuple):
     num_client_procs: int
     # The number of clients run on each benchmark client process.
     num_clients_per_proc: int
+    # The number of leaders.
+    num_leaders: int
 
     # Benchmark parameters. ####################################################
     # The (rough) duration of the benchmark.
@@ -74,10 +79,6 @@ class Input(NamedTuple):
     # monitoring is enabled.
     prometheus_scrape_interval: datetime.timedelta
 
-    # Leader options. ##########################################################
-    leader_options: LeaderOptions
-    leader_log_level: str
-
     # Dep service node options. ################################################
     dep_service_node_options: DepServiceNodeOptions
     dep_service_node_log_level: str
@@ -85,6 +86,14 @@ class Input(NamedTuple):
     # Acceptor options. ########################################################
     acceptor_options: AcceptorOptions
     acceptor_log_level: str
+
+    # Replica options. ########################################################
+    replica_options: ReplicaOptions
+    replica_log_level: str
+
+    # Leader options. ##########################################################
+    leader_options: LeaderOptions
+    leader_log_level: str
 
     # Client options. ##########################################################
     client_options: ClientOptions
@@ -121,6 +130,9 @@ class SimpleBPaxosNet(object):
     def acceptors(self) -> List[mininet.node.Node]:
         raise NotImplementedError()
 
+    def replicas(self) -> List[mininet.node.Node]:
+        raise NotImplementedError()
+
     def config(self) -> proto_util.Message:
         raise NotImplementedError()
 
@@ -128,12 +140,14 @@ class SimpleBPaxosNet(object):
 class SingleSwitchNet(SimpleBPaxosNet):
     def __init__(self,
                  f: int,
-                 num_client_procs: int) -> None:
+                 num_client_procs: int,
+                 num_leaders: int) -> None:
         self.f = f
         self._clients: List[mininet.node.Node] = []
         self._leaders: List[mininet.node.Node] = []
         self._dep_service_nodes: List[mininet.node.Node] = []
         self._acceptors: List[mininet.node.Node] = []
+        self._replicas: List[mininet.node.Node] = []
         self._net = Mininet()
 
         switch = self._net.addSwitch('s1')
@@ -144,7 +158,7 @@ class SingleSwitchNet(SimpleBPaxosNet):
             self._net.addLink(client, switch)
             self._clients.append(client)
 
-        for i in range(f + 1):
+        for i in range(num_leaders):
             leader = self._net.addHost(f'l{i}')
             self._net.addLink(leader, switch)
             self._leaders.append(leader)
@@ -158,6 +172,11 @@ class SingleSwitchNet(SimpleBPaxosNet):
             acceptor = self._net.addHost(f'a{i}')
             self._net.addLink(acceptor, switch)
             self._acceptors.append(acceptor)
+
+        for i in range(f + 1):
+            replica = self._net.addHost(f'r{i}')
+            self._net.addLink(replica, switch)
+            self._replicas.append(replica)
 
     def net(self) -> Mininet:
         return self._net
@@ -173,6 +192,9 @@ class SingleSwitchNet(SimpleBPaxosNet):
 
     def acceptors(self) -> List[mininet.node.Node]:
         return self._acceptors
+
+    def replicas(self) -> List[mininet.node.Node]:
+        return self._replicas
 
     def config(self) -> proto_util.Message:
         return {
@@ -193,6 +215,10 @@ class SingleSwitchNet(SimpleBPaxosNet):
                 {'host': a.IP(), 'port': 11000}
                 for a in self.acceptors()
             ],
+            'replicaAddress': [
+                {'host': a.IP(), 'port': 12000}
+                for a in self.replicas()
+            ],
         }
 
 
@@ -207,70 +233,6 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
         bench.write_string(config_filename,
                            proto_util.message_to_pbtext(net.config()))
         bench.log('Config file config.pbtxt written.')
-
-        # Launch leaders.
-        leader_procs = []
-        for (i, host) in enumerate(net.leaders()):
-            proc = bench.popen(
-                f=host.popen,
-                label=f'leader_{i}',
-                cmd = [
-                    'java',
-                    '-cp', os.path.abspath(args['jar']),
-                    'frankenpaxos.simplebpaxos.LeaderMain',
-                    '--index', str(i),
-                    '--config', config_filename,
-                    '--log_level', input.leader_log_level,
-                    '--prometheus_host', host.IP(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
-                    '--options.resendDependencyRequestsTimerPeriod',
-                        '{}s'.format(input.leader_options
-                                     .resend_dependency_requests_timer_period
-                                     .total_seconds()),
-                    '--options.recoverVertexTimerMinPeriod',
-                        '{}s'.format(input.leader_options
-                                     .recover_vertex_timer_min_period
-                                     .total_seconds()),
-                    '--options.recoverVertexTimerMaxPeriod',
-                        '{}s'.format(input.leader_options
-                                     .recover_vertex_timer_max_period
-                                     .total_seconds()),
-                    '--options.proposer.resendPhase1asTimerPeriod',
-                        '{}s'.format(input.leader_options
-                                     .proposer_options
-                                     .resend_phase1as_timer_period
-                                     .total_seconds()),
-                    '--options.proposer.resendPhase2asTimerPeriod',
-                        '{}s'.format(input.leader_options
-                                     .proposer_options
-                                     .resend_phase2as_timer_period
-                                     .total_seconds()),
-                ],
-                profile=input.profiled,
-            )
-            leader_procs.append(proc)
-        bench.log('Leaders started.')
-
-        # Launch acceptors.
-        acceptor_procs = []
-        for (i, host) in enumerate(net.acceptors()):
-            proc = bench.popen(
-                f=host.popen,
-                label=f'acceptor_{i}',
-                cmd = [
-                    'java',
-                    '-cp', os.path.abspath(args['jar']),
-                    'frankenpaxos.simplebpaxos.AcceptorMain',
-                    '--index', str(i),
-                    '--config', config_filename,
-                    '--log_level', input.acceptor_log_level,
-                    '--prometheus_host', host.IP(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
-                ],
-                profile=input.profiled,
-            )
-            acceptor_procs.append(proc)
-        bench.log('Acceptors started.')
 
         # Launch dep service nodes.
         dep_service_node_procs = []
@@ -293,6 +255,91 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             dep_service_node_procs.append(proc)
         bench.log('DepServiceNodes started.')
 
+        # Launch acceptors.
+        acceptor_procs = []
+        for (i, host) in enumerate(net.acceptors()):
+            proc = bench.popen(
+                f=host.popen,
+                label=f'acceptor_{i}',
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args['jar']),
+                    'frankenpaxos.simplebpaxos.AcceptorMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                    '--log_level', input.acceptor_log_level,
+                    '--prometheus_host', host.IP(),
+                    '--prometheus_port', '12345' if input.monitored else '-1',
+                ],
+                profile=input.profiled,
+            )
+            acceptor_procs.append(proc)
+        bench.log('Acceptors started.')
+
+        # Launch replicas.
+        replica_procs = []
+        for (i, host) in enumerate(net.replicas()):
+            proc = bench.popen(
+                f=host.popen,
+                label=f'replica_{i}',
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args['jar']),
+                    'frankenpaxos.simplebpaxos.ReplicaMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                    '--log_level', input.replica_log_level,
+                    '--prometheus_host', host.IP(),
+                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--options.recoverVertexTimerMinPeriod',
+                        '{}s'.format(input.replica_options
+                                     .recover_vertex_timer_min_period
+                                     .total_seconds()),
+                    '--options.recoverVertexTimerMaxPeriod',
+                        '{}s'.format(input.replica_options
+                                     .recover_vertex_timer_max_period
+                                     .total_seconds()),
+                ],
+                profile=input.profiled,
+            )
+            replica_procs.append(proc)
+        bench.log('Replicas started.')
+
+        # Launch leaders.
+        leader_procs = []
+        for (i, host) in enumerate(net.leaders()):
+            proc = bench.popen(
+                f=host.popen,
+                label=f'leader_{i}',
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args['jar']),
+                    'frankenpaxos.simplebpaxos.LeaderMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                    '--log_level', input.leader_log_level,
+                    '--prometheus_host', host.IP(),
+                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--options.resendDependencyRequestsTimerPeriod',
+                        '{}s'.format(input.leader_options
+                                     .resend_dependency_requests_timer_period
+                                     .total_seconds()),
+                    '--options.proposer.resendPhase1asTimerPeriod',
+                        '{}s'.format(input.leader_options
+                                     .proposer_options
+                                     .resend_phase1as_timer_period
+                                     .total_seconds()),
+                    '--options.proposer.resendPhase2asTimerPeriod',
+                        '{}s'.format(input.leader_options
+                                     .proposer_options
+                                     .resend_phase2as_timer_period
+                                     .total_seconds()),
+                ],
+                profile=input.profiled,
+            )
+            leader_procs.append(proc)
+        bench.log('Leaders started.')
+
         # Launch Prometheus.
         if input.monitored:
             prometheus_config = prometheus.prometheus_config(
@@ -306,6 +353,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     [f'{n.IP()}:12345' for n in net.clients()],
                   'bpaxos_dep_service_node':
                     [f'{n.IP()}:12345' for n in net.dep_service_nodes()],
+                  'bpaxos_replica':
+                    [f'{n.IP()}:12345' for n in net.replicas()],
                 }
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
@@ -357,7 +406,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
         # Wait for clients to finish and then terminate leaders and acceptors.
         for proc in client_procs:
             proc.wait()
-        for proc in leader_procs + acceptor_procs + dep_service_node_procs:
+        for proc in (leader_procs + acceptor_procs + dep_service_node_procs +
+                     replica_procs):
             proc.terminate()
         bench.log('Clients finished and processes terminated.')
 
@@ -371,7 +421,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                       args: Dict[Any, Any],
                       input: Input) -> Output:
         with SingleSwitchNet(f=input.f,
-                             num_client_procs=input.num_client_procs) as net:
+                             num_client_procs=input.num_client_procs,
+                             num_leaders=input.num_leaders) as net:
             return self._run_benchmark(bench, args, input, net)
 
 
@@ -387,6 +438,7 @@ def _main(args) -> None:
                     f = 1,
                     num_client_procs = num_client_procs,
                     num_clients_per_proc = 1,
+                    num_leaders = 2,
                     duration = datetime.timedelta(seconds=10),
                     timeout = datetime.timedelta(seconds=30),
                     client_lag = datetime.timedelta(seconds=0),
@@ -394,12 +446,14 @@ def _main(args) -> None:
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
-                    leader_options = LeaderOptions(),
-                    leader_log_level = 'debug',
                     dep_service_node_options = DepServiceNodeOptions(),
                     dep_service_node_log_level = 'debug',
                     acceptor_options = AcceptorOptions(),
                     acceptor_log_level = 'debug',
+                    replica_options = ReplicaOptions(),
+                    replica_log_level = 'debug',
+                    leader_options = LeaderOptions(),
+                    leader_log_level = 'debug',
                     client_options = ClientOptions(),
                     client_log_level = 'debug',
                     client_num_keys = 100,
