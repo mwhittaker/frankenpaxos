@@ -1,14 +1,14 @@
 // A protocol cheatsheet, similar to [1].
 //
-//                                           Dependency
-//                                            Service
-//   Client              Leader                 Node
-//      | ---------------> |                     |  ClientRequest
-//      |                  | ------------------> |  DependencyRequest
-//      |                  | <------------------ |  DependencyReply
-//      | <--------------- |                     |  ClientReply
-//      |                  | --------.           |  Commit
-//      |                  | <-------'           |
+//                              Dependency
+//                               Service
+//   Client         Leader        Node         Replica
+//      | ----------> |             |             |  ClientRequest
+//      |             | ----------> |             |  DependencyRequest
+//      |             | <---------- |             |  DependencyReply
+//      |             | ------------^-----------> |  Commit
+//      | <-----------^-------------^------------ |  ClientReply
+//      |             | <-----------^------------ |  Recover
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
@@ -94,6 +94,15 @@ message DependencyReply {
   repeated VertexId dependency = 3;
 }
 
+message Commit {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required CommandOrNoop command_or_noop = 2;
+  repeated VertexId dependency = 3;
+}
+
 message ClientReply {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -104,13 +113,12 @@ message ClientReply {
   required bytes result = 3;
 }
 
-message Commit {
+message Recover {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
+  // TODO(mwhittaker): Figure out what other fields need to go here.
   required VertexId vertex_id = 1;
-  required CommandOrNoop command_or_noop = 2;
-  repeated VertexId dependency = 3;
 }
 
 // Inbound messages. ///////////////////////////////////////////////////////////
@@ -121,7 +129,7 @@ message LeaderInbound {
   oneof request {
     ClientRequest client_request = 1;
     DependencyReply dependency_reply = 2;
-    Commit commit = 3;
+    Recover recover = 3;
   }
 }
 
@@ -131,6 +139,15 @@ message DepServiceNodeInbound {
 
   oneof request {
     DependencyRequest dependency_request = 1;
+  }
+}
+
+message ReplicaInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Commit commit = 1;
   }
 }
 
