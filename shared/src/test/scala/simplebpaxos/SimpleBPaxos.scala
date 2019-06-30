@@ -18,7 +18,7 @@ import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
 
-class SimpleBPaxos(val f: Int) {
+class SimpleBPaxos(val f: Int, seed: Long) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = 2 * f + 1
@@ -52,7 +52,8 @@ class SimpleBPaxos(val f: Int) {
       options = ClientOptions.default.copy(
         reproposePeriod = java.time.Duration.ofSeconds(10)
       ),
-      metrics = new ClientMetrics(FakeCollectors)
+      metrics = new ClientMetrics(FakeCollectors),
+      seed = seed
     )
   }
 
@@ -113,7 +114,8 @@ class SimpleBPaxos(val f: Int) {
         recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
         recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(20)
       ),
-      metrics = new ReplicaMetrics(FakeCollectors)
+      metrics = new ReplicaMetrics(FakeCollectors),
+      seed = seed
     )
   }
 }
@@ -140,7 +142,7 @@ class SimulatedSimpleBPaxos(val f: Int) extends SimulatedSystem {
   // True if some value has been chosen in some execution of the system.
   var valueChosen: Boolean = false
 
-  override def newSystem(seed: Long): System = new SimpleBPaxos(f)
+  override def newSystem(seed: Long): System = new SimpleBPaxos(f, seed)
 
   override def getState(bpaxos: System): State = {
     // Merge two States together, taking a pairwise union.
