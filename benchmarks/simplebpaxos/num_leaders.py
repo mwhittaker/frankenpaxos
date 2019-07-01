@@ -10,7 +10,7 @@ def _main(args) -> None:
             return [
                 Input(
                     net_name = 'SingleSwitchNet',
-                    f = 1,
+                    f = f,
                     num_client_procs = num_client_procs,
                     num_clients_per_proc = num_clients_per_proc,
                     num_leaders = num_leaders,
@@ -29,11 +29,14 @@ def _main(args) -> None:
                     replica_log_level = 'debug',
                     leader_options = LeaderOptions(),
                     leader_log_level = 'debug',
-                    client_options = ClientOptions(),
+                    client_options = ClientOptions(
+                        repropose_period = datetime.timedelta(seconds=1),
+                    ),
                     client_log_level = 'debug',
                     client_num_keys = 1000,
                 )
-                for num_leaders in [5, 7, 9]
+                for f in [1, 2]
+                for num_leaders in [5, 10]
                 for (num_client_procs, num_clients_per_proc) in
                     [(1, 1)] + [(i, 10) for i in range(1, 10, 2)]
             ] * 3
