@@ -173,8 +173,17 @@ const client_info = {
 
   template: `
     <div>
+      <button v-on:click="propose">Propose</button>
+      <input v-model="proposal" v-on:keyup.enter="propose"></input>
+
       <div>
         ids = <frankenpaxos-map :map="node.actor.ids"></frankenpaxos-map>
+      </div>
+
+      <div>
+        pendingPseudonyms =
+        <frankenpaxos-set :set="node.actor.pendingPseudonyms">
+        </frankenpaxos-set>
       </div>
 
       <div>
@@ -186,13 +195,23 @@ const client_info = {
             <fp-field :name="'pseudonym'" :value="pc.pseudonym"></fp-field>
             <fp-field :name="'id'" :value="pc.id"></fp-field>
             <fp-field :name="'command'" :value="pc.command"></fp-field>
-            <fp-field :name="'result'" :value="pc.result"></fp-field>
+            <fp-field :name="'startTime'" :value="pc.startTime"></fp-field>
+            <fp-field :name="'startTimeNanos'" :value="pc.startTimeNanos"></fp-field>
+            <fp-field :name="'batch'">
+              Batch
+              <fp-object v-slot="{let: batch}" :value="pc.batch">
+                <fp-field :name="'pendingPseudonyms'">
+                  <frankenpaxos-set :set="batch.pendingPseudonyms"></frankenpaxos-set>
+                </fp-field>
+                <fp-field :name="'results'">
+                  <frankenpaxos-map :map="batch.results"></frankenpaxos-map>
+                </fp-field>
+                <fp-field :name="'promise'" :value="batch.promise"></fp-field>
+              </fp-object>
+            </fp-field>
           </fp-object>
         </frankenpaxos-map>
       </div>
-
-      <button v-on:click="propose">Propose</button>
-      <input v-model="proposal" v-on:keyup.enter="propose"></input>
     </div>
   `,
 }

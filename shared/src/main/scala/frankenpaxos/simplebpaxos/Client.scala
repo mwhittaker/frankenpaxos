@@ -98,6 +98,7 @@ object Client {
   // DO_NOT_SUBMIT(mwhittaker): Document.
   @JSExportAll
   case class PendingCommandBatch(
+      pseudonyms: Set[Pseudonym],
       pendingPseudonyms: mutable.Set[Pseudonym],
       results: mutable.Map[Pseudonym, (Array[Byte], Timing)],
       promise: Promise[mutable.Map[Pseudonym, (Array[Byte], Timing)]]
@@ -187,10 +188,12 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             s"pseudonym."
         )
       )
+      return
     }
 
     // Form the batch.
     val batch = PendingCommandBatch(
+      pseudonyms = commands.keySet,
       pendingPseudonyms = mutable.Set() ++ commands.keys,
       results = mutable.Map[Pseudonym, (Array[Byte], Timing)](),
       promise = promise
@@ -254,6 +257,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         t.start()
       }
     )
+    t.start()
     t
   }
 
@@ -293,11 +297,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
+        // Clean up the pending command.
         metrics.responsesTotal.inc()
         pendingCommands -= pendingCommand.pseudonym
         reproposeTimers(pendingCommand.pseudonym).stop()
         reproposeTimers -= pendingCommand.pseudonym
 
+        // Update the batch.
         val batch = pendingCommand.batch
         val stopTime = java.time.Instant.now()
         val stopTimeNanos = System.nanoTime()
@@ -312,6 +318,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         batch.pendingPseudonyms -= pendingCommand.pseudonym
         if (batch.pendingPseudonyms.isEmpty) {
+          // If the batch is done, clean up and return to the client.
+          pendingPseudonyms --= batch.pseudonyms
           batch.promise.success(batch.results)
         }
     }
