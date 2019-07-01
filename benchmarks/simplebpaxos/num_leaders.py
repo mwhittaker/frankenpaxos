@@ -12,7 +12,8 @@ def _main(args) -> None:
                     net_name = 'SingleSwitchNet',
                     f = f,
                     num_client_procs = num_client_procs,
-                    num_clients_per_proc = num_clients_per_proc,
+                    num_batches_per_proc = 5,
+                    num_commands_per_batch = 5,
                     num_leaders = num_leaders,
                     duration = datetime.timedelta(seconds=20),
                     timeout = datetime.timedelta(seconds=45),
@@ -45,7 +46,8 @@ def _main(args) -> None:
             return str({
                 'f': input.f,
                 'num_client_procs': input.num_client_procs,
-                'num_clients_per_proc': input.num_clients_per_proc,
+                'num_batches_per_proc': input.num_batches_per_proc,
+                'num_commands_per_batch': input.num_commands_per_batch,
                 'num_leaders': input.num_leaders,
                 'output.throughput_1s.p90': f'{output.throughput_1s.p90:.6}'
             })

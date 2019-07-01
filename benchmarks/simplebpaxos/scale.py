@@ -12,7 +12,8 @@ def _main(args) -> None:
                     net_name = 'SingleSwitchNet',
                     f = f,
                     num_client_procs = num_client_procs,
-                    num_clients_per_proc = num_clients_per_proc,
+                    num_batches_per_proc = num_batches_per_proc,
+                    num_commands_per_batch = num_commands_per_batch,
                     num_leaders = f + 1,
                     duration = datetime.timedelta(seconds=20),
                     timeout = datetime.timedelta(seconds=45),
@@ -34,17 +35,21 @@ def _main(args) -> None:
                     client_num_keys = 1000,
                 )
                 for f in [1, 2]
-                for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1)] +
-                    [(i, 10) for i in range(1, 5) if f == 1] +
-                    [(i, 10) for i in range(1, 8) if f == 2]
+                for (num_client_procs,
+                     num_batches_per_proc,
+                     num_commands_per_batch) in
+                    [(1, 1, 1)] +
+                    [(1, 1, i) for i in range(1, 50, 10)] +
+                    [(1, i, 1) for i in range(1, 50, 10)] +
+                    [(1, i, i) for i in range(1, 10, 3)]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
                 'num_client_procs': input.num_client_procs,
-                'num_clients_per_proc': input.num_clients_per_proc,
+                'num_batches_per_proc': input.num_batches_per_proc,
+                'num_commands_per_batch': input.num_commands_per_batch,
                 'output.throughput_1s.p90': f'{output.throughput_1s.p90:.6}'
             })
 

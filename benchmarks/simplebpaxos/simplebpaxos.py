@@ -59,8 +59,10 @@ class Input(NamedTuple):
     f: int
     # The number of benchmark client processes launched.
     num_client_procs: int
-    # The number of clients run on each benchmark client process.
-    num_clients_per_proc: int
+    # The number of batches sent on each benchmark client process.
+    num_batches_per_proc: int
+    # The number of commands sent in each batch.
+    num_commands_per_batch: int
     # The number of leaders.
     num_leaders: int
 
@@ -391,7 +393,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_port', '12345' if input.monitored else '-1',
                     '--duration', f'{input.duration.total_seconds()}s',
                     '--timeout', f'{input.timeout.total_seconds()}s',
-                    '--num_clients', f'{input.num_clients_per_proc}',
+                    '--num_batches', f'{input.num_batches_per_proc}',
+                    '--num_commands_per_batch',
+                        f'{input.num_commands_per_batch}',
                     '--num_keys', f'{input.client_num_keys}',
                     '--output_file_prefix', bench.abspath(f'client_{i}'),
                     '--options.reproposePeriod',
@@ -437,7 +441,8 @@ def _main(args) -> None:
                     net_name = 'SingleSwitchNet',
                     f = 1,
                     num_client_procs = num_client_procs,
-                    num_clients_per_proc = 1,
+                    num_batches_per_proc = 2,
+                    num_commands_per_batch = 2,
                     num_leaders = 2,
                     duration = datetime.timedelta(seconds=10),
                     timeout = datetime.timedelta(seconds=30),

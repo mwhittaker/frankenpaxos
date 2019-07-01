@@ -38,7 +38,8 @@ object BenchmarkClientMain extends App {
       // Benchmark flags.
       duration: java.time.Duration = java.time.Duration.ofSeconds(5),
       timeout: Duration = 10 seconds,
-      numClients: Int = 1,
+      numBatches: Int = 1,
+      numCommandsPerBatch: Int = 1,
       numKeys: Int = 1,
       outputFilePrefix: String = "",
       // Options.
@@ -71,8 +72,10 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(duration = x))
     opt[Duration]("timeout")
       .action((x, f) => f.copy(timeout = x))
-    opt[Int]("num_clients")
-      .action((x, f) => f.copy(numClients = x))
+    opt[Int]("num_batches")
+      .action((x, f) => f.copy(numBatches = x))
+    opt[Int]("num_commands_per_batch")
+      .action((x, f) => f.copy(numCommandsPerBatch = x))
     opt[Int]("num_keys")
       .action((x, f) => f.copy(numKeys = x))
     opt[String]("output_file_prefix")
@@ -125,28 +128,35 @@ object BenchmarkClientMain extends App {
     new BenchmarkUtil.Recorder(s"${flags.outputFilePrefix}_data.csv")
   def run(pseudonym: Int): Future[Unit] = {
     implicit val context = transport.executionContext
-    BenchmarkUtil
-      .timed(() => client.propose(pseudonym, randomProposal().toByteArray))
+    val commands =
+      for (p <- pseudonym until (pseudonym + flags.numCommandsPerBatch))
+        yield p -> randomProposal().toByteArray
+    client
+      .proposeBatch(commands.toMap)
       .transformWith({
         case scala.util.Failure(_) =>
           logger.debug("Request failed.")
           Future.successful(())
 
-        case scala.util.Success((_, timing)) =>
-          recorder.record(
-            start = timing.startTime,
-            stop = timing.stopTime,
-            latencyNanos = timing.durationNanos,
-            host = flags.host,
-            port = flags.port
-          )
+        case scala.util.Success(results) =>
+          for ((pseudonym, (_, timing)) <- results) {
+            recorder.record(
+              start = timing.startTime,
+              stop = timing.stopTime,
+              latencyNanos = timing.durationNanos,
+              host = flags.host,
+              port = flags.port
+            )
+          }
           Future.successful(())
       })
   }
 
   implicit val context = transport.executionContext
-  val futures = for (pseudonym <- 0 to flags.numClients)
-    yield BenchmarkUtil.runFor(() => run(pseudonym), flags.duration)
+  val futures = for (pseudonym <- 0 until flags.numBatches) yield {
+    BenchmarkUtil.runFor(() => run(pseudonym * flags.numCommandsPerBatch),
+                         flags.duration)
+  }
 
   // Wait for the benchmark to finish.
   try {
