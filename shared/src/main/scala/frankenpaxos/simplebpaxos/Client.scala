@@ -38,7 +38,16 @@ class ClientMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
     .name("simple_bpaxos_client_requests_total")
-    .help("Total number of client requests sent to consensus.")
+    .help(
+      "Total number of client requests sent to consensus (including those " +
+        "sent in batches)."
+    )
+    .register()
+
+  val requestBatchesTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_client_request_batches_total")
+    .help("Total number of client request batches sent to consensus.")
     .register()
 
   val responsesTotal: Counter = collectors.counter
@@ -56,7 +65,7 @@ class ClientMetrics(collectors: Collectors) {
   val reproposeTotal: Counter = collectors.counter
     .build()
     .name("simple_bpaxos_client_repropose_total")
-    .help("Total number of times a client reproposes a value..")
+    .help("Total number of times a client reproposes a value.")
     .register()
 }
 
@@ -67,16 +76,31 @@ object Client {
   type Pseudonym = Int
   type Id = Int
 
-  // A pending command. Clients can only propose one request at a time, so if
-  // there is a pending command, no other command can be proposed. This
-  // restriction hurts performance a bit---a single client cannot pipeline
-  // requests---but it simplifies the design of the protocol.
+  // DO_NOT_SUBMIT(mwhittaker): Document.
+  @JSExportAll
+  case class Timing(
+      startTime: java.time.Instant,
+      stopTime: java.time.Instant,
+      durationNanos: Long
+  )
+
+  // DO_NOT_SUBMIT(mwhittaker): Document.
   @JSExportAll
   case class PendingCommand(
       pseudonym: Pseudonym,
       id: Int,
       command: Array[Byte],
-      result: Promise[Array[Byte]]
+      startTime: java.time.Instant,
+      startTimeNanos: Long,
+      batch: PendingCommandBatch
+  )
+
+  // DO_NOT_SUBMIT(mwhittaker): Document.
+  @JSExportAll
+  case class PendingCommandBatch(
+      pendingPseudonyms: mutable.Set[Pseudonym],
+      results: mutable.Map[Pseudonym, (Array[Byte], Timing)],
+      promise: Promise[mutable.Map[Pseudonym, (Array[Byte], Timing)]]
   )
 }
 
@@ -97,88 +121,118 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override def serializer = Client.serializer
 
   // Fields ////////////////////////////////////////////////////////////////////
-  val addressAsBytes: ByteString =
-    ByteString.copyFrom(transport.addressSerializer.toBytes(address))
-
   // Random number generator.
   val rand = new Random(seed)
 
-  // Every request that a client sends is annotated with a monotonically
-  // increasing client id. Here, we assume that if a client fails, it does not
-  // recover, so we are safe to intialize the id to 0. If clients can recover
-  // from failure, we would have to implement some mechanism to ensure that
-  // client ids increase over time, even after crashes and restarts.
+  // The client's address, as a ByteString.
+  val addressAsBytes: ByteString =
+    ByteString.copyFrom(transport.addressSerializer.toBytes(address))
+
+  // Leader channels.
+  private val leaders: Seq[Chan[Leader[Transport]]] =
+    for ((address, i) <- config.leaderAddresses.zipWithIndex)
+      yield chan[Leader[Transport]](address, Leader.serializer)
+
+  // The id of every pseudonym. Every request that a client sends is annotated
+  // with a monotonically increasing client id. Here, we assume that if a
+  // client fails, it does not recover, so we are safe to intialize the id to
+  // 0. If clients can recover from failure, we would have to implement some
+  // mechanism to ensure that client ids increase over time, even after crashes
+  // and restarts.
   @JSExport
   protected var ids = mutable.Map[Pseudonym, Id]()
 
+  // DO_NOT_SUBMIT(mwhittaker): Document.
   @JSExport
   protected var pendingCommands = mutable.Map[Pseudonym, PendingCommand]()
 
-  // Leader channels.
-  private val leaders: Map[Int, Chan[Leader[Transport]]] = {
-    for ((address, i) <- config.leaderAddresses.zipWithIndex)
-      yield i -> chan[Leader[Transport]](address, Leader.serializer)
-  }.toMap
+  // DO_NOT_SUBMIT(mwhittaker): Document.
+  @JSExport
+  protected var pendingPseudonyms = mutable.Set[Pseudonym]()
 
   // Timers to resend a proposed value. If a client doesn't hear back from a
   // leader quickly enough, it resends its proposal.
   private val reproposeTimers = mutable.Map[Pseudonym, Transport#Timer]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  private def getLeader(): Chan[Leader[Transport]] = {
+    // TODO(mwhittaker): Abstract out the policy of which leader to send to.
+    leaders(rand.nextInt(leaders.size))
+  }
+
   private def toClientRequest(pendingCommand: PendingCommand): ClientRequest = {
-    val PendingCommand(pseudonym, id, command, _) = pendingCommand
     ClientRequest(
-      command = Command(clientPseudonym = pseudonym,
-                        clientAddress = addressAsBytes,
-                        clientId = id,
-                        command = ByteString.copyFrom(command))
+      command = Command(
+        clientPseudonym = pendingCommand.pseudonym,
+        clientAddress = addressAsBytes,
+        clientId = pendingCommand.id,
+        command = ByteString.copyFrom(pendingCommand.command)
+      )
     )
   }
 
-  private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
-    // TODO(mwhittaker): Abstract out the policy of which leader to send to.
-    val randomIndex = rand.nextInt(leaders.size)
-    val leader = leaders(randomIndex)
-    val request = toClientRequest(pendingCommand)
-    leader.send(LeaderInbound().withClientRequest(request))
-  }
-
-  private def proposeImpl(
-      pseudonym: Pseudonym,
-      command: Array[Byte],
-      promise: Promise[Array[Byte]]
+  private def proposeBatchImpl(
+      commands: Map[Pseudonym, Array[Byte]],
+      promise: Promise[mutable.Map[Pseudonym, (Array[Byte], Timing)]]
   ): Unit = {
-    pendingCommands.get(pseudonym) match {
-      case Some(_) =>
-        promise.failure(
-          new IllegalStateException(
-            s"You attempted to propose a value with pseudonym $pseudonym, " +
-              s"but this pseudonym already has a command pending. A client " +
-              s"can only have one pending request at a time. Try waiting or s" +
-              s"use a different pseudonym."
-          )
+    // Check that none of the proposed pseudonyms are currently pending
+    // the completion of a batch.
+    if (!pendingPseudonyms.intersect(commands.keySet).isEmpty) {
+      promise.failure(
+        new IllegalStateException(
+          s"You attempted to propose a batch with pseudonyms " +
+            s"${commands.keys}, but there is a batch of pending commands " +
+            s"with one of those pseudonyms. A pseudonym can only have one " +
+            s"pending batch at a time. Try waiting or use a different " +
+            s"pseudonym."
         )
-
-      case None =>
-        // Send the command.
-        val id = ids.getOrElse(pseudonym, 0)
-        val pendingCommand = PendingCommand(pseudonym, id, command, promise)
-        sendProposeRequest(pendingCommand)
-
-        // Update our metadata.
-        pendingCommands(pseudonym) = pendingCommand
-        reproposeTimers
-          .getOrElseUpdate(pseudonym, makeReproposeTimer(pseudonym))
-          .start()
-        ids(pseudonym) = id + 1
-        metrics.requestsTotal.inc()
+      )
     }
+
+    // Form the batch.
+    val batch = PendingCommandBatch(
+      pendingPseudonyms = mutable.Set() ++ commands.keys,
+      results = mutable.Map[Pseudonym, (Array[Byte], Timing)](),
+      promise = promise
+    )
+
+    // Update metadata.
+    val startTime = java.time.Instant.now()
+    val startTimeNanos = System.nanoTime()
+    for ((pseudonym, command) <- commands) {
+      logger.check(!pendingCommands.contains(pseudonym))
+      val id = ids.getOrElse(pseudonym, 0)
+      ids(pseudonym) = id + 1
+
+      pendingCommands(pseudonym) = PendingCommand(
+        pseudonym = pseudonym,
+        id = id,
+        command = command,
+        startTime = startTime,
+        startTimeNanos = startTimeNanos,
+        batch = batch
+      )
+      pendingPseudonyms += pseudonym
+      reproposeTimers(pseudonym) = makeReproposeTimer(pseudonym)
+    }
+
+    // Send the command batch.
+    getLeader().send(
+      LeaderInbound().withClientRequestBatch(
+        ClientRequestBatch(
+          clientRequest =
+            commands.keys.map(k => toClientRequest(pendingCommands(k))).toSeq
+        )
+      )
+    )
+    metrics.requestsTotal.inc(commands.size)
+    metrics.requestBatchesTotal.inc()
   }
 
   // Timers ////////////////////////////////////////////////////////////////////
   private def makeReproposeTimer(pseudonym: Pseudonym): Transport#Timer = {
     lazy val t: Transport#Timer = timer(
-      s"reproposeTimer (pseudonym $pseudonym)",
+      s"reproposeTimer [$pseudonym]",
       options.reproposePeriod,
       () => {
         metrics.reproposeTotal.inc()
@@ -191,9 +245,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
           case Some(pendingCommand) =>
             // Ideally, we would re-send our request to all leaders. But, since
-            // EPaxos doesn't have a mechanism to prevent dueling leaders, we
-            // send to one leader at a time.
-            sendProposeRequest(pendingCommand)
+            // Simple BPaxos doesn't have a mechanism to prevent dueling
+            // leaders, we send to one leader at a time.
+            getLeader().send(
+              LeaderInbound().withClientRequest(toClientRequest(pendingCommand))
+            )
         }
         t.start()
       }
@@ -209,9 +265,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     import ClientInbound.Request
     inbound.request match {
       case Request.ClientReply(r) => handleClientReply(src, r)
-      case Request.Empty => {
+      case Request.Empty =>
         logger.fatal("Empty ClientInbound encountered.")
-      }
     }
   }
 
@@ -220,49 +275,74 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       clientReply: ClientReply
   ): Unit = {
     pendingCommands.get(clientReply.clientPseudonym) match {
-      case Some(PendingCommand(pseudonym, id, command, promise)) =>
-        logger.checkEq(clientReply.clientPseudonym, pseudonym)
-        if (clientReply.clientId == id) {
-          pendingCommands -= pseudonym
-          reproposeTimers(pseudonym).stop()
-          promise.success(clientReply.result.toByteArray)
-          metrics.responsesTotal.inc()
-        } else {
-          logger.warn(
-            s"Received a reply for unpending command with pseudonym " +
-              s"${clientReply.clientPseudonym} and id ${clientReply.clientId}."
-          )
-          metrics.unpendingResponsesTotal.inc()
-        }
-
       case None =>
-        logger.warn(
-          s"Received a reply for unpending command with pseudonym " +
+        logger.debug(
+          s"Client received a reply for unpending command with pseudonym " +
             s"${clientReply.clientPseudonym} and id ${clientReply.clientId}."
         )
         metrics.unpendingResponsesTotal.inc()
+
+      case Some(pendingCommand: PendingCommand) =>
+        logger.checkEq(clientReply.clientPseudonym, pendingCommand.pseudonym)
+        if (clientReply.clientId != pendingCommand.id) {
+          logger.debug(
+            s"Client received a reply for unpending command with pseudonym " +
+              s"${clientReply.clientPseudonym} and id ${clientReply.clientId}."
+          )
+          metrics.unpendingResponsesTotal.inc()
+          return
+        }
+
+        metrics.responsesTotal.inc()
+        pendingCommands -= pendingCommand.pseudonym
+        reproposeTimers(pendingCommand.pseudonym).stop()
+        reproposeTimers -= pendingCommand.pseudonym
+
+        val batch = pendingCommand.batch
+        val stopTime = java.time.Instant.now()
+        val stopTimeNanos = System.nanoTime()
+        batch.results(pendingCommand.pseudonym) = (
+          clientReply.result.toByteArray,
+          Timing(
+            startTime = pendingCommand.startTime,
+            stopTime = stopTime,
+            durationNanos = stopTimeNanos - pendingCommand.startTimeNanos
+          )
+        )
+
+        batch.pendingPseudonyms -= pendingCommand.pseudonym
+        if (batch.pendingPseudonyms.isEmpty) {
+          batch.promise.success(batch.results)
+        }
     }
   }
 
   // Interface /////////////////////////////////////////////////////////////////
-  def propose(
-      pseudonym: Pseudonym,
-      command: Array[Byte]
-  ): Future[Array[Byte]] = {
-    val promise = Promise[Array[Byte]]()
+  def proposeBatch(
+      commands: Map[Pseudonym, Array[Byte]]
+  ): Future[mutable.Map[Pseudonym, (Array[Byte], Timing)]] = {
+    val promise = Promise[mutable.Map[Pseudonym, (Array[Byte], Timing)]]()
     transport.executionContext.execute(
-      () => proposeImpl(pseudonym, command, promise)
+      () => proposeBatchImpl(commands, promise)
     )
     promise.future
   }
 
-  def propose(pseudonym: Pseudonym, command: String): Future[String] = {
-    val promise = Promise[Array[Byte]]()
-    transport.executionContext.execute(
-      () => proposeImpl(pseudonym, command.getBytes(), promise)
-    )
-    promise.future.map(new String(_))(
-      concurrent.ExecutionContext.Implicits.global
-    )
+  def propose(
+      pseudonym: Pseudonym,
+      command: Array[Byte]
+  ): Future[(Array[Byte], Timing)] = {
+    implicit val context = transport.executionContext
+    proposeBatch(Map(pseudonym -> command)).map(m => m(pseudonym))
+  }
+
+  def propose(
+      pseudonym: Pseudonym,
+      command: String
+  ): Future[(String, Timing)] = {
+    implicit val context = transport.executionContext
+    propose(pseudonym, command.getBytes()).map({
+      case (bytes, timing) => (new String(bytes), timing)
+    })
   }
 }

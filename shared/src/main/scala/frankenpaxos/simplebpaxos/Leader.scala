@@ -50,6 +50,12 @@ class LeaderMetrics(collectors: Collectors) {
     .help("Total number of processed requests.")
     .register()
 
+  val clientRequestsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_leader_client_requests_total")
+    .help("Total number of processed client requests.")
+    .register()
+
   val committedCommandsTotal: Counter = collectors.counter
     .build()
     .name("simple_bpaxos_leader_committed_commands_total")
@@ -232,9 +238,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import LeaderInbound.Request
     inbound.request match {
-      case Request.ClientRequest(r)   => handleClientRequest(src, r)
-      case Request.DependencyReply(r) => handleDependencyReply(src, r)
-      case Request.Recover(r)         => handleRecover(src, r)
+      case Request.ClientRequest(r) =>
+        metrics.requestsTotal.labels("ClientRequest").inc()
+        handleClientRequest(src, r)
+      case Request.ClientRequestBatch(r) =>
+        metrics.requestsTotal.labels("ClientRequestBatch").inc()
+        handleClientRequestBatch(src, r)
+      case Request.DependencyReply(r) =>
+        metrics.requestsTotal.labels("DependencyReply").inc()
+        handleDependencyReply(src, r)
+      case Request.Recover(r) =>
+        metrics.requestsTotal.labels("Recover").inc()
+        handleRecover(src, r)
       case Request.Empty => {
         logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -245,7 +260,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       clientRequest: ClientRequest
   ): Unit = {
-    metrics.requestsTotal.labels("ClientRequest").inc()
+    metrics.clientRequestsTotal.inc()
 
     // TODO(mwhittaker): Think harder about repeated client commands. The
     // leader isn't a replica, so it doesn't cache a response to an already
@@ -276,12 +291,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     )
   }
 
+  private def handleClientRequestBatch(
+      src: Transport#Address,
+      clientRequestBatch: ClientRequestBatch
+  ): Unit = {
+    clientRequestBatch.clientRequest.foreach(handleClientRequest(src, _))
+  }
+
   private def handleDependencyReply(
       src: Transport#Address,
       dependencyReply: DependencyReply
   ): Unit = {
-    metrics.requestsTotal.labels("DependencyReply").inc()
-
     states.get(dependencyReply.vertexId) match {
       case state @ (None | Some(_: WaitingForConsensus[_]) |
           Some(_: Committed[_])) =>
@@ -331,8 +351,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       recover: Recover
   ): Unit = {
-    metrics.requestsTotal.labels("Recover").inc()
-
     // Sanity check and stop timers.
     states.get(recover.vertexId) match {
       case None =>

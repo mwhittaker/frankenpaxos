@@ -77,6 +77,13 @@ message ClientRequest {
   required Command command = 1;
 }
 
+message ClientRequestBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated ClientRequest client_request = 1;
+}
+
 message DependencyRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -128,8 +135,9 @@ message LeaderInbound {
 
   oneof request {
     ClientRequest client_request = 1;
-    DependencyReply dependency_reply = 2;
-    Recover recover = 3;
+    ClientRequestBatch client_request_batch = 2;
+    DependencyReply dependency_reply = 3;
+    Recover recover = 4;
   }
 }
 
