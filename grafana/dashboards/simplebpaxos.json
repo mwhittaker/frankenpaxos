@@ -366,7 +366,7 @@
           "expr": "sum(rate(simple_bpaxos_client_responses_total[1s]))",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Reponse Sum",
+          "legendFormat": "Reponses Sum",
           "refId": "B"
         },
         {
@@ -382,6 +382,20 @@
           "intervalFactor": 1,
           "legendFormat": "Unpending Reponse Sum",
           "refId": "D"
+        },
+        {
+          "expr": "rate(simple_bpaxos_client_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Requests ({{instance}})",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(simple_bpaxos_client_requests_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Requests Sum",
+          "refId": "F"
         }
       ],
       "thresholds": [],
@@ -1183,8 +1197,8 @@
     "list": []
   },
   "time": {
-    "from": "2019-06-30T23:57:27.693Z",
-    "to": "2019-06-30T23:57:53.177Z"
+    "from": "2019-07-01T18:34:05.552Z",
+    "to": "2019-07-01T18:34:28.966Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1214,5 +1228,5 @@
   "timezone": "",
   "title": "Simple BPaxos",
   "uid": "4mBsFHVWk",
-  "version": 5
+  "version": 6
 }
