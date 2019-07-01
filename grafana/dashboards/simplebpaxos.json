@@ -130,6 +130,104 @@
         "x": 0,
         "y": 7
       },
+      "id": 14,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(simple_bpaxos_replica_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(simple_bpaxos_replica_requests_total[1s])) by (instance)",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Sum ({{instance}})",
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Replica Request Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
       "id": 12,
       "legend": {
         "alignAsTable": false,
@@ -231,7 +329,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 21
       },
       "id": 6,
       "legend": {
@@ -338,7 +436,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 28
       },
       "id": 10,
       "legend": {
@@ -426,7 +524,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 35
       },
       "id": 11,
       "legend": {
@@ -522,7 +620,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 42
       },
       "id": 4,
       "legend": {
@@ -549,21 +647,21 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "rate(simple_bpaxos_leader_executed_commands_total[1s])",
+          "expr": "rate(simple_bpaxos_replica_executed_commands_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Executed Commands ({{instance}})",
           "refId": "A"
         },
         {
-          "expr": "rate(simple_bpaxos_leader_executed_noops_total[1s])",
+          "expr": "rate(simple_bpaxos_replica_executed_noops_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Executed Noops ({{instance}})",
           "refId": "B"
         },
         {
-          "expr": "rate(simple_bpaxos_leader_repeated_commands_total[1s])",
+          "expr": "rate(simple_bpaxos_replica_repeated_commands_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Repeated Commands ({{instance}})",
@@ -573,7 +671,7 @@
           "expr": "rate(simple_bpaxos_leader_committed_commands_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Chosen Commands ({{instance}})",
+          "legendFormat": "Leader Chosen Commands ({{instance}})",
           "refId": "D"
         }
       ],
@@ -581,7 +679,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Leader Command Throughput",
+      "title": "Command Throughput",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -629,7 +727,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 50
       },
       "id": 7,
       "legend": {
@@ -715,7 +813,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 58
       },
       "id": 13,
       "legend": {
@@ -808,7 +906,93 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 66
+      },
+      "id": 15,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(simple_bpaxos_replica_recover_vertex_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Recover Vertex {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Replica Timeout Rate",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 74
       },
       "id": 8,
       "legend": {
@@ -894,7 +1078,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 82
       },
       "id": 9,
       "legend": {
@@ -928,21 +1112,21 @@
           "refId": "A"
         },
         {
-          "expr": "rate(simple_bpaxos_leader_dependencies_sum[1s]) / rate(simple_bpaxos_leader_dependencies_count[1s])",
+          "expr": "rate(simple_bpaxos_replica_dependencies_sum[1s]) / rate(simple_bpaxos_leader_dependencies_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Average # of deps on leader ({{instance}})",
           "refId": "B"
         },
         {
-          "expr": "rate(simple_bpaxos_leader_dependency_graph_num_vertices[1s])",
+          "expr": "rate(simple_bpaxos_replica_dependency_graph_num_vertices[1s])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Dependency graph # vertices ({{instance}})",
           "refId": "D"
         },
         {
-          "expr": "rate(simple_bpaxos_leader_dependency_graph_num_edges[1s])",
+          "expr": "rate(simple_bpaxos_replica_dependency_graph_num_edges[1s])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Dependency graph # edges ({{instance}})",
@@ -999,8 +1183,8 @@
     "list": []
   },
   "time": {
-    "from": "2019-06-24T22:10:23.432Z",
-    "to": "2019-06-24T22:10:50.475Z"
+    "from": "2019-06-30T23:57:27.693Z",
+    "to": "2019-06-30T23:57:53.177Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1030,5 +1214,5 @@
   "timezone": "",
   "title": "Simple BPaxos",
   "uid": "4mBsFHVWk",
-  "version": 2
+  "version": 5
 }

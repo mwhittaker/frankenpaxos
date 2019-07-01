@@ -2,7 +2,7 @@ from .simplebpaxos import *
 
 
 def _main(args) -> None:
-    class ScaleSimpleBPaxosSuite(SimpleBPaxosSuite):
+    class NumLeadersSimpleBPaxosSuite(SimpleBPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -10,10 +10,10 @@ def _main(args) -> None:
             return [
                 Input(
                     net_name = 'SingleSwitchNet',
-                    f = f,
+                    f = 1,
                     num_client_procs = num_client_procs,
                     num_clients_per_proc = num_clients_per_proc,
-                    num_leaders = f + 1,
+                    num_leaders = num_leaders,
                     duration = datetime.timedelta(seconds=20),
                     timeout = datetime.timedelta(seconds=45),
                     client_lag = datetime.timedelta(seconds=5),
@@ -33,11 +33,9 @@ def _main(args) -> None:
                     client_log_level = 'debug',
                     client_num_keys = 1000,
                 )
-                for f in [1, 2]
+                for num_leaders in [5, 7, 9]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1)] +
-                    [(i, 10) for i in range(1, 5) if f == 1] +
-                    [(i, 10) for i in range(1, 8) if f == 2]
+                    [(1, 1)] + [(i, 10) for i in range(1, 10, 2)]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
@@ -45,12 +43,13 @@ def _main(args) -> None:
                 'f': input.f,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
+                'num_leaders': input.num_leaders,
                 'output.throughput_1s.p90': f'{output.throughput_1s.p90:.6}'
             })
 
-    suite = ScaleSimpleBPaxosSuite()
+    suite = NumLeadersSimpleBPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'simplebpaxos_scale') as dir:
+                                  'simplebpaxos_num_leaders') as dir:
         suite.run_suite(dir)
 
 
