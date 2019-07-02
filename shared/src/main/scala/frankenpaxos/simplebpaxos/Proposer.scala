@@ -8,8 +8,6 @@ import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.roundsystem.RoundSystem
 import scala.collection.mutable
-import scala.concurrent.Future
-import scala.concurrent.Promise
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -22,14 +20,12 @@ object ProposerInboundSerializer extends ProtoSerializer[ProposerInbound] {
 
 @JSExportAll
 case class ProposerOptions(
-    // TODO(mwhittaker): Add options.
     resendPhase1asTimerPeriod: java.time.Duration,
     resendPhase2asTimerPeriod: java.time.Duration
 )
 
 @JSExportAll
 object ProposerOptions {
-  // TODO(mwhittaker): Add options.
   val default = ProposerOptions(
     resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(1),
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(1)
@@ -43,12 +39,6 @@ class ProposerMetrics(collectors: Collectors) {
     .name("simple_bpaxos_proposer_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
-    .register()
-
-  val proposeTotal: Counter = collectors.counter
-    .build()
-    .name("simple_bpaxos_proposer_propose_total")
-    .help("Total number of proposed state machine commands.")
     .register()
 
   val chosenCommandsTotal: Counter = collectors.counter
@@ -82,8 +72,6 @@ object Proposer {
 
   @JSExportAll
   case class Phase1[Transport <: frankenpaxos.Transport[Transport]](
-      // A promise to fulfill once a value has been chosen.
-      promise: Promise[Acceptor.VoteValue],
       // The current round.
       round: Round,
       // The pending value that this proposer wants to get chosen.
@@ -96,8 +84,6 @@ object Proposer {
 
   @JSExportAll
   case class Phase2[Transport <: frankenpaxos.Transport[Transport]](
-      // A promise to fulfill once a value has been chosen.
-      promise: Promise[Acceptor.VoteValue],
       // The current round.
       round: Round,
       // The value that this proposer is proposing.
@@ -109,8 +95,10 @@ object Proposer {
   ) extends State[Transport]
 
   @JSExportAll
-  case class Chosen[Transport <: frankenpaxos.Transport[Transport]]()
-      extends State[Transport]
+  case class Chosen[Transport <: frankenpaxos.Transport[Transport]](
+      commandOrNoop: CommandOrNoop,
+      dependencies: Set[VertexId]
+  ) extends State[Transport]
 }
 
 @JSExportAll
@@ -124,19 +112,23 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 ) extends Actor(address, transport, logger) {
   import Proposer._
 
-  // Sanity check the configuration and get our index.
-  logger.check(config.valid())
-  logger.check(config.proposerAddresses.contains(address))
-  private val index = config.proposerAddresses.indexOf(address)
-
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = ProposerInbound
   override def serializer = Proposer.serializer
 
   // Fields ////////////////////////////////////////////////////////////////////
+  // Sanity check the configuration and get our index.
+  logger.check(config.valid())
+  logger.check(config.proposerAddresses.contains(address))
+  private val index = config.proposerAddresses.indexOf(address)
+
   private val acceptors: Seq[Chan[Acceptor[Transport]]] =
     for (address <- config.acceptorAddresses)
       yield chan[Acceptor[Transport]](address, Acceptor.serializer)
+
+  private val replicas: Seq[Chan[Replica[Transport]]] =
+    for (address <- config.replicaAddresses)
+      yield chan[Replica[Transport]](address, Replica.serializer)
 
   @JSExport
   protected val states = mutable.Map[VertexId, State[Transport]]()
@@ -146,22 +138,22 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     new RoundSystem.RotatedClassicRoundRobin(config.leaderAddresses.size,
                                              vertexId.leaderIndex)
 
-  def proposeImpl(
+  private def proposeImpl(
       vertexId: VertexId,
       commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId],
-      promise: Promise[Acceptor.VoteValue]
+      dependencies: Set[VertexId]
   ): Unit = {
     states.get(vertexId) match {
       case Some(_) =>
         logger.fatal(
-          s"Proposer received a proposal in $vertexId, but is already " +
-            s"processing proposal in this vertex id. propose should be " +
-            s"called at most once per vertex id."
+          s"Proposer received a proposal in vertex ${vertexId}, but " +
+            s"is already processing a proposal in this vertex. The propose " +
+            s"is ignoring the new Propose request."
         )
 
       case None =>
-        val value = Acceptor.VoteValue(commandOrNoop, dependencies)
+        val value = Acceptor.VoteValue(commandOrNoop = commandOrNoop,
+                                       dependencies = dependencies)
         val round = roundSystem(vertexId).nextClassicRound(index, -1)
 
         // If we're the leader of round 0, then we can skip phase 1 and proceed
@@ -177,7 +169,6 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
           // Update our state.
           states(vertexId) = Phase2(
-            promise = promise,
             round = round,
             value = value,
             phase2bs = mutable.Map[AcceptorId, Phase2b](),
@@ -191,7 +182,6 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
           // Update our state.
           states(vertexId) = Phase1(
-            promise = promise,
             round = round,
             value = value,
             phase1bs = mutable.Map[AcceptorId, Phase1b](),
@@ -241,21 +231,40 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import ProposerInbound.Request
     inbound.request match {
-      case Request.Phase1B(r) => handlePhase1b(src, r)
-      case Request.Phase2B(r) => handlePhase2b(src, r)
-      case Request.Nack(r)    => handleNack(src, r)
+      case Request.Propose(r) =>
+        metrics.requestsTotal.labels("Propose").inc()
+        handlePropose(src, r)
+      case Request.Phase1B(r) =>
+        metrics.requestsTotal.labels("Phase1b").inc()
+        handlePhase1b(src, r)
+      case Request.Phase2B(r) =>
+        metrics.requestsTotal.labels("Phase2b").inc()
+        handlePhase2b(src, r)
+      case Request.Nack(r) =>
+        metrics.requestsTotal.labels("Nack").inc()
+        handleNack(src, r)
+      case Request.Recover(r) =>
+        metrics.requestsTotal.labels("Recover").inc()
+        handleRecover(src, r)
       case Request.Empty => {
         logger.fatal("Empty ProposerInbound encountered.")
       }
     }
   }
 
+  private def handlePropose(
+      src: Transport#Address,
+      propose: Propose
+  ): Unit = {
+    proposeImpl(propose.vertexId,
+                CommandOrNoop().withCommand(propose.command),
+                propose.dependency.toSet)
+  }
+
   private def handlePhase1b(
       src: Transport#Address,
       phase1b: Phase1b
   ): Unit = {
-    metrics.requestsTotal.labels("Phase1b").inc()
-
     states.get(phase1b.vertexId) match {
       case state @ (None | Some(_: Phase2[_]) | Some(_: Chosen[_])) =>
         logger.warn(
@@ -311,7 +320,6 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // Stop existing timers and update our state.
         phase1.resendPhase1as.stop()
         states(phase1b.vertexId) = Phase2(
-          promise = phase1.promise,
           round = phase1.round,
           value = proposal,
           phase2bs = mutable.Map[AcceptorId, Phase2b](),
@@ -324,8 +332,6 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2b: Phase2b
   ): Unit = {
-    metrics.requestsTotal.labels("Phase2b").inc()
-
     states.get(phase2b.vertexId) match {
       case state @ (None | Some(_: Phase1[_]) | Some(_: Chosen[_])) =>
         logger.warn(
@@ -352,12 +358,25 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
-        // Once we have a quorum of responses, the value is chosen!
-        phase2.promise.success(phase2.value)
-
-        // Stop existing timers and update our state.
+        // Once we have a quorum of responses, the value is chosen! Stop
+        // existing timers and update our state.
         phase2.resendPhase2as.stop()
-        states(phase2b.vertexId) = Chosen[Transport]()
+        states(phase2b.vertexId) = Chosen[Transport](
+          commandOrNoop = phase2.value.commandOrNoop,
+          dependencies = phase2.value.dependencies
+        )
+        metrics.chosenCommandsTotal.inc()
+
+        // Inform the replicas that the value has been chosen.
+        for (replica <- replicas) {
+          replica.send(
+            ReplicaInbound().withCommit(
+              Commit(vertexId = phase2b.vertexId,
+                     commandOrNoop = phase2.value.commandOrNoop,
+                     dependency = phase2.value.dependencies.toSeq)
+            )
+          )
+        }
     }
   }
 
@@ -366,8 +385,6 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       nack: Nack
   ): Unit = {
-    metrics.requestsTotal.labels("Nack").inc()
-
     val round =
       roundSystem(nack.vertexId).nextClassicRound(index, nack.higherRound)
     states.get(nack.vertexId) match {
@@ -401,7 +418,6 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // Stop existing timers and update state.
         phase1.resendPhase1as.stop()
         states(nack.vertexId) = Phase1(
-          promise = phase1.promise,
           round = round,
           value = phase1.value,
           phase1bs = mutable.Map[AcceptorId, Phase1b](),
@@ -426,7 +442,6 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // Stop existing timers and update state.
         phase2.resendPhase2as.stop()
         states(nack.vertexId) = Phase1(
-          promise = phase2.promise,
           round = round,
           value = phase2.value,
           phase1bs = mutable.Map[AcceptorId, Phase1b](),
@@ -435,15 +450,34 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // Interface /////////////////////////////////////////////////////////////////
-  private[simplebpaxos] def propose(
-      vertexId: VertexId,
-      commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId]
-  ): Future[Acceptor.VoteValue] = {
-    metrics.proposeTotal.inc()
-    val promise = Promise[Acceptor.VoteValue]()
-    proposeImpl(vertexId, commandOrNoop, dependencies, promise)
-    promise.future
+  private def handleRecover(
+      src: Transport#Address,
+      recover: Recover
+  ): Unit = {
+    states.get(recover.vertexId) match {
+      case None =>
+        // Propose a noop.
+        proposeImpl(
+          recover.vertexId,
+          CommandOrNoop().withNoop(Noop()),
+          Set[VertexId]()
+        )
+
+      case Some(_: Phase1[_]) | Some(_: Phase2[_]) =>
+        logger.debug(
+          s"Proposer received Recover for vertex ${recover.vertexId}, but is " +
+            s"already in the process of getting a value chosen for this vertex."
+        )
+
+      case Some(chosen: Chosen[_]) =>
+        val replica = chan[Replica[Transport]](src, Replica.serializer)
+        replica.send(
+          ReplicaInbound().withCommit(
+            Commit(vertexId = recover.vertexId,
+                   commandOrNoop = chosen.commandOrNoop,
+                   dependency = chosen.dependencies.toSeq)
+          )
+        )
+    }
   }
 }

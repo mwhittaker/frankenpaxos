@@ -1,14 +1,35 @@
 // A protocol cheatsheet, similar to [1].
 //
-//                              Dependency
-//                               Service
-//   Client         Leader        Node         Replica
-//      | ----------> |             |             |  ClientRequest
-//      |             | ----------> |             |  DependencyRequest
-//      |             | <---------- |             |  DependencyReply
-//      |             | ------------^-----------> |  Commit
-//      | <-----------^-------------^------------ |  ClientReply
-//      |             | <-----------^------------ |  Recover
+// Normal case.
+//                     Dependency
+//                      Service
+//   Client    Leader    Node   Proposer Acceptor Replica
+//      | -----> |        |        |        |        |     ClientRequest
+//      |        | -----> |        |        |        |     DependencyRequest
+//      |        | <----- |        |        |        |     DependencyReply
+//      |        | -------^------> |        |        |     Propose
+//      |        |        |        | -----> |        |     Phase2a
+//      |        |        |        | <----- |        |     Phase2b
+//      |        |        |        | -------^------> |     Commit
+//      | <------^--------^--------^--------^------- |     ClientReply
+//
+// Recovery.
+//                     Dependency
+//                      Service
+//   Client    Leader    Node   Proposer Acceptor Replica
+//      |        |        |        | <------^------- |     Recover
+//      |        |        |        | -----> |        |     Phase1a
+//      |        |        |        | <----- |        |     Phase1b
+//      |        |        |        | -----> |        |     Phase2a
+//      |        |        |        | <----- |        |     Phase2b
+//      |        |        |        | -------^------> |     Commit
+//      | <------^--------^--------^--------^------- |     ClientReply
+//
+// Misc.
+//                     Dependency
+//                      Service
+//   Client    Leader    Node   Proposer Acceptor Replica
+//      |        |        |        | <----- |        |     Nack
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
@@ -69,6 +90,11 @@ message CommandOrNoop {
   }
 }
 
+message VoteValueProto {
+  required CommandOrNoop commandOrNoop = 1;
+  repeated VertexId dependency = 2;
+}
+
 // Protocol messages. //////////////////////////////////////////////////////////
 message ClientRequest {
   option (scalapb.message).annotations =
@@ -92,6 +118,60 @@ message DependencyReply {
   required VertexId vertex_id = 1;
   required int32 dep_service_node_index = 2;
   repeated VertexId dependency = 3;
+}
+
+message Propose {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required Command command = 2;
+  repeated VertexId dependency = 3;
+}
+
+message Phase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 round = 2;
+}
+
+message Phase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 acceptor_id = 2;
+  required int32 round = 3;
+  required int32 vote_round = 4;
+  optional VoteValueProto vote_value = 5;
+}
+
+message Phase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 round = 2;
+  required VoteValueProto vote_value = 3;
+}
+
+message Phase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 acceptor_id = 2;
+  required int32 round = 3;
+}
+
+message Nack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required VertexId vertex_id = 1;
+  required int32 higher_round = 3;
 }
 
 message Commit {
@@ -129,7 +209,6 @@ message LeaderInbound {
   oneof request {
     ClientRequest client_request = 1;
     DependencyReply dependency_reply = 2;
-    Recover recover = 3;
   }
 }
 
@@ -139,6 +218,29 @@ message DepServiceNodeInbound {
 
   oneof request {
     DependencyRequest dependency_request = 1;
+  }
+}
+
+message ProposerInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Propose propose = 1;
+    Phase1b phase1b = 2;
+    Phase2b phase2b = 3;
+    Nack nack = 4;
+    Recover recover = 5;
+  }
+}
+
+message AcceptorInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Phase1a phase1a = 1;
+    Phase2a phase2a = 2;
   }
 }
 
