@@ -79,16 +79,16 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 ) extends Actor(address, transport, logger) {
   import Acceptor._
 
-  // Sanity check the configuration and get our index.
-  logger.check(config.valid())
-  logger.check(config.acceptorAddresses.contains(address))
-  private val index = config.acceptorAddresses.indexOf(address)
-
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = AcceptorInbound
   override def serializer = Acceptor.serializer
 
   // Fields ////////////////////////////////////////////////////////////////////
+  // Sanity check the configuration and get our index.
+  logger.check(config.valid())
+  logger.check(config.acceptorAddresses.contains(address))
+  private val index = config.acceptorAddresses.indexOf(address)
+
   val states = mutable.Map[VertexId, State]()
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -98,8 +98,12 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import AcceptorInbound.Request
     inbound.request match {
-      case Request.Phase1A(r) => handlePhase1a(src, r)
-      case Request.Phase2A(r) => handlePhase2a(src, r)
+      case Request.Phase1A(r) =>
+        metrics.requestsTotal.labels("Phase1a").inc()
+        handlePhase1a(src, r)
+      case Request.Phase2A(r) =>
+        metrics.requestsTotal.labels("Phase2a").inc()
+        handlePhase2a(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -110,8 +114,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1a: Phase1a
   ): Unit = {
-    metrics.requestsTotal.labels("Phase1a").inc()
-
     val state = states.getOrElse(
       phase1a.vertexId,
       State(round = -1, voteRound = -1, voteValue = None)
@@ -124,7 +126,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     if (phase1a.round < state.round) {
       logger.debug(
         s"An acceptor received a phase 1a message in ${phase1a.vertexId} for " +
-          s"round ${phase1a.round} and is in round ${state.round}."
+          s"round ${phase1a.round} but is in round ${state.round}."
       )
       proposer.send(
         ProposerInbound().withNack(
@@ -153,8 +155,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2a: Phase2a
   ): Unit = {
-    metrics.requestsTotal.labels("Phase2a").inc()
-
     val state = states.getOrElse(
       phase2a.vertexId,
       State(round = -1, voteRound = -1, voteValue = None)

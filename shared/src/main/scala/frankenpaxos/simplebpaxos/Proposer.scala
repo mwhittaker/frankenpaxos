@@ -145,7 +145,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     states.get(vertexId) match {
       case Some(_) =>
-        logger.fatal(
+        logger.debug(
           s"Proposer received a proposal in vertex ${vertexId}, but " +
             s"is already processing a proposal in this vertex. The propose " +
             s"is ignoring the new Propose request."
@@ -267,7 +267,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     states.get(phase1b.vertexId) match {
       case state @ (None | Some(_: Phase2[_]) | Some(_: Chosen[_])) =>
-        logger.warn(
+        logger.debug(
           s"Proposer received a phase1b in ${phase1b.vertexId}, but is not " +
             s"currently in phase 1 for this vertex id. The state is $state."
         )
@@ -278,7 +278,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           // We know that phase1b.round is less than phase1.round because if it
           // were higher, we would have received a Nack instead of a Phase1b.
           logger.checkLt(phase1b.round, phase1.round)
-          logger.warn(
+          logger.debug(
             s"Proposer received a phase1b in round ${phase1b.round} in " +
               s"${phase1b.vertexId} but is in round ${phase1b.round}."
           )
@@ -334,7 +334,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     states.get(phase2b.vertexId) match {
       case state @ (None | Some(_: Phase1[_]) | Some(_: Chosen[_])) =>
-        logger.warn(
+        logger.debug(
           s"Proposer received a phase2b in ${phase2b.vertexId}, but is not " +
             s"currently in phase 2 for this vertex id. The state is $state."
         )
@@ -345,7 +345,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           // We know that phase2b.round is less than phase2.round because if it
           // were higher, we would have received a Nack instead of a Phase2b.
           logger.checkLt(phase2b.round, phase2.round)
-          logger.warn(
+          logger.debug(
             s"Proposer received a phase2b in round ${phase2b.round} in " +
               s"${phase2b.vertexId} but is in round ${phase2b.round}."
           )
@@ -389,13 +389,13 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       roundSystem(nack.vertexId).nextClassicRound(index, nack.higherRound)
     states.get(nack.vertexId) match {
       case None =>
-        logger.warn(
+        logger.debug(
           s"Proposer received a nack in ${nack.vertexId}, but is not " +
             s"currently leading ${nack.vertexId}."
         )
 
       case Some(chosen: Chosen[Transport]) =>
-        logger.warn(
+        logger.debug(
           s"Proposer received a nack in ${nack.vertexId}, but a value was " +
             s"already chosen in ${nack.vertexId}."
         )
@@ -403,7 +403,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       case Some(phase1: Phase1[Transport]) =>
         // Ignore the nack if it's stale.
         if (nack.higherRound <= phase1.round) {
-          logger.warn(
+          logger.debug(
             s"Proposer received a nack in ${nack.vertexId} for round " +
               s"${nack.higherRound}, but is already in round ${phase1.round}."
           )
@@ -427,7 +427,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       case Some(phase2: Phase2[Transport]) =>
         // Ignore the nack if it's stale.
         if (nack.higherRound <= phase2.round) {
-          logger.warn(
+          logger.debug(
             s"Proposer received a nack in ${nack.vertexId} for round " +
               s"${nack.higherRound}, but is already in round ${phase2.round}."
           )

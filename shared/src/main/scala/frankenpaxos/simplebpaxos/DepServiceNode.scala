@@ -44,7 +44,10 @@ class DepServiceNodeMetrics(collectors: Collectors) {
   val dependencies: Summary = collectors.summary
     .build()
     .name("simple_bpaxos_dep_service_node_dependencies")
-    .help("The number of dependencies that a command has.")
+    .help(
+      "The number of dependencies that a dependency service node computes " +
+        "for a command."
+    )
     .register()
 }
 
@@ -96,7 +99,9 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import DepServiceNodeInbound.Request
     inbound.request match {
-      case Request.DependencyRequest(r) => handleDependencyRequest(src, r)
+      case Request.DependencyRequest(r) =>
+        metrics.requestsTotal.labels("DependencyRequest").inc()
+        handleDependencyRequest(src, r)
       case Request.Empty => {
         logger.fatal("Empty DepServiceNodeInbound encountered.")
       }
@@ -107,8 +112,6 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       dependencyRequest: DependencyRequest
   ): Unit = {
-    metrics.requestsTotal.labels("DependencyRequest").inc()
-
     val vertexId = dependencyRequest.vertexId
     val dependencies = dependenciesCache.get(vertexId) match {
       case Some(dependencies) => dependencies

@@ -3,8 +3,8 @@ package frankenpaxos.simplebpaxos
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     leaderAddresses: Seq[Transport#Address],
-    depServiceNodeAddresses: Seq[Transport#Address],
     proposerAddresses: Seq[Transport#Address],
+    depServiceNodeAddresses: Seq[Transport#Address],
     acceptorAddresses: Seq[Transport#Address],
     replicaAddresses: Seq[Transport#Address]
 ) {
@@ -14,8 +14,8 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
 
   def valid(): Boolean = {
     return (leaderAddresses.size >= f + 1) &&
-      (depServiceNodeAddresses.size == n) &&
       (proposerAddresses.size == leaderAddresses.size) &&
+      (depServiceNodeAddresses.size == n) &&
       (acceptorAddresses.size == n) &&
       (replicaAddresses.size == f + 1)
   }

@@ -138,10 +138,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // Random number generator.
   val rand = new Random(seed)
 
-  // Channels to the leaders.
-  private val leaders: Seq[Chan[Leader[Transport]]] =
-    for (a <- config.leaderAddresses)
-      yield chan[Leader[Transport]](a, Leader.serializer)
+  // Channels to the proposers.
+  private val proposers: Seq[Chan[Proposer[Transport]]] =
+    for (a <- config.proposerAddresses)
+      yield chan[Proposer[Transport]](a, Proposer.serializer)
 
   // The committed commands.
   val commands = mutable.Map[VertexId, Committed]()
@@ -157,7 +157,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val recoverVertexTimers = mutable.Map[VertexId, Transport#Timer]()
 
-  // Helpers ///////////////////////////////////////////////////////////////////
   // Timers ////////////////////////////////////////////////////////////////////
   private def makeRecoverVertexTimer(vertexId: VertexId): Transport#Timer = {
     lazy val t: Transport#Timer = timer(
@@ -179,9 +178,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
         // Send a recover message to a randomly selected leader. We randomly
         // select a leader to avoid dueling leaders.
-        val leader = leaders(rand.nextInt(leaders.size))
-        leader.send(
-          LeaderInbound().withRecover(
+        //
+        // TODO(mwhittaker): Send the recover message intially to the proposer
+        // that led the instance. Only if that proposer is dead should we send
+        // to another proposer.
+        val proposer = proposers(rand.nextInt(proposers.size))
+        proposer.send(
+          ProposerInbound().withRecover(
             Recover(vertexId = vertexId)
           )
         )
@@ -200,7 +203,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import ReplicaInbound.Request
     inbound.request match {
-      case Request.Commit(r) => handleCommit(src, r)
+      case Request.Commit(r) =>
+        metrics.requestsTotal.labels("Commit").inc()
+        handleCommit(src, r)
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -211,8 +216,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       commit: Commit
   ): Unit = {
-    metrics.requestsTotal.labels("Commit").inc()
-
     // If we've already recorded this command as committed, don't record it as
     // committed again.
     if (commands.contains(commit.vertexId)) {

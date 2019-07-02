@@ -71,7 +71,7 @@ object Leader {
       resendDependencyRequestsTimer: Transport#Timer
   ) extends State[Transport]
 
-// TODO(mwhittaker): Garbage collect these entries.
+  // TODO(mwhittaker): Garbage collect these entries.
   @JSExportAll
   case class Proposed[Transport <: frankenpaxos.Transport[Transport]]()
       extends State[Transport]

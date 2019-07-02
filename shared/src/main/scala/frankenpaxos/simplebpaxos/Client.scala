@@ -115,10 +115,9 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   protected var pendingCommands = mutable.Map[Pseudonym, PendingCommand]()
 
   // Leader channels.
-  private val leaders: Map[Int, Chan[Leader[Transport]]] = {
+  private val leaders: Seq[Chan[Leader[Transport]]] =
     for ((address, i) <- config.leaderAddresses.zipWithIndex)
-      yield i -> chan[Leader[Transport]](address, Leader.serializer)
-  }.toMap
+      yield chan[Leader[Transport]](address, Leader.serializer)
 
   // Timers to resend a proposed value. If a client doesn't hear back from a
   // leader quickly enough, it resends its proposal.
