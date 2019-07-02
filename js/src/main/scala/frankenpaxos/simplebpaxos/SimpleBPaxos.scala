@@ -25,17 +25,17 @@ class SimpleBPaxos {
       JsTransportAddress("Leader 4"),
       JsTransportAddress("Leader 5")
     ),
-    depServiceNodeAddresses = Seq(
-      JsTransportAddress("Dep Service Node 1"),
-      JsTransportAddress("Dep Service Node 2"),
-      JsTransportAddress("Dep Service Node 3")
-    ),
     proposerAddresses = Seq(
       JsTransportAddress("Proposer 1"),
       JsTransportAddress("Proposer 2"),
       JsTransportAddress("Proposer 3"),
       JsTransportAddress("Proposer 4"),
       JsTransportAddress("Proposer 5")
+    ),
+    depServiceNodeAddresses = Seq(
+      JsTransportAddress("Dep Service Node 1"),
+      JsTransportAddress("Dep Service Node 2"),
+      JsTransportAddress("Dep Service Node 3")
     ),
     acceptorAddresses = Seq(
       JsTransportAddress("Acceptor 1"),
@@ -73,14 +73,9 @@ class SimpleBPaxos {
       logger = new JsLogger(),
       config = config,
       options = LeaderOptions.default.copy(
-        resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(3),
-        proposerOptions = ProposerOptions(
-          resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(3),
-          resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(3)
-        )
+        resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(3)
       ),
-      metrics = new LeaderMetrics(FakeCollectors),
-      proposerMetrics = new ProposerMetrics(FakeCollectors)
+      metrics = new LeaderMetrics(FakeCollectors)
     )
   }
   val leader1 = leaders(0)
@@ -88,6 +83,26 @@ class SimpleBPaxos {
   val leader3 = leaders(2)
   val leader4 = leaders(3)
   val leader5 = leaders(4)
+
+  // Proposers.
+  val proposers = for (i <- 1 to config.proposerAddresses.size) yield {
+    new Proposer[JsTransport](
+      address = JsTransportAddress(s"Proposer $i"),
+      transport = transport,
+      logger = new JsLogger(),
+      config = config,
+      options = ProposerOptions.default.copy(
+        resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(3),
+        resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(3)
+      ),
+      metrics = new ProposerMetrics(FakeCollectors)
+    )
+  }
+  val proposer1 = proposers(0)
+  val proposer2 = proposers(1)
+  val proposer3 = proposers(2)
+  val proposer4 = proposers(3)
+  val proposer5 = proposers(4)
 
   // DepServiceNodes.
   val depServiceNodes = for (i <- 1 to config.depServiceNodeAddresses.size)

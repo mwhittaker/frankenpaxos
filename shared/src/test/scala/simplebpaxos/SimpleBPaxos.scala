@@ -32,10 +32,10 @@ class SimpleBPaxos(val f: Int, seed: Long) {
     f = f,
     leaderAddresses = for (i <- 1 to numLeaders)
       yield FakeTransportAddress(s"Leader $i"),
-    depServiceNodeAddresses = for (i <- 1 to numDepServiceNodes)
-      yield FakeTransportAddress(s"Dep Service Node $i"),
     proposerAddresses = for (i <- 1 to numLeaders)
       yield FakeTransportAddress(s"Proposer $i"),
+    depServiceNodeAddresses = for (i <- 1 to numDepServiceNodes)
+      yield FakeTransportAddress(s"Dep Service Node $i"),
     acceptorAddresses = for (i <- 1 to numAcceptors)
       yield FakeTransportAddress(s"Acceptor $i"),
     replicaAddresses = for (i <- 1 to numReplicas)
@@ -65,14 +65,24 @@ class SimpleBPaxos(val f: Int, seed: Long) {
       logger = new FakeLogger(),
       config = config,
       options = LeaderOptions.default.copy(
-        resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(3),
-        proposerOptions = ProposerOptions(
-          resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(3),
-          resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(3)
-        )
+        resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(3)
       ),
-      metrics = new LeaderMetrics(FakeCollectors),
-      proposerMetrics = new ProposerMetrics(FakeCollectors)
+      metrics = new LeaderMetrics(FakeCollectors)
+    )
+  }
+
+  // Proposers.
+  val proposers = for (i <- 1 to numLeaders) yield {
+    new Proposer[FakeTransport](
+      address = FakeTransportAddress(s"Proposer $i"),
+      transport = transport,
+      logger = new FakeLogger(),
+      config = config,
+      options = ProposerOptions.default.copy(
+        resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(3),
+        resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(3)
+      ),
+      metrics = new ProposerMetrics(FakeCollectors)
     )
   }
 

@@ -17,7 +17,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import scala.concurrent.duration
 
-object LeaderMain extends App {
+object ProposerMain extends App {
   case class Flags(
       // Basic flags.
       index: Int = -1,
@@ -27,12 +27,12 @@ object LeaderMain extends App {
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
       // Options.
-      options: LeaderOptions = LeaderOptions.default
+      options: ProposerOptions = ProposerOptions.default
   )
 
   implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def optionAction(
-        f: (A, LeaderOptions) => LeaderOptions
+        f: (A, ProposerOptions) => ProposerOptions
     ): scopt.OptionDef[A, Flags] =
       o.action((x, flags) => flags.copy(options = f(x, flags.options)))
   }
@@ -53,8 +53,10 @@ object LeaderMain extends App {
       .text(s"-1 to disable")
 
     // Options.
-    opt[java.time.Duration]("options.resendDependencyRequestsTimerPeriod")
-      .optionAction((x, o) => o.copy(resendDependencyRequestsTimerPeriod = x))
+    opt[java.time.Duration]("options.resendPhase1asTimerPeriod")
+      .optionAction((x, o) => o.copy(resendPhase1asTimerPeriod = x))
+    opt[java.time.Duration]("options.resendPhase2asTimerPeriod")
+      .optionAction((x, o) => o.copy(resendPhase2asTimerPeriod = x))
   }
 
   // Parse flags.
@@ -65,11 +67,11 @@ object LeaderMain extends App {
       throw new IllegalArgumentException("Could not parse flags.")
   }
 
-  // Construct leader.
+  // Construct proposer.
   val logger = new PrintLogger(flags.logLevel)
   val config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath())
-  val leader = new Leader[NettyTcpTransport](
-    address = config.leaderAddresses(flags.index),
+  val proposer = new Proposer[NettyTcpTransport](
+    address = config.proposerAddresses(flags.index),
     transport = new NettyTcpTransport(logger),
     logger = logger,
     config = config,
