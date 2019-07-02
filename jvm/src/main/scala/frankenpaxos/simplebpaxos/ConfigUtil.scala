@@ -12,8 +12,8 @@ object ConfigUtil {
     Config(
       f = proto.f,
       leaderAddresses = proto.leaderAddress.map(addr),
-      depServiceNodeAddresses = proto.depServiceNodeAddress.map(addr),
       proposerAddresses = proto.proposerAddress.map(addr),
+      depServiceNodeAddresses = proto.depServiceNodeAddress.map(addr),
       acceptorAddresses = proto.acceptorAddress.map(addr),
       replicaAddresses = proto.replicaAddress.map(addr)
     )

@@ -33,7 +33,6 @@ class ProposerOptions(NamedTuple):
 class LeaderOptions(NamedTuple):
     resend_dependency_requests_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
-    proposer_options: ProposerOptions = ProposerOptions()
 
 
 class DepServiceNodeOptions(NamedTuple):
@@ -79,6 +78,14 @@ class Input(NamedTuple):
     # monitoring is enabled.
     prometheus_scrape_interval: datetime.timedelta
 
+    # Leader options. ##########################################################
+    leader_options: LeaderOptions
+    leader_log_level: str
+
+    # Proposer options. ########################################################
+    proposer_options: ProposerOptions
+    proposer_log_level: str
+
     # Dep service node options. ################################################
     dep_service_node_options: DepServiceNodeOptions
     dep_service_node_log_level: str
@@ -90,10 +97,6 @@ class Input(NamedTuple):
     # Replica options. ########################################################
     replica_options: ReplicaOptions
     replica_log_level: str
-
-    # Leader options. ##########################################################
-    leader_options: LeaderOptions
-    leader_log_level: str
 
     # Client options. ##########################################################
     client_options: ClientOptions
@@ -124,6 +127,9 @@ class SimpleBPaxosNet(object):
     def leaders(self) -> List[mininet.node.Node]:
         raise NotImplementedError()
 
+    def proposers(self) -> List[mininet.node.Node]:
+        raise NotImplementedError()
+
     def dep_service_nodes(self) -> List[mininet.node.Node]:
         raise NotImplementedError()
 
@@ -145,6 +151,7 @@ class SingleSwitchNet(SimpleBPaxosNet):
         self.f = f
         self._clients: List[mininet.node.Node] = []
         self._leaders: List[mininet.node.Node] = []
+        self._proposers: List[mininet.node.Node] = []
         self._dep_service_nodes: List[mininet.node.Node] = []
         self._acceptors: List[mininet.node.Node] = []
         self._replicas: List[mininet.node.Node] = []
@@ -162,6 +169,11 @@ class SingleSwitchNet(SimpleBPaxosNet):
             leader = self._net.addHost(f'l{i}')
             self._net.addLink(leader, switch)
             self._leaders.append(leader)
+
+        for i in range(num_leaders):
+            proposer = self._net.addHost(f'p{i}')
+            self._net.addLink(proposer, switch)
+            self._proposers.append(proposer)
 
         for i in range(2*f + 1):
             dep_service_node = self._net.addHost(f'd{i}')
@@ -187,6 +199,9 @@ class SingleSwitchNet(SimpleBPaxosNet):
     def leaders(self) -> List[mininet.node.Node]:
         return self._leaders
 
+    def proposers(self) -> List[mininet.node.Node]:
+        return self._proposers
+
     def dep_service_nodes(self) -> List[mininet.node.Node]:
         return self._dep_service_nodes
 
@@ -200,24 +215,24 @@ class SingleSwitchNet(SimpleBPaxosNet):
         return {
             'f': self.f,
             'leaderAddress': [
-                {'host': a.IP(), 'port': 9000}
-                for a in self.leaders()
+                {'host': n.IP(), 'port': 9000}
+                for n in self.leaders()
             ],
             'proposerAddress': [
-                {'host': a.IP(), 'port': 9001}
-                for a in self.leaders()
+                {'host': n.IP(), 'port': 10000}
+                for n in self.proposers()
             ],
             'depServiceNodeAddress': [
-                {'host': a.IP(), 'port': 10000}
-                for a in self.dep_service_nodes()
+                {'host': n.IP(), 'port': 11000}
+                for n in self.dep_service_nodes()
             ],
             'acceptorAddress': [
-                {'host': a.IP(), 'port': 11000}
-                for a in self.acceptors()
+                {'host': n.IP(), 'port': 12000}
+                for n in self.acceptors()
             ],
             'replicaAddress': [
-                {'host': a.IP(), 'port': 12000}
-                for a in self.replicas()
+                {'host': n.IP(), 'port': 13000}
+                for n in self.replicas()
             ],
         }
 
@@ -305,6 +320,35 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             replica_procs.append(proc)
         bench.log('Replicas started.')
 
+        # Launch proposers.
+        proposer_procs = []
+        for (i, host) in enumerate(net.proposers()):
+            proc = bench.popen(
+                f=host.popen,
+                label=f'proposer_{i}',
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args['jar']),
+                    'frankenpaxos.simplebpaxos.ProposerMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                    '--log_level', input.proposer_log_level,
+                    '--prometheus_host', host.IP(),
+                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--options.resendPhase1asTimerPeriod',
+                        '{}s'.format(input.proposer_options
+                                     .resend_phase1as_timer_period
+                                     .total_seconds()),
+                    '--options.resendPhase2asTimerPeriod',
+                        '{}s'.format(input.proposer_options
+                                     .resend_phase2as_timer_period
+                                     .total_seconds()),
+                ],
+                profile=input.profiled,
+            )
+            proposer_procs.append(proc)
+        bench.log('Proposers started.')
+
         # Launch leaders.
         leader_procs = []
         for (i, host) in enumerate(net.leaders()):
@@ -324,16 +368,6 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         '{}s'.format(input.leader_options
                                      .resend_dependency_requests_timer_period
                                      .total_seconds()),
-                    '--options.proposer.resendPhase1asTimerPeriod',
-                        '{}s'.format(input.leader_options
-                                     .proposer_options
-                                     .resend_phase1as_timer_period
-                                     .total_seconds()),
-                    '--options.proposer.resendPhase2asTimerPeriod',
-                        '{}s'.format(input.leader_options
-                                     .proposer_options
-                                     .resend_phase2as_timer_period
-                                     .total_seconds()),
                 ],
                 profile=input.profiled,
             )
@@ -347,6 +381,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                 {
                   'bpaxos_leader':
                     [f'{n.IP()}:12345' for n in net.leaders()],
+                  'bpaxos_proposer':
+                    [f'{n.IP()}:12345' for n in net.proposers()],
                   'bpaxos_acceptor':
                     [f'{n.IP()}:12345' for n in net.acceptors()],
                   'bpaxos_client':
@@ -406,8 +442,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
         # Wait for clients to finish and then terminate leaders and acceptors.
         for proc in client_procs:
             proc.wait()
-        for proc in (leader_procs + acceptor_procs + dep_service_node_procs +
-                     replica_procs):
+        for proc in (leader_procs + proposer_procs + acceptor_procs +
+                     dep_service_node_procs + replica_procs):
             proc.terminate()
         bench.log('Clients finished and processes terminated.')
 
@@ -448,12 +484,14 @@ def _main(args) -> None:
                         datetime.timedelta(milliseconds=200),
                     dep_service_node_options = DepServiceNodeOptions(),
                     dep_service_node_log_level = 'debug',
+                    leader_options = LeaderOptions(),
+                    leader_log_level = 'debug',
+                    proposer_options = ProposerOptions(),
+                    proposer_log_level = 'debug',
                     acceptor_options = AcceptorOptions(),
                     acceptor_log_level = 'debug',
                     replica_options = ReplicaOptions(),
                     replica_log_level = 'debug',
-                    leader_options = LeaderOptions(),
-                    leader_log_level = 'debug',
                     client_options = ClientOptions(),
                     client_log_level = 'debug',
                     client_num_keys = 100,
