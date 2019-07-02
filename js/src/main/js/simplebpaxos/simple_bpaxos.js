@@ -204,7 +204,6 @@ let leader_info = {
 
   components: {
     'command': command_component,
-    'command-or-noop': command_or_noop_component,
     'dependency-reply': dependency_reply_component,
   },
 
@@ -245,32 +244,8 @@ let leader_info = {
             </fp-object>
           </div>
 
-          <div v-if="state.constructor.name.endsWith('WaitingForConsensus')">
-            WaitingForConsensus
-            <fp-object>
-              <fp-field :name="'commandOrNoop'">
-                <command-or-noop :value="state.commandOrNoop"></command-or-noop>
-              </fp-field>
-              <fp-field :name="'dependencies'">
-                <frankenpaxos-set :set="state.dependencies"></frankenpaxos-set>
-              </fp-field>
-              <fp-field
-                :name="'future'"
-                :value="state.future">
-              </fp-field>
-            </fp-object>
-          </div>
-
-          <div v-if="state.constructor.name.endsWith('Committed')">
-            Committed
-            <fp-object>
-              <fp-field :name="'commandOrNoop'">
-                <command-or-noop :value="state.commandOrNoop"></command-or-noop>
-              </fp-field>
-              <fp-field :name="'dependencies'">
-                <frankenpaxos-set :set="state.dependencies"></frankenpaxos-set>
-              </fp-field>
-            </fp-object>
+          <div v-if="state.constructor.name.endsWith('Proposed')">
+            Proposed
           </div>
         </frankenpaxos-map>
       </div>
@@ -284,6 +259,7 @@ const proposer_info = {
   },
 
   components: {
+    'command-or-noop': command_or_noop_component,
     'vote-value': vote_value_component,
     'phase1b': phase1b_component,
     'phase2b': phase2b_component,
@@ -296,7 +272,6 @@ const proposer_info = {
         <div v-if="state.constructor.name.endsWith('Phase1')">
           Phase1
           <fp-object>
-            <fp-field :name="'promise'" :value="state.promise"></fp-field>
             <fp-field :name="'round'" :value="state.round"></fp-field>
             <fp-field :name="'value'">
               <vote-value :value="state.value"></vote-value>
@@ -316,7 +291,6 @@ const proposer_info = {
         <div v-if="state.constructor.name.endsWith('Phase2')">
           Phase2
           <fp-object v-if="state.constructor.name.endsWith('Phase2')">
-            <fp-field :name="'promise'" :value="state.promise"></fp-field>
             <fp-field :name="'round'" :value="state.round"></fp-field>
             <fp-field :name="'value'">
               <vote-value :value="state.value"></vote-value>
@@ -335,6 +309,14 @@ const proposer_info = {
 
         <div v-if="state.constructor.name.endsWith('Chosen')">
           Chosen
+          <fp-object>
+            <fp-field :name="'commandOrNoop'">
+              <command-or-noop :set="state.commandOrNoop"></command-or-noop>
+            </fp-field>
+            <fp-field :name="'dependencies'">
+              <frankenpaxos-set :set="state.dependencies"></frankenpaxos-set>
+            </fp-field>
+          </fp-object>
         </div>
       </frankenpaxos-map>
     </div>
@@ -514,100 +496,100 @@ function make_nodes(SimpleBPaxos, snap) {
 
   // Clients.
   const clients = [
-    {actor: SimpleBPaxos.client1, y: 200},
-    {actor: SimpleBPaxos.client2, y: 400},
-    {actor: SimpleBPaxos.client3, y: 600},
+    {client: SimpleBPaxos.client1, y: 200},
+    {client: SimpleBPaxos.client2, y: 400},
+    {client: SimpleBPaxos.client3, y: 600},
   ]
-  for (const [index, client] of clients.entries()) {
-    nodes[client.actor.address] = {
-      actor: client.actor,
+  for (const [index, {client, y}] of clients.entries()) {
+    nodes[client.address] = {
+      actor: client,
       color: flat_red,
       component: client_info,
       svgs: [
-        snap.circle(client_x, client.y, 20).attr(colored(flat_red)),
-        snap.text(client_x, client.y, (index + 1).toString()).attr(number_style),
+        snap.circle(client_x, y, 20).attr(colored(flat_red)),
+        snap.text(client_x, y, (index + 1).toString()).attr(number_style),
       ],
     };
   }
 
   // Leaders and proposers.
-  const leaders = [
-    {actor: SimpleBPaxos.leader1, y: 200},
-    {actor: SimpleBPaxos.leader2, y: 300},
-    {actor: SimpleBPaxos.leader3, y: 400},
-    {actor: SimpleBPaxos.leader4, y: 500},
-    {actor: SimpleBPaxos.leader5, y: 600},
+  const leaders_and_proposers = [
+    {leader: SimpleBPaxos.leader1, proposer: SimpleBPaxos.proposer1, y: 200},
+    {leader: SimpleBPaxos.leader2, proposer: SimpleBPaxos.proposer2, y: 300},
+    {leader: SimpleBPaxos.leader3, proposer: SimpleBPaxos.proposer3, y: 400},
+    {leader: SimpleBPaxos.leader4, proposer: SimpleBPaxos.proposer4, y: 500},
+    {leader: SimpleBPaxos.leader5, proposer: SimpleBPaxos.proposer5, y: 600},
   ]
-  for (const [index, leader] of leaders.entries()) {
-    nodes[leader.actor.address] = {
-      actor: leader.actor,
+  for (const [index, {leader, proposer, y}] of leaders_and_proposers.entries()) {
+    nodes[leader.address] = {
+      actor: leader,
       color: flat_blue,
       component: leader_info,
       svgs: [
-        snap.circle(leader_x, leader.y, 20).attr(colored(flat_blue)),
-        snap.text(leader_x, leader.y, (index + 1).toString()).attr(number_style),
+        snap.circle(leader_x, y, 20).attr(colored(flat_blue)),
+        snap.text(leader_x, y, (index + 1).toString()).attr(number_style),
       ],
     };
-    nodes[leader.actor.proposer.address] = {
-      actor: leader.actor.proposer,
+    nodes[proposer.address] = {
+      actor: proposer,
       color: flat_green,
       component: proposer_info,
       svgs: [
-        snap.circle(proposer_x, leader.y + 35, 20).attr(colored(flat_green)),
-        snap.text(proposer_x, leader.y + 35, (index + 1).toString()).attr(number_style),
+        snap.circle(proposer_x, y + 35, 20).attr(colored(flat_green)),
+        snap.text(proposer_x, y + 35, (index + 1).toString()).attr(number_style),
       ],
     };
   }
 
   // Dependency service nodes.
   const dep_nodes = [
-    {actor: SimpleBPaxos.depServiceNode1, y: 100},
-    {actor: SimpleBPaxos.depServiceNode2, y: 200},
-    {actor: SimpleBPaxos.depServiceNode3, y: 300},
+    {dep_node: SimpleBPaxos.depServiceNode1, y: 100},
+    {dep_node: SimpleBPaxos.depServiceNode2, y: 200},
+    {dep_node: SimpleBPaxos.depServiceNode3, y: 300},
   ]
-  for (const [index, dep_node] of dep_nodes.entries()) {
-    nodes[dep_node.actor.address] = {
-      actor: dep_node.actor,
+  for (const [index, {dep_node, y}] of dep_nodes.entries()) {
+    nodes[dep_node.address] = {
+      actor: dep_node,
       color: flat_purple,
       component: dep_node_info,
       svgs: [
-        snap.circle(dep_service_x, dep_node.y, 20).attr(colored(flat_purple)),
-        snap.text(dep_service_x, dep_node.y, (index + 1).toString()).attr(number_style),
+        snap.circle(dep_service_x, y, 20).attr(colored(flat_purple)),
+        snap.text(dep_service_x, y, (index + 1).toString()).attr(number_style),
       ],
     };
   }
 
   // Acceptors.
   const acceptors = [
-    {actor: SimpleBPaxos.acceptor1, y: 500},
-    {actor: SimpleBPaxos.acceptor2, y: 600},
-    {actor: SimpleBPaxos.acceptor3, y: 700},
+    {acceptor: SimpleBPaxos.acceptor1, y: 500},
+    {acceptor: SimpleBPaxos.acceptor2, y: 600},
+    {acceptor: SimpleBPaxos.acceptor3, y: 700},
   ]
-  for (const [index, acceptor] of acceptors.entries()) {
-    nodes[acceptor.actor.address] = {
-      actor: acceptor.actor,
+  for (const [index, {acceptor, y}] of acceptors.entries()) {
+    nodes[acceptor.address] = {
+      actor: acceptor,
       color: flat_orange,
       component: acceptor_info,
       svgs: [
-        snap.circle(acceptor_x, acceptor.y, 20).attr(colored(flat_orange)),
-        snap.text(acceptor_x, acceptor.y, (index + 1).toString()).attr(number_style),
+        snap.circle(acceptor_x, y, 20).attr(colored(flat_orange)),
+        snap.text(acceptor_x, y, (index + 1).toString()).attr(number_style),
       ],
     };
   }
 
   // Replicas.
   const replicas = [
-    {actor: SimpleBPaxos.replica1, x: 200},
-    {actor: SimpleBPaxos.replica2, x: 400},
+    {replica: SimpleBPaxos.replica1, x: 200},
+    {replica: SimpleBPaxos.replica2, x: 400},
   ]
-  for (const [index, replica] of replicas.entries()) {
-    nodes[replica.actor.address] = {
-      actor: replica.actor,
+  for (const [index, {replica, x}] of replicas.entries()) {
+    nodes[replica.address] = {
+      actor: replica,
       color: flat_dark_blue,
       component: replica_info,
       svgs: [
-        snap.circle(replica.x, replica_y, 20).attr(colored(flat_dark_blue)),
-        snap.text(replica.x, replica_y, (index + 1).toString()).attr(number_style),
+        snap.circle(x, replica_y, 20).attr(colored(flat_dark_blue)),
+        snap.text(x, replica_y, (index + 1).toString()).attr(number_style),
       ],
     };
   }
