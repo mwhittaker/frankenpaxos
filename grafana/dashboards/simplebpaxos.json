@@ -63,36 +63,36 @@
           "expr": "rate(simple_bpaxos_leader_requests_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": " ({{instance}}) {{type}}",
+          "legendFormat": "{{type}} ({{instance}})",
           "refId": "A"
         },
         {
           "expr": "sum(rate(simple_bpaxos_leader_requests_total[1s])) by (instance)",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": " ({{instance}}) Total Inbound",
+          "legendFormat": "Total Inbound ({{instance}})",
           "refId": "B"
         },
         {
           "expr": "sum(rate(simple_bpaxos_leader_requests_total{type=\"ClientRequest\"}[1s])) ",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Total Client Requests",
-          "refId": "E"
+          "legendFormat": "Total ClientRequest",
+          "refId": "C"
         },
         {
           "expr": "rate(simple_bpaxos_leader_proposals_sent_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": " ({{instance}}) Proposals Sent",
-          "refId": "C"
+          "legendFormat": "Proposals Sent ({{instance}}) ",
+          "refId": "D"
         },
         {
           "expr": "sum(rate(simple_bpaxos_leader_proposals_sent_total[1s]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Total Proposals Sent",
-          "refId": "D"
+          "refId": "E"
         }
       ],
       "thresholds": [],
@@ -268,36 +268,36 @@
           "expr": "rate(simple_bpaxos_proposer_requests_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "({{instance}}) {{type}}",
+          "legendFormat": "{{type}} ({{instance}})",
           "refId": "A"
-        },
-        {
-          "expr": "sum(rate(simple_bpaxos_proposer_requests_total{type=\"Propose\"}[1s])) ",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Total Propose",
-          "refId": "D"
         },
         {
           "expr": "sum(rate(simple_bpaxos_proposer_requests_total[1s])) by (instance)",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "({{instance}}) Total Inbound ",
+          "legendFormat": "Total Inbound ({{instance}})",
           "refId": "B"
+        },
+        {
+          "expr": "sum(rate(simple_bpaxos_proposer_requests_total{type=\"Propose\"}[1s])) ",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Proposals",
+          "refId": "E"
         },
         {
           "expr": "rate(simple_bpaxos_proposer_chosen_commands_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "({{instance}}) Chosen Commands",
+          "legendFormat": "Commands Chosen ({{instance}}) ",
           "refId": "C"
         },
         {
           "expr": "sum(rate(simple_bpaxos_proposer_chosen_commands_total[1s]))",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Total Chosen Commands",
-          "refId": "E"
+          "legendFormat": "Total Commands Chosen",
+          "refId": "D"
         }
       ],
       "thresholds": [],
@@ -589,32 +589,46 @@
           "refId": "B"
         },
         {
-          "expr": "rate(simple_bpaxos_client_unpending_responses_total[1s])",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Unpending Response {{instance}}",
-          "refId": "C"
-        },
-        {
-          "expr": "sum(rate(simple_bpaxos_client_unpending_responses_total[1s]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Unpending Reponse Sum",
-          "refId": "D"
-        },
-        {
           "expr": "rate(simple_bpaxos_client_requests_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Requests ({{instance}})",
+          "legendFormat": "Requests Sent ({{instance}})",
           "refId": "E"
         },
         {
           "expr": "sum(rate(simple_bpaxos_client_requests_total[1s]))",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Requests Sum",
+          "legendFormat": "Total Requests Sent",
           "refId": "F"
+        },
+        {
+          "expr": "rate(simple_bpaxos_client_responses_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Good Responses ({{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(simple_bpaxos_client_responses_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Good Reponses",
+          "refId": "D"
+        },
+        {
+          "expr": "rate(simple_bpaxos_client_unpending_responses_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Unpending Responses ({{instance}})",
+          "refId": "G"
+        },
+        {
+          "expr": "sum(rate(simple_bpaxos_client_unpending_responses_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Unpending Reponses",
+          "refId": "H"
         }
       ],
       "thresholds": [],
@@ -715,13 +729,6 @@
           "intervalFactor": 1,
           "legendFormat": "Repeated Commands ({{instance}})",
           "refId": "C"
-        },
-        {
-          "expr": "rate(simple_bpaxos_leader_committed_commands_total[1s])",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Leader Chosen Commands ({{instance}})",
-          "refId": "D"
         }
       ],
       "thresholds": [],
@@ -806,7 +813,7 @@
           "expr": "rate(simple_bpaxos_leader_resend_dependency_requests_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{instance}} Resend Dependency Request",
+          "legendFormat": "Resend Dependency Requests ({{instance}})",
           "refId": "A"
         }
       ],
@@ -892,14 +899,14 @@
           "expr": "rate(simple_bpaxos_proposer_resend_phase1a_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Resend Phase1a {{instance}}",
+          "legendFormat": "Resend Phase1as ({{instance}})",
           "refId": "A"
         },
         {
           "expr": "rate(simple_bpaxos_proposer_resend_phase2a_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Resend Phase2a {{instance}}",
+          "legendFormat": "Resend Phase2as ({{instance}})",
           "refId": "B"
         }
       ],
@@ -985,7 +992,7 @@
           "expr": "rate(simple_bpaxos_replica_recover_vertex_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Recover Vertex {{instance}}",
+          "legendFormat": "Recover Vertex ({{instance}})",
           "refId": "A"
         }
       ],
@@ -1071,7 +1078,7 @@
           "expr": "rate(simple_bpaxos_client_repropose_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Repropose {{instance}}",
+          "legendFormat": "Repropose ({{instance}})",
           "refId": "A"
         }
       ],
@@ -1157,14 +1164,14 @@
           "expr": "rate(simple_bpaxos_dep_service_node_dependencies_sum[1s]) / rate(simple_bpaxos_dep_service_node_dependencies_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Average # of deps on dep service ({{instance}})",
+          "legendFormat": "Average # of deps on Dep Service ({{instance}})",
           "refId": "A"
         },
         {
-          "expr": "rate(simple_bpaxos_replica_dependencies_sum[1s]) / rate(simple_bpaxos_leader_dependencies_count[1s])",
+          "expr": "rate(simple_bpaxos_replica_dependencies_sum[1s]) / rate(simple_bpaxos_replica_dependencies_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Average # of deps on leader ({{instance}})",
+          "legendFormat": "Average # of deps on Replica ({{instance}})",
           "refId": "B"
         },
         {
@@ -1232,8 +1239,8 @@
     "list": []
   },
   "time": {
-    "from": "2019-07-03T00:03:31.013Z",
-    "to": "2019-07-03T00:04:23.077Z"
+    "from": "2019-07-03T21:34:27.657Z",
+    "to": "2019-07-03T21:34:50.546Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1263,5 +1270,5 @@
   "timezone": "",
   "title": "Simple BPaxos",
   "uid": "4mBsFHVWk",
-  "version": 9
+  "version": 14
 }

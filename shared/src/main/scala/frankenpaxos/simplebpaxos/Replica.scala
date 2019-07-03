@@ -226,6 +226,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // Record the committed command.
     val dependencies = commit.dependency.toSet
     commands(commit.vertexId) = Committed(commit.commandOrNoop, dependencies)
+    metrics.dependencies.observe(dependencies.size)
 
     // Stop any recovery timer for the current vertex, and start recovery
     // timers for any uncommitted vertices on which we depend.
