@@ -31,14 +31,18 @@ object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
 @JSExportAll
 case class ReplicaOptions(
     recoverVertexTimerMinPeriod: java.time.Duration,
-    recoverVertexTimerMaxPeriod: java.time.Duration
+    recoverVertexTimerMaxPeriod: java.time.Duration,
+    processGraphBatchSize: Int,
+    processGraphTimerPeriod: java.time.Duration
 )
 
 @JSExportAll
 object ReplicaOptions {
   val default = ReplicaOptions(
     recoverVertexTimerMinPeriod = java.time.Duration.ofMillis(500),
-    recoverVertexTimerMaxPeriod = java.time.Duration.ofMillis(1500)
+    recoverVertexTimerMaxPeriod = java.time.Duration.ofMillis(1500),
+    processGraphBatchSize = 1000,
+    processGraphTimerPeriod = java.time.Duration.ofSeconds(1)
   )
 }
 
@@ -67,6 +71,12 @@ class ReplicaMetrics(collectors: Collectors) {
     .build()
     .name("simple_bpaxos_replica_repeated_commands_total")
     .help("Total number of commands that were redundantly chosen.")
+    .register()
+
+  val processGraphTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_replica_process_graph_total")
+    .help("Total number of times the replica processed the dependency graph.")
     .register()
 
   val recoverVertexTotal: Counter = collectors.counter
@@ -136,6 +146,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private val proposers: Seq[Chan[Proposer[Transport]]] =
     for (a <- config.proposerAddresses)
       yield chan[Proposer[Transport]](a, Proposer.serializer)
+
+  // The number of committed commands that are in the graph that have not yet
+  // been processed. We process the graph every `options.processGraphBatchSize`
+  // committed commands and every `options.processGraphTimerPeriod` seconds. If
+  // the timer expires, we clear this number.
+  var numPendingCommittedCommands: Int = 0
 
   // The committed commands.
   val commands = mutable.Map[VertexId, Committed]()
@@ -218,6 +234,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Record the committed command.
+    numPendingCommittedCommands += 1
     val dependencies = commit.dependency.toSet
     commands(commit.vertexId) = Committed(commit.commandOrNoop, dependencies)
     metrics.dependencies.observe(dependencies.size)
