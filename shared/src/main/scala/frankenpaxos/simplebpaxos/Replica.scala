@@ -212,7 +212,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def handleCommit(
+  // Public for testing.
+  def handleCommit(
       src: Transport#Address,
       commit: Commit
   ): Unit = {
