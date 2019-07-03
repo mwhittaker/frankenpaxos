@@ -227,6 +227,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                     dependency = dependencies.toSeq)
           )
         )
+        metrics.proposalsSentTotal.inc()
 
         // Update our state.
         states(dependencyReply.vertexId) = Proposed()
