@@ -241,8 +241,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Execute commands.
-    val executable: Seq[VertexId] =
-      dependencyGraph.commit(commit.vertexId, (), dependencies)
+    dependencyGraph.commit(commit.vertexId, (), dependencies)
+    val executable: Seq[VertexId] = dependencyGraph.execute()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numNodes)
     metrics.dependencyGraphNumEdges.set(dependencyGraph.numEdges)
 

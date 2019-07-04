@@ -399,8 +399,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Execute commands.
-    val executable: Seq[VertexId] =
-      dependencyGraph.commit(vertexId, (), dependencies)
+    dependencyGraph.commit(vertexId, (), dependencies)
+    val executable: Seq[VertexId] = dependencyGraph.execute()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numNodes)
     metrics.dependencyGraphNumEdges.set(dependencyGraph.numEdges)
 

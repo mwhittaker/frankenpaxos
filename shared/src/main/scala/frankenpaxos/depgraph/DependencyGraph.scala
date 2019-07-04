@@ -111,22 +111,6 @@ import scala.scalajs.js.annotation.JSExportAll
 //   - B, C, A
 //
 // # API
-// DependencyGraph represents the dependency graphs maintained by protocols
-// like EPaxos and BPaxos. A DependencyGraph has a single method, `commit`, to
-// commit a vertex (identified by an instance), its sequence number, and its
-// dependencies. `commit` returns a set of instances that can be executed,
-// arranged in the order that they should be executed. For example, we can
-// replicate the example above like this:
-//
-//   val A = Instance(...)
-//   val B = Instance(...)
-//   val C = Instance(...)
-//
-//   val g = ... // Make a DependencyGraph.
-//   g.commit(A, 0, Set(B)) // Evaluates to Seq()
-//   g.commit(C, 0, Set(A)) // Evaluates to Seq()
-//   g.commit(B, 0, Set(A)) // Evaluates to Seq(A, B, C) or Seq(B, A, C)
-//
 // Note that vertex identifiers and sequence numbers are both generic. This is
 // because EPaxos and BPaxos use different types of vertex identifiers, and
 // BPaxos doesn't even use sequence numbers.
@@ -135,16 +119,28 @@ abstract class DependencyGraph[Key, SequenceNumber](
     implicit val keyOrdering: Ordering[Key],
     implicit val sequenceNumberOrdering: Ordering[SequenceNumber]
 ) {
-  // See above. If an instance is committed after it has already been
-  // committed, then `commit` ignores it and returns an empty sequence.
+  // Commit adds a vertex, its sequence number, and its dependencies to the
+  // dependency graph. It does not try to execute any part of the graph.
   def commit(
       key: Key,
       sequenceNumber: SequenceNumber,
       dependencies: Set[Key]
-  ): Seq[Key]
+  ): Unit
+
+  // Execute finds all vertices in the graph that are eligible for execution,
+  // and then returns them in an order that is compatible with the graph (i.e.
+  // a reverse topological order of components, with a deterministic ordering
+  // of commands within components).
+  //
+  // It is the responsibility of the caller of execute to execute the commands
+  // associated with the vertices. Once a dependency graph returns a command
+  // from execute, it will never return it again.
+  def execute(): Seq[Key]
 
   // Returns the current number of vertices and edges in the graph. This is
-  // used mainly for monitoring.
+  // used mainly for monitoring. A dependency graph implementation may or may
+  // not prune vertices from the graph after they are executed, so these
+  // numbers may go up and down over time.
   def numNodes: Int
   def numEdges: Int
 }

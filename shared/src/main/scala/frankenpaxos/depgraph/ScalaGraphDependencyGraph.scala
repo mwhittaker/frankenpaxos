@@ -32,10 +32,10 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
       key: Key,
       sequenceNumber: SequenceNumber,
       dependencies: Set[Key]
-  ): Seq[Key] = {
+  ): Unit = {
     // Ignore commands that have already been committed.
     if (committed.contains(key) || executed.contains(key)) {
-      return Seq()
+      return
     }
 
     // Update our bookkeeping.
@@ -51,9 +51,6 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
         graph.add(key ~> dependency)
       }
     }
-
-    // Execute the graph.
-    execute()
   }
 
   private def isEligible(key: Key): Boolean = {
@@ -61,7 +58,7 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
     graph.outerNodeTraverser(graph.get(key)).forall(committed.contains(_))
   }
 
-  private def execute(): Seq[Key] = {
+  override def execute(): Seq[Key] = {
     // Filter out all vertices that are not eligible.
     val eligibleGraph = graph.filter(isEligible)
 

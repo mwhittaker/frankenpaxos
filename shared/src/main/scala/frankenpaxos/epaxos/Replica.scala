@@ -678,11 +678,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Execute commands.
-    val executable: Seq[Instance] = dependencyGraph.commit(
-      instance,
-      triple.sequenceNumber,
-      triple.dependencies
-    )
+    dependencyGraph.commit(instance, triple.sequenceNumber, triple.dependencies)
+    val executable: Seq[Instance] = dependencyGraph.execute()
 
     for (i <- executable) {
       import CommandOrNoop.Value
