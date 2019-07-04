@@ -11,7 +11,7 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
   case class Vertex(
       key: Key,
       sequenceNumber: SequenceNumber,
-      dependencies: Set[Key]
+      dependencies: mutable.Set[Key]
   )
 
   case class VertexMetadata(
@@ -34,7 +34,11 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
       return
     }
 
-    vertices(key) = Vertex(key, sequenceNumber, dependencies)
+    vertices(key) = Vertex(
+      key,
+      sequenceNumber,
+      mutable.Set() ++ dependencies.filter(!executed.contains(_))
+    )
   }
 
   override def execute(): Seq[Key] = {
@@ -49,10 +53,9 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
     }
 
     // Remove the executed commands.
-    for (k <- executables) {
-      vertices -= k
-      executed += k
-    }
+    vertices --= executables
+    executed ++= executables
+
     executables.toSeq
   }
 
@@ -71,7 +74,10 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
     )
     stack += v
 
-    for (w <- vertices(v).dependencies if !executed.contains(w)) {
+    // Prune committed dependencies.
+    vertices(v).dependencies.retain(!executed.contains(_))
+
+    for (w <- vertices(v).dependencies) {
       if (!vertices.contains(w)) {
         // If we depend on an uncommitted vertex, we are ineligible.
         metadatas(v) = metadatas(v).copy(eligible = false)
@@ -113,6 +119,9 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
     }
 
     // Pop v.
+    // TODO(mwhittaker): We might be able to store the stack index in the
+    // VertexMetadata. Then, instead of continuously popping off the stack, we
+    // can just slice the stack. This might make things go faster.
     component += stack.last
     stack.remove(stack.size - 1)
     metadatas(v) = metadatas(v).copy(onStack = false)
@@ -128,10 +137,5 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
     }
   }
 
-  override def numNodes: Int = vertices.size
-
-  override def numEdges: Int = {
-    // TODO(mwhittaker): Implement
-    ???
-  }
+  override def numVertices: Int = vertices.size
 }

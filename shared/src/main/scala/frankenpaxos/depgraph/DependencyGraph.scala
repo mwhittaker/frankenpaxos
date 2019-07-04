@@ -137,10 +137,9 @@ abstract class DependencyGraph[Key, SequenceNumber](
   // from execute, it will never return it again.
   def execute(): Seq[Key]
 
-  // Returns the current number of vertices and edges in the graph. This is
-  // used mainly for monitoring. A dependency graph implementation may or may
-  // not prune vertices from the graph after they are executed, so these
-  // numbers may go up and down over time.
-  def numNodes: Int
-  def numEdges: Int
+  // Returns the current number of vertices in the graph. This is used mainly
+  // for monitoring. A dependency graph implementation may or may not prune
+  // vertices from the graph after they are executed, so these numbers may go
+  // up and down over time.
+  def numVertices: Int
 }

@@ -62,7 +62,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
         graphType <- Gen.enumeration("graph_type")(Jgrapht, Tarjan)
         numCommands <- Gen.enumeration("num_commands")(10000)
         cycleSize <- Gen.enumeration("cycle_size")(1, 10, 25)
-        batchSize <- Gen.enumeration("batch_size")(1, 1000, 10000)
+        batchSize <- Gen.enumeration("batch_size")(1, 100, 1000)
       } yield Params(graphType, numCommands, cycleSize, batchSize)
 
     using(params) config (
@@ -96,7 +96,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       for {
         graphType <- Gen.enumeration("graph_type")(Jgrapht, Tarjan)
         numCommands <- Gen.enumeration("num_commands")(10000)
-        depSize <- Gen.enumeration("depSize")(1, 10, 100)
+        depSize <- Gen.enumeration("depSize")(1, 10, 25)
         batchSize <- Gen.enumeration("batch_size")(1, 100)
       } yield Params(graphType, numCommands, depSize, batchSize)
 

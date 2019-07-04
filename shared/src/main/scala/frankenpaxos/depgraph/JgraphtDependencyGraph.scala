@@ -114,6 +114,5 @@ class JgraphtDependencyGraph[Key, SequenceNumber]()(
     executable
   }
 
-  override def numNodes: Int = graph.vertexSet().size
-  override def numEdges: Int = graph.edgeSet().size
+  override def numVertices: Int = graph.vertexSet().size
 }

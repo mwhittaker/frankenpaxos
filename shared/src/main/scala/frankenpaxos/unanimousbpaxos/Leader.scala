@@ -165,12 +165,6 @@ class LeaderMetrics(collectors: Collectors) {
     .help("The number of vertices in the dependency graph.")
     .register()
 
-  val dependencyGraphNumEdges: Gauge = collectors.gauge
-    .build()
-    .name("unanimous_bpaxos_leader_dependency_graph_num_edges")
-    .help("The number of edges in the dependency graph.")
-    .register()
-
   val dependencies: Summary = collectors.summary
     .build()
     .name("unanimous_bpaxos_leader_dependencies")
@@ -401,8 +395,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // Execute commands.
     dependencyGraph.commit(vertexId, (), dependencies)
     val executable: Seq[VertexId] = dependencyGraph.execute()
-    metrics.dependencyGraphNumVertices.set(dependencyGraph.numNodes)
-    metrics.dependencyGraphNumEdges.set(dependencyGraph.numEdges)
+    metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
     for (v <- executable) {
       import CommandOrNoop.Value
