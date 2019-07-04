@@ -1,0 +1,16 @@
+language: go
+go:
+  - "1.11.x"
+
+sudo: false
+
+install:
+- go get ./...
+
+script:
+- go install ./server/
+- go install ./client/
+- go install ./cmd/
+
+notifications:
+  email: false
