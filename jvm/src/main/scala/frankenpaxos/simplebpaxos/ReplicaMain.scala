@@ -57,6 +57,10 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(recoverVertexTimerMinPeriod = x))
     opt[java.time.Duration]("options.recoverVertexTimerMaxPeriod")
       .optionAction((x, o) => o.copy(recoverVertexTimerMaxPeriod = x))
+    opt[Int]("options.executeGraphBatchSize")
+      .optionAction((x, o) => o.copy(executeGraphBatchSize = x))
+    opt[java.time.Duration]("options.executeGraphTimerPeriod")
+      .optionAction((x, o) => o.copy(executeGraphTimerPeriod = x))
   }
 
   // Parse flags.

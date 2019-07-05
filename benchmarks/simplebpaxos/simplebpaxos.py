@@ -48,6 +48,9 @@ class ReplicaOptions(NamedTuple):
         datetime.timedelta(seconds=1)
     recover_vertex_timer_max_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
+    execute_graph_batch_size: int = 100
+    execute_graph_timer_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
 
 
 class Input(NamedTuple):
@@ -314,6 +317,12 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         '{}s'.format(input.replica_options
                                      .recover_vertex_timer_max_period
                                      .total_seconds()),
+                    '--options.executeGraphBatchSize',
+                        str(input.replica_options.execute_graph_batch_size),
+                    '--options.executeGraphTimerPeriod',
+                        '{}s'.format(input.replica_options
+                                     .execute_graph_timer_period
+                                     .total_seconds()),
                 ],
                 profile=input.profiled,
             )
@@ -490,7 +499,9 @@ def _main(args) -> None:
                     proposer_log_level = 'debug',
                     acceptor_options = AcceptorOptions(),
                     acceptor_log_level = 'debug',
-                    replica_options = ReplicaOptions(),
+                    replica_options = ReplicaOptions(
+                        execute_graph_batch_size = 1,
+                    ),
                     replica_log_level = 'debug',
                     client_options = ClientOptions(),
                     client_log_level = 'debug',
