@@ -294,9 +294,12 @@ class ThroughputOutput(NamedTuple):
 
 class RecorderOutput(NamedTuple):
     latency: LatencyOutput
-    throughput_1s: ThroughputOutput
-    throughput_2s: ThroughputOutput
-    throughput_5s: ThroughputOutput
+    start_throughput_1s: ThroughputOutput
+    start_throughput_2s: ThroughputOutput
+    start_throughput_5s: ThroughputOutput
+    stop_throughput_1s: ThroughputOutput
+    stop_throughput_2s: ThroughputOutput
+    stop_throughput_5s: ThroughputOutput
 
 # parse_recorder_data parses and summarizes data written by a
 # frankenpaxos.BenchmarkUtil.Recorder.
@@ -323,47 +326,36 @@ def parse_recorder_data(bench: BenchmarkDirectory,
     subprocess.call(['gzip', bench.abspath('data.csv')])
     bench.log('Aggregate recorder data compressed.')
 
-    latency_ms = df['latency_nanos'] / 1e6
-    throughput_1s = pd_util.throughput(df, 1000)
-    throughput_2s = pd_util.throughput(df, 2000)
-    throughput_5s = pd_util.throughput(df, 5000)
+    def latency(s):
+        return LatencyOutput(
+            mean_ms = s.mean(),
+            median_ms = s.median(),
+            min_ms = s.min(),
+            max_ms = s.max(),
+            p90_ms = s.quantile(.90),
+            p95_ms = s.quantile(.95),
+            p99_ms = s.quantile(.99),
+        )
+
+    def throughput(s):
+        return ThroughputOutput(
+            mean = s.mean(),
+            median = s.median(),
+            min = s.min(),
+            max = s.max(),
+            p90 = s.quantile(.90),
+            p95 = s.quantile(.95),
+            p99 = s.quantile(.99),
+        )
+
     return RecorderOutput(
-        latency = LatencyOutput(
-            mean_ms = latency_ms.mean(),
-            median_ms = latency_ms.median(),
-            min_ms = latency_ms.min(),
-            max_ms = latency_ms.max(),
-            p90_ms = latency_ms.quantile(.90),
-            p95_ms = latency_ms.quantile(.95),
-            p99_ms = latency_ms.quantile(.99),
-        ),
-        throughput_1s = ThroughputOutput(
-            mean = throughput_1s.mean(),
-            median = throughput_1s.median(),
-            min = throughput_1s.min(),
-            max = throughput_1s.max(),
-            p90 = throughput_1s.quantile(.90),
-            p95 = throughput_1s.quantile(.95),
-            p99 = throughput_1s.quantile(.99),
-        ),
-        throughput_2s = ThroughputOutput(
-            mean = throughput_2s.mean(),
-            median = throughput_2s.median(),
-            min = throughput_2s.min(),
-            max = throughput_2s.max(),
-            p90 = throughput_2s.quantile(.90),
-            p95 = throughput_2s.quantile(.95),
-            p99 = throughput_2s.quantile(.99),
-        ),
-        throughput_5s = ThroughputOutput(
-            mean = throughput_5s.mean(),
-            median = throughput_5s.median(),
-            min = throughput_5s.min(),
-            max = throughput_5s.max(),
-            p90 = throughput_5s.quantile(.90),
-            p95 = throughput_5s.quantile(.95),
-            p99 = throughput_5s.quantile(.99),
-        ),
+        latency = latency(df['latency_nanos'] / 1e6),
+        start_throughput_1s = throughput(pd_util.throughput(df.index, 1000)),
+        start_throughput_2s = throughput(pd_util.throughput(df.index, 2000)),
+        start_throughput_5s = throughput(pd_util.throughput(df.index, 5000)),
+        stop_throughput_1s = throughput(pd_util.throughput(df['stop'], 1000)),
+        stop_throughput_2s = throughput(pd_util.throughput(df['stop'], 2000)),
+        stop_throughput_5s = throughput(pd_util.throughput(df['stop'], 5000)),
     )
 
 

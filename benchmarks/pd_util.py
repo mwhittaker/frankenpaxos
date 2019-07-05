@@ -32,29 +32,29 @@ def outliers(s: pd.Series, n: float) -> pd.Series:
     return np.abs(s - mu) >= (n * sigma)
 
 
-def throughput(df: pd.DataFrame,
+def throughput(s: pd.Series,
                window_size_ms: float,
                trim: bool = False) -> pd.Series:
     """
-    Consider a timestamp indexed dataframe:
+    Consider a series of timestamps:
 
-                    latency
-      11:00:01 am | 100     |
-      11:00:03 am | 200     |
-      11:00:54 am | 300     |
-      11:01:34 am | 400     |
-      11:02:16 am | 500     |
+        timestamp
+      0 11:00:01 am
+      1 11:00:03 am
+      2 11:00:54 am
+      3 11:01:34 am
+      4 11:02:16 am
 
     Imagine we divide the data into 1 minute rolling windows with every window
     having its right edge be a entry in the dataframe. We'd get the following
     windows and latencies:
 
-                                  latencies
-      10:59:01 am - 11:00:01 am | [100]           |
-      10:59:03 am - 11:00:03 am | [100, 200]      |
-      10:59:54 am - 11:00:54 am | [100, 200, 300] |
-      11:00:34 am - 11:01:34 am | [300, 400]      |
-      11:01:16 am - 11:02:16 am | [300, 400, 500] |
+                                  timestamps
+      10:59:01 am - 11:00:01 am | [0]       |
+      10:59:03 am - 11:00:03 am | [0, 1]    |
+      10:59:54 am - 11:00:54 am | [0, 1, 2] |
+      11:00:34 am - 11:01:34 am | [2, 3]    |
+      11:01:16 am - 11:02:16 am | [2, 3, 4] |
 
     If we count the number of entries in each window and divide by the window
     size, we get the throughput of each window measured in events per second.
@@ -69,7 +69,7 @@ def throughput(df: pd.DataFrame,
     This is what `throughput` computes. If `trim` is true, the first
     window_size_ms of throughput data is trimmed.
     """
-    s = pd.Series(0, index=df.sort_index(0).index)
+    s = pd.Series(0, index=s.sort_values())
     throughput = (s.rolling(f'{window_size_ms}ms').count() /
                   (window_size_ms / 1000))
     if trim:

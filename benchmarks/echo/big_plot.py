@@ -2,6 +2,7 @@
 import matplotlib
 matplotlib.use('pdf')
 
+from .. import parser_util
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,11 +13,11 @@ import pandas as pd
 def plot_latency(df: pd.DataFrame, ax) -> None:
     grouped = df.groupby('num_clients').agg([np.mean, np.std])
     columns = {
-        'mean_latency_ms': 'mean',
-        'median_latency_ms': 'median',
-        'p90_latency_ms': 'P90',
-        'p95_latency_ms': 'P95',
-        'p99_latency_ms': 'P99',
+        'latency.mean_ms': 'mean',
+        'latency.median_ms': 'median',
+        'latency.p90_ms': 'P90',
+        'latency.p95_ms': 'P95',
+        'latency.p99_ms': 'P99',
     }
     for column in columns:
         mean = grouped[column]['mean']
@@ -36,11 +37,11 @@ def plot_latency(df: pd.DataFrame, ax) -> None:
 def plot_1_second_throughput(df: pd.DataFrame, ax) -> None:
     grouped = df.groupby('num_clients').agg([np.mean, np.std])
     columns = {
-        'mean_1_second_throughput': 'mean',
-        'median_1_second_throughput': 'median',
-        'p90_1_second_throughput': 'P90',
-        'p95_1_second_throughput': 'P95',
-        'p99_1_second_throughput': 'P99',
+        'stop_throughput_1s.mean': 'mean',
+        'stop_throughput_1s.median': 'median',
+        'stop_throughput_1s.p90': 'P90',
+        'stop_throughput_1s.p95': 'P95',
+        'stop_throughput_1s.p99': 'P99',
     }
     for column in columns:
         mean = grouped[column]['mean']
@@ -59,6 +60,7 @@ def plot_1_second_throughput(df: pd.DataFrame, ax) -> None:
 
 def main(args) -> None:
     df = pd.read_csv(args.results_csv)
+    df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
 
     # See [1] for figure size defaults. We add an extra plot at the bottom for
     # a textual note.
@@ -75,20 +77,6 @@ def main(args) -> None:
     print(f'Wrote plot to {args.output}.')
 
 
-def get_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        'results_csv',
-        type=str,
-        help='results.csv file'
-    )
-    parser.add_argument(
-        '-o', '--output',
-        type=str,
-        default='echo_big.pdf',
-        help='Output filename.'
-    )
-    return parser
-
 if __name__ == '__main__':
-    main(get_parser().parse_args())
+    parser = parser_util.get_plot_parser('echo_big.pdf')
+    main(parser.parse_args())

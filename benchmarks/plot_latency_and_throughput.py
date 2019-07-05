@@ -12,41 +12,31 @@ import pandas as pd
 
 def plot_latency(ax: plt.Axes, latency_ms: pd.Series) -> None:
     ax.plot_date(latency_ms.index,
-                 latency_ms.rolling('250ms').mean(),
-                 label='250ms',
+                 latency_ms.rolling('500ms').median(),
+                 label='500ms',
                  fmt='-',
                  alpha=0.5)
     ax.plot_date(latency_ms.index,
-                 latency_ms.rolling('500ms').mean(),
-                 label='500ms',
-                 fmt='-',
-                 alpha=0.7)
-    ax.plot_date(latency_ms.index,
-                 latency_ms.rolling('1s').mean(),
+                 latency_ms.rolling('1s').median(),
                  label='1s',
                  fmt='-')
-    ax.set_title('Latency')
+    ax.set_title('Median latency')
     ax.set_xlabel('Time')
-    ax.set_ylabel('Latency (ms)')
+    ax.set_ylabel('Median latency (ms)')
 
 
-def plot_throughput(ax: plt.Axes, df: pd.DataFrame) -> None:
+def plot_throughput(ax: plt.Axes, start: pd.Series, stop: pd.Series) -> None:
     # Plot throughput.
-    ax.plot_date(pd_util.throughput(df, 250, trim=True).index,
-                 pd_util.throughput(df, 250, trim=True),
-                 label='250ms',
-                 fmt='-',
-                 alpha=0.5)
-    ax.plot_date(pd_util.throughput(df, 500, trim=True).index,
-                 pd_util.throughput(df, 500, trim=True),
-                 label='500ms',
+    ax.plot_date(pd_util.throughput(start, 1000, trim=True).index,
+                 pd_util.throughput(start, 1000, trim=True),
+                 label='start',
+                 fmt='-')
+    ax.plot_date(pd_util.throughput(stop, 1000, trim=True).index,
+                 pd_util.throughput(stop, 1000, trim=True),
+                 label='stop',
                  fmt='-',
                  alpha=0.7)
-    ax.plot_date(pd_util.throughput(df, 1000, trim=True).index,
-                 pd_util.throughput(df, 1000, trim=True),
-                 label='1s',
-                 fmt='-')
-    ax.set_title('Throughput')
+    ax.set_title('Throughput (1 second windows)')
     ax.set_xlabel('Time')
     ax.set_ylabel('Throughput')
 
@@ -60,16 +50,13 @@ def main(args) -> None:
     new_start_time = start_time + pd.DateOffset(seconds=args.drop)
     df = df[df['start'] >= new_start_time]
 
-    # Drop outliers.
-    latency_ms = df['latency_nanos'] / 1e6
-    latency_ms = latency_ms[~pd_util.outliers(latency_ms, args.stds)]
-
     # See [1] for figure size defaults.
     #
     # [1]: https://matplotlib.org/api/_as_gen/matplotlib.pyplot.figure.html
-    fig, ax = plt.subplots(2, 1, figsize=(6.4, 2 * 4.8))
-    plot_latency(ax[0], latency_ms)
-    plot_throughput(ax[1], df)
+    num_plots = 2
+    fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8))
+    plot_latency(ax[0], df['latency_nanos'] / 1e6)
+    plot_throughput(ax[1], df['start'], df['stop'])
     for axes in ax:
         axes.grid()
         axes.legend(loc='best')
@@ -93,12 +80,6 @@ def get_parser() -> argparse.ArgumentParser:
         type=float,
         default=0,
         help='Drop this number of seconds from the beginning of the benchmark.'
-    )
-    parser.add_argument(
-        '-s', '--stds',
-        type=float,
-        default=1e20,
-        help='Latency values that deviate by more that <stds> stds are stripped'
     )
     parser.add_argument(
         '-o', '--output',
