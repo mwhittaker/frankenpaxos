@@ -23,6 +23,15 @@ object LogLevel {
   })
 }
 
+// A logger can be used to log messages and check that certain invariants hold.
+//
+// A logger can log messages with five different severities (or levels): debug,
+// info, warn, error, and fatal. The `logLevel` parameter passed to a Logger
+// can selectively disable the logging of certain log levels. For example, a
+// logger constructed with log level warn will log messages with level warn,
+// error, or fatal. It will not log debug or info messages. If you think a
+// message might be logged often, it's best to make it debug so that it can be
+// turned off for benchmarking.
 abstract class Logger(logLevel: LogLevel) {
   // Logging.
   def fatal(message: String): Nothing = {

@@ -227,7 +227,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           promise.success(clientReply.result.toByteArray)
           metrics.responsesTotal.inc()
         } else {
-          logger.warn(
+          logger.debug(
             s"Received a reply for unpending command with pseudonym " +
               s"${clientReply.clientPseudonym} and id ${clientReply.clientId}."
           )
@@ -235,7 +235,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         }
 
       case None =>
-        logger.warn(
+        logger.debug(
           s"Received a reply for unpending command with pseudonym " +
             s"${clientReply.clientPseudonym} and id ${clientReply.clientId}."
         )

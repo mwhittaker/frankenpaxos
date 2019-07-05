@@ -195,7 +195,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     states.get(dependencyReply.vertexId) match {
       case state @ (None | Some(_: Proposed[_])) =>
-        logger.warn(
+        logger.debug(
           s"Leader received DependencyReply for vertex " +
             s"${dependencyReply.vertexId}, but is not currently waiting for " +
             s"dependencies for that vertex. The state is $state."

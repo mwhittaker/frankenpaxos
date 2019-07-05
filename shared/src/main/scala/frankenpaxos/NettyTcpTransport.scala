@@ -118,7 +118,6 @@ class NettyTcpTransport(private val logger: Logger)
       msg match {
         case bytes: Array[Byte] => {
           actor.receive(remoteAddress, actor.serializer.fromBytes(bytes))
-          // actor.receiveImpl(remoteAddress, bytes)
         }
         case _ =>
           logger.fatal(
@@ -158,7 +157,7 @@ class NettyTcpTransport(private val logger: Logger)
         unregisterChannel(localAddress, remoteAddress)
         ctx.fireChannelUnregistered()
       } else {
-        logger.warn(
+        logger.debug(
           "Unregistering a channel with null source or destination " +
             "addresses. The connection must have failed."
         )
@@ -174,10 +173,10 @@ class NettyTcpTransport(private val logger: Logger)
       }
 
       if (future.isCancelled()) {
-        logger.warn(s"Future was cancelled: $message")
+        logger.debug(s"Future was cancelled: $message")
       } else {
-        logger.warn(s"Future failed: $message")
-        logger.warn(future.cause().getStackTrace.mkString("\n"))
+        logger.debug(s"Future failed: $message")
+        logger.debug(future.cause().getStackTrace.mkString("\n"))
       }
     }
   }
@@ -259,7 +258,7 @@ class NettyTcpTransport(private val logger: Logger)
         )
 
       case Some(Pending(msgs)) =>
-        logger.info(
+        logger.debug(
           s"A channel between remote address $remoteAddress and " +
             s"local address $localAddress is being registered, and a set of " +
             s"${msgs.size} pending messages was found. We are sending the " +
@@ -278,7 +277,7 @@ class NettyTcpTransport(private val logger: Logger)
         channel.flush()
 
       case None =>
-        logger.info(
+        logger.debug(
           s"Successfully registering channel between remote address " +
             s"$remoteAddress and local address $localAddress."
         )
@@ -292,7 +291,7 @@ class NettyTcpTransport(private val logger: Logger)
   ): Unit = {
     channels.remove((localAddress, remoteAddress)) match {
       case Some(_) =>
-        logger.info(
+        logger.debug(
           s"Successfully unregistered channel between remote address " +
             s"$remoteAddress and local address $localAddress."
         )
@@ -320,7 +319,7 @@ class NettyTcpTransport(private val logger: Logger)
       .childHandler(new ChannelInitializer[SocketChannel]() {
         @throws(classOf[Exception])
         override def initChannel(channel: SocketChannel): Unit = {
-          logger.info(
+          logger.debug(
             s"Server socket on address ${channel.localAddress} established " +
               s"connection with ${channel.remoteAddress}."
           )
@@ -369,14 +368,14 @@ class NettyTcpTransport(private val logger: Logger)
           )
 
       case Some(Pending(msgs)) =>
-        logger.info(
+        logger.debug(
           s"Attempted to send a message from $src to $dst, but a channel is " +
             s"currently pending. The message is being buffered for later."
         )
         msgs += bytes
 
       case None =>
-        logger.info(
+        logger.debug(
           s"No channel was found between $src and $dst, so we are creating one."
         )
         channels((src, dst)) = Pending(mutable.Buffer(bytes))
@@ -410,7 +409,7 @@ class NettyTcpTransport(private val logger: Logger)
                 if (!future.isSuccess()) {
                   unregisterChannel(src, dst)
                 } else {
-                  logger.info(
+                  logger.debug(
                     s"Client socket on address " +
                       s"${future.channel.localAddress} established " +
                       s"connection with ${future.channel.remoteAddress}."
