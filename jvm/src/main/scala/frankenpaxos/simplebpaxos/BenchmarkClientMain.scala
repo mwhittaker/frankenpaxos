@@ -36,6 +36,9 @@ object BenchmarkClientMain extends App {
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
       // Benchmark flags.
+      warmupDuration: java.time.Duration = java.time.Duration.ofSeconds(5),
+      warmupTimeout: Duration = 10 seconds,
+      numWarmupClients: Int = 10,
       duration: java.time.Duration = java.time.Duration.ofSeconds(5),
       timeout: Duration = 10 seconds,
       numClients: Int = 1,
@@ -67,6 +70,12 @@ object BenchmarkClientMain extends App {
       .text(s"Prometheus port; -1 to disable")
 
     // Benchmark flags.
+    opt[java.time.Duration]("warmup_duration")
+      .action((x, f) => f.copy(warmupDuration = x))
+    opt[Duration]("warmup_timeout")
+      .action((x, f) => f.copy(warmupTimeout = x))
+    opt[Int]("num_warmup_clients")
+      .action((x, f) => f.copy(numWarmupClients = x))
     opt[java.time.Duration]("duration")
       .action((x, f) => f.copy(duration = x))
     opt[Duration]("timeout")
@@ -144,13 +153,27 @@ object BenchmarkClientMain extends App {
       })
   }
 
+  // Warm up the protocol.
   implicit val context = transport.executionContext
+  val warmupFutures = for (pseudonym <- 0 to flags.numWarmupClients)
+    yield BenchmarkUtil.runFor(() => run(pseudonym), flags.warmupDuration)
+  try {
+    logger.info("Client warmup started.")
+    concurrent.Await.result(Future.sequence(warmupFutures), flags.warmupTimeout)
+    logger.info("Client warmup finished successfully.")
+  } catch {
+    case e: java.util.concurrent.TimeoutException =>
+      logger.warn("Client warmup futures timed out!")
+      logger.warn(e.toString())
+  }
+
+  // Run the benchmark.
   val futures = for (pseudonym <- 0 to flags.numClients)
     yield BenchmarkUtil.runFor(() => run(pseudonym), flags.duration)
-
-  // Wait for the benchmark to finish.
   try {
+    logger.info("Clients started.")
     concurrent.Await.result(Future.sequence(futures), flags.timeout)
+    logger.info("Clients finished successfully.")
   } catch {
     case e: java.util.concurrent.TimeoutException =>
       logger.warn("Client futures timed out!")
@@ -158,9 +181,9 @@ object BenchmarkClientMain extends App {
   }
 
   // Shut everything down.
-  logger.debug("Shutting down transport.")
+  logger.info("Shutting down transport.")
   transport.shutdown()
-  logger.debug("Transport shut down.")
+  logger.info("Transport shut down.")
 
   prometheusServer.foreach(server => {
     logger.info("Stopping prometheus.")

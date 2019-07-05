@@ -48,7 +48,7 @@ class ReplicaOptions(NamedTuple):
         datetime.timedelta(seconds=1)
     recover_vertex_timer_max_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
-    execute_graph_batch_size: int = 100
+    execute_graph_batch_size: int = 1
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
 
@@ -61,12 +61,18 @@ class Input(NamedTuple):
     f: int
     # The number of benchmark client processes launched.
     num_client_procs: int
+    # The number of warmup clients run on each benchmark client process.
+    num_warmup_clients_per_proc: int
     # The number of clients run on each benchmark client process.
     num_clients_per_proc: int
     # The number of leaders.
     num_leaders: int
 
     # Benchmark parameters. ####################################################
+    # The (rough) duration of the benchmark warmup.
+    warmup_duration: datetime.timedelta
+    # Global warmup timeout.
+    warmup_timeout: datetime.timedelta
     # The (rough) duration of the benchmark.
     duration: datetime.timedelta
     # Global timeout.
@@ -434,6 +440,12 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--log_level', input.client_log_level,
                     '--prometheus_host', host.IP(),
                     '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--warmup_duration',
+                        f'{input.warmup_duration.total_seconds()}s',
+                    '--warmup_timeout',
+                        f'{input.warmup_timeout.total_seconds()}s',
+                    '--num_warmup_clients',
+                        f'{input.num_warmup_clients_per_proc}',
                     '--duration', f'{input.duration.total_seconds()}s',
                     '--timeout', f'{input.timeout.total_seconds()}s',
                     '--num_clients', f'{input.num_clients_per_proc}',
@@ -482,8 +494,11 @@ def _main(args) -> None:
                     net_name = 'SingleSwitchNet',
                     f = 1,
                     num_client_procs = num_client_procs,
+                    num_warmup_clients_per_proc = 1,
                     num_clients_per_proc = 1,
                     num_leaders = 2,
+                    warmup_duration = datetime.timedelta(seconds=5),
+                    warmup_timeout = datetime.timedelta(seconds=10),
                     duration = datetime.timedelta(seconds=10),
                     timeout = datetime.timedelta(seconds=30),
                     client_lag = datetime.timedelta(seconds=0),
