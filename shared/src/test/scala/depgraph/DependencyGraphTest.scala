@@ -238,9 +238,9 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
         }
 
     forAll(nodesGen) { (nodes: Seq[(Int, Int, Set[Int])]) =>
-      val jgrapht = new JgraphtDependencyGraph()
-      val scalagraph = new ScalaGraphDependencyGraph()
-      val tarjan = new TarjanDependencyGraph()
+      val jgrapht = new JgraphtDependencyGraph[Int, Int]()
+      val scalagraph = new ScalaGraphDependencyGraph[Int, Int]()
+      val tarjan = new TarjanDependencyGraph[Int, Int]()
       for ((id, sequenceNumber, dependencies) <- nodes) {
         jgrapht.commit(id, sequenceNumber, dependencies - id)
         scalagraph.commit(id, sequenceNumber, dependencies - id)
