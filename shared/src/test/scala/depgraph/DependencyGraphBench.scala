@@ -37,8 +37,8 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       } yield Params(graphType, numCommands, depSize)
 
     using(params) config (
-      exec.independentSamples -> 3,
-      exec.benchRuns -> 5,
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
     ) in { params =>
       val g = makeGraph(params.graphType)
       for (i <- 0 until params.numCommands) {
@@ -66,8 +66,8 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       } yield Params(graphType, numCommands, cycleSize, batchSize)
 
     using(params) config (
-      exec.independentSamples -> 3,
-      exec.benchRuns -> 5,
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
     ) in { params =>
       val g = makeGraph(params.graphType)
       for {
@@ -101,8 +101,8 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       } yield Params(graphType, numCommands, depSize, batchSize)
 
     using(params) config (
-      exec.independentSamples -> 3,
-      exec.benchRuns -> 5,
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
     ) in { params =>
       val g = makeGraph(params.graphType)
       for (i <- 0 until params.numCommands) {

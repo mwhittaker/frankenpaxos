@@ -46,8 +46,8 @@ object SimpleBPaxosBenchmark extends Bench.ForkedTime {
       } yield Params(graphType, numCommands, cycleSize)
 
     using(params) config (
-      exec.independentSamples -> 3,
-      exec.benchRuns -> 5,
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
     ) in { params =>
       val logger = new FakeLogger()
       val transport = new FakeTransport(logger)
