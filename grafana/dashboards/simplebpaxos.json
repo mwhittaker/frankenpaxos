@@ -729,6 +729,13 @@
           "intervalFactor": 1,
           "legendFormat": "Repeated Commands ({{instance}})",
           "refId": "C"
+        },
+        {
+          "expr": "rate(simple_bpaxos_replica_execute_graph_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Execute Graph ({{instance}})",
+          "refId": "D"
         }
       ],
       "thresholds": [],
@@ -994,6 +1001,13 @@
           "intervalFactor": 1,
           "legendFormat": "Recover Vertex ({{instance}})",
           "refId": "A"
+        },
+        {
+          "expr": "rate(simple_bpaxos_replica_execute_graph_timer_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Execute Graph Timer ({{instance}})",
+          "refId": "B"
         }
       ],
       "thresholds": [],
@@ -1239,8 +1253,8 @@
     "list": []
   },
   "time": {
-    "from": "2019-07-03T21:34:27.657Z",
-    "to": "2019-07-03T21:34:50.546Z"
+    "from": "2019-07-05T21:12:14.800Z",
+    "to": "2019-07-05T21:12:50.151Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1270,5 +1284,5 @@
   "timezone": "",
   "title": "Simple BPaxos",
   "uid": "4mBsFHVWk",
-  "version": 14
+  "version": 15
 }
