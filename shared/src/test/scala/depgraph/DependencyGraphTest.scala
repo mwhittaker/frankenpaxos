@@ -1,12 +1,14 @@
 package frankenpaxos.depgraph
 
 import com.google.protobuf.ByteString
+import org.scalacheck.Gen
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
+import org.scalatest.prop.PropertyChecks
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-class DependencyGraphTest extends FlatSpec with Matchers {
+class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   private def runTest(test: (DependencyGraph[Int, Int]) => Unit): Unit = {
     test(new JgraphtDependencyGraph[Int, Int]())
     info("JgraphtDependencyGraph passed")
@@ -195,5 +197,64 @@ class DependencyGraphTest extends FlatSpec with Matchers {
       graph.execute() shouldBe Seq(3, 5, 6)
     }
     runTest(test)
+  }
+
+  it should "correctly commit a hard tarjan test case" in {
+    def test(graph: DependencyGraph[Int, Int]): Unit = {
+      graph.commit(0, 0, Set(3, 1))
+      graph.commit(1, 1, Set(2))
+      graph.commit(2, 2, Set(1))
+      graph.commit(3, 3, Set(4))
+      graph.commit(4, 4, Set(2, 3, 5, 6, 7, 8))
+      graph.commit(5, 5, Set(6))
+      graph.commit(6, 6, Set())
+      graph.commit(7, 7, Set(4))
+      graph.commit(8, 8, Set(7))
+      Set(
+        Seq(1, 2, 6, 5, 3, 4, 7, 8, 0),
+        Seq(6, 1, 2, 5, 3, 4, 7, 8, 0),
+        Seq(6, 5, 1, 2, 3, 4, 7, 8, 0)
+      ) should contain(graph.execute())
+    }
+    runTest(test)
+  }
+
+  "All dep graph implementations" should "agree" in {
+    val n = 100
+
+    val seqDepGen: Gen[(Int, Set[Int])] = for {
+      sequenceNumber <- Gen.choose[Int](0, n)
+      numDependencies <- Gen.choose[Int](0, n)
+      dependencies <- Gen.containerOfN[Set, Int](numDependencies,
+                                                 Gen.choose[Int](0, n))
+    } yield (sequenceNumber, dependencies)
+
+    val nodesGen: Gen[Seq[(Int, Int, Set[Int])]] =
+      for (nodes <- Gen.containerOfN[Seq, (Int, Set[Int])](n, seqDepGen))
+        yield {
+          for (((sequenceNumber, dependencies), i) <- nodes.zipWithIndex)
+            yield (i, sequenceNumber, dependencies)
+
+        }
+
+    forAll(nodesGen) { (nodes: Seq[(Int, Int, Set[Int])]) =>
+      val jgrapht = new JgraphtDependencyGraph()
+      val scalagraph = new ScalaGraphDependencyGraph()
+      val tarjan = new TarjanDependencyGraph()
+      for ((id, sequenceNumber, dependencies) <- nodes) {
+        jgrapht.commit(id, sequenceNumber, dependencies - id)
+        scalagraph.commit(id, sequenceNumber, dependencies - id)
+        tarjan.commit(id, sequenceNumber, dependencies - id)
+      }
+
+      // We check that the three graphs have the same elements. It's possible
+      // that they return elements in different orders, though, so they may not
+      // be exactly equal.
+      val jgraphtOutput = jgrapht.execute()
+      val scalagraphOutput = scalagraph.execute()
+      val tarjanOutput = tarjan.execute()
+      jgraphtOutput should contain theSameElementsAs scalagraphOutput
+      jgraphtOutput should contain theSameElementsAs tarjanOutput
+    }
   }
 }
