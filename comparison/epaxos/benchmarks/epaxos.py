@@ -12,6 +12,7 @@ import time
 import tqdm
 import yaml
 
+tc_intf_parameters = {}
 
 class ReplicaOptions(NamedTuple):
     resend_pre_accepts_timer_period: datetime.timedelta = \
@@ -98,11 +99,13 @@ class EPaxosNet(object):
 class SingleSwitchNet(EPaxosNet):
     def __init__(self,
                  f: int,
-                 num_client_procs: int) -> None:
+                 num_client_procs: int,
+                 tc_intf_params: dict) -> None:
         self.f = f
         self._clients: List[mininet.node.Node] = []
         self._replicas: List[mininet.node.Node] = []
         self._net = Mininet()
+        self._tc_intf_params = tc_intf_params
 
         switch = self._net.addSwitch('s1')
         self._net.addController('c')
@@ -113,8 +116,11 @@ class SingleSwitchNet(EPaxosNet):
             self._clients.append(client)
 
         num_replicas = 2*f + 1
+        tc_intf = TCIntf()
+        tc_intf.config(self._tc_intf_params)
         for i in range(num_replicas):
             replica = self._net.addHost(f'r{i}')
+            replica.addIntf(tc_intf)
             self._net.addLink(replica, switch)
             self._replicas.append(replica)
 
@@ -126,6 +132,9 @@ class SingleSwitchNet(EPaxosNet):
 
     def replicas(self) -> List[mininet.node.Node]:
         return self._replicas
+
+    def tc_intf_params(self) -> dict:
+        return self._tc_intf_params
 
     def config(self) -> proto_util.Message:
         return {
