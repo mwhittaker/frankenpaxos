@@ -4,6 +4,7 @@ import frankenpaxos.Actor
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
+import frankenpaxos.PrometheusUtil
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
 import java.net.InetAddress
@@ -18,41 +19,30 @@ object ServerMain extends App {
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
-    opt[String]("host")
-      .valueName("<host>")
-      .action((x, f) => f.copy(host = x))
-      .text(s"Hostname (default: ${Flags().host})")
-
-    opt[Int]("port")
-      .valueName("<port>")
-      .action((x, f) => f.copy(port = x))
-      .text(s"Port (default: ${Flags().port})")
-
+    opt[String]("host").action((x, f) => f.copy(host = x))
+    opt[Int]("port").action((x, f) => f.copy(port = x))
     opt[String]("prometheus_host")
-      .valueName("<host>")
       .action((x, f) => f.copy(prometheusHost = x))
-      .text(s"Prometheus hostname (default: ${Flags().prometheusHost})")
-
     opt[Int]("prometheus_port")
-      .valueName("<port>")
       .action((x, f) => f.copy(prometheusPort = x))
-      .text(s"Prometheus port (default: ${Flags().prometheusPort})")
+      .text(s"-1 to disable")
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
-    case Some(flags) => flags
-    case None        => ???
+    case Some(flags) =>
+      flags
+    case None =>
+      throw new IllegalArgumentException("Could not parse flags.")
   }
 
+  // Start the server.
   val logger = new PrintLogger()
-  val transport = new NettyTcpTransport(logger)
-  val address = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port))
-  val server = new Server[NettyTcpTransport](address, transport, logger)
-
-  DefaultExports.initialize()
-  val prometheusServer =
-    new HTTPServer(flags.prometheusHost, flags.prometheusPort)
-  logger.info(
-    s"Prometheus server running on ${flags.prometheusHost}:${flags.prometheusPort}"
+  val server = new Server[NettyTcpTransport](
+    address = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port)),
+    transport = new NettyTcpTransport(logger),
+    logger = logger
   )
+
+  // Start Prometheus.
+  PrometheusUtil.server(flags.prometheusHost, flags.prometheusPort)
 }

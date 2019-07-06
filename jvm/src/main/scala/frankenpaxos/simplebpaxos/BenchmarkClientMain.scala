@@ -105,7 +105,7 @@ object BenchmarkClientMain extends App {
 
   // Construct client.
   val logger = new PrintLogger(flags.logLevel)
-  val transport = new NettyTcpTransport(logger);
+  val transport = new NettyTcpTransport(logger)
   val client = new Client[NettyTcpTransport](
     address = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port)),
     transport = transport,

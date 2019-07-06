@@ -130,7 +130,6 @@ class EchoSuite(benchmark.Suite[Input, Output]):
                 f=net.server().popen,
                 label=f'client_{i}',
                 cmd = [
-                    'timeout', f'{input.timeout_seconds}s',
                     'java',
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.echo.BenchmarkClientMain',
@@ -139,6 +138,7 @@ class EchoSuite(benchmark.Suite[Input, Output]):
                     '--host', host.IP(),
                     '--port', '10000',
                     '--duration', f'{input.duration_seconds}s',
+                    '--timeout', f'{input.timeout_seconds}s',
                     '--num_clients', f'{input.num_clients_per_proc}',
                     '--output_file', bench.abspath(f'client_{i}_data.csv'),
                 ]

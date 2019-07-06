@@ -34,7 +34,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   private val pingTimer: Transport#Timer =
     timer("pingTimer", java.time.Duration.ofSeconds(1), () => {
-      _echo("ping")
+      echoImpl("ping")
       pingTimer.start()
     });
   pingTimer.start();
@@ -48,11 +48,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     logger.info(s"Received ${reply.msg} from $src.")
   }
 
-  private def _echo(msg: String): Unit = {
+  private def echoImpl(msg: String): Unit = {
     server.send(ServerInbound(msg = msg))
   }
 
   def echo(msg: String): Unit = {
-    transport.executionContext().execute(() => _echo(msg))
+    transport.executionContext().execute(() => echoImpl(msg))
   }
 }

@@ -59,7 +59,7 @@ def plot_1_second_throughput(df: pd.DataFrame, ax) -> None:
 
 
 def main(args) -> None:
-    df = pd.read_csv(args.results_csv)
+    df = pd.read_csv(args.results)
     df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
 
     # See [1] for figure size defaults. We add an extra plot at the bottom for

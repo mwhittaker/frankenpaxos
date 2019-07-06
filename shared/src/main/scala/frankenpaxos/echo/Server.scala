@@ -45,7 +45,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   logger.info(s"Echo server listening on $address.")
 
   override def receive(src: Transport#Address, request: ServerInbound): Unit = {
-    logger.info(s"Received ${request.msg} from $src.")
+    logger.debug(s"Received ${request.msg} from $src.")
     numMessagesReceived += 1
     metrics.echoRequestsTotal.inc()
 

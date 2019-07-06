@@ -3,7 +3,9 @@ package frankenpaxos.echo
 import collection.mutable
 import com.github.tototoshi.csv.CSVWriter
 import frankenpaxos.Actor
+import frankenpaxos.BenchmarkUtil
 import frankenpaxos.FileLogger
+import frankenpaxos.Flags.durationRead
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
@@ -11,6 +13,8 @@ import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration._
 import scala.util.Try
 
 object BenchmarkClientMain extends App {
@@ -20,6 +24,7 @@ object BenchmarkClientMain extends App {
       serverHost: String = "localhost",
       serverPort: Int = 9000,
       duration: java.time.Duration = java.time.Duration.ofSeconds(0),
+      timeout: Duration = 0 seconds,
       numClients: Int = 1,
       outputFile: String = ""
   )
@@ -29,10 +34,8 @@ object BenchmarkClientMain extends App {
     opt[Int]("port").action((x, f) => f.copy(port = x))
     opt[String]("server_host").action((x, f) => f.copy(serverHost = x))
     opt[Int]("server_port").action((x, f) => f.copy(serverPort = x))
-    opt[scala.concurrent.duration.Duration]("duration")
-      .action(
-        (x, f) => f.copy(duration = java.time.Duration.ofNanos(x.toNanos))
-      )
+    opt[java.time.Duration]("duration").action((x, f) => f.copy(duration = x))
+    opt[Duration]("timeout").action((x, f) => f.copy(timeout = x))
     opt[Int]("num_clients").action((x, f) => f.copy(numClients = x))
     opt[String]("output_file").action((x, f) => f.copy(outputFile = x))
   }
@@ -44,65 +47,58 @@ object BenchmarkClientMain extends App {
       throw new IllegalArgumentException("Could not parse flags.")
   }
 
+  // Start the client.
   val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger)
-  val srcAddress = NettyTcpAddress(
-    new InetSocketAddress(flags.host, flags.port)
+  val client = new BenchmarkClient[NettyTcpTransport](
+    srcAddress = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port)),
+    dstAddress = NettyTcpAddress(
+      new InetSocketAddress(flags.serverHost, flags.serverPort)
+    ),
+    transport = transport,
+    logger = logger
   )
-  val dstAddress = NettyTcpAddress(
-    new InetSocketAddress(flags.serverHost, flags.serverPort)
-  )
-  val client = new BenchmarkClient[NettyTcpTransport](srcAddress,
-                                                      dstAddress,
-                                                      transport,
-                                                      logger)
-  val latencyWriter = CSVWriter.open(new File(flags.outputFile))
-  latencyWriter.writeRow(Seq("start", "stop", "latency_nanos", "address"))
-  val benchmarkStopTime = java.time.Instant.now().plus(flags.duration)
 
-  def f(startTime: java.time.Instant, startTimeNanos: Long)(
-      reply: Try[Unit]
-  ): Future[Unit] = {
-    reply match {
-      case scala.util.Failure(_) =>
-        logger.debug("Echo failed.")
+  // Run clients.
+  val recorder =
+    new BenchmarkUtil.Recorder(flags.outputFile)
+  def run(): Future[Unit] = {
+    implicit val context = transport.executionContext
+    BenchmarkUtil
+      .timed(() => client.echo())
+      .transformWith({
+        case scala.util.Failure(_) =>
+          logger.debug("Request failed.")
+          Future.successful(())
 
-      case scala.util.Success(_) =>
-        val stopTimeNanos = System.nanoTime()
-        val stopTime = java.time.Instant.now()
-        latencyWriter.writeRow(
-          Seq(
-            startTime.toString(),
-            stopTime.toString(),
-            (stopTimeNanos - startTimeNanos).toString(),
-            srcAddress.toString()
+        case scala.util.Success((_, timing)) =>
+          recorder.record(
+            start = timing.startTime,
+            stop = timing.stopTime,
+            latencyNanos = timing.durationNanos,
+            host = flags.host,
+            port = flags.port
           )
-        )
-    }
-
-    if (java.time.Instant.now().isBefore(benchmarkStopTime)) {
-      client
-        .echo()
-        .transformWith(f(java.time.Instant.now(), System.nanoTime()))(
-          transport.executionContext
-        )
-    } else {
-      Future.successful(())
-    }
+          Future.successful(())
+      })
   }
 
-  val futures = for (i <- 0 until flags.numClients) yield {
-    client
-      .echo()
-      .transformWith(f(java.time.Instant.now(), System.nanoTime()))(
-        transport.executionContext
-      )
+  // Run the benchmark.
+  implicit val context = transport.executionContext
+  val futures = for (_ <- 0 to flags.numClients)
+    yield BenchmarkUtil.runFor(() => run(), flags.duration)
+  try {
+    logger.info("Clients started.")
+    concurrent.Await.result(Future.sequence(futures), flags.timeout)
+    logger.info("Clients finished successfully.")
+  } catch {
+    case e: java.util.concurrent.TimeoutException =>
+      logger.warn("Client futures timed out!")
+      logger.warn(e.toString())
   }
-  concurrent.Await.result(
-    Future.sequence(futures)(implicitly, transport.executionContext),
-    scala.concurrent.duration.Duration.Inf
-  )
-  logger.debug("Shutting down transport.")
+
+  // Shut everything down.
+  logger.info("Shutting down transport.")
   transport.shutdown()
-  logger.debug("Transport shut down.")
+  logger.info("Transport shut down.")
 }

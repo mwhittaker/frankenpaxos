@@ -16,42 +16,29 @@ object ClientMain extends App {
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
-    opt[String]("server_host")
-      .valueName("<host>")
-      .action((x, f) => f.copy(serverHost = x))
-      .text(s"Server hostname (default: ${Flags().serverHost})")
-
-    opt[Int]("server_port")
-      .valueName("<port>")
-      .action((x, f) => f.copy(serverPort = x))
-      .text(s"Server port (default: ${Flags().serverPort})")
-
-    opt[String]("host")
-      .valueName("<host>")
-      .action((x, f) => f.copy(host = x))
-      .text(s"Client hostname (default: ${Flags().host})")
-
-    opt[Int]("port")
-      .valueName("<port>")
-      .action((x, f) => f.copy(port = x))
-      .text(s"Client port (default: ${Flags().port})")
+    opt[String]("server_host").action((x, f) => f.copy(serverHost = x))
+    opt[Int]("server_port").action((x, f) => f.copy(serverPort = x))
+    opt[String]("host").action((x, f) => f.copy(host = x))
+    opt[Int]("port").action((x, f) => f.copy(port = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
-    case Some(flags) => flags
-    case None        => ???
+    case Some(flags) =>
+      flags
+    case None =>
+      throw new IllegalArgumentException("Could not parse flags.")
   }
 
   val logger = new PrintLogger()
-  val transport = new NettyTcpTransport(logger)
-  val srcAddress = NettyTcpAddress(
-    new InetSocketAddress(flags.host, flags.port)
+  val chatClient = new Client[NettyTcpTransport](
+    srcAddress = NettyTcpAddress(new InetSocketAddress(flags.host, flags.port)),
+    dstAddress = NettyTcpAddress(
+      new InetSocketAddress(flags.serverHost, flags.serverPort)
+    ),
+    transport = new NettyTcpTransport(logger),
+    logger
   )
-  val dstAddress = NettyTcpAddress(
-    new InetSocketAddress(flags.serverHost, flags.serverPort)
-  )
-  val chatClient =
-    new Client[NettyTcpTransport](srcAddress, dstAddress, transport, logger)
+
   var ok = true
   while (ok) {
     val line = scala.io.StdIn.readLine()

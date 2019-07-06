@@ -51,7 +51,7 @@ class BenchmarkClient[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  def _echo(promise: Promise[Unit]): Unit = {
+  def echoImpl(promise: Promise[Unit]): Unit = {
     server.send(BenchmarkServerInbound(id = id))
     promises(id) = promise
     id += 1
@@ -59,7 +59,7 @@ class BenchmarkClient[Transport <: frankenpaxos.Transport[Transport]](
 
   def echo(): Future[Unit] = {
     val promise = Promise[Unit]()
-    transport.executionContext.execute(() => _echo(promise))
+    transport.executionContext.execute(() => echoImpl(promise))
     promise.future
   }
 }
