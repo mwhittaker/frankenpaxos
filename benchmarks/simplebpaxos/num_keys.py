@@ -46,7 +46,7 @@ def _main(args) -> None:
             return str({
                 'f': input.f,
                 'client_num_keys': input.client_num_keys,
-                'output.throughput_1s.p90': f'{output.throughput_1s.p90:.6}',
+                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
     suite = NumKeysSimpleBPaxosSuite()

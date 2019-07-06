@@ -50,7 +50,7 @@ def _main(args) -> None:
                 'f': input.f,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
-                'output.throughput_1s.p90': f'{output.throughput_1s.p90:.6}'
+                'throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}'
             })
 
     suite = ScaleSimpleBPaxosSuite()

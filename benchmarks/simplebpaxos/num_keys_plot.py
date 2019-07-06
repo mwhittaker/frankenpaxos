@@ -41,7 +41,8 @@ def main(args) -> None:
     fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8))
 
     plot(df, ax[0], 'latency.median_ms', 'Median latency (ms)')
-    plot(df, ax[1], 'throughput_1s.p90', 'P90 throughput (1 second windows)')
+    plot(df, ax[1], 'stop_throughput_1s.p90',
+                    'P90 throughput (1 second windows)')
 
     fig.set_tight_layout(True)
     fig.savefig(args.output)
