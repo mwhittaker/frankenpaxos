@@ -424,6 +424,10 @@ let replica_info = {
   template: `
     <div>
       <div>stateMachine = {{node.actor.stateMachine}}</div>
+      <div>
+        numPendingCommittedCommands =
+        {{node.actor.numPendingCommittedCommands}}
+      </div>
 
       <div>
         clientTable =

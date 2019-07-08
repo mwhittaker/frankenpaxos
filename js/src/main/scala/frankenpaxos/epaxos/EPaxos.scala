@@ -57,7 +57,9 @@ class EPaxos {
       resendAcceptsTimerPeriod = java.time.Duration.ofSeconds(5),
       resendPreparesTimerPeriod = java.time.Duration.ofSeconds(3),
       recoverInstanceTimerMinPeriod = java.time.Duration.ofSeconds(10),
-      recoverInstanceTimerMaxPeriod = java.time.Duration.ofSeconds(20)
+      recoverInstanceTimerMaxPeriod = java.time.Duration.ofSeconds(20),
+      executeGraphBatchSize = 1,
+      executeGraphTimerPeriod = java.time.Duration.ofSeconds(10)
     )
     val replica = new Replica[JsTransport](address,
                                            transport,

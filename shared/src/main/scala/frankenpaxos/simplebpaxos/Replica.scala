@@ -171,7 +171,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // been processed. We process the graph every `options.executeGraphBatchSize`
   // committed commands and every `options.executeGraphTimerPeriod` seconds. If
   // the timer expires, we clear this number.
-  var numPendingCommittedCommands: Int = 0
+  @JSExportAll
+  protected var numPendingCommittedCommands: Int = 0
 
   // The committed commands.
   val commands = mutable.Map[VertexId, Committed]()

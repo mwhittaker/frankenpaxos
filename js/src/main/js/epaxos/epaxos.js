@@ -170,6 +170,11 @@ let replica_info = {
       <div>largestBallot = {{node.actor.largestBallot}}</div>
       <div>stateMachine = {{node.actor.stateMachine}}</div>
       <div>
+        numPendingCommittedCommands =
+        {{node.actor.numPendingCommittedCommands}}
+      </div>
+
+      <div>
         dependencyGraph =
         <frankenpaxos-graph
           style="height: 200px; border: 1pt solid black;"
