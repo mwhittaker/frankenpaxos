@@ -24,17 +24,33 @@ def main(args) -> None:
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
-                    replica_options = ReplicaOptions(),
+                    replica_options = ReplicaOptions(
+                        resend_pre_accepts_timer_period = \
+                            datetime.timedelta(seconds=60),
+                        default_to_slow_path_timer_period = \
+                            datetime.timedelta(seconds=60),
+                        resend_accepts_timer_period = \
+                            datetime.timedelta(seconds=60),
+                        resend_prepares_timer_period = \
+                            datetime.timedelta(seconds=60),
+                        recover_instance_timer_min_period = \
+                            datetime.timedelta(seconds=60),
+                        recover_instance_timer_max_period = \
+                            datetime.timedelta(seconds=120),
+                        execute_graph_batch_size = 100,
+                        execute_graph_timer_period = \
+                            datetime.timedelta(seconds=1)
+                    ),
                     replica_log_level = args.log_level,
                     client_options = ClientOptions(
-                        repropose_period = datetime.timedelta(milliseconds=500),
+                        repropose_period = datetime.timedelta(seconds=60),
                     ),
                     client_log_level = args.log_level,
-                    client_num_keys = 1000,
+                    client_num_keys = 1000000,
                 )
                 for f in [1, 2]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1), (1, 10), (2, 10), (3, 10), (4, 10)]
+                    [(1, x) for x in [100, 1000, 10000, 50000, 100000]]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
@@ -42,6 +58,7 @@ def main(args) -> None:
                 'f': input.f,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
+                'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
