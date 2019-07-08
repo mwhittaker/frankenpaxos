@@ -488,63 +488,6 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             return self._run_benchmark(bench, args, input, net)
 
 
-def _main(args) -> None:
-    class ExampleSimpleBPaxosSuite(SimpleBPaxosSuite):
-        def args(self) -> Dict[Any, Any]:
-            return vars(args)
-
-        def inputs(self) -> Collection[Input]:
-            return [
-                Input(
-                    net_name = 'SingleSwitchNet',
-                    f = 1,
-                    num_client_procs = num_client_procs,
-                    num_warmup_clients_per_proc = 1,
-                    num_clients_per_proc = 1,
-                    num_leaders = 2,
-                    warmup_duration = datetime.timedelta(seconds=5),
-                    warmup_timeout = datetime.timedelta(seconds=10),
-                    warmup_sleep = datetime.timedelta(seconds=2),
-                    duration = datetime.timedelta(seconds=10),
-                    timeout = datetime.timedelta(seconds=30),
-                    client_lag = datetime.timedelta(seconds=0),
-                    profiled = args.profile,
-                    monitored = args.monitor,
-                    prometheus_scrape_interval =
-                        datetime.timedelta(milliseconds=200),
-                    dep_service_node_options = DepServiceNodeOptions(),
-                    dep_service_node_log_level = 'debug',
-                    leader_options = LeaderOptions(),
-                    leader_log_level = 'debug',
-                    proposer_options = ProposerOptions(),
-                    proposer_log_level = 'debug',
-                    acceptor_options = AcceptorOptions(),
-                    acceptor_log_level = 'debug',
-                    replica_options = ReplicaOptions(
-                        execute_graph_batch_size = 1,
-                    ),
-                    replica_log_level = 'debug',
-                    client_options = ClientOptions(),
-                    client_log_level = 'debug',
-                    client_num_keys = 100,
-                )
-                for num_client_procs in [1, 2]
-            ] * 2
-
-        def summary(self, input: Input, output: Output) -> str:
-            return str({
-                'num_client_procs': input.num_client_procs,
-                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90}',
-            })
-
-    suite = ExampleSimpleBPaxosSuite()
-    with benchmark.SuiteDirectory(args.suite_directory, 'simplebpaxos') as dir:
-        suite.run_suite(dir)
-
 
 def get_parser() -> argparse.ArgumentParser:
     return parser_util.get_benchmark_parser()
-
-
-if __name__ == '__main__':
-    _main(get_parser().parse_args())

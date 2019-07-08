@@ -276,48 +276,5 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
             return self._run_benchmark(bench, args, input, net)
 
 
-def _main(args) -> None:
-    class ExampleEPaxosSuite(EPaxosSuite):
-        def args(self) -> Dict[Any, Any]:
-            return vars(args)
-
-        def inputs(self) -> Collection[Input]:
-            return [
-                Input(
-                    net_name = 'SingleSwitchNet',
-                    f = 1,
-                    num_client_procs = num_client_procs,
-                    num_clients_per_proc = 1,
-                    duration = datetime.timedelta(seconds=20),
-                    timeout = datetime.timedelta(seconds=60),
-                    client_lag = datetime.timedelta(seconds=0),
-                    profiled = args.profile,
-                    monitored = args.monitor,
-                    prometheus_scrape_interval =
-                        datetime.timedelta(milliseconds=200),
-                    replica_options = ReplicaOptions(),
-                    replica_log_level = 'debug',
-                    client_options = ClientOptions(),
-                    client_log_level = 'debug',
-                    client_num_keys = 100,
-                )
-                for num_client_procs in [1, 2]
-            ] * 2
-
-        def summary(self, input: Input, output: Output) -> str:
-            return str({
-                'num_client_procs': input.num_client_procs,
-                'output.throughput_1s.p90': f'{output.throughput_1s.p90:.6}',
-            })
-
-    suite = ExampleEPaxosSuite()
-    with benchmark.SuiteDirectory(args.suite_directory, 'epaxos') as dir:
-        suite.run_suite(dir)
-
-
 def get_parser() -> argparse.ArgumentParser:
     return parser_util.get_benchmark_parser()
-
-
-if __name__ == '__main__':
-    _main(get_parser().parse_args())

@@ -21,13 +21,13 @@ def _main(args) -> None:
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     leader_options = LeaderOptions(),
-                    leader_log_level = 'debug',
+                    leader_log_level = args.log_level,
                     dep_service_node_options = DepServiceNodeOptions(),
-                    dep_service_node_log_level = 'debug',
+                    dep_service_node_log_level = args.log_level,
                     acceptor_options = AcceptorOptions(),
-                    acceptor_log_level = 'debug',
+                    acceptor_log_level = args.log_level,
                     client_options = ClientOptions(),
-                    client_log_level = 'debug',
+                    client_log_level = args.log_level,
                     client_num_keys = 1000,
                 )
                 for f in [1, 2]

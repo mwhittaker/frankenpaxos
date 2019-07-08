@@ -29,6 +29,12 @@ def get_benchmark_parser() -> argparse.ArgumentParser:
         help='FrankenPaxos JAR file'
     )
     parser.add_argument(
+        '-l', '--log_level',
+        choices=['debug', 'info', 'warn', 'error', 'fatal'],
+        default='debug',
+        help='Log level'
+    )
+    parser.add_argument(
         '-p', '--profile',
         action='store_true',
         help='Profile code using perf'

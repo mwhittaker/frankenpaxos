@@ -1,7 +1,7 @@
 from .epaxos import *
 
 
-def _main(args) -> None:
+def main(args) -> None:
     class ScaleEPaxosSuite(EPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
@@ -21,11 +21,11 @@ def _main(args) -> None:
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     replica_options = ReplicaOptions(),
-                    replica_log_level = 'debug',
+                    replica_log_level = args.log_level,
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(milliseconds=500),
                     ),
-                    client_log_level = 'debug',
+                    client_log_level = args.log_level,
                     client_num_keys = 1000,
                 )
                 for f in [1, 2]
@@ -47,4 +47,4 @@ def _main(args) -> None:
 
 
 if __name__ == '__main__':
-    _main(get_parser().parse_args())
+    main(get_parser().parse_args())
