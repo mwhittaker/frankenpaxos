@@ -2,7 +2,7 @@ from .simplebpaxos import *
 
 
 def main(args) -> None:
-    class ScaleSimpleBPaxosSuite(SimpleBPaxosSuite):
+    class LatencyThroughputSimpleBPaxosSuite(SimpleBPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -14,12 +14,12 @@ def main(args) -> None:
                     num_client_procs = num_client_procs,
                     num_warmup_clients_per_proc = 1,
                     num_clients_per_proc = num_clients_per_proc,
-                    num_leaders = f + 1,
-                    warmup_duration = datetime.timedelta(seconds=5),
-                    warmup_timeout = datetime.timedelta(seconds=10),
-                    warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=20),
-                    timeout = datetime.timedelta(seconds=30),
+                    num_leaders = num_leaders,
+                    warmup_duration = datetime.timedelta(seconds=3),
+                    warmup_timeout = datetime.timedelta(seconds=5),
+                    warmup_sleep = datetime.timedelta(seconds=2),
+                    duration = datetime.timedelta(seconds=10),
+                    timeout = datetime.timedelta(seconds=15),
                     client_lag = datetime.timedelta(seconds=2),
                     profiled = args.profile,
                     monitored = args.monitor,
@@ -46,7 +46,7 @@ def main(args) -> None:
                             datetime.timedelta(seconds=60),
                         recover_vertex_timer_max_period = \
                             datetime.timedelta(seconds=120),
-                        execute_graph_batch_size = 100,
+                        execute_graph_batch_size = execute_graph_batch_size,
                         execute_graph_timer_period = \
                             datetime.timedelta(seconds=1)
                     ),
@@ -58,23 +58,34 @@ def main(args) -> None:
                     client_num_keys = 1000000,
                 )
                 for f in [1, 2]
+                for num_leaders in
+                    [x for x in [2, 7] if f == 1] +
+                    [x for x in [3, 10] if f == 2]
+                for execute_graph_batch_size in [1, 10, 100, 1000]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, x) for x in [100, 1000, 10000, 50000, 100000]]
+                    [(1, 1000),  # 1000
+                     (3, 1000),  # 3000
+                     (5, 1000),  # 5000
+                     (5, 2000),  # 10,000
+                     (5, 6000),  # 30,000
+                     (5, 10000)] # 50,000
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
+                'num_leaders': input.num_leaders,
+                'execute_graph_batch_size':
+                    input.replica_options.execute_graph_batch_size,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.median':
-                    f'{output.stop_throughput_1s.median:.6}',
+                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = ScaleSimpleBPaxosSuite()
+    suite = LatencyThroughputSimpleBPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'simplebpaxos_scale') as dir:
+                                  'simplebpaxos_latency_throughput') as dir:
         suite.run_suite(dir)
 
 
