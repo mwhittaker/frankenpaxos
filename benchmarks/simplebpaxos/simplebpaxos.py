@@ -71,11 +71,13 @@ class Input(NamedTuple):
     # Benchmark parameters. ####################################################
     # The (rough) duration of the benchmark warmup.
     warmup_duration: datetime.timedelta
-    # Global warmup timeout.
+    # Warmup timeout.
     warmup_timeout: datetime.timedelta
+    # Warmup sleep time.
+    warmup_sleep: datetime.timedelta
     # The (rough) duration of the benchmark.
     duration: datetime.timedelta
-    # Global timeout.
+    # Benchmark timeout.
     timeout: datetime.timedelta
     # Delay between starting leaders and clients.
     client_lag: datetime.timedelta
@@ -444,6 +446,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         f'{input.warmup_duration.total_seconds()}s',
                     '--warmup_timeout',
                         f'{input.warmup_timeout.total_seconds()}s',
+                    '--warmup_sleep',
+                        f'{input.warmup_sleep.total_seconds()}s',
                     '--num_warmup_clients',
                         f'{input.num_warmup_clients_per_proc}',
                     '--duration', f'{input.duration.total_seconds()}s',
@@ -471,7 +475,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
         # Client i writes results to `client_i_data.csv`.
         client_csvs = [bench.abspath(f'client_{i}_data.csv')
                        for i in range(input.num_client_procs)]
-        return benchmark.parse_recorder_data(bench, client_csvs)
+        return benchmark.parse_recorder_data(bench, client_csvs,
+                drop_prefix=input.warmup_duration + input.warmup_sleep)
 
     def run_benchmark(self,
                       bench: benchmark.BenchmarkDirectory,
@@ -499,6 +504,7 @@ def _main(args) -> None:
                     num_leaders = 2,
                     warmup_duration = datetime.timedelta(seconds=5),
                     warmup_timeout = datetime.timedelta(seconds=10),
+                    warmup_sleep = datetime.timedelta(seconds=2),
                     duration = datetime.timedelta(seconds=10),
                     timeout = datetime.timedelta(seconds=30),
                     client_lag = datetime.timedelta(seconds=0),
@@ -528,7 +534,7 @@ def _main(args) -> None:
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'num_client_procs': input.num_client_procs,
-                'output.throughput_1s.p90': f'{output.throughput_1s.p90}',
+                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90}',
             })
 
     suite = ExampleSimpleBPaxosSuite()

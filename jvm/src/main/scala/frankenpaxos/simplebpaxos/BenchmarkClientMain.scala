@@ -38,6 +38,7 @@ object BenchmarkClientMain extends App {
       // Benchmark flags.
       warmupDuration: java.time.Duration = java.time.Duration.ofSeconds(5),
       warmupTimeout: Duration = 10 seconds,
+      warmupSleep: java.time.Duration = java.time.Duration.ofSeconds(0),
       numWarmupClients: Int = 10,
       duration: java.time.Duration = java.time.Duration.ofSeconds(5),
       timeout: Duration = 10 seconds,
@@ -74,6 +75,8 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(warmupDuration = x))
     opt[Duration]("warmup_timeout")
       .action((x, f) => f.copy(warmupTimeout = x))
+    opt[java.time.Duration]("warmup_sleep")
+      .action((x, f) => f.copy(warmupSleep = x))
     opt[Int]("num_warmup_clients")
       .action((x, f) => f.copy(numWarmupClients = x))
     opt[java.time.Duration]("duration")
@@ -129,7 +132,7 @@ object BenchmarkClientMain extends App {
     proposal
   }
 
-  // Run clients.
+  // Function to run client.
   val recorder =
     new BenchmarkUtil.Recorder(s"${flags.outputFilePrefix}_data.csv")
   def run(pseudonym: Int): Future[Unit] = {
@@ -166,6 +169,9 @@ object BenchmarkClientMain extends App {
       logger.warn("Client warmup futures timed out!")
       logger.warn(e.toString())
   }
+
+  // Sleep to let protocol settle.
+  Thread.sleep(flags.warmupSleep.toMillis())
 
   // Run the benchmark.
   val futures = for (pseudonym <- 0 to flags.numClients)

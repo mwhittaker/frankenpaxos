@@ -12,11 +12,12 @@ def _main(args) -> None:
                     net_name = 'SingleSwitchNet',
                     f = f,
                     num_client_procs = num_client_procs,
-                    num_warmup_clients_per_proc = 10,
+                    num_warmup_clients_per_proc = 1,
                     num_clients_per_proc = num_clients_per_proc,
                     num_leaders = f + 1,
                     warmup_duration = datetime.timedelta(seconds=5),
                     warmup_timeout = datetime.timedelta(seconds=10),
+                    warmup_sleep = datetime.timedelta(seconds=5),
                     duration = datetime.timedelta(seconds=20),
                     timeout = datetime.timedelta(seconds=45),
                     client_lag = datetime.timedelta(seconds=5),
@@ -40,9 +41,7 @@ def _main(args) -> None:
                 )
                 for f in [1, 2]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1)] +
-                    [(i, 10) for i in range(1, 5) if f == 1] +
-                    [(i, 10) for i in range(1, 8) if f == 2]
+                    [(1, x) for x in [1, 10, 100, 1000, 10000, 50000, 100000]]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
@@ -50,7 +49,8 @@ def _main(args) -> None:
                 'f': input.f,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
-                'throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}'
+                'latency.median_ms': f'{output.latency.median_ms:.6}',
+                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
     suite = ScaleSimpleBPaxosSuite()
