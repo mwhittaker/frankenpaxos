@@ -12,7 +12,11 @@ def main(args) -> None:
                     net_name = 'SingleSwitchNet',
                     f = f,
                     num_client_procs = 4,
+                    num_warmup_clients_per_proc = 10,
                     num_clients_per_proc = 10,
+                    warmup_duration = datetime.timedelta(seconds=5),
+                    warmup_timeout = datetime.timedelta(seconds=10),
+                    warmup_sleep = datetime.timedelta(seconds=5),
                     duration = datetime.timedelta(seconds=20),
                     timeout = datetime.timedelta(seconds=60),
                     client_lag = datetime.timedelta(seconds=5),
@@ -36,7 +40,7 @@ def main(args) -> None:
             return str({
                 'f': input.f,
                 'client_num_keys': input.client_num_keys,
-                'output.throughput_1s.p90': f'{output.throughput_1s.p90:.6}',
+                'throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
     suite = NumKeysEPaxosSuite()

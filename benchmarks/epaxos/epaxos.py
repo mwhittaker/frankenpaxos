@@ -49,10 +49,18 @@ class Input(NamedTuple):
     f: int
     # The number of benchmark client processes launched.
     num_client_procs: int
+    # The number of warmup clients run on each benchmark client process.
+    num_warmup_clients_per_proc: int
     # The number of clients run on each benchmark client process.
     num_clients_per_proc: int
 
     # Benchmark parameters. ####################################################
+    # The (rough) duration of the benchmark warmup.
+    warmup_duration: datetime.timedelta
+    # Warmup timeout.
+    warmup_timeout: datetime.timedelta
+    # Warmup sleep time.
+    warmup_sleep: datetime.timedelta
     # The (rough) duration of the benchmark.
     duration: datetime.timedelta
     # Global timeout.
@@ -244,6 +252,14 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                     '--log_level', input.client_log_level,
                     '--prometheus_host', host.IP(),
                     '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--warmup_duration',
+                        f'{input.warmup_duration.total_seconds()}s',
+                    '--warmup_timeout',
+                        f'{input.warmup_timeout.total_seconds()}s',
+                    '--warmup_sleep',
+                        f'{input.warmup_sleep.total_seconds()}s',
+                    '--num_warmup_clients',
+                        f'{input.num_warmup_clients_per_proc}',
                     '--duration', f'{input.duration.total_seconds()}s',
                     '--timeout', f'{input.timeout.total_seconds()}s',
                     '--num_clients', f'{input.num_clients_per_proc}',
@@ -268,7 +284,8 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
         # Client i writes results to `client_i_data.csv`.
         client_csvs = [bench.abspath(f'client_{i}_data.csv')
                        for i in range(input.num_client_procs)]
-        return benchmark.parse_recorder_data(bench, client_csvs)
+        return benchmark.parse_recorder_data(bench, client_csvs,
+                drop_prefix=input.warmup_duration + input.warmup_sleep)
 
     def run_benchmark(self,
                       bench: benchmark.BenchmarkDirectory,
