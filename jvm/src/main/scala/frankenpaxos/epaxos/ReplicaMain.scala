@@ -64,6 +64,10 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(recoverInstanceTimerMinPeriod = x))
     opt[java.time.Duration]("options.recoverInstanceTimerMaxPeriod")
       .optionAction((x, o) => o.copy(recoverInstanceTimerMaxPeriod = x))
+    opt[Int]("options.executeGraphBatchSize")
+      .optionAction((x, o) => o.copy(executeGraphBatchSize = x))
+    opt[java.time.Duration]("options.executeGraphTimerPeriod")
+      .optionAction((x, o) => o.copy(executeGraphTimerPeriod = x))
   }
 
   // Parse flags.

@@ -14,6 +14,7 @@ import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.statemachine.StateMachine
@@ -35,7 +36,15 @@ case class ReplicaOptions(
     resendAcceptsTimerPeriod: java.time.Duration,
     resendPreparesTimerPeriod: java.time.Duration,
     recoverInstanceTimerMinPeriod: java.time.Duration,
-    recoverInstanceTimerMaxPeriod: java.time.Duration
+    recoverInstanceTimerMaxPeriod: java.time.Duration,
+    // When a replica receives a committed command, it adds it to its
+    // dependency graph. When executeGraphBatchSize commands have been
+    // committed, the replica attempts to execute as many commands in the graph
+    // as possible. If executeGraphBatchSize commands have not been committed
+    // within executeGraphTimerPeriod since the last time the graph was
+    // executed, the graph is executed.
+    executeGraphBatchSize: Int,
+    executeGraphTimerPeriod: java.time.Duration
 )
 
 @JSExportAll
@@ -46,7 +55,9 @@ object ReplicaOptions {
     resendAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
     resendPreparesTimerPeriod = java.time.Duration.ofSeconds(1),
     recoverInstanceTimerMinPeriod = java.time.Duration.ofMillis(500),
-    recoverInstanceTimerMaxPeriod = java.time.Duration.ofMillis(1500)
+    recoverInstanceTimerMaxPeriod = java.time.Duration.ofMillis(1500),
+    executeGraphBatchSize = 1,
+    executeGraphTimerPeriod = java.time.Duration.ofSeconds(1)
   )
 }
 
@@ -57,6 +68,21 @@ class ReplicaMetrics(collectors: Collectors) {
     .name("epaxos_replica_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
+    .register()
+
+  val executeGraphTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_execute_graph_total")
+    .help("Total number of times the replica executed the dependency graph.")
+    .register()
+
+  val executeGraphTimerTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_replica_execute_graph_timer_total")
+    .help(
+      "Total number of times the replica executed the dependency graph from " +
+        "a timer."
+    )
     .register()
 
   val executedCommandsTotal: Counter = collectors.counter
@@ -115,6 +141,12 @@ class ReplicaMetrics(collectors: Collectors) {
     .build()
     .name("epaxos_replica_default_to_slow_path_total")
     .help("Total number of times the leader defaulted to the slow path.")
+    .register()
+
+  val dependencyGraphNumVertices: Gauge = collectors.gauge
+    .build()
+    .name("epaxos_replica_dependency_graph_num_vertices")
+    .help("The number of vertices in the dependency graph.")
     .register()
 
   val dependencies: Summary = collectors.summary
@@ -179,41 +211,41 @@ object Replica {
       dependencies: Set[Instance]
   )
 
-  // The core data structure of every EPaxos replica, the cmd log, records
-  // information about every instance that a replica knows about. In the EPaxos
-  // paper, the cmd log is visualized as an infinite two-dimensional array that
-  // looks like this:
-  //
-  //      ... ... ...
-  //     |___|___|___|
-  //   2 |   |   |   |
-  //     |___|___|___|
-  //   1 |   |   |   |
-  //     |___|___|___|
-  //   0 |   |   |   |
-  //     |___|___|___|
-  //       Q   R   S
-  //
-  // The array is indexed on the left by an instance number and on the bottom
-  // by a replica id. Thus, every cell is indexed by an instance (e.g. Q.1),
-  // and every cell contains the state of the instance that indexes it.
-  // `CmdLogEntry` represents the data within a cell, and `cmdLog` represents
-  // the cmd log.
-  //
-  // Note that EPaxos has a small bug in how it implements ballots. The EPaxos
-  // TLA+ specification and Go implementation have a single ballot per command
-  // log entry. As detailed in [1], this is a bug. We need two ballots, like
-  // what is done in normal Paxos. Note that we haven't proven this two-ballot
-  // implementation is correct, so it may also be wrong.
-  //
-  // [1]: https://drive.google.com/open?id=1dQ_cigMWJ7w9KAJeSYcH3cZoFpbraWxm
+// The core data structure of every EPaxos replica, the cmd log, records
+// information about every instance that a replica knows about. In the EPaxos
+// paper, the cmd log is visualized as an infinite two-dimensional array that
+// looks like this:
+//
+//      ... ... ...
+//     |___|___|___|
+//   2 |   |   |   |
+//     |___|___|___|
+//   1 |   |   |   |
+//     |___|___|___|
+//   0 |   |   |   |
+//     |___|___|___|
+//       Q   R   S
+//
+// The array is indexed on the left by an instance number and on the bottom
+// by a replica id. Thus, every cell is indexed by an instance (e.g. Q.1),
+// and every cell contains the state of the instance that indexes it.
+// `CmdLogEntry` represents the data within a cell, and `cmdLog` represents
+// the cmd log.
+//
+// Note that EPaxos has a small bug in how it implements ballots. The EPaxos
+// TLA+ specification and Go implementation have a single ballot per command
+// log entry. As detailed in [1], this is a bug. We need two ballots, like
+// what is done in normal Paxos. Note that we haven't proven this two-ballot
+// implementation is correct, so it may also be wrong.
+//
+// [1]: https://drive.google.com/open?id=1dQ_cigMWJ7w9KAJeSYcH3cZoFpbraWxm
   @JSExportAll
   sealed trait CmdLogEntry
 
-  // A NoCommandEntry represents a command entry for which a replica has not
-  // yet received any command (i.e., hasn't yet received a PreAccept, Accept,
-  // or Commit). This is possible, for example, when a replica receives a
-  // Prepare for an instance it has previously not received any messages about.
+// A NoCommandEntry represents a command entry for which a replica has not
+// yet received any command (i.e., hasn't yet received a PreAccept, Accept,
+// or Commit). This is possible, for example, when a replica receives a
+// Prepare for an instance it has previously not received any messages about.
   @JSExportAll
   case class NoCommandEntry(
       // ballot plays the role of a Paxos acceptor's ballot. voteBallot is absent
@@ -242,12 +274,12 @@ object Replica {
       triple: CommandTriple
   ) extends CmdLogEntry
 
-  // When a replica receives a command from a client, it becomes the leader of
-  // the command, the designated replica that is responsible for driving the
-  // protocol through its phases to get the command chosen. LeaderState
-  // represents the state of a leader during various points in the lifecycle of
-  // the protocol, whether the leader is pre-accepting, accepting, or preparing
-  // (during recovery).
+// When a replica receives a command from a client, it becomes the leader of
+// the command, the designated replica that is responsible for driving the
+// protocol through its phases to get the command chosen. LeaderState
+// represents the state of a leader during various points in the lifecycle of
+// the protocol, whether the leader is pre-accepting, accepting, or preparing
+// (during recovery).
   sealed trait LeaderState[Transport <: frankenpaxos.Transport[Transport]]
 
   @JSExportAll
@@ -357,6 +389,26 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // replica receives a nack and needs to choose a larger ballot.
   @JSExport
   protected var largestBallot: Ballot = Ballot(0, index)
+
+  // The number of committed commands that are in the graph that have not yet
+  // been processed. We process the graph every `options.executeGraphBatchSize`
+  // committed commands and every `options.executeGraphTimerPeriod` seconds. If
+  // the timer expires, we clear this number.
+  var numPendingCommittedCommands: Int = 0
+
+  // A timer to execute the dependency graph.
+  @JSExport
+  protected val executeGraphTimer: Transport#Timer = timer(
+    "executeGraphTimer",
+    options.executeGraphTimerPeriod,
+    () => {
+      metrics.executeGraphTimerTotal.inc()
+      execute()
+      numPendingCommittedCommands = 0
+      executeGraphTimer.start()
+    }
+  )
+  executeGraphTimer.start()
 
   // The client table records the response to the latest request from each
   // client. For example, if command c1 sends command x with id 2 to a leader
@@ -677,9 +729,21 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       recoverInstanceTimers(i) = makeRecoverInstanceTimer(i)
     }
 
-    // Execute commands.
+    // Commit the command and execute the graph if we have sufficiently many
+    // commands pending execution.
     dependencyGraph.commit(instance, triple.sequenceNumber, triple.dependencies)
+    numPendingCommittedCommands += 1
+    if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
+      execute()
+      numPendingCommittedCommands = 0
+      executeGraphTimer.reset()
+    }
+  }
+
+  private def execute(): Unit = {
     val executable: Seq[Instance] = dependencyGraph.execute()
+    metrics.executeGraphTotal.inc()
+    metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
     for (i <- executable) {
       import CommandOrNoop.Value

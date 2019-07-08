@@ -52,7 +52,7 @@ object ReplicaOptions {
   val default = ReplicaOptions(
     recoverVertexTimerMinPeriod = java.time.Duration.ofMillis(500),
     recoverVertexTimerMaxPeriod = java.time.Duration.ofMillis(1500),
-    executeGraphBatchSize = 100,
+    executeGraphBatchSize = 1,
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1)
   )
 }
@@ -195,6 +195,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     () => {
       metrics.executeGraphTimerTotal.inc()
       execute()
+      numPendingCommittedCommands = 0
       executeGraphTimer.start()
     }
   )

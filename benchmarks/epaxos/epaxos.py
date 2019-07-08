@@ -32,6 +32,9 @@ class ReplicaOptions(NamedTuple):
         datetime.timedelta(milliseconds=500)
     recover_instance_timer_max_period: datetime.timedelta = \
         datetime.timedelta(milliseconds=1500)
+    execute_graph_batch_size: int = 1
+    execute_graph_timer_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
 
 
 class ClientOptions(NamedTuple):
