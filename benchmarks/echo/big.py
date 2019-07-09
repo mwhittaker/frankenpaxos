@@ -22,13 +22,16 @@ def _main(args) -> None:
                     [(1, 1)] + [(i, 10000) for i in [1, 2, 3, 4, 5]]
             ] * 3
 
+        def make_net(self, args: Dict[Any, Any], input: Input) -> EchoNet:
+            return SingleSwitchMininet(num_client_procs=input.num_client_procs)
+
         def summary(self, input: Input, output: Output) -> str:
-            return ' '.join([
-                f'num_client_procs={input.num_client_procs}',
-                f'num_clients_per_proc={input.num_clients_per_proc}',
-                f'start_throughput_1s.p90={output.start_throughput_1s.p90}',
-                f'stop_throughput_1s.p90={output.stop_throughput_1s.p90}',
-            ])
+            return str({
+                'num_client_procs': input.num_client_procs,
+                'num_clients_per_proc': input.num_clients_per_proc,
+                'latency.median_ms': output.latency.median_ms,
+                'stop_throughput_1s.p90': output.stop_throughput_1s.p90,
+            })
 
     suite = BigEchoSuite()
     with benchmark.SuiteDirectory(args.suite_directory, 'echo_big') as dir:

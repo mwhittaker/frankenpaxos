@@ -1,5 +1,6 @@
 from typing import Optional, Sequence, Union
 import mininet
+import mininet.node
 import paramiko
 import subprocess
 
@@ -19,14 +20,16 @@ import subprocess
 #
 # Note that the filenames into which stdout and stderr are written are relative
 # to the machine on which the process runs. In the example above, the process
-# was run locally, so the results are run locally. However, if you run a remote
-# process, the results are written on the machine where the command runs. For
-# example
+# was run locally, so the results are written locally. However, if you run a
+# remote process, the results are written on the machine where the command
+# runs. For example, the commands below execute `hostname` on the machine at
+# adress 1.2.3.4. The results are written to /tmp/out.txt and /tmp/err.txt on
+# machine 1.2.3.4, not locally.
 #
 # >>> client = paramiko.SSHClient()
-# >>> client.load_system_host_keys()
+# >>> client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
 # >>> client.connect('1.2.3.4')
-# >>> proc = ParamikoProc('hostname', '/tmp/out.txt', 'tmp/err.txt')
+# >>> proc = ParamikoProc('hostname', '/tmp/out.txt', '/tmp/err.txt')
 class Proc:
     def __init__(self,
                  args: Union[str, Sequence[str]],
@@ -44,7 +47,7 @@ class Proc:
     def get_cmd(self) -> str:
         return self.cmd
 
-    def wait(self) -> None:
+    def wait(self) -> int:
         raise NotImplementedError()
 
     def kill(self) -> None:
@@ -62,9 +65,10 @@ class PopenProc(Proc):
                                       stderr=open(stderr, 'w'))
         self.returncode = None
 
-    def wait(self) -> None:
+    def wait(self) -> int:
         self.popen.wait()
         self.returncode = self.popen.returncode
+        return self.returncode
 
     def kill(self) -> None:
         self.popen.kill()
@@ -86,8 +90,9 @@ class ParamikoProc(Proc):
     def get_cmd(self) -> str:
         return self.cmd
 
-    def wait(self) -> None:
+    def wait(self) -> int:
         self.returncode = self.channel.recv_exit_status()
+        return self.returncode
 
     def kill(self) -> None:
         self.channel.close()
@@ -101,14 +106,15 @@ class MininetProc(Proc):
                  stdout: str,
                  stderr: str) -> None:
         super().__init__(args, stdout, stderr)
-        self.popen = node.Popen(args,
+        self.popen = node.popen(args,
                                 stdout=open(stdout, 'w'),
                                 stderr=open(stderr, 'w'))
         self.returncode = None
 
-    def wait(self) -> None:
+    def wait(self) -> int:
         self.popen.wait()
         self.returncode = self.popen.returncode
+        return self.returncode
 
     def kill(self) -> None:
         self.popen.kill()
