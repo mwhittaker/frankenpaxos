@@ -62,6 +62,19 @@ def main(args) -> None:
                     [(1, x) for x in [100, 1000, 10000, 50000, 100000]]
             ] * 3
 
+        def make_net(self, args: Dict[Any, Any], input: Input) -> SimpleBPaxosNet:
+            if args['address'] is not None:
+                return RemoteSimpleBPaxosNet(
+                            args['address'],
+                            f=input.f,
+                            num_client_procs=input.num_client_procs,
+                            num_leaders=input.num_leaders)
+            else:
+                return SingleSwitchMininet(
+                            f=input.f,
+                            num_client_procs=input.num_client_procs,
+                            num_leaders=input.num_leaders)
+
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,

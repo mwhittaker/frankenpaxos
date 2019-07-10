@@ -4,7 +4,6 @@ from .. import parser_util
 from .. import pd_util
 from .. import proc
 from .. import prometheus
-from mininet.net import Mininet
 from typing import Any, Callable, Collection, Dict, List, NamedTuple
 import argparse
 import csv
@@ -12,6 +11,7 @@ import datetime
 import enum
 import itertools
 import mininet
+import mininet.net
 import os
 import pandas as pd
 import paramiko
@@ -21,6 +21,7 @@ import tqdm
 import yaml
 
 
+# Input/Output #################################################################
 class Input(NamedTuple):
     duration_seconds: float
     timeout_seconds: float
@@ -35,6 +36,7 @@ class Input(NamedTuple):
 Output = benchmark.RecorderOutput
 
 
+# Networks #####################################################################
 class EchoNet(object):
     def __enter__(self) -> 'EchoNet':
         return self
@@ -54,12 +56,6 @@ class RemoteEchoNet(EchoNet):
         assert len(addresses) > 0
         self.hosts = [self._make_host(a) for a in addresses]
         self.num_client_procs = num_client_procs
-
-    def __enter__(self) -> 'RemoteEchoNet':
-        return self
-
-    def __exit__(self, cls, exn, traceback) -> None:
-        pass
 
     def _make_host(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
@@ -86,13 +82,13 @@ class EchoMininet(EchoNet):
     def __exit__(self, cls, exn, traceback) -> None:
         self.net().stop()
 
-    def net(self) -> Mininet:
+    def net(self) -> mininet.net.Mininet:
         raise NotImplementedError()
 
 
 class SingleSwitchMininet(EchoMininet):
     def __init__(self, num_client_procs: int) -> None:
-        self._net = Mininet()
+        self._net = mininet.net.Mininet()
         switch = self._net.addSwitch('s1')
         self._net.addController('c')
 
@@ -106,7 +102,7 @@ class SingleSwitchMininet(EchoMininet):
         self._net.addLink(server, switch)
         self._server = host.MininetHost(server)
 
-    def net(self) -> Mininet:
+    def net(self) -> mininet.net.Mininet:
         return self._net
 
     def clients(self) -> List[host.Host]:
@@ -116,6 +112,7 @@ class SingleSwitchMininet(EchoMininet):
         return self._server
 
 
+# Suite ########################################################################
 class EchoSuite(benchmark.Suite[Input, Output]):
     def make_net(self, args: Dict[Any, Any], input: Input) -> EchoNet:
         raise NotImplementedError

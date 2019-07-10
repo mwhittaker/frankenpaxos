@@ -1,6 +1,6 @@
 from . import benchmark
 from . import pd_util
-from typing import Any, Dict, Iterable, List, NamedTuple, Tuple
+from typing import Any, Dict, List, NamedTuple, Tuple
 import os
 import subprocess
 

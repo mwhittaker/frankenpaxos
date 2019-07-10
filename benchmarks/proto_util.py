@@ -57,6 +57,7 @@ def message_to_pbtext(d: Message, indent: int = 0) -> str:
             strings.append(f'{k}: {{\n{substring}\n}}')
     return "\n".join(strings)
 
+
 def _indent(s: str, n: int) -> str:
     padding = " " * n
     return padding + s.replace("\n", "\n" + padding)
