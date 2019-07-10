@@ -47,7 +47,7 @@ class Proc:
     def get_cmd(self) -> str:
         return self.cmd
 
-    def wait(self) -> int:
+    def wait(self) -> Optional[int]:
         raise NotImplementedError()
 
     def kill(self) -> None:
@@ -65,7 +65,7 @@ class PopenProc(Proc):
                                       stderr=open(stderr, 'w'))
         self.returncode = None
 
-    def wait(self) -> int:
+    def wait(self) -> Optional[int]:
         self.popen.wait()
         self.returncode = self.popen.returncode
         return self.returncode
@@ -85,12 +85,17 @@ class ParamikoProc(Proc):
         self.cmd = f'{self.cmd} 2> "{stderr}" > "{stdout}"'
         self.client = client
         self.channel = client.get_transport().open_session()
+        # By getting a PTY, when the channel is closed, the command we're
+        # running will be sent a SIGHUP and die. I don't fully understand the
+        # details behind all this, but it seems to work ok.
+        self.channel.get_pty()
+        self.channel.set_environment_variable(name='foo', value='bar')
         self.channel.exec_command(self.cmd)
 
     def get_cmd(self) -> str:
         return self.cmd
 
-    def wait(self) -> int:
+    def wait(self) -> Optional[int]:
         self.returncode = self.channel.recv_exit_status()
         return self.returncode
 
@@ -111,7 +116,7 @@ class MininetProc(Proc):
                                 stderr=open(stderr, 'w'))
         self.returncode = None
 
-    def wait(self) -> int:
+    def wait(self) -> Optional[int]:
         self.popen.wait()
         self.returncode = self.popen.returncode
         return self.returncode
