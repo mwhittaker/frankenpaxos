@@ -23,7 +23,12 @@ def _main(args) -> None:
             ] * 3
 
         def make_net(self, args: Dict[Any, Any], input: Input) -> EchoNet:
-            return SingleSwitchMininet(num_client_procs=input.num_client_procs)
+            if args['address'] is not None:
+                return RemoteEchoNet(args['address'],
+                                     num_client_procs=input.num_client_procs)
+            else:
+                return SingleSwitchMininet(num_client_procs=
+                                           input.num_client_procs)
 
         def summary(self, input: Input, output: Output) -> str:
             return str({

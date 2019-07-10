@@ -44,6 +44,11 @@ def get_benchmark_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='Monitor code using prometheus'
     )
+    parser.add_argument(
+        '-a', '--address',
+        action='append',
+        help='Remote addresses for benchmark'
+    )
     return parser
 
 

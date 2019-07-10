@@ -52,7 +52,7 @@ class EchoNet(object):
 class RemoteEchoNet(EchoNet):
     def __init__(self, addresses: List[str], num_client_procs: int) -> None:
         assert len(addresses) > 0
-        self.ssh_clients = [self._make_ssh_client(a) for a in addresses]
+        self.hosts = [self._make_host(a) for a in addresses]
         self.num_client_procs = num_client_procs
 
     def __enter__(self) -> 'RemoteEchoNet':
@@ -61,21 +61,21 @@ class RemoteEchoNet(EchoNet):
     def __exit__(self, cls, exn, traceback) -> None:
         pass
 
-    def _make_ssh_client(self, address: str) -> paramiko.SSHClient:
+    def _make_host(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
         client.connect(address)
-        return client
+        return host.RemoteHost(client)
 
     def clients(self) -> List[host.Host]:
-        if len(self.ssh_clients) == 1:
-            return self.ssh_clients * self.num_client_procs
+        if len(self.hosts) == 1:
+            return self.hosts * self.num_client_procs
         else:
-            cycle = itertools.cycle(self.ssh_clients[1:])
+            cycle = itertools.cycle(self.hosts[1:])
             return list(itertools.islice(cycle, self.num_client_procs))
 
     def server(self) -> host.Host:
-        return self.ssh_clients[0]
+        return self.hosts[0]
 
 
 class EchoMininet(EchoNet):
