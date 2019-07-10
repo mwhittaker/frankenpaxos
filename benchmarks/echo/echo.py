@@ -10,9 +10,11 @@ import argparse
 import csv
 import datetime
 import enum
+import itertools
 import mininet
 import os
 import pandas as pd
+import paramiko
 import subprocess
 import time
 import tqdm
@@ -47,6 +49,35 @@ class EchoNet(object):
         raise NotImplementedError()
 
 
+class RemoteEchoNet(EchoNet):
+    def __init__(self, addresses: List[str], num_client_procs: int) -> None:
+        assert len(addresses) > 0
+        self.ssh_clients = [self._make_ssh_client(a) for a in addresses]
+        self.num_client_procs = num_client_procs
+
+    def __enter__(self) -> 'RemoteEchoNet':
+        return self
+
+    def __exit__(self, cls, exn, traceback) -> None:
+        pass
+
+    def _make_ssh_client(self, address: str) -> paramiko.SSHClient:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
+        client.connect(address)
+        return client
+
+    def clients(self) -> List[host.Host]:
+        if len(self.ssh_clients) == 1:
+            return self.ssh_clients * self.num_client_procs
+        else:
+            cycle = itertools.cycle(self.ssh_clients[1:])
+            return list(itertools.islice(cycle, self.num_client_procs))
+
+    def server(self) -> host.Host:
+        return self.ssh_clients[0]
+
+
 class EchoMininet(EchoNet):
     def __enter__(self) -> 'EchoNet':
         self.net().start()
@@ -61,13 +92,11 @@ class EchoMininet(EchoNet):
 
 class SingleSwitchMininet(EchoMininet):
     def __init__(self, num_client_procs: int) -> None:
-        self._clients: List[host.Host] = []
-        self._server: host.Host = None
         self._net = Mininet()
-
         switch = self._net.addSwitch('s1')
         self._net.addController('c')
 
+        self._clients: List[host.Host] = []
         for i in range(num_client_procs):
             client = self._net.addHost(f'c{i}')
             self._net.addLink(client, switch)
@@ -111,9 +140,9 @@ class EchoSuite(benchmark.Suite[Input, Output]):
                 'java',
                 '-cp', os.path.abspath(args['jar']),
                 'frankenpaxos.echo.BenchmarkServerMain',
-                '--host', net.server().IP(),
+                '--host', net.server().ip(),
                 '--port', '9000',
-                '--prometheus_host', net.server().IP(),
+                '--prometheus_host', net.server().ip(),
                 '--prometheus_port', '12345',
             ]
         )
@@ -138,7 +167,7 @@ class EchoSuite(benchmark.Suite[Input, Output]):
 
         # Wait for server and prometheus.
         bench.log('Waiting.')
-        time.sleep(20)
+        time.sleep(5)
         bench.log('Waiting over.')
 
         # Launch clients.
@@ -151,10 +180,10 @@ class EchoSuite(benchmark.Suite[Input, Output]):
                     'java',
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.echo.BenchmarkClientMain',
-                    '--server_host', net.server().IP(),
+                    '--server_host', net.server().ip(),
                     '--server_port', '9000',
-                    '--host', host.IP(),
-                    '--port', '10000',
+                    '--host', host.ip(),
+                    '--port', str(10000 + i),
                     '--duration', f'{input.duration_seconds}s',
                     '--timeout', f'{input.timeout_seconds}s',
                     '--num_clients', f'{input.num_clients_per_proc}',
