@@ -59,7 +59,7 @@ def _main(args) -> None:
                 for f in [1, 2]
                 for num_leaders in [3, 5, 7, 10]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1000), (5, 1000)]
+                    [(1, 100), (6, 100), (6, 250)]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
@@ -69,8 +69,7 @@ def _main(args) -> None:
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'num_leaders': input.num_leaders,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.median':
-                    f'{output.stop_throughput_1s.median:.6}',
+                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
     suite = NumLeadersSimpleBPaxosSuite()

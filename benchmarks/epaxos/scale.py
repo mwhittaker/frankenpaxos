@@ -49,7 +49,20 @@ def main(args) -> None:
                 )
                 for f in [1, 2]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, x) for x in [100, 1000, 10000, 50000, 100000]]
+                    [
+                        (1, 100),
+                        (2, 100),
+                        (3, 100),
+                        (4, 100),
+                        (5, 100),
+                        (6, 100),
+                        (6, 250),
+                        (6, 500),
+                        (6, 750),
+                        (6, 1000),
+                        (6, 1500),
+                        (6, 2000),
+                    ]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
