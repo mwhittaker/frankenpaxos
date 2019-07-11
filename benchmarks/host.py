@@ -1,5 +1,5 @@
 from . import proc
-from typing import Sequence, Union
+from typing import NamedTuple, Sequence, Union
 import mininet
 import mininet.node
 import paramiko
@@ -16,6 +16,13 @@ class Host:
               stdout: str,
               stderr: str) -> proc.Proc:
         raise NotImplementedError()
+
+
+# An endpoint is a host and port. Typically, you launch a server that listens
+# at a particular endpoint.
+class Endpoint(NamedTuple):
+    host: Host
+    port: int
 
 
 class LocalHost(Host):

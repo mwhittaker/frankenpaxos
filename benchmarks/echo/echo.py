@@ -44,10 +44,10 @@ class EchoNet(object):
     def __exit__(self, cls, exn, traceback) -> None:
         pass
 
-    def clients(self) -> List[host.Host]:
+    def clients(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
-    def server(self) -> host.Host:
+    def server(self) -> host.Endpoint:
         raise NotImplementedError()
 
 
@@ -63,15 +63,16 @@ class RemoteEchoNet(EchoNet):
         client.connect(address)
         return host.RemoteHost(client)
 
-    def clients(self) -> List[host.Host]:
+    def clients(self) -> List[host.Endpoint]:
         if len(self.hosts) == 1:
-            return self.hosts * self.num_client_procs
+            hosts = self.hosts * self.num_client_procs
         else:
             cycle = itertools.cycle(self.hosts[1:])
-            return list(itertools.islice(cycle, self.num_client_procs))
+            hosts = list(itertools.islice(cycle, self.num_client_procs))
+        return [host.Endpoint(h, 10000 + 100*i) for (i, h) in enumerate(hosts)]
 
-    def server(self) -> host.Host:
-        return self.hosts[0]
+    def server(self) -> host.Endpoint:
+        return host.Endpoint(self.hosts[0], 9000)
 
 
 class EchoMininet(EchoNet):
@@ -92,23 +93,23 @@ class SingleSwitchMininet(EchoMininet):
         switch = self._net.addSwitch('s1')
         self._net.addController('c')
 
-        self._clients: List[host.Host] = []
+        self._clients: List[host.Endpoint] = []
         for i in range(num_client_procs):
             client = self._net.addHost(f'c{i}')
             self._net.addLink(client, switch)
-            self._clients.append(host.MininetHost(client))
+            self._clients.append(host.Endpoint(host.MininetHost(client), 10000))
 
         server = self._net.addHost(f'h1')
         self._net.addLink(server, switch)
-        self._server = host.MininetHost(server)
+        self._server = host.Endpoint(host.MininetHost(server), 9000)
 
     def net(self) -> mininet.net.Mininet:
         return self._net
 
-    def clients(self) -> List[host.Host]:
+    def clients(self) -> List[host.Endpoint]:
         return self._clients
 
-    def server(self) -> host.Host:
+    def server(self) -> host.Endpoint:
         return self._server
 
 
@@ -131,16 +132,17 @@ class EchoSuite(benchmark.Suite[Input, Output]):
                        net: EchoNet) -> Output:
         # Launch server.
         server_proc = bench.popen(
-            host=net.server(),
+            host=net.server().host,
             label='server',
             cmd = [
                 'java',
                 '-cp', os.path.abspath(args['jar']),
                 'frankenpaxos.echo.BenchmarkServerMain',
-                '--host', net.server().ip(),
-                '--port', '9000',
-                '--prometheus_host', net.server().ip(),
-                '--prometheus_port', '12345',
+                '--host', net.server().host.ip(),
+                '--port', str(net.server().port),
+                '--prometheus_host', net.server().host.ip(),
+                '--prometheus_port',
+                    str(net.server().port + 1) if input.monitored else '-1',
             ]
         )
         bench.log('Servers started.')
@@ -149,11 +151,12 @@ class EchoSuite(benchmark.Suite[Input, Output]):
         if input.monitored:
             prometheus_config = prometheus.prometheus_config(
                 input.prometheus_scrape_interval_ms,
-                {'echo_server': [f'{net.server().ip()}:12345']}
+                {'echo_server':
+                 [f'{net.server().host.ip()}:{net.server().port + 1}']}
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
             prometheus_server = bench.popen(
-                host=net.server(),
+                host=net.server().host,
                 label='prometheus',
                 cmd = [
                     'prometheus',
@@ -169,18 +172,18 @@ class EchoSuite(benchmark.Suite[Input, Output]):
 
         # Launch clients.
         client_procs = []
-        for (i, host) in enumerate(net.clients()):
+        for (i, client) in enumerate(net.clients()):
             client_proc = bench.popen(
-                host=net.server(),
+                host=net.server().host,
                 label=f'client_{i}',
                 cmd = [
                     'java',
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.echo.BenchmarkClientMain',
-                    '--server_host', net.server().ip(),
-                    '--server_port', '9000',
-                    '--host', host.ip(),
-                    '--port', str(10000 + i),
+                    '--server_host', net.server().host.ip(),
+                    '--server_port', str(net.server().port),
+                    '--host', client.host.ip(),
+                    '--port', str(client.port),
                     '--duration', f'{input.duration_seconds}s',
                     '--timeout', f'{input.timeout_seconds}s',
                     '--num_clients', f'{input.num_clients_per_proc}',

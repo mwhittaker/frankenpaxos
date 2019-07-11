@@ -11,6 +11,7 @@ import argparse
 import csv
 import datetime
 import enum
+import itertools
 import mininet
 import mininet.net
 import os
@@ -136,46 +137,46 @@ class SimpleBPaxosNet(object):
     def f(self) -> int:
         raise NotImplementedError()
 
-    def clients(self) -> List[host.Host]:
+    def clients(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
-    def leaders(self) -> List[host.Host]:
+    def leaders(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
-    def proposers(self) -> List[host.Host]:
+    def proposers(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
-    def dep_service_nodes(self) -> List[host.Host]:
+    def dep_service_nodes(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
-    def acceptors(self) -> List[host.Host]:
+    def acceptors(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
-    def replicas(self) -> List[host.Host]:
+    def replicas(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
     def config(self) -> proto_util.Message:
         return {
             'f': self.f(),
             'leaderAddress': [
-                {'host': h.ip(), 'port': 9000 + i}
-                for (i, h) in enumerate(self.leaders())
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.leaders()
             ],
             'proposerAddress': [
-                {'host': h.ip(), 'port': 10000 + i}
-                for (i, h) in enumerate(self.proposers())
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.proposers()
             ],
             'depServiceNodeAddress': [
-                {'host': h.ip(), 'port': 11000 + i}
-                for (i, h) in enumerate(self.dep_service_nodes())
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.dep_service_nodes()
             ],
             'acceptorAddress': [
-                {'host': h.ip(), 'port': 12000 + i}
-                for (i, h) in enumerate(self.acceptors())
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.acceptors()
             ],
             'replicaAddress': [
-                {'host': h.ip(), 'port': 13000 + i}
-                for (i, h) in enumerate(self.replicas())
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.replicas()
             ],
         }
 
@@ -194,35 +195,39 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
     def _make_host(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
-        client.connect(address, username='vagrant', password='vagrant')
+        client.connect(address)
         return host.RemoteHost(client)
 
     class _Placement(NamedTuple):
-        clients: List[host.Host]
-        leaders: List[host.Host]
-        proposers: List[host.Host]
-        dep_service_nodes: List[host.Host]
-        acceptors: List[host.Host]
-        replicas: List[host.Host]
+        clients: List[host.Endpoint]
+        leaders: List[host.Endpoint]
+        proposers: List[host.Endpoint]
+        dep_service_nodes: List[host.Endpoint]
+        acceptors: List[host.Endpoint]
+        replicas: List[host.Endpoint]
 
     def _placement(self) -> '_Placement':
+        ports = itertools.count(9000, 100)
+        def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
+            return [host.Endpoint(h, next(ports)) for h in hosts]
+
         if len(self._hosts) == 1:
             return self._Placement(
-                clients = self._hosts * self._num_client_procs,
-                leaders = self._hosts * self._num_leaders,
-                proposers = self._hosts * self._num_leaders,
-                dep_service_nodes = self._hosts * (2*self.f() + 1),
-                acceptors = self._hosts * (2*self.f() + 1),
-                replicas = self._hosts * (self.f() + 1),
+                clients = portify(self._hosts * self._num_client_procs),
+                leaders = portify(self._hosts * self._num_leaders),
+                proposers = portify(self._hosts * self._num_leaders),
+                dep_service_nodes = portify(self._hosts * (2*self.f()+1)),
+                acceptors = portify(self._hosts * (2*self.f()+1)),
+                replicas = portify(self._hosts * (self.f()+1)),
             )
         elif len(self._hosts) == 4:
             return self._Placement(
-                clients = [self._hosts[0]] * self._num_client_procs,
-                leaders = [self._hosts[1]] * self._num_leaders,
-                proposers = [self._hosts[1]] * self._num_leaders,
-                dep_service_nodes = [self._hosts[2]] * (2*self.f() + 1),
-                acceptors = [self._hosts[2]] * (2*self.f() + 1),
-                replicas = [self._hosts[3]] * (self.f() + 1),
+                clients = portify([self._hosts[0]] * self._num_client_procs),
+                leaders = portify([self._hosts[1]] * self._num_leaders),
+                proposers = portify([self._hosts[1]] * self._num_leaders),
+                dep_service_nodes = portify([self._hosts[2]] * (2*self.f()+1)),
+                acceptors = portify([self._hosts[2]] * (2*self.f()+1)),
+                replicas = portify([self._hosts[3]] * (self.f()+1)),
             )
         else:
             raise NotImplementedError()
@@ -230,22 +235,22 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
     def f(self) -> int:
         return self._f
 
-    def clients(self) -> List[host.Host]:
+    def clients(self) -> List[host.Endpoint]:
         return self._placement().clients
 
-    def leaders(self) -> List[host.Host]:
+    def leaders(self) -> List[host.Endpoint]:
         return self._placement().leaders
 
-    def proposers(self) -> List[host.Host]:
+    def proposers(self) -> List[host.Endpoint]:
         return self._placement().proposers
 
-    def dep_service_nodes(self) -> List[host.Host]:
+    def dep_service_nodes(self) -> List[host.Endpoint]:
         return self._placement().dep_service_nodes
 
-    def acceptors(self) -> List[host.Host]:
+    def acceptors(self) -> List[host.Endpoint]:
         return self._placement().acceptors
 
-    def replicas(self) -> List[host.Host]:
+    def replicas(self) -> List[host.Endpoint]:
         return self._placement().replicas
 
 
@@ -267,12 +272,12 @@ class SingleSwitchMininet(SimpleBPaxosMininet):
                  num_client_procs: int,
                  num_leaders: int) -> None:
         self._f = f
-        self._clients: List[host.Host] = []
-        self._leaders: List[host.Host] = []
-        self._proposers: List[host.Host] = []
-        self._dep_service_nodes: List[host.Host] = []
-        self._acceptors: List[host.Host] = []
-        self._replicas: List[host.Host] = []
+        self._clients: List[host.Endpoint] = []
+        self._leaders: List[host.Endpoint] = []
+        self._proposers: List[host.Endpoint] = []
+        self._dep_service_nodes: List[host.Endpoint] = []
+        self._acceptors: List[host.Endpoint] = []
+        self._replicas: List[host.Endpoint] = []
         self._net = mininet.net.Mininet()
 
         switch = self._net.addSwitch('s1')
@@ -281,59 +286,76 @@ class SingleSwitchMininet(SimpleBPaxosMininet):
         for i in range(num_client_procs):
             client = self._net.addHost(f'c{i}')
             self._net.addLink(client, switch)
-            self._clients.append(host.MininetHost(client))
+            self._clients.append(host.Endpoint(host.MininetHost(client), 10000))
 
         for i in range(num_leaders):
             leader = self._net.addHost(f'l{i}')
             self._net.addLink(leader, switch)
-            self._leaders.append(host.MininetHost(leader))
+            self._leaders.append(host.Endpoint(host.MininetHost(leader), 11000))
 
         for i in range(num_leaders):
             proposer = self._net.addHost(f'p{i}')
             self._net.addLink(proposer, switch)
-            self._proposers.append(host.MininetHost(proposer))
+            self._proposers.append(
+                host.Endpoint(host.MininetHost(proposer), 12000))
 
         for i in range(2*f + 1):
             dep_service_node = self._net.addHost(f'd{i}')
             self._net.addLink(dep_service_node, switch)
-            self._dep_service_nodes.append(host.MininetHost(dep_service_node))
+            self._dep_service_nodes.append(
+                host.Endpoint(host.MininetHost(dep_service_node), 13000))
 
         for i in range(2*f + 1):
             acceptor = self._net.addHost(f'a{i}')
             self._net.addLink(acceptor, switch)
-            self._acceptors.append(host.MininetHost(acceptor))
+            self._acceptors.append(
+                host.Endpoint(host.MininetHost(acceptor), 14000))
 
         for i in range(f + 1):
             replica = self._net.addHost(f'r{i}')
             self._net.addLink(replica, switch)
-            self._replicas.append(host.MininetHost(replica))
+            self._replicas.append(
+                host.Endpoint(host.MininetHost(replica), 15000))
 
     def net(self) -> mininet.net.Mininet:
         return self._net
 
-    def clients(self) -> List[host.Host]:
+    def f(self) -> int:
+        return self._f
+
+    def clients(self) -> List[host.Endpoint]:
         return self._clients
 
-    def leaders(self) -> List[host.Host]:
+    def leaders(self) -> List[host.Endpoint]:
         return self._leaders
 
-    def proposers(self) -> List[host.Host]:
+    def proposers(self) -> List[host.Endpoint]:
         return self._proposers
 
-    def dep_service_nodes(self) -> List[host.Host]:
+    def dep_service_nodes(self) -> List[host.Endpoint]:
         return self._dep_service_nodes
 
-    def acceptors(self) -> List[host.Host]:
+    def acceptors(self) -> List[host.Endpoint]:
         return self._acceptors
 
-    def replicas(self) -> List[host.Host]:
+    def replicas(self) -> List[host.Endpoint]:
         return self._replicas
 
 
 # Suite ########################################################################
 class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
     def make_net(self, args: Dict[Any, Any], input: Input) -> SimpleBPaxosNet:
-        raise NotImplementedError
+        if args['address'] is not None:
+            return RemoteSimpleBPaxosNet(
+                        args['address'],
+                        f=input.f,
+                        num_client_procs=input.num_client_procs,
+                        num_leaders=input.num_leaders)
+        else:
+            return SingleSwitchMininet(
+                        f=input.f,
+                        num_client_procs=input.num_client_procs,
+                        num_leaders=input.num_leaders)
 
     def run_benchmark(self,
                       bench: benchmark.BenchmarkDirectory,
@@ -348,16 +370,17 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                        input: Input,
                        net: SimpleBPaxosNet) -> Output:
         # Write config file.
+        config = net.config()
         config_filename = bench.abspath('config.pbtxt')
         bench.write_string(config_filename,
-                           proto_util.message_to_pbtext(net.config()))
+                           proto_util.message_to_pbtext(config))
         bench.log('Config file config.pbtxt written.')
 
         # Launch dep service nodes.
         dep_service_node_procs = []
-        for (i, host) in enumerate(net.dep_service_nodes()):
+        for (i, dep) in enumerate(net.dep_service_nodes()):
             proc = bench.popen(
-                host=host,
+                host=dep.host,
                 label=f'dep_service_node_{i}',
                 cmd = [
                     'java',
@@ -366,8 +389,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.dep_service_node_log_level,
-                    '--prometheus_host', host.ip(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--prometheus_host', dep.host.ip(),
+                    '--prometheus_port',
+                        str(dep.port + 1) if input.monitored else '-1',
                 ],
             )
             dep_service_node_procs.append(proc)
@@ -375,9 +399,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch acceptors.
         acceptor_procs = []
-        for (i, host) in enumerate(net.acceptors()):
+        for (i, acceptor) in enumerate(net.acceptors()):
             proc = bench.popen(
-                host=host,
+                host=acceptor.host,
                 label=f'acceptor_{i}',
                 cmd = [
                     'java',
@@ -386,8 +410,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.acceptor_log_level,
-                    '--prometheus_host', host.ip(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--prometheus_host', acceptor.host.ip(),
+                    '--prometheus_port',
+                        str(acceptor.port + 1) if input.monitored else '-1',
                 ],
             )
             acceptor_procs.append(proc)
@@ -395,9 +420,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch replicas.
         replica_procs = []
-        for (i, host) in enumerate(net.replicas()):
+        for (i, replica) in enumerate(net.replicas()):
             proc = bench.popen(
-                host=host,
+                host=replica.host,
                 label=f'replica_{i}',
                 cmd = [
                     'java',
@@ -406,8 +431,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.replica_log_level,
-                    '--prometheus_host', host.ip(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--prometheus_host', replica.host.ip(),
+                    '--prometheus_port',
+                        str(replica.port + 1) if input.monitored else '-1',
                     '--options.recoverVertexTimerMinPeriod',
                         '{}s'.format(input.replica_options
                                      .recover_vertex_timer_min_period
@@ -429,9 +455,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch proposers.
         proposer_procs = []
-        for (i, host) in enumerate(net.proposers()):
+        for (i, proposer) in enumerate(net.proposers()):
             proc = bench.popen(
-                host=host,
+                host=proposer.host,
                 label=f'proposer_{i}',
                 cmd = [
                     'java',
@@ -440,8 +466,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.proposer_log_level,
-                    '--prometheus_host', host.ip(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--prometheus_host', proposer.host.ip(),
+                    '--prometheus_port',
+                        str(proposer.port + 1) if input.monitored else '-1',
                     '--options.resendPhase1asTimerPeriod',
                         '{}s'.format(input.proposer_options
                                      .resend_phase1as_timer_period
@@ -457,9 +484,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch leaders.
         leader_procs = []
-        for (i, host) in enumerate(net.leaders()):
+        for (i, leader) in enumerate(net.leaders()):
             proc = bench.popen(
-                host=host,
+                host=leader.host,
                 label=f'leader_{i}',
                 cmd = [
                     'java',
@@ -468,8 +495,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.leader_log_level,
-                    '--prometheus_host', host.ip(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--prometheus_host', leader.host.ip(),
+                    '--prometheus_port',
+                        str(leader.port + 1) if input.monitored else '-1',
                     '--options.resendDependencyRequestsTimerPeriod',
                         '{}s'.format(input.leader_options
                                      .resend_dependency_requests_timer_period
@@ -484,23 +512,23 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             prometheus_config = prometheus.prometheus_config(
                 int(input.prometheus_scrape_interval.total_seconds() * 1000),
                 {
-                  'bpaxos_leader':
-                    [f'{n.ip()}:12345' for n in net.leaders()],
-                  'bpaxos_proposer':
-                    [f'{n.ip()}:12345' for n in net.proposers()],
-                  'bpaxos_acceptor':
-                    [f'{n.ip()}:12345' for n in net.acceptors()],
-                  'bpaxos_client':
-                    [f'{n.ip()}:12345' for n in net.clients()],
-                  'bpaxos_dep_service_node':
-                    [f'{n.ip()}:12345' for n in net.dep_service_nodes()],
-                  'bpaxos_replica':
-                    [f'{n.ip()}:12345' for n in net.replicas()],
+                  'bpaxos_leader': [f'{e.host.ip()}:{e.port+1}'
+                                    for e in net.leaders()],
+                  'bpaxos_proposer': [f'{e.host.ip()}:{e.port+1}'
+                                      for e in net.proposers()],
+                  'bpaxos_acceptor': [f'{e.host.ip()}:{e.port+1}'
+                                      for e in net.acceptors()],
+                  'bpaxos_client': [f'{e.host.ip()}:{e.port+1}'
+                                    for e in net.clients()],
+                  'bpaxos_dep_service_node': [f'{e.host.ip()}:{e.port+1}'
+                                    for e in net.dep_service_nodes()],
+                  'bpaxos_replica': [f'{e.host.ip()}:{e.port+1}'
+                                     for e in net.replicas()],
                 }
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
             prometheus_server = bench.popen(
-                host=net.clients()[0],
+                host=net.clients()[0].host,
                 label='prometheus',
                 cmd = [
                     'prometheus',
@@ -516,20 +544,21 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch clients.
         client_procs = []
-        for (i, host) in enumerate(net.clients()):
+        for (i, client) in enumerate(net.clients()):
             proc = bench.popen(
-                host=host,
+                host=client.host,
                 label=f'client_{i}',
                 cmd = [
                     'java',
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.simplebpaxos.BenchmarkClientMain',
-                    '--host', host.ip(),
-                    '--port', str(10000 + i),
+                    '--host', client.host.ip(),
+                    '--port', str(client.port),
                     '--config', config_filename,
                     '--log_level', input.client_log_level,
-                    '--prometheus_host', host.ip(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--prometheus_host', client.host.ip(),
+                    '--prometheus_port',
+                        str(client.port + 1) if input.monitored else '-1',
                     '--warmup_duration',
                         f'{input.warmup_duration.total_seconds()}s',
                     '--warmup_timeout',

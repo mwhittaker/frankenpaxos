@@ -2,6 +2,8 @@ from typing import Optional, Sequence, Union
 import mininet
 import mininet.node
 import paramiko
+import random
+import string
 import subprocess
 
 
@@ -54,6 +56,7 @@ class Proc:
         raise NotImplementedError()
 
 
+# A PopenProc is just a wrapper around a locally run subprocess.Popen.
 class PopenProc(Proc):
     def __init__(self,
                  args: Union[str, Sequence[str]],
@@ -75,6 +78,29 @@ class PopenProc(Proc):
         self.returncode = self.popen.returncode
 
 
+# A ParamikoProc is a process run on a remote machine over SSH via paramiko.
+# Paramiko makes it easy to run commands on another machine. You simply get a
+# hold of a channel and run `channel.exec_command`. However, paramiko does not
+# make it easy to _kill_ a command that is currently being run via
+# exec_command.
+#
+# There are a couple of different possible solutions [1], but none are great.
+# For example, if you call `channel.get_pty` before `channel.exec_command`,
+# then calling `channel.close` will send a SIGHUP to the command and kill it
+# (normally). However, if you call `channel.get_pty` too many times, paramiko
+# crashes. I'm not exactly sure why. Moreover, the paramiko documentation
+# suggests not calling `get_pty` before issuing `exec_command` [2].
+#
+# We implement the following solution. It's not great, but it seems to work ok.
+# First, every ParamikoProc generates a unique nonce. When we call
+# `channel.exec_command`, we echo the nonce before the command, like this:
+# `echo <nonce>; <cmd>`. When we do this, calling `pgrep -f <nonce>` returns
+# the pid of a command that looks like this: `bash -c echo <nonce>; <cmd>`.
+# This command is the parent of `<cmd>`. We then kill the entire process group
+# rooted by the `bash -c` command. This also kill `<cmd>`.
+#
+# [1]: https://stackoverflow.com/q/7734679/3187068
+# [2]: http://docs.paramiko.org/en/latest/api/channel.html#paramiko.channel.Channel.get_pty
 class ParamikoProc(Proc):
     def __init__(self,
                  client: paramiko.SSHClient,
@@ -82,14 +108,10 @@ class ParamikoProc(Proc):
                  stdout: str,
                  stderr: str) -> None:
         super().__init__(args, stdout, stderr)
-        self.cmd = f'{self.cmd} 2> "{stderr}" > "{stdout}"'
+        self.nonce = _random_string(80)
+        self.cmd = f'echo {self.nonce}; ({self.cmd}) 2> "{stderr}" > "{stdout}"'
         self.client = client
         self.channel = client.get_transport().open_session()
-        # By getting a PTY, when the channel is closed, the command we're
-        # running will be sent a SIGHUP and die. I don't fully understand the
-        # details behind all this, but it seems to work ok.
-        self.channel.get_pty()
-        self.channel.set_environment_variable(name='foo', value='bar')
         self.channel.exec_command(self.cmd)
 
     def get_cmd(self) -> str:
@@ -100,6 +122,16 @@ class ParamikoProc(Proc):
         return self.returncode
 
     def kill(self) -> None:
+        # Get the process group id of the command.
+        _, stdout, _ = self.client.exec_command(f'pgrep -f {self.nonce}')
+        stdout.channel.recv_exit_status()
+        pgid = stdout.read().decode("utf-8").strip()
+
+        # Kill the process group.
+        _, stdout, _ = self.client.exec_command(f'kill -- -{pgid}')
+        stdout.channel.recv_exit_status()
+
+        # Close the channel.
         self.channel.close()
         self.returncode = self.channel.recv_exit_status()
 
@@ -124,3 +156,7 @@ class MininetProc(Proc):
     def kill(self) -> None:
         self.popen.kill()
         self.returncode = self.popen.returncode
+
+
+def _random_string(n: int) -> str:
+    return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
