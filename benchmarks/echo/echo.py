@@ -173,7 +173,7 @@ class EchoSuite(benchmark.Suite[Input, Output]):
         client_procs = []
         for (i, client) in enumerate(net.clients()):
             client_proc = bench.popen(
-                host=net.server().host,
+                host=client.host,
                 label=f'client_{i}',
                 cmd = [
                     'java',
