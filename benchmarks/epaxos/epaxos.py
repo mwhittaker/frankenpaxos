@@ -1,24 +1,23 @@
 from .. import benchmark
+from .. import host
 from .. import parser_util
-from .. import pd_util
 from .. import prometheus
 from .. import proto_util
 from .. import util
-from mininet.net import Mininet
 from typing import Any, Callable, Collection, Dict, List, NamedTuple
 import argparse
 import csv
 import datetime
-import enum
+import itertools
 import mininet
+import mininet.net
 import os
-import pandas as pd
-import subprocess
+import paramiko
 import time
-import tqdm
 import yaml
 
 
+# Input/Output #################################################################
 class ReplicaOptions(NamedTuple):
     resend_pre_accepts_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
@@ -43,8 +42,6 @@ class ClientOptions(NamedTuple):
 
 class Input(NamedTuple):
     # System-wide parameters. ##################################################
-    # The name of the mininet network.
-    net_name: str
     # The maximum number of tolerated faults.
     f: int
     # The number of benchmark client processes launched.
@@ -88,38 +85,105 @@ class Input(NamedTuple):
 Output = benchmark.RecorderOutput
 
 
+# Networks #####################################################################
 class EPaxosNet(object):
     def __init__(self) -> None:
         pass
 
     def __enter__(self) -> 'EPaxosNet':
+        return self
+
+    def __exit__(self, cls, exn, traceback) -> None:
+        pass
+
+    def f(self) -> int:
+        raise NotImplementedError()
+
+    def clients(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
+    def replicas(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
+    def config(self) -> proto_util.Message:
+        return {
+            'f': self.f(),
+            'replicaAddress': [
+                {'host': e.host.ip(), 'port': e.port} for e in self.replicas()
+            ],
+        }
+
+
+class RemoteEPaxosNet(EPaxosNet):
+    def __init__(self,
+                 addresses: List[str],
+                 f: int,
+                 num_client_procs: int) -> None:
+        assert len(addresses) > 0
+        self._f = f
+        self._num_client_procs = num_client_procs
+        self._hosts = [self._make_host(a) for a in addresses]
+
+    def _make_host(self, address: str) -> host.Host:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
+        client.connect(address)
+        return host.RemoteHost(client)
+
+    class _Placement(NamedTuple):
+        clients: List[host.Endpoint]
+        replicas: List[host.Endpoint]
+
+    def _placement(self) -> '_Placement':
+        ports = itertools.count(10000, 100)
+        def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
+            return [host.Endpoint(h, next(ports)) for h in hosts]
+
+        if len(self._hosts) == 1:
+            return self._Placement(
+                clients = portify(self._hosts * self._num_client_procs),
+                replicas = portify(self._hosts * (2*self.f() + 1)),
+            )
+        else:
+            return self._Placement(
+                clients = portify([self._hosts[0]] * self._num_client_procs),
+                replicas = portify(list(itertools.islice(
+                    itertools.cycle(self._hosts[1:]), 2*self.f() + 1))),
+            )
+
+    def f(self) -> int:
+        return self._f
+
+    def clients(self) -> List[host.Endpoint]:
+        return self._placement().clients
+
+    def replicas(self) -> List[host.Endpoint]:
+        return self._placement().replicas
+
+
+class EPaxosMininet(EPaxosNet):
+    def __init__(self) -> None:
+        pass
+
+    def __enter__(self) -> 'EPaxosMininet':
         self.net().start()
         return self
 
     def __exit__(self, cls, exn, traceback) -> None:
         self.net().stop()
 
-    def net(self) -> Mininet:
-        raise NotImplementedError()
-
-    def clients(self) -> List[mininet.node.Node]:
-        raise NotImplementedError()
-
-    def replicas(self) -> List[mininet.node.Node]:
-        raise NotImplementedError()
-
-    def config(self) -> proto_util.Message:
+    def net(self) -> mininet.net.Mininet:
         raise NotImplementedError()
 
 
-class SingleSwitchNet(EPaxosNet):
+class SingleSwitchMininet(EPaxosMininet):
     def __init__(self,
                  f: int,
                  num_client_procs: int) -> None:
-        self.f = f
-        self._clients: List[mininet.node.Node] = []
-        self._replicas: List[mininet.node.Node] = []
-        self._net = Mininet()
+        self._f = f
+        self._clients: List[host.Endpoint] = []
+        self._replicas: List[host.Endpoint] = []
+        self._net = mininet.net.Mininet()
 
         switch = self._net.addSwitch('s1')
         self._net.addController('c')
@@ -127,34 +191,47 @@ class SingleSwitchNet(EPaxosNet):
         for i in range(num_client_procs):
             client = self._net.addHost(f'c{i}')
             self._net.addLink(client, switch)
-            self._clients.append(client)
+            self._clients.append(host.Endpoint(host.MininetHost(client), 10000))
 
         num_replicas = 2*f + 1
         for i in range(num_replicas):
             replica = self._net.addHost(f'r{i}')
             self._net.addLink(replica, switch)
-            self._replicas.append(replica)
+            self._replicas.append(
+                host.Endpoint(host.MininetHost(replica), 11000))
 
-    def net(self) -> Mininet:
+    def net(self) -> mininet.net.Mininet:
         return self._net
 
-    def clients(self) -> List[mininet.node.Node]:
+    def f(self) -> int:
+        return self._f
+
+    def clients(self) -> List[host.Endpoint]:
         return self._clients
 
-    def replicas(self) -> List[mininet.node.Node]:
+    def replicas(self) -> List[host.Endpoint]:
         return self._replicas
-
-    def config(self) -> proto_util.Message:
-        return {
-            'f': self.f,
-            'replicaAddress': [
-                {'host': a.IP(), 'port': 9000}
-                for (i, a) in enumerate(self.replicas())
-            ],
-        }
 
 
 class EPaxosSuite(benchmark.Suite[Input, Output]):
+    def make_net(self, args: Dict[Any, Any], input: Input) -> EPaxosNet:
+        if args['address'] is not None:
+            return RemoteEPaxosNet(
+                        args['address'],
+                        f=input.f,
+                        num_client_procs=input.num_client_procs)
+        else:
+            return SingleSwitchMininet(
+                        f=input.f,
+                        num_client_procs=input.num_client_procs)
+
+    def run_benchmark(self,
+                      bench: benchmark.BenchmarkDirectory,
+                      args: Dict[Any, Any],
+                      input: Input) -> Output:
+        with self.make_net(args, input) as net:
+            return self._run_benchmark(bench, args, input, net)
+
     def _run_benchmark(self,
                        bench: benchmark.BenchmarkDirectory,
                        args: Dict[Any, Any],
@@ -168,9 +245,9 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch replicas.
         replica_procs = []
-        for (i, host) in enumerate(net.replicas()):
+        for (i, replica) in enumerate(net.replicas()):
             proc = bench.popen(
-                f=host.popen,
+                host=replica.host,
                 label=f'replica_{i}',
                 cmd = [
                     'java',
@@ -179,8 +256,9 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.replica_log_level,
-                    '--prometheus_host', host.IP(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--prometheus_host', replica.host.ip(),
+                    '--prometheus_port',
+                        str(replica.port + 1) if input.monitored else '-1',
                     '--options.resendPreAcceptsTimerPeriod', '{}ms'.format(
                         input.replica_options
                              .resend_pre_accepts_timer_period
@@ -206,7 +284,6 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                              .recover_instance_timer_max_period
                              .total_seconds() * 1000),
                 ],
-                profile=input.profiled,
             )
             replica_procs.append(proc)
         bench.log('Replicas started.')
@@ -216,13 +293,15 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
             prometheus_config = prometheus.prometheus_config(
                 int(input.prometheus_scrape_interval.total_seconds() * 1000),
                 {
-                  'epaxos_replica': [f'{r.IP()}:12345' for r in net.replicas()],
-                  'epaxos_client': [f'{c.IP()}:12345' for c in net.clients()],
+                  'epaxos_replica': [f'{e.host.ip()}:{e.port + 1}'
+                                     for e in net.replicas()],
+                  'epaxos_client': [f'{e.host.ip()}:{e.port + 1}'
+                                    for e in net.clients()],
                 }
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
             prometheus_server = bench.popen(
-                f=net.replicas()[0].popen,
+                host=net.replicas()[0].host,
                 label='prometheus',
                 cmd = [
                     'prometheus',
@@ -238,20 +317,21 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch clients.
         client_procs = []
-        for (i, host) in enumerate(net.clients()):
+        for (i, client) in enumerate(net.clients()):
             proc = bench.popen(
-                f=host.popen,
+                host=client.host,
                 label=f'client_{i}',
                 cmd = [
                     'java',
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.epaxos.BenchmarkClientMain',
-                    '--host', host.IP(),
-                    '--port', str(10000),
+                    '--host', client.host.ip(),
+                    '--port', str(client.port),
                     '--config', config_filename,
                     '--log_level', input.client_log_level,
-                    '--prometheus_host', host.IP(),
-                    '--prometheus_port', '12345' if input.monitored else '-1',
+                    '--prometheus_host', client.host.ip(),
+                    '--prometheus_port',
+                        str(client.port + 1) if input.monitored else '-1',
                     '--warmup_duration',
                         f'{input.warmup_duration.total_seconds()}s',
                     '--warmup_timeout',
@@ -278,7 +358,7 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
         for proc in client_procs:
             proc.wait()
         for proc in replica_procs:
-            proc.terminate()
+            proc.kill()
         bench.log('Clients finished and processes terminated.')
 
         # Client i writes results to `client_i_data.csv`.
@@ -286,14 +366,6 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                        for i in range(input.num_client_procs)]
         return benchmark.parse_recorder_data(bench, client_csvs,
                 drop_prefix=input.warmup_duration + input.warmup_sleep)
-
-    def run_benchmark(self,
-                      bench: benchmark.BenchmarkDirectory,
-                      args: Dict[Any, Any],
-                      input: Input) -> Output:
-        with SingleSwitchNet(f=input.f,
-                             num_client_procs=input.num_client_procs) as net:
-            return self._run_benchmark(bench, args, input, net)
 
 
 def get_parser() -> argparse.ArgumentParser:

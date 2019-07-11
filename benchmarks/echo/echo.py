@@ -25,7 +25,6 @@ import yaml
 class Input(NamedTuple):
     duration_seconds: float
     timeout_seconds: float
-    net_name: str
     num_client_procs: int
     num_clients_per_proc: int
     profiled: bool

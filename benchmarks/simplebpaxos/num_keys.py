@@ -9,7 +9,6 @@ def _main(args) -> None:
         def inputs(self) -> Collection[Input]:
             return [
                 Input(
-                    net_name = 'SingleSwitchNet',
                     f = f,
                     num_client_procs = 1,
                     num_warmup_clients_per_proc = 10,

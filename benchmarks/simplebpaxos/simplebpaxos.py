@@ -60,8 +60,6 @@ class ReplicaOptions(NamedTuple):
 
 class Input(NamedTuple):
     # System-wide parameters. ##################################################
-    # The name of the mininet network.
-    net_name: str
     # The maximum number of tolerated faults.
     f: int
     # The number of benchmark client processes launched.
@@ -207,7 +205,7 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
         replicas: List[host.Endpoint]
 
     def _placement(self) -> '_Placement':
-        ports = itertools.count(9000, 100)
+        ports = itertools.count(10000, 100)
         def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
             return [host.Endpoint(h, next(ports)) for h in hosts]
 

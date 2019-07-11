@@ -11,7 +11,6 @@ def _main(args) -> None:
                 Input(
                     duration_seconds=10,
                     timeout_seconds=20,
-                    net_name='SingleSwitchNet',
                     num_client_procs=num_client_procs,
                     num_clients_per_proc=num_clients_per_proc,
                     profiled=args.profile,
