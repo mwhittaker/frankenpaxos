@@ -73,7 +73,8 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
-    val addresses: Set[Transport#Address],
+    // Public for Javascript visualizations.
+    val addresses: Seq[Transport#Address],
     options: HeartbeatOptions = HeartbeatOptions.default
 ) extends Actor(address, transport, logger) {
   // Sanity check options.
@@ -83,46 +84,43 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = ParticipantInbound
   override val serializer = ParticipantInboundSerializer
 
-  private val chans: Map[Transport#Address, Chan[Participant[Transport]]] = {
+  type Index = Int
+
+  private val chans: Seq[Chan[Participant[Transport]]] =
     for (a <- addresses)
-      yield a -> chan[Participant[Transport]](a, Participant.serializer)
-  }.toMap
+      yield chan[Participant[Transport]](a, Participant.serializer)
 
   // When a participant sents a heartbeat ping, it sets a fail timer. If it
   // doesn't hear back before the timer expires, it sends another. If it does,
   // it sets a success timer to send another ping.
-  private val failTimers: Map[Transport#Address, Transport#Timer] = {
-    for (a <- addresses)
-      yield a -> timer(s"failTimer$a", options.failPeriod, () => fail(a))
-  }.toMap
+  private val failTimers: Seq[Transport#Timer] =
+    for ((a, i) <- addresses.zipWithIndex)
+      yield timer(s"failTimer$a", options.failPeriod, () => fail(i))
 
   // Timers that are set after a participant receives a pong.
-  private val successTimers: Map[Transport#Address, Transport#Timer] = {
-    for (a <- addresses)
-      yield
-        a -> timer(s"successTimer$a", options.successPeriod, () => succeed(a))
-  }.toMap
+  private val successTimers: Seq[Transport#Timer] =
+    for ((a, i) <- addresses.zipWithIndex)
+      yield timer(s"successTimer$a", options.successPeriod, () => succeed(i))
 
   // The number of unacknowledged retries sent to every participant.
   @JSExport
-  protected val numRetries: mutable.Map[Transport#Address, Int] = mutable.Map()
-  for (a <- addresses) {
-    numRetries(a) = 0
-  }
+  protected val numRetries = mutable.Buffer.fill(addresses.size)(0)
 
   // The estimated delay between this node and every other node.
   @JSExport
-  protected var networkDelayNanos = Map[Transport#Address, Double]()
+  protected var networkDelayNanos = mutable.Map[Index, Double]()
 
   // The addresses of participants that are alive.
   @JSExport
-  protected val alive: mutable.Set[Transport#Address] =
-    mutable.Set() ++ addresses
+  protected val alive: mutable.Set[Transport#Address] = mutable
+    .Set() ++ addresses
 
   // Send a ping to every participant and start the timers.
-  for ((a, chan) <- chans) {
-    chan.send(ParticipantInbound().withPing(Ping(System.nanoTime)))
-    failTimers(a).start()
+  for ((chan, i) <- chans.zipWithIndex) {
+    chan.send(
+      ParticipantInbound().withPing(Ping(index = i, nanotime = System.nanoTime))
+    )
+    failTimers(i).start()
   }
 
   override def receive(
@@ -141,40 +139,48 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handlePing(src: Transport#Address, ping: Ping): Unit = {
     val participant = chan[Participant[Transport]](src, Participant.serializer)
-    participant.send(ParticipantInbound().withPong(Pong(ping.nanotime)))
+    participant.send(
+      ParticipantInbound()
+        .withPong(Pong(index = ping.index, nanotime = ping.nanotime))
+    )
   }
 
   private def handlePong(src: Transport#Address, pong: Pong): Unit = {
     val delayNanos = (System.nanoTime - pong.nanotime) / 2
-    networkDelayNanos.get(src) match {
+    networkDelayNanos.get(pong.index) match {
       case Some(x) =>
-        val newAverage =
-          (options.networkDelayAlpha * delayNanos) +
-            ((1 - options.networkDelayAlpha) * x)
-        networkDelayNanos += (src -> newAverage)
+        val newAverage = (options.networkDelayAlpha * delayNanos) +
+          ((1 - options.networkDelayAlpha) * x)
+        networkDelayNanos(pong.index) = newAverage
 
       case None =>
-        networkDelayNanos += (src -> delayNanos)
+        networkDelayNanos(pong.index) = delayNanos
     }
 
-    alive += src
-    numRetries(src) = 0
-    failTimers(src).stop()
-    successTimers(src).start()
+    alive += addresses(pong.index)
+    numRetries(pong.index) = 0
+    failTimers(pong.index).stop()
+    successTimers(pong.index).start()
   }
 
-  private def fail(a: Transport#Address): Unit = {
-    numRetries(a) += 1
-    if (numRetries(a) >= options.numRetries) {
-      alive -= a
+  private def fail(index: Index): Unit = {
+    numRetries(index) += 1
+    if (numRetries(index) >= options.numRetries) {
+      alive -= addresses(index)
     }
-    chans(a).send(ParticipantInbound().withPing(Ping(System.nanoTime)))
-    failTimers(a).start()
+    chans(index).send(
+      ParticipantInbound()
+        .withPing(Ping(index = index, nanotime = System.nanoTime))
+    )
+    failTimers(index).start()
   }
 
-  private def succeed(a: Transport#Address): Unit = {
-    chans(a).send(ParticipantInbound().withPing(Ping(System.nanoTime)))
-    failTimers(a).start()
+  private def succeed(index: Index): Unit = {
+    chans(index).send(
+      ParticipantInbound()
+        .withPing(Ping(index = index, nanotime = System.nanoTime))
+    )
+    failTimers(index).start()
   }
 
   // Returns the network delay to every node. If a node is not alive, the delay
@@ -185,19 +191,13 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     val maxDuration = java.time.Duration.ofSeconds(Long.MaxValue, 999999999)
 
     {
-      for (address <- addresses) yield {
-        val delay =
-          networkDelayNanos
-            .get(address)
-            .flatMap(
-              delay =>
-                if (alive.contains(address)) Some(delay)
-                else None
-            )
-            .map(_.toLong)
-            .map(java.time.Duration.ofNanos(_))
-            .getOrElse(maxDuration)
-        (address, delay)
+      for ((address, index) <- addresses.zipWithIndex) yield {
+        val delay = networkDelayNanos.get(index) match {
+          case Some(delayNanos) if alive.contains(address) =>
+            java.time.Duration.ofNanos(delayNanos.toLong)
+          case Some(_) | None => maxDuration
+        }
+        address -> delay
       }
     }.toMap
   }

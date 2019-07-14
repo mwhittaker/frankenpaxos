@@ -118,7 +118,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     new frankenpaxos.heartbeat.Participant[Transport](heartbeatAddress,
                                                       transport,
                                                       logger,
-                                                      Set())
+                                                      Seq())
 
   // See the documentation for AcceptorOptions.waitPeriod and
   // AcceptorOptions.waitStagger above. Long is the value reported by

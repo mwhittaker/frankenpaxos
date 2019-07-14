@@ -282,11 +282,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val heartbeat: frankenpaxos.heartbeat.Participant[Transport] =
     new frankenpaxos.heartbeat.Participant[Transport](
-      heartbeatAddress,
-      transport,
-      logger,
-      config.acceptorHeartbeatAddresses.to[Set],
-      options.heartbeatOptions
+      address = heartbeatAddress,
+      transport = transport,
+      logger = logger,
+      addresses = config.acceptorHeartbeatAddresses,
+      options = options.heartbeatOptions
     )
 
   // The state of the leader.

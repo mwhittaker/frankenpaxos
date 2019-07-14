@@ -1,37 +1,39 @@
 from .. import benchmark
+from .. import host
 from .. import parser_util
 from .. import pd_util
 from .. import prometheus
 from .. import proto_util
 from .. import util
-from mininet.net import Mininet
-from typing import Callable, Dict, List, NamedTuple
+from typing import Any, Callable, Dict, List, NamedTuple
 import argparse
 import csv
+import datetime
 import enum
+import itertools
 import mininet
+import mininet.net
 import os
 import pandas as pd
+import paramiko
 import subprocess
 import time
-import tqdm
 import yaml
 
 
-# TODO(mwhittaker): Don't use Enum. Do what ThriftySystemType is doing. It's
-# simpler.
+# Input/Output #################################################################
 class RoundSystemType(enum.Enum):
-  CLASSIC_ROUND_ROBIN = 0
-  ROUND_ZERO_FAST = 1
-  MIXED_ROUND_ROBIN = 2
+    CLASSIC_ROUND_ROBIN = 'CLASSIC_ROUND_ROBIN'
+    ROUND_ZERO_FAST = 'ROUND_ZERO_FAST'
+    MIXED_ROUND_ROBIN = 'MIXED_ROUND_ROBIN'
 
 
 class ThriftySystemType:
-  NOT_THRIFTY = "NotThrifty"
-  RANDOM = "Random"
-  CLOSEST = "Closest"
+    NOT_THRIFTY = 'NotThrifty'
+    RANDOM = 'Random'
+    CLOSEST = 'Closest'
 
-
+# TODO(mwhittaker): Switch from _ms to datetime.
 class ElectionOptions(NamedTuple):
     ping_period_ms: float = 1 * 1000
     no_ping_timeout_min_ms: float = 10 * 1000
@@ -63,13 +65,13 @@ class LeaderOptions(NamedTuple):
     election: ElectionOptions = ElectionOptions()
     heartbeat: HeartbeatOptions = HeartbeatOptions()
 
+
 class ClientOptions(NamedTuple):
     repropose_period_ms: float = 10 * 1000
 
+
 class Input(NamedTuple):
     # System-wide parameters. ##################################################
-    # The name of the mininet network.
-    net_name: str
     # The maximum number of tolerated faults.
     f: int
     # The number of benchmark client processes launched.
@@ -77,7 +79,7 @@ class Input(NamedTuple):
     # The number of clients run on each benchmark client process.
     num_clients_per_proc: int
     # The type of round system used by the protocol.
-    round_system_type: str
+    round_system_type: RoundSystemType
 
     # Benchmark parameters. ####################################################
     # The (rough) duration of the benchmark.
@@ -107,42 +109,146 @@ class Input(NamedTuple):
 
     # Leader options. ##########################################################
     leader: LeaderOptions = LeaderOptions()
-    leader_log_level: str = "debug"
+    leader_log_level: str = 'debug'
 
     # Client options. ##########################################################
     client: ClientOptions = ClientOptions()
 
 
-class Output(NamedTuple):
-    mean_latency_ms: float
-    median_latency_ms: float
-    p90_latency_ms: float
-    p95_latency_ms: float
-    p99_latency_ms: float
-
-    mean_1_second_throughput: float
-    median_1_second_throughput: float
-    p90_1_second_throughput: float
-    p95_1_second_throughput: float
-    p99_1_second_throughput: float
-
-    mean_2_second_throughput: float
-    median_2_second_throughput: float
-    p90_2_second_throughput: float
-    p95_2_second_throughput: float
-    p99_2_second_throughput: float
-
-    mean_5_second_throughput: float
-    median_5_second_throughput: float
-    p90_5_second_throughput: float
-    p95_5_second_throughput: float
-    p99_5_second_throughput: float
+Output = benchmark.RecorderOutput
 
 
+# Networks #####################################################################
 class FastMultiPaxosNet(object):
     def __init__(self) -> None:
         pass
 
+    def __enter__(self) -> 'FastMultiPaxosNet':
+        return self
+
+    def __exit__(self, cls, exn, traceback) -> None:
+        pass
+
+    def f(self) -> int:
+        raise NotImplementedError()
+
+    def rs_type(self) -> RoundSystemType:
+        raise NotImplementedError()
+
+    def clients(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
+    def leaders(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
+    def leader_elections(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
+    def leader_heartbeats(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
+    def acceptors(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
+    def acceptor_heartbeats(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
+    def config(self) -> proto_util.Message:
+        return {
+            'f': self.f(),
+            'leaderAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.leaders()
+            ],
+            'leaderElectionAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.leader_elections()
+            ],
+            'leaderHeartbeatAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.leader_heartbeats()
+            ],
+            'acceptorAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.acceptors()
+            ],
+            'acceptorHeartbeatAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.acceptor_heartbeats()
+            ],
+            'roundSystemType': self.rs_type()
+        }
+
+
+class RemoteFastMultiPaxosNet(FastMultiPaxosNet):
+    def __init__(self,
+                 addresses: List[str],
+                 f: int,
+                 rs_type: RoundSystemType,
+                 num_client_procs: int) -> None:
+        assert len(addresses) > 0
+        self._f = f
+        self._rs_type = rs_type
+        self._num_client_procs = num_client_procs
+        self._hosts = [self._make_host(a) for a in addresses]
+
+    def _make_host(self, address: str) -> host.Host:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
+        client.connect(address)
+        return host.RemoteHost(client)
+
+    class _Placement(NamedTuple):
+        clients: List[host.Endpoint]
+        leaders: List[host.Endpoint]
+        leader_elections: List[host.Endpoint]
+        leader_heartbeats: List[host.Endpoint]
+        acceptors: List[host.Endpoint]
+        acceptor_heartbeats: List[host.Endpoint]
+
+    def _placement(self) -> '_Placement':
+        ports = itertools.count(10000, 100)
+        def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
+            return [host.Endpoint(h, next(ports)) for h in hosts]
+
+        if len(self._hosts) == 1:
+            return self._Placement(
+                clients = portify(self._hosts * self._num_client_procs),
+                leaders = portify(self._hosts * (self.f() + 1)),
+                leader_elections = portify(self._hosts * (self.f() + 1)),
+                leader_heartbeats = portify(self._hosts * (self.f() + 1)),
+                acceptors = portify(self._hosts * (2*self.f() + 1)),
+                acceptor_heartbeats = portify(self._hosts * (2*self.f() + 1)),
+            )
+        else:
+            raise NotImplementedError()
+
+    def f(self) -> int:
+        return self._f
+
+    def rs_type(self) -> RoundSystemType:
+        return self._rs_type
+
+    def clients(self) -> List[host.Endpoint]:
+        return self._placement().clients
+
+    def leaders(self) -> List[host.Endpoint]:
+        return self._placement().leaders
+
+    def leader_elections(self) -> List[host.Endpoint]:
+        return self._placement().leader_elections
+
+    def leader_heartbeats(self) -> List[host.Endpoint]:
+        return self._placement().leader_heartbeats
+
+    def acceptors(self) -> List[host.Endpoint]:
+        return self._placement().acceptors
+
+    def acceptor_heartbeats(self) -> List[host.Endpoint]:
+        return self._placement().acceptor_heartbeats
+
+
+class FastMultiPaxosMininet(FastMultiPaxosNet):
     def __enter__(self) -> 'FastMultiPaxosNet':
         self.net().start()
         return self
@@ -150,33 +256,24 @@ class FastMultiPaxosNet(object):
     def __exit__(self, cls, exn, traceback) -> None:
         self.net().stop()
 
-    def net(self) -> Mininet:
-        raise NotImplementedError()
-
-    def clients(self) -> List[mininet.node.Node]:
-        raise NotImplementedError()
-
-    def leaders(self) -> List[mininet.node.Node]:
-        raise NotImplementedError()
-
-    def acceptors(self) -> List[mininet.node.Node]:
-        raise NotImplementedError()
-
-    def config(self) -> proto_util.Message:
+    def net(self) -> mininet.net.Mininet:
         raise NotImplementedError()
 
 
-class SingleSwitchNet(FastMultiPaxosNet):
+class SingleSwitchMininet(FastMultiPaxosMininet):
     def __init__(self,
                  f: int,
-                 num_client_procs: int,
-                 rs_type: RoundSystemType) -> None:
-        self.f = f
-        self.rs_type = rs_type
-        self._clients: List[mininet.node.Node] = []
-        self._leaders: List[mininet.node.Node] = []
-        self._acceptors: List[mininet.node.Node] = []
-        self._net = Mininet()
+                 rs_type: RoundSystemType,
+                 num_client_procs: int) -> None:
+        self._f = f
+        self._rs_type = rs_type
+        self._clients: List[host.Endpoint] = []
+        self._leaders: List[host.Endpoint] = []
+        self._leader_elections: List[host.Endpoint] = []
+        self._leader_heartbeats: List[host.Endpoint] = []
+        self._acceptors: List[host.Endpoint] = []
+        self._acceptor_heartbeats: List[host.Endpoint] = []
+        self._net = mininet.net.Mininet()
 
         switch = self._net.addSwitch('s1')
         self._net.addController('c')
@@ -184,346 +281,252 @@ class SingleSwitchNet(FastMultiPaxosNet):
         for i in range(num_client_procs):
             client = self._net.addHost(f'c{i}')
             self._net.addLink(client, switch)
-            self._clients.append(client)
+            self._clients.append(host.Endpoint(host.MininetHost(client), 10000))
 
         num_leaders = f + 1
         for i in range(num_leaders):
             leader = self._net.addHost(f'l{i}')
             self._net.addLink(leader, switch)
-            self._leaders.append(leader)
+            self._leaders.append(
+                host.Endpoint(host.MininetHost(leader), 11000))
+            self._leader_elections.append(
+                host.Endpoint(host.MininetHost(leader), 11010))
+            self._leader_heartbeats.append(
+                host.Endpoint(host.MininetHost(leader), 11020))
 
         num_acceptors = 2*f + 1
         for i in range(num_acceptors):
             acceptor = self._net.addHost(f'a{i}')
             self._net.addLink(acceptor, switch)
-            self._acceptors.append(acceptor)
+            self._acceptors.append(
+                host.Endpoint(host.MininetHost(acceptor), 12000))
+            self._acceptor_heartbeats.append(
+                host.Endpoint(host.MininetHost(acceptor), 12010))
 
-    def net(self) -> Mininet:
+    def net(self) -> mininet.net.Mininet:
         return self._net
 
-    def clients(self) -> List[mininet.node.Node]:
+    def f(self) -> int:
+        return self._f
+
+    def rs_type(self) -> RoundSystemType:
+        return self._rs_type
+
+    def clients(self) -> List[host.Endpoint]:
         return self._clients
 
-    def leaders(self) -> List[mininet.node.Node]:
+    def leaders(self) -> List[host.Endpoint]:
         return self._leaders
 
-    def acceptors(self) -> List[mininet.node.Node]:
+    def leader_elections(self) -> List[host.Endpoint]:
+        return self._leader_elections
+
+    def leader_heartbeats(self) -> List[host.Endpoint]:
+        return self._leader_heartbeats
+
+    def acceptors(self) -> List[host.Endpoint]:
         return self._acceptors
 
-    def config(self) -> proto_util.Message:
-        return {
-            'f': self.f,
-            'leaderAddress': [
-                {'host': l.IP(), 'port': 9000}
-                for (i, l) in enumerate(self.leaders())
-            ],
-            'leaderElectionAddress': [
-                {'host': l.IP(), 'port': 9001}
-                for (i, l) in enumerate(self.leaders())
-            ],
-            'leaderHeartbeatAddress': [
-                {'host': l.IP(), 'port': 9002}
-                for (i, l) in enumerate(self.leaders())
-            ],
-            'acceptorAddress': [
-                {'host': a.IP(), 'port': 10000}
-                for (i, a) in enumerate(self.acceptors())
-            ],
-            'acceptorHeartbeatAddress': [
-                {'host': a.IP(), 'port': 10001}
-                for (i, a) in enumerate(self.acceptors())
-            ],
-            'roundSystemType': self.rs_type
-        }
+    def acceptor_heartbeats(self) -> List[host.Endpoint]:
+        return self._acceptor_heartbeats
 
 
-def run_benchmark(bench: benchmark.BenchmarkDirectory,
-                  args: argparse.Namespace,
-                  input: Input,
-                  net: FastMultiPaxosNet) -> Output:
-    # Write config file.
-    config_filename = bench.abspath('config.pbtxt')
-    bench.write_string(config_filename,
-                       proto_util.message_to_pbtext(net.config()))
-    bench.log('Config file config.pbtxt written.')
+# Suite ########################################################################
+class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
+    def make_net(self, args: Dict[Any, Any], input: Input) -> FastMultiPaxosNet:
+        if args['address'] is not None:
+            return RemoteFastMultiPaxosNet(
+                        args['address'],
+                        f=input.f,
+                        rs_type=input.round_system_type,
+                        num_client_procs=input.num_client_procs)
+        else:
+            return SingleSwitchMininet(
+                        f=input.f,
+                        rs_type=input.round_system_type,
+                        num_client_procs=input.num_client_procs)
 
-    # Launch acceptors.
-    acceptor_procs = []
-    for (i, host) in enumerate(net.acceptors()):
-        proc = bench.popen(
-            f=host.popen,
-            label=f'acceptor_{i}',
-            cmd = [
-                'java',
-                '-cp', os.path.abspath(args.jar),
-                'frankenpaxos.fastmultipaxos.AcceptorMain',
-                # Basic flags.
-                '--index', str(i),
-                '--config', config_filename,
-                # Monitoring.
-                '--prometheus_host', host.IP(),
-                '--prometheus_port', '12345' if input.monitored else '-1',
-                # Options.
-                '--options.waitPeriod', f'{input.acceptor.wait_period_ms}ms',
-                '--options.waitStagger', f'{input.acceptor.wait_stagger_ms}ms',
-            ],
-            profile=args.profile,
-        )
-        acceptor_procs.append(proc)
-    bench.log('Acceptors started.')
+    def run_benchmark(self,
+                      bench: benchmark.BenchmarkDirectory,
+                      args: Dict[Any, Any],
+                      input: Input) -> Output:
+        with self.make_net(args, input) as net:
+            return self._run_benchmark(bench, args, input, net)
 
-    # Launch leaders.
-    leader_procs = []
-    for (i, host) in enumerate(net.leaders()):
-        proc = bench.popen(
-            f=host.popen,
-            label=f'leader_{i}',
-            cmd = [
-                'java',
-                '-cp', os.path.abspath(args.jar),
-                'frankenpaxos.fastmultipaxos.LeaderMain',
-                # Basic flags.
-                '--index', str(i),
-                '--config', config_filename,
-                '--log_level', input.leader_log_level,
-                # Monitoring.
-                '--prometheus_host', host.IP(),
-                '--prometheus_port', '12345' if input.monitored else '-1',
-                # Options.
-                '--options.thriftySystem',
-                    input.leader.thrifty_system,
-                '--options.resendPhase1asTimerPeriod',
-                    f'{input.leader.resend_phase1as_timer_period_ms}ms',
-                '--options.resendPhase2asTimerPeriod',
-                    f'{input.leader.resend_phase2as_timer_period_ms}ms',
-                '--options.phase2aMaxBufferSize',
-                    f'{input.leader.phase2a_max_buffer_size}',
-                '--options.phase2aBufferFlushPeriod',
-                    f'{input.leader.phase2a_buffer_flush_period_ms}ms',
-                '--options.valueChosenMaxBufferSize',
-                    f'{input.leader.value_chosen_max_buffer_size}',
-                '--options.valueChosenBufferFlushPeriod',
-                    f'{input.leader.value_chosen_buffer_flush_period_ms}ms',
-                '--options.election.pingPeriod',
-                    f'{input.leader.election.ping_period_ms}ms',
-                '--options.election.noPingTimeoutMin',
-                    f'{input.leader.election.no_ping_timeout_min_ms}ms',
-                '--options.election.noPingTimeoutMax',
-                    f'{input.leader.election.no_ping_timeout_max_ms}ms',
-                '--options.election.notEnoughVotesTimeoutMin',
-                    f'{input.leader.election.not_enough_votes_timeout_min_ms}ms',
-                '--options.election.notEnoughVotesTimeoutMax',
-                    f'{input.leader.election.not_enough_votes_timeout_max_ms}ms',
-                '--options.heartbeat.failPeriod',
-                    f'{input.leader.heartbeat.fail_period_ms}ms',
-                '--options.heartbeat.successPeriod',
-                    f'{input.leader.heartbeat.success_period_ms}ms',
-                '--options.heartbeat.numRetries',
-                    str(input.leader.heartbeat.num_retries),
-                '--options.heartbeat.networkDelayAlpha',
-                    str(input.leader.heartbeat.network_delay_alpha),
-            ],
-            profile=args.profile,
-        )
-        leader_procs.append(proc)
-    bench.log('Leaders started.')
+    def _run_benchmark(self,
+                       bench: benchmark.BenchmarkDirectory,
+                       args: Dict[Any, Any],
+                       input: Input,
+                       net: FastMultiPaxosNet) -> Output:
+        # Write config file.
+        config_filename = bench.abspath('config.pbtxt')
+        bench.write_string(config_filename,
+                           proto_util.message_to_pbtext(net.config()))
+        bench.log('Config file config.pbtxt written.')
 
-    # Launch Prometheus.
-    if input.monitored:
-        prometheus_config = prometheus.prometheus_config(
-            input.prometheus_scrape_interval_ms,
-            {
-              'fast_multipaxos_acceptor':
-                [f'{a.IP()}:12345' for a in net.acceptors()],
-              'fast_multipaxos_leader':
-                [f'{l.IP()}:12345' for l in net.leaders()],
-              'fast_multipaxos_client':
-                [f'{c.IP()}:12345' for c in net.clients()],
-            }
-        )
-        bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
-        prometheus_server = bench.popen(
-            f=net.leaders()[0].popen,
-            label='prometheus',
-            cmd = [
-                'prometheus',
-                f'--config.file={bench.abspath("prometheus.yml")}',
-                f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
-            ],
-        )
-        bench.log('Prometheus started.')
+        # Launch acceptors.
+        acceptor_procs = []
+        for (i, acceptor) in enumerate(net.acceptors()):
+            proc = bench.popen(
+                host=acceptor.host,
+                label=f'acceptor_{i}',
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args['jar']),
+                    'frankenpaxos.fastmultipaxos.AcceptorMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                    '--prometheus_host', acceptor.host.ip(),
+                    '--prometheus_port',
+                        str(acceptor.port + 1) if input.monitored else '-1',
+                    '--options.waitPeriod',
+                        f'{input.acceptor.wait_period_ms}ms',
+                    '--options.waitStagger',
+                        f'{input.acceptor.wait_stagger_ms}ms',
+                ],
+            )
+            acceptor_procs.append(proc)
+        bench.log('Acceptors started.')
 
-    # Wait a bit so that a stable leader can elect itself. If we start
-    # clients too soon, they may not talk to a stable leader.
-    time.sleep(input.client_lag_seconds)
-    bench.log('Client lag ended.')
+        # Launch leaders.
+        leader_procs = []
+        for (i, leader) in enumerate(net.leaders()):
+            proc = bench.popen(
+                host=leader.host,
+                label=f'leader_{i}',
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args['jar']),
+                    'frankenpaxos.fastmultipaxos.LeaderMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                    '--log_level', input.leader_log_level,
+                    '--prometheus_host', leader.host.ip(),
+                    '--prometheus_port',
+                        str(leader.port + 1) if input.monitored else '-1',
+                    '--options.thriftySystem',
+                        input.leader.thrifty_system,
+                    '--options.resendPhase1asTimerPeriod',
+                        f'{input.leader.resend_phase1as_timer_period_ms}ms',
+                    '--options.resendPhase2asTimerPeriod',
+                        f'{input.leader.resend_phase2as_timer_period_ms}ms',
+                    '--options.phase2aMaxBufferSize',
+                        f'{input.leader.phase2a_max_buffer_size}',
+                    '--options.phase2aBufferFlushPeriod',
+                        f'{input.leader.phase2a_buffer_flush_period_ms}ms',
+                    '--options.valueChosenMaxBufferSize',
+                        f'{input.leader.value_chosen_max_buffer_size}',
+                    '--options.valueChosenBufferFlushPeriod',
+                        f'{input.leader.value_chosen_buffer_flush_period_ms}ms',
+                    '--options.election.pingPeriod',
+                        f'{input.leader.election.ping_period_ms}ms',
+                    '--options.election.noPingTimeoutMin',
+                        f'{input.leader.election.no_ping_timeout_min_ms}ms',
+                    '--options.election.noPingTimeoutMax',
+                        f'{input.leader.election.no_ping_timeout_max_ms}ms',
+                    '--options.election.notEnoughVotesTimeoutMin',
+                        f'{input.leader.election.not_enough_votes_timeout_min_ms}ms',
+                    '--options.election.notEnoughVotesTimeoutMax',
+                        f'{input.leader.election.not_enough_votes_timeout_max_ms}ms',
+                    '--options.heartbeat.failPeriod',
+                        f'{input.leader.heartbeat.fail_period_ms}ms',
+                    '--options.heartbeat.successPeriod',
+                        f'{input.leader.heartbeat.success_period_ms}ms',
+                    '--options.heartbeat.numRetries',
+                        str(input.leader.heartbeat.num_retries),
+                    '--options.heartbeat.networkDelayAlpha',
+                        str(input.leader.heartbeat.network_delay_alpha),
+                ],
+            )
+            leader_procs.append(proc)
+        bench.log('Leaders started.')
 
-    # Launch clients.
-    client_procs = []
-    for (i, host) in enumerate(net.clients()):
-        proc = bench.popen(
-            f=host.popen,
-            label=f'client_{i}',
-            cmd = [
-                'timeout', f'{input.timeout_seconds}s',
-                'java',
-                '-cp', os.path.abspath(args.jar),
-                'frankenpaxos.fastmultipaxos.BenchmarkClientMain',
-                '--host', host.IP(),
-                '--port', "11000",
-                '--prometheus_host', host.IP(),
-                '--prometheus_port', '12345' if input.monitored else '-1',
-                '--config', config_filename,
-                '--options.reproposePeriod',
-                    f'{input.client.repropose_period_ms}ms',
-                '--duration',
-                    f'{input.duration_seconds}s',
-                '--timeout',
-                    f'{input.timeout_seconds}s',
-                '--num_clients',
-                    f'{input.num_clients_per_proc}',
-                '--command_size_bytes_mean',
-                    f'{input.command_size_bytes_mean}',
-                '--command_size_bytes_stddev',
-                    f'{input.command_size_bytes_stddev}',
-                '--sleep_time_nanos_mean',
-                    f'{input.command_sleep_time_nanos_mean}',
-                '--sleep_time_nanos_stddev',
-                    f'{input.command_sleep_time_nanos_stddev}',
-                '--output_file_prefix',
-                    bench.abspath(f'client_{i}'),
-            ]
-        )
-        client_procs.append(proc)
-    bench.log('Clients started.')
+        # Launch Prometheus.
+        if input.monitored:
+            prometheus_config = prometheus.prometheus_config(
+                input.prometheus_scrape_interval_ms,
+                {
+                  'fast_multipaxos_acceptor':
+                    [f'{e.host.ip()}:{e.port + 1}' for e in net.acceptors()],
+                  'fast_multipaxos_leader':
+                    [f'{e.host.ip()}:{e.port + 1}' for e in net.leaders()],
+                  'fast_multipaxos_client':
+                    [f'{e.host.ip()}:{e.port + 1}' for e in net.clients()],
+                }
+            )
+            bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
+            prometheus_server = bench.popen(
+                host=net.leaders()[0].host,
+                label='prometheus',
+                cmd = [
+                    'prometheus',
+                    f'--config.file={bench.abspath("prometheus.yml")}',
+                    f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
+                ],
+            )
+            bench.log('Prometheus started.')
 
-    # Wait for clients to finish and then terminate everything.
-    for proc in client_procs:
-        proc.wait()
-    for proc in leader_procs + acceptor_procs:
-        proc.terminate()
-    if input.monitored:
-        prometheus_server.terminate()
-    bench.log('Clients finished and processes terminated.')
+        # Wait a bit so that a stable leader can elect itself. If we start
+        # clients too soon, they may not talk to a stable leader.
+        time.sleep(input.client_lag_seconds)
+        bench.log('Client lag ended.')
 
-    # Client i writes results to `client_i_data.csv`. We concatenate these
-    # results into a single CSV file.
-    client_csvs = [bench.abspath(f'client_{i}_data.csv')
-                   for i in range(input.num_client_procs)]
-    df = pd_util.read_csvs(client_csvs, parse_dates=['start', 'stop'])
-    bench.log('Data read.')
-    df = df.set_index('start')
-    bench.log('Data index set.')
-    df = df.sort_index(0)
-    bench.log('Data index sorted.')
-    df.to_csv(bench.abspath('data.csv'))
-    bench.log('Data written.')
+        # Launch clients.
+        client_procs = []
+        for (i, client) in enumerate(net.clients()):
+            proc = bench.popen(
+                host=client.host,
+                label=f'client_{i}',
+                cmd = [
+                    'timeout', f'{input.timeout_seconds}s',
+                    'java',
+                    '-cp', os.path.abspath(args['jar']),
+                    'frankenpaxos.fastmultipaxos.BenchmarkClientMain',
+                    '--host', client.host.ip(),
+                    '--port', str(client.port),
+                    '--prometheus_host', client.host.ip(),
+                    '--prometheus_port',
+                        str(client.port + 1) if input.monitored else '-1',
+                    '--config', config_filename,
+                    '--options.reproposePeriod',
+                        f'{input.client.repropose_period_ms}ms',
+                    '--duration',
+                        f'{input.duration_seconds}s',
+                    '--timeout',
+                        f'{input.timeout_seconds}s',
+                    '--num_clients',
+                        f'{input.num_clients_per_proc}',
+                    '--command_size_bytes_mean',
+                        f'{input.command_size_bytes_mean}',
+                    '--command_size_bytes_stddev',
+                        f'{input.command_size_bytes_stddev}',
+                    '--sleep_time_nanos_mean',
+                        f'{input.command_sleep_time_nanos_mean}',
+                    '--sleep_time_nanos_stddev',
+                        f'{input.command_sleep_time_nanos_stddev}',
+                    '--output_file_prefix',
+                        bench.abspath(f'client_{i}'),
+                ]
+            )
+            client_procs.append(proc)
+        bench.log('Clients started.')
 
-    # Since we concatenate and save the file, we can throw away the originals.
-    for client_csv in client_csvs:
-        os.remove(client_csv)
+        # Wait for clients to finish and then terminate everything.
+        for proc in client_procs:
+            proc.wait()
+        for proc in leader_procs + acceptor_procs:
+            proc.kill()
+        if input.monitored:
+            prometheus_server.kill()
+        bench.log('Clients finished and processes terminated.')
 
-    # We also compress the output data since it can get big.
-    subprocess.call(['gzip', bench.abspath('data.csv')])
-    bench.log('Data compressed.')
-
-    latency_ms = df['latency_nanos'] / 1e6
-    throughput_1s = pd_util.throughput(df, 1000)
-    throughput_2s = pd_util.throughput(df, 2000)
-    throughput_5s = pd_util.throughput(df, 5000)
-    return Output(
-        mean_latency_ms = latency_ms.mean(),
-        median_latency_ms = latency_ms.median(),
-        p90_latency_ms = latency_ms.quantile(.90),
-        p95_latency_ms = latency_ms.quantile(.95),
-        p99_latency_ms = latency_ms.quantile(.99),
-
-        mean_1_second_throughput = throughput_1s.mean(),
-        median_1_second_throughput = throughput_1s.median(),
-        p90_1_second_throughput = throughput_1s.quantile(.90),
-        p95_1_second_throughput = throughput_1s.quantile(.95),
-        p99_1_second_throughput = throughput_1s.quantile(.99),
-
-        mean_2_second_throughput = throughput_2s.mean(),
-        median_2_second_throughput = throughput_2s.median(),
-        p90_2_second_throughput = throughput_2s.quantile(.90),
-        p95_2_second_throughput = throughput_2s.quantile(.95),
-        p99_2_second_throughput = throughput_2s.quantile(.99),
-
-        mean_5_second_throughput = throughput_5s.mean(),
-        median_5_second_throughput = throughput_5s.median(),
-        p90_5_second_throughput = throughput_5s.quantile(.90),
-        p95_5_second_throughput = throughput_5s.quantile(.95),
-        p99_5_second_throughput = throughput_5s.quantile(.99),
-    )
-
-
-def run_suite(args: argparse.Namespace,
-              inputs: List[Input],
-              make_net: Callable[[Input], FastMultiPaxosNet],
-              name: str = None) -> None:
-    assert len(inputs) > 0, inputs
-
-
-    suite_name = 'fast_multipaxos' + (f'_{name}' if name else '')
-    with benchmark.SuiteDirectory(args.suite_directory, suite_name) as suite:
-        print(f'Running benchmark suite in {suite.path}.')
-        suite.write_dict('args.json', vars(args))
-        suite.write_string('inputs.txt', '\n'.join(str(i) for i in inputs))
-
-        results_file = suite.create_file('results.csv')
-        results_writer = csv.writer(results_file)
-        results_writer.writerow(util.flatten_tuple_fields(inputs[0]) +
-                                list(Output._fields))
-        results_file.flush()
-
-        for input in tqdm.tqdm(inputs):
-            with suite.benchmark_directory() as bench:
-                with make_net(input) as net:
-                    bench.write_string('input.txt', str(input))
-                    bench.write_dict('input.json', util.tuple_to_dict(input))
-                    output = run_benchmark(bench, args, input, net)
-                    row = util.flatten_tuple(input) + list(output)
-                    results_writer.writerow([str(x) for x in row])
-                    results_file.flush()
-
-
-def _main(args) -> None:
-    inputs = [
-        Input(
-            net_name='SingleSwitchNet',
-            f=1,
-            num_client_procs=num_client_procs,
-            num_clients_per_proc=1,
-            round_system_type=RoundSystemType.CLASSIC_ROUND_ROBIN.name,
-
-            duration_seconds = 20,
-            timeout_seconds = 60,
-            client_lag_seconds = 5,
-            command_size_bytes_mean = 0,
-            command_size_bytes_stddev = 0,
-            command_sleep_time_nanos_mean = 0,
-            command_sleep_time_nanos_stddev = 0,
-            profiled = args.profile,
-            monitored = args.monitor,
-            prometheus_scrape_interval_ms = 200,
-        )
-        for num_client_procs in [1, 2]
-    ] * 2
-
-    def make_net(input) -> FastMultiPaxosNet:
-        return SingleSwitchNet(
-            f=input.f,
-            num_client_procs=input.num_client_procs,
-            rs_type = RoundSystemType[input.round_system_type]
-        )
-
-    run_suite(args, inputs, make_net)
+        # Client i writes results to `client_i_data.csv`.
+        client_csvs = [bench.abspath(f'client_{i}_data.csv')
+                       for i in range(input.num_client_procs)]
+        # TODO(mwhittaker): Implement.
+        return benchmark.parse_recorder_data(bench, client_csvs,
+                drop_prefix=datetime.timedelta(seconds=0))
 
 
 def get_parser() -> argparse.ArgumentParser:
     return parser_util.get_benchmark_parser()
-
-
-if __name__ == '__main__':
-    _main(get_parser().parse_args())

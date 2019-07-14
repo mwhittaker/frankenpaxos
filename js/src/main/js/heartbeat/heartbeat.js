@@ -1,21 +1,28 @@
-// Returns numbers drawn from an exponential distribution with mean `mean`.
-let exponential = function(mean) {
-  return -Math.log(Math.random() + Number.EPSILON) * mean
-}
-
 let participant_info = {
   props: ['node'],
 
   template: `
     <div>
-      numRetries =
-      <frankenpaxos-map :map="node.actor.numRetries"></frankenpaxos-map>
+      <div>
+        addresses =
+        <frankenpaxos-seq :seq="node.actor.addresses"></frankenpaxos-seq>
+      </div>
 
-      networkDelayNanos =
-      <frankenpaxos-map :map="node.actor.networkDelayNanos"></frankenpaxos-map>
+      <div>
+        numRetries =
+        <frankenpaxos-seq :seq="node.actor.numRetries"></frankenpaxos-seq>
+      </div>
 
-      alive =
-      <frankenpaxos-set :set="node.actor.alive"></frankenpaxos-set>
+      <div>
+        networkDelayNanos =
+        <frankenpaxos-map :map="node.actor.networkDelayNanos">
+        </frankenpaxos-map>
+      </div>
+
+      <div>
+        alive =
+        <frankenpaxos-set :set="node.actor.alive"></frankenpaxos-set>
+      </div>
     </div>
   `,
 };
@@ -122,6 +129,12 @@ function main() {
     },
 
     methods: {
+      distance: function(x1, y1, x2, y2) {
+        const dx = x1 - x2;
+        const dy = y1 - y2;
+        return Math.sqrt(dx*dx + dy*dy);
+      },
+
       send_message: function(message) {
         let from_bytes = serializer.fromBytes(message.bytes);
         let string_message = serializer.toPrettyString(from_bytes);
@@ -132,10 +145,13 @@ function main() {
         let src_y = src.svgs[0].attr("cy");
         let dst_x = dst.svgs[0].attr("cx");
         let dst_y = dst.svgs[0].attr("cy");
+        let d = this.distance(src_x, src_y, dst_x, dst_y);
+        let speed = 100 + (Math.random() * 50); // px per second.
 
-        let svg_message = snap.circle(src_x, src_y, 7).attr({fill: color});
+        let svg_message = snap.circle(src_x, src_y, 9).attr({fill: color});
         snap.prepend(svg_message);
-        return TweenMax.to(svg_message.node, (300 + exponential(200)) / 1000, {
+        let duration = d / speed;
+        return TweenMax.to(svg_message.node, duration, {
           attr: { cx: dst_x, cy: dst_y },
           ease: Linear.easeNone,
           onComplete: () => { svg_message.remove(); },
