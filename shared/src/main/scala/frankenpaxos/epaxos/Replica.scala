@@ -37,6 +37,18 @@ case class ReplicaOptions(
     resendPreparesTimerPeriod: java.time.Duration,
     recoverInstanceTimerMinPeriod: java.time.Duration,
     recoverInstanceTimerMaxPeriod: java.time.Duration,
+    // If `unsafeSkipGraphExecution` is true, replicas skip graph execution
+    // entirely. Instead, they execute commands as soon as they are committed.
+    //
+    // As the name suggests, this is not safe. It completely breaks the
+    // protocol. This flag should only be used to debug performance issues. For
+    // example, disabling graph execution makes it easier to see if graph
+    // execution is a bottleneck.
+    //
+    // Note that if unsafeSkipGraphExecution is true, then
+    // executeGraphBatchSize and executeGraphTimerPeriod are completely
+    // ignored.
+    unsafeSkipGraphExecution: Boolean,
     // When a replica receives a committed command, it adds it to its
     // dependency graph. When executeGraphBatchSize commands have been
     // committed, the replica attempts to execute as many commands in the graph
@@ -56,6 +68,7 @@ object ReplicaOptions {
     resendPreparesTimerPeriod = java.time.Duration.ofSeconds(1),
     recoverInstanceTimerMinPeriod = java.time.Duration.ofMillis(500),
     recoverInstanceTimerMaxPeriod = java.time.Duration.ofMillis(1500),
+    unsafeSkipGraphExecution = false,
     executeGraphBatchSize = 1,
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1)
   )
@@ -397,19 +410,27 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var numPendingCommittedCommands: Int = 0
 
-  // A timer to execute the dependency graph.
+  // A timer to execute the dependency graph. If the batch size is 1 or if
+  // graph execution is disabled, then there is no need for the timer.
   @JSExport
-  protected val executeGraphTimer: Transport#Timer = timer(
-    "executeGraphTimer",
-    options.executeGraphTimerPeriod,
-    () => {
-      metrics.executeGraphTimerTotal.inc()
-      execute()
-      numPendingCommittedCommands = 0
-      executeGraphTimer.start()
+  protected val executeGraphTimer: Option[Transport#Timer] =
+    if (options.executeGraphBatchSize == 1 ||
+        options.unsafeSkipGraphExecution) {
+      None
+    } else {
+      lazy val t: Transport#Timer = timer(
+        "executeGraphTimer",
+        options.executeGraphTimerPeriod,
+        () => {
+          metrics.executeGraphTimerTotal.inc()
+          execute()
+          numPendingCommittedCommands = 0
+          t.start()
+        }
+      )
+      t.start()
+      Some(t)
     }
-  )
-  executeGraphTimer.start()
 
   // The client table records the response to the latest request from each
   // client. For example, if command c1 sends command x with id 2 to a leader
@@ -730,14 +751,21 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       recoverInstanceTimers(i) = makeRecoverInstanceTimer(i)
     }
 
-    // Commit the command and execute the graph if we have sufficiently many
-    // commands pending execution.
-    dependencyGraph.commit(instance, triple.sequenceNumber, triple.dependencies)
-    numPendingCommittedCommands += 1
-    if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
-      execute()
-      numPendingCommittedCommands = 0
-      executeGraphTimer.reset()
+    // If we're skipping the graph, execute the command right away. Otherwise,
+    // commit the command to the dependency graph and execute the graph if we
+    // have sufficiently many commands pending execution.
+    if (options.unsafeSkipGraphExecution) {
+      executeCommand(instance, triple.commandOrNoop)
+    } else {
+      dependencyGraph.commit(instance,
+                             triple.sequenceNumber,
+                             triple.dependencies)
+      numPendingCommittedCommands += 1
+      if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
+        execute()
+        numPendingCommittedCommands = 0
+        executeGraphTimer.foreach(_.reset())
+      }
     }
   }
 
@@ -747,7 +775,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
     for (i <- executable) {
-      import CommandOrNoop.Value
       cmdLog.get(i) match {
         case None | Some(_: NoCommandEntry) | Some(_: PreAcceptedEntry) |
             Some(_: AcceptedEntry) =>
@@ -756,52 +783,59 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               s"doesn't have a CommittedEntry for it."
           )
 
-        case Some(CommittedEntry(triple)) => {
-          triple.commandOrNoop.value match {
-            case Value.Empty =>
-              logger.fatal("Empty CommandOrNoop.")
-
-            case Value.Noop(Noop()) =>
-              // Noop.
-              metrics.executedNoopsTotal.inc()
-
-            case Value.Command(
-                Command(clientAddressBytes, clientPseudonym, clientId, command)
-                ) =>
-              val clientAddress = transport.addressSerializer.fromBytes(
-                clientAddressBytes.toByteArray
-              )
-              val clientIdentity = (clientAddress, clientPseudonym)
-              clientTable.executed(clientIdentity, clientId) match {
-                case ClientTable.Executed(_) =>
-                  // Don't execute the same command twice.
-                  metrics.repeatedCommandsTotal.inc()
-
-                case ClientTable.NotExecuted =>
-                  val output = stateMachine.run(command.toByteArray)
-                  clientTable.execute(clientIdentity, clientId, output)
-                  metrics.executedCommandsTotal.inc()
-
-                  // The leader of the command instance returns the response to
-                  // the client. If the leader is dead, then the client will
-                  // eventually re-send its request and some other replica will
-                  // reply, either from its client log or by getting the
-                  // command chosen in a new instance.
-                  if (index == i.replicaIndex) {
-                    val client =
-                      chan[Client[Transport]](clientAddress, Client.serializer)
-                    client.send(
-                      ClientInbound().withClientReply(
-                        ClientReply(clientPseudonym = clientPseudonym,
-                                    clientId = clientId,
-                                    result = ByteString.copyFrom(output))
-                      )
-                    )
-                  }
-              }
-          }
-        }
+        case Some(CommittedEntry(triple)) =>
+          executeCommand(i, triple.commandOrNoop)
       }
+    }
+  }
+
+  private def executeCommand(
+      instance: Instance,
+      commandOrNoop: CommandOrNoop
+  ): Unit = {
+    import CommandOrNoop.Value
+
+    commandOrNoop.value match {
+      case Value.Empty =>
+        logger.fatal("Empty CommandOrNoop.")
+
+      case Value.Noop(Noop()) =>
+        metrics.executedNoopsTotal.inc()
+
+      case Value.Command(
+          Command(clientAddressBytes, clientPseudonym, clientId, command)
+          ) =>
+        val clientAddress = transport.addressSerializer.fromBytes(
+          clientAddressBytes.toByteArray
+        )
+        val clientIdentity = (clientAddress, clientPseudonym)
+        clientTable.executed(clientIdentity, clientId) match {
+          case ClientTable.Executed(_) =>
+            // Don't execute the same command twice.
+            metrics.repeatedCommandsTotal.inc()
+
+          case ClientTable.NotExecuted =>
+            val output = stateMachine.run(command.toByteArray)
+            clientTable.execute(clientIdentity, clientId, output)
+            metrics.executedCommandsTotal.inc()
+
+            // The leader of the command instance returns the response to
+            // the client. If the leader is dead, then the client will
+            // eventually re-send its request and some other replica will
+            // reply, either from its client log or by getting the
+            // command chosen in a new instance.
+            if (index == instance.replicaIndex) {
+              val client =
+                chan[Client[Transport]](clientAddress, Client.serializer)
+              client.send(
+                ClientInbound().withClientReply(
+                  ClientReply(clientPseudonym = clientPseudonym,
+                              clientId = clientId,
+                              result = ByteString.copyFrom(output))
+                )
+              )
+            }
+        }
     }
   }
 

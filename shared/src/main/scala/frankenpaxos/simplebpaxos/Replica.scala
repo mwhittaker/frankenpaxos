@@ -37,12 +37,8 @@ case class ReplicaOptions(
     // recoverVertexTimerMaxPeriod.
     recoverVertexTimerMinPeriod: java.time.Duration,
     recoverVertexTimerMaxPeriod: java.time.Duration,
-    // When a replica receives a committed command, it adds it to its
-    // dependency graph. When executeGraphBatchSize commands have been
-    // committed, the replica attempts to execute as many commands in the graph
-    // as possible. If executeGraphBatchSize commands have not been committed
-    // within executeGraphTimerPeriod since the last time the graph was
-    // executed, the graph is executed.
+    // See frankenpaxos.epaxos.Replica for information on the following options.
+    unsafeSkipGraphExecution: Boolean,
     executeGraphBatchSize: Int,
     executeGraphTimerPeriod: java.time.Duration
 )
@@ -52,6 +48,7 @@ object ReplicaOptions {
   val default = ReplicaOptions(
     recoverVertexTimerMinPeriod = java.time.Duration.ofMillis(500),
     recoverVertexTimerMaxPeriod = java.time.Duration.ofMillis(1500),
+    unsafeSkipGraphExecution = false,
     executeGraphBatchSize = 1,
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1)
   )
@@ -188,21 +185,29 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val recoverVertexTimers = mutable.Map[VertexId, Transport#Timer]()
 
-  // A timer to execute the dependency graph.
+  // A timer to execute the dependency graph. If the batch size is 1 or if
+  // graph execution is disabled, then there is no need for the timer.
   @JSExport
-  protected val executeGraphTimer: Transport#Timer = timer(
-    "executeGraphTimer",
-    options.executeGraphTimerPeriod,
-    () => {
-      metrics.executeGraphTimerTotal.inc()
-      execute()
-      numPendingCommittedCommands = 0
-      executeGraphTimer.start()
+  protected val executeGraphTimer: Option[Transport#Timer] =
+    if (options.executeGraphBatchSize == 1 ||
+        options.unsafeSkipGraphExecution) {
+      None
+    } else {
+      lazy val t: Transport#Timer = timer(
+        "executeGraphTimer",
+        options.executeGraphTimerPeriod,
+        () => {
+          metrics.executeGraphTimerTotal.inc()
+          execute()
+          numPendingCommittedCommands = 0
+          t.start()
+        }
+      )
+      t.start()
+      Some(t)
     }
-  )
-  executeGraphTimer.start()
 
-  // Timers ////////////////////////////////////////////////////////////////////
+  // Helpers ///////////////////////////////////////////////////////////////////
   private def execute(): Unit = {
     val executable: Seq[VertexId] = dependencyGraph.execute()
     metrics.executeGraphTotal.inc()
@@ -217,26 +222,56 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               s"a Committed entry for it."
           )
 
-        case Some(Committed(CommandOrNoop(Value.Empty), _)) =>
-          logger.fatal("Empty CommandOrNoop.")
+        case Some(committed: Committed) =>
+          executeCommand(v, committed.commandOrNoop)
+      }
+    }
+  }
 
-        case Some(Committed(CommandOrNoop(Value.Noop(Noop())), _)) =>
-          metrics.executedNoopsTotal.inc()
+  private def executeCommand(
+      vertexId: VertexId,
+      commandOrNoop: CommandOrNoop
+  ): Unit = {
+    import CommandOrNoop.Value
 
-        case Some(Committed(CommandOrNoop(Value.Command(command)), _)) =>
-          val clientAddress = transport.addressSerializer.fromBytes(
-            command.clientAddress.toByteArray
-          )
-          val clientIdentity = (clientAddress, command.clientPseudonym)
-          clientTable.executed(clientIdentity, command.clientId) match {
-            case ClientTable.Executed(None) =>
-              // Don't execute the same command twice.
-              metrics.repeatedCommandsTotal.inc()
+    commandOrNoop.value match {
+      case Value.Empty =>
+        logger.fatal("Empty CommandOrNoop.")
 
-            case ClientTable.Executed(Some(output)) =>
-              // Don't execute the same command twice. Also, replay the output
-              // to the client.
-              metrics.repeatedCommandsTotal.inc()
+      case Value.Noop(Noop()) =>
+        metrics.executedNoopsTotal.inc()
+
+      case Value.Command(command) =>
+        val clientAddress = transport.addressSerializer.fromBytes(
+          command.clientAddress.toByteArray
+        )
+        val clientIdentity = (clientAddress, command.clientPseudonym)
+        clientTable.executed(clientIdentity, command.clientId) match {
+          case ClientTable.Executed(None) =>
+            // Don't execute the same command twice.
+            metrics.repeatedCommandsTotal.inc()
+
+          case ClientTable.Executed(Some(output)) =>
+            // Don't execute the same command twice. Also, replay the output
+            // to the client.
+            metrics.repeatedCommandsTotal.inc()
+            val client =
+              chan[Client[Transport]](clientAddress, Client.serializer)
+            client.send(
+              ClientInbound().withClientReply(
+                ClientReply(clientPseudonym = command.clientPseudonym,
+                            clientId = command.clientId,
+                            result = ByteString.copyFrom(output))
+              )
+            )
+
+          case ClientTable.NotExecuted =>
+            val output = stateMachine.run(command.command.toByteArray)
+            clientTable.execute(clientIdentity, command.clientId, output)
+            metrics.executedCommandsTotal.inc()
+
+            // TODO(mwhittaker): Think harder about if this is live.
+            if (index == vertexId.leaderIndex % config.replicaAddresses.size) {
               val client =
                 chan[Client[Transport]](clientAddress, Client.serializer)
               client.send(
@@ -246,26 +281,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                               result = ByteString.copyFrom(output))
                 )
               )
-
-            case ClientTable.NotExecuted =>
-              val output = stateMachine.run(command.command.toByteArray)
-              clientTable.execute(clientIdentity, command.clientId, output)
-              metrics.executedCommandsTotal.inc()
-
-              // TODO(mwhittaker): Think harder about if this is live.
-              if (index == v.leaderIndex % config.replicaAddresses.size) {
-                val client =
-                  chan[Client[Transport]](clientAddress, Client.serializer)
-                client.send(
-                  ClientInbound().withClientReply(
-                    ClientReply(clientPseudonym = command.clientPseudonym,
-                                clientId = command.clientId,
-                                result = ByteString.copyFrom(output))
-                  )
-                )
-              }
-          }
-      }
+            }
+        }
     }
   }
 
@@ -352,14 +369,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       recoverVertexTimers(v) = makeRecoverVertexTimer(v)
     }
 
-    // Commit the command and execute the graph if we have sufficiently many
-    // commands pending execution.
-    dependencyGraph.commit(commit.vertexId, (), dependencies)
-    numPendingCommittedCommands += 1
-    if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
-      execute()
-      numPendingCommittedCommands = 0
-      executeGraphTimer.reset()
+    // If we're skipping the graph, execute the command right away. Otherwise,
+    // commit the command to the dependency graph and execute the graph if we
+    // have sufficiently many commands pending execution.
+    if (options.unsafeSkipGraphExecution) {
+      executeCommand(commit.vertexId, commit.commandOrNoop)
+    } else {
+      dependencyGraph.commit(commit.vertexId, (), dependencies)
+      numPendingCommittedCommands += 1
+      if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
+        execute()
+        numPendingCommittedCommands = 0
+        executeGraphTimer.foreach(_.reset())
+      }
     }
   }
 }
