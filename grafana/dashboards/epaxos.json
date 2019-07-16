@@ -70,8 +70,15 @@
           "expr": "sum(rate(epaxos_replica_requests_total[1s])) by (instance)",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Sum ({{instance}})",
+          "legendFormat": "Total inbound ({{instance}})",
           "refId": "B"
+        },
+        {
+          "expr": "sum(rate(epaxos_replica_requests_total{type=\"ClientRequest\"}[1s])) ",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Client Requests",
+          "refId": "C"
         }
       ],
       "thresholds": [],
@@ -153,6 +160,27 @@
       "steppedLine": false,
       "targets": [
         {
+          "expr": "sum(rate(epaxos_client_requests_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Requests",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(epaxos_client_responses_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Responses",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(epaxos_client_unpending_responses_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Unpending Reponse",
+          "refId": "D"
+        },
+        {
           "expr": "rate(epaxos_client_responses_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
@@ -160,25 +188,11 @@
           "refId": "A"
         },
         {
-          "expr": "sum(rate(epaxos_client_responses_total[1s]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Reponse Sum",
-          "refId": "B"
-        },
-        {
           "expr": "rate(fast_multipaxos_client_unpending_responses_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Unpending Response {{instance}}",
           "refId": "C"
-        },
-        {
-          "expr": "sum(rate(epaxos_client_unpending_responses_total[1s]))",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "Unpending Reponse Sum",
-          "refId": "D"
         }
       ],
       "thresholds": [],
@@ -649,8 +663,15 @@
           "expr": "rate(epaxos_replica_dependencies_sum[1s]) / rate(epaxos_replica_dependencies_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Average number of dependencies {{instance}}",
+          "legendFormat": "Average number of dependencies ({{instance}})",
           "refId": "A"
+        },
+        {
+          "expr": "rate(epaxos_replica_dependency_graph_num_vertices[1s]) ",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Num vertices ({{instance}})",
+          "refId": "B"
         }
       ],
       "thresholds": [],
@@ -703,8 +724,8 @@
     "list": []
   },
   "time": {
-    "from": "2019-06-17T14:57:58.543Z",
-    "to": "2019-06-17T14:58:26.275Z"
+    "from": "2019-07-16T21:36:41.351Z",
+    "to": "2019-07-16T21:37:12.538Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -734,5 +755,5 @@
   "timezone": "",
   "title": "EPaxos",
   "uid": "vC5R8YnZz",
-  "version": 2
+  "version": 3
 }
