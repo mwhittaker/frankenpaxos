@@ -19,6 +19,7 @@ import yaml
 
 # Input/Output #################################################################
 class ReplicaOptions(NamedTuple):
+    thrifty_system: str = 'NotThrifty'
     resend_pre_accepts_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
     default_to_slow_path_timer_period: datetime.timedelta = \
@@ -262,6 +263,8 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', replica.host.ip(),
                     '--prometheus_port',
                         str(replica.port + 1) if input.monitored else '-1',
+                    '--options.thriftySystem',
+                        input.replica_options.thrifty_system,
                     '--options.resendPreAcceptsTimerPeriod', '{}ms'.format(
                         input.replica_options
                              .resend_pre_accepts_timer_period

@@ -24,6 +24,7 @@ def main(args) -> None:
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     replica_options = ReplicaOptions(
+                        thrifty_system = 'Random',
                         resend_pre_accepts_timer_period = \
                             datetime.timedelta(seconds=60),
                         default_to_slow_path_timer_period = \

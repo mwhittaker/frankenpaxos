@@ -7,11 +7,11 @@ import frankenpaxos.LogLevel
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
+import frankenpaxos.PrometheusUtil
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.TarjanDependencyGraph
 import frankenpaxos.statemachine.KeyValueStore
-import io.prometheus.client.exporter.HTTPServer
-import io.prometheus.client.hotspot.DefaultExports
+import frankenpaxos.thrifty.ThriftySystem
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -60,6 +60,8 @@ object ReplicaMain extends App {
       .text(s"-1 to disable")
 
     // Options.
+    opt[ThriftySystem]("options.thriftySystem")
+      .optionAction((x, o) => o.copy(thriftySystem = x))
     opt[java.time.Duration]("options.resendPreAcceptsTimerPeriod")
       .optionAction((x, o) => o.copy(resendPreAcceptsTimerPeriod = x))
     opt[java.time.Duration]("options.defaultToSlowPathTimerPeriod")
@@ -102,9 +104,5 @@ object ReplicaMain extends App {
   )
 
   // Start Prometheus.
-  if (flags.prometheusPort != -1) {
-    DefaultExports.initialize()
-    val prometheusServer =
-      new HTTPServer(flags.prometheusHost, flags.prometheusPort)
-  }
+  PrometheusUtil.server(flags.prometheusHost, flags.prometheusPort)
 }
