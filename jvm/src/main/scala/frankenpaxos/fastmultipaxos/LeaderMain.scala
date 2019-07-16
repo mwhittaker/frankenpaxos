@@ -10,6 +10,7 @@ import frankenpaxos.election.LeaderElectionOptions
 import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.statemachine
 import frankenpaxos.statemachine.Sleeper
+import frankenpaxos.thrifty.ThriftySystem
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
 import java.io.File

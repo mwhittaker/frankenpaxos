@@ -18,6 +18,7 @@ import frankenpaxos.roundsystem.ClassicRound
 import frankenpaxos.roundsystem.FastRound
 import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.statemachine.StateMachine
+import frankenpaxos.thrifty.ThriftySystem
 import scala.collection.breakOut
 import scala.scalajs.js.annotation._
 

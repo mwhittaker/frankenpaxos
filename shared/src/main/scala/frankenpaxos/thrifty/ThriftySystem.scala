@@ -1,4 +1,4 @@
-package frankenpaxos.fastmultipaxos
+package frankenpaxos.thrifty
 
 // In Paxos (and in pretty much every Paxos variant), there comes a time when a
 // node has to send a message to a set of nodes and wait for a certain number

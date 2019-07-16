@@ -9,6 +9,7 @@ import frankenpaxos.simulator.FakeTransportMessage
 import frankenpaxos.simulator.FakeTransportTimer
 import frankenpaxos.simulator.SimulatedSystem
 import frankenpaxos.statemachine.AppendLog
+import frankenpaxos.thrifty.ThriftySystem
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -103,7 +104,8 @@ class SimulatedFastMultiPaxos(
 
   var valueChosen: Boolean = false
 
-  override def newSystem(seed: Long): System = new FastMultiPaxos(f, roundSystem)
+  override def newSystem(seed: Long): System =
+    new FastMultiPaxos(f, roundSystem)
 
   override def getState(fastMultiPaxos: System): State = {
     // Merge two States together, taking a pairwise union.
