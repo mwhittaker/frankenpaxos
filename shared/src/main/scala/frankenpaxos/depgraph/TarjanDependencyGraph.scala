@@ -108,10 +108,10 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
       Vertex(key, sequenceNumber, dependencies.filter(!executed.contains(_)))
   }
 
-  override def execute(): Seq[Key] = {
+  override def executeByComponent(): Seq[Seq[Key]] = {
     val metadatas = mutable.Map[Key, VertexMetadata]()
     val stack = mutable.Buffer[Key]()
-    val executables = mutable.Buffer[Key]()
+    val executables = mutable.Buffer[Seq[Key]]()
 
     for ((key, vertex) <- vertices) {
       if (!metadatas.contains(key)) {
@@ -120,8 +120,13 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
     }
 
     // Remove the executed commands.
-    vertices --= executables
-    executed ++= executables
+    for {
+      component <- executables
+      key <- component
+    } {
+      vertices -= key
+      executed += key
+    }
 
     executables.toSeq
   }
@@ -129,7 +134,7 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
   def strongConnect(
       metadatas: mutable.Map[Key, VertexMetadata],
       stack: mutable.Buffer[Key],
-      executables: mutable.Buffer[Key],
+      executables: mutable.Buffer[Seq[Key]],
       v: Key
   ): Unit = {
     val number = metadatas.size
@@ -195,7 +200,7 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
       component.foreach(k => metadatas(k) = metadatas(k).copy(eligible = false))
     } else {
       // Sort the component and append to executables.
-      executables ++= component.sortBy(k => (vertices(k).sequenceNumber, k))
+      executables += component.sortBy(k => (vertices(k).sequenceNumber, k))
     }
   }
 

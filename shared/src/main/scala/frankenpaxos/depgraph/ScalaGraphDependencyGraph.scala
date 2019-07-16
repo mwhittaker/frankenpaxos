@@ -58,7 +58,7 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
     graph.outerNodeTraverser(graph.get(key)).forall(committed.contains(_))
   }
 
-  override def execute(): Seq[Key] = {
+  override def executeByComponent(): Seq[Seq[Key]] = {
     // Filter out all vertices that are not eligible.
     val eligibleGraph = graph.filter(isEligible)
 
@@ -94,14 +94,14 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
     // Iterate through the graph in topological order. topologicalSort returns
     // either a node that is part of a cycle (Left) or the topological order.
     // Condensations are acyclic, so we should always get Right.
-    val executable: Seq[Key] = condensation.topologicalSort match {
+    val executable: Seq[Seq[Key]] = condensation.topologicalSort match {
       case Left(node) =>
         throw new IllegalStateException(
           s"Condensation $condensation has a cycle."
         )
       case Right(topologicalOrder) =>
         topologicalOrder
-          .flatMap(component => {
+          .map(component => {
             component.nodes
               .map(_.toOuter)
               .toSeq
@@ -110,7 +110,10 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
           .toSeq
     }
 
-    for (key <- executable) {
+    for {
+      component <- executable
+      key <- component
+    } {
       graph.remove(key)
       committed -= key
       sequenceNumbers -= key

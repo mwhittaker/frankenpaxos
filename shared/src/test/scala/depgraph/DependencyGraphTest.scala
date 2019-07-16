@@ -24,8 +24,8 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   "A dep graph" should "correctly commit a command with no dependencies" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(0, 0, Set())
-      graph.execute() shouldBe Seq(0)
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq(Seq(0))
+      graph.executeByComponent() shouldBe Seq()
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -34,11 +34,11 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "ignore repeated commands" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(0, 0, Set())
-      graph.execute() shouldBe Seq(0)
+      graph.executeByComponent() shouldBe Seq(Seq(0))
       graph.commit(0, 1, Set())
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(0, 2, Set(1))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -47,14 +47,14 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a chain of commands" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(0, 0, Set())
-      graph.execute() shouldBe Seq(0)
+      graph.executeByComponent() shouldBe Seq(Seq(0))
       graph.commit(1, 0, Set(0))
-      graph.execute() shouldBe Seq(1)
+      graph.executeByComponent() shouldBe Seq(Seq(1))
       graph.commit(2, 0, Set(1))
-      graph.execute() shouldBe Seq(2)
+      graph.executeByComponent() shouldBe Seq(Seq(2))
       graph.commit(3, 0, Set(2))
-      graph.execute() shouldBe Seq(3)
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq(Seq(3))
+      graph.executeByComponent() shouldBe Seq()
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -63,14 +63,14 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a reverse chain of commands" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(3, 0, Set(2))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(2, 0, Set(1))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(1, 0, Set(0))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(0, 0, Set())
-      graph.execute() shouldBe Seq(0, 1, 2, 3)
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq(Seq(0), Seq(1), Seq(2), Seq(3))
+      graph.executeByComponent() shouldBe Seq()
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -79,14 +79,14 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a reverse chain with sequence numbers" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(3, 0, Set(2))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(2, 1, Set(1))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(1, 2, Set(0))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(0, 3, Set())
-      graph.execute() shouldBe Seq(0, 1, 2, 3)
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq(Seq(0), Seq(1), Seq(2), Seq(3))
+      graph.executeByComponent() shouldBe Seq()
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -95,9 +95,9 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a two cycle" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(0, 0, Set(1))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(1, 0, Set(0))
-      graph.execute() should contain theSameElementsAs Set(0, 1)
+      graph.executeByComponent() shouldBe Seq(Seq(0, 1))
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -106,9 +106,9 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a two cycle with sequence numbers" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(0, 1, Set(1))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(1, 0, Set(0))
-      graph.execute() shouldBe Seq(1, 0)
+      graph.executeByComponent() shouldBe Seq(Seq(1, 0))
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -117,11 +117,11 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a three cycle" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(0, 0, Set(1))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(1, 0, Set(2))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(2, 0, Set(0))
-      graph.execute() should contain theSameElementsAs Set(0, 1, 2)
+      graph.executeByComponent() shouldBe Seq(Seq(0, 1, 2))
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -130,11 +130,11 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a three cycle with sequence numbers" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(0, 1, Set(1))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(1, 0, Set(2))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(2, 2, Set(0))
-      graph.execute() shouldBe Seq(1, 0, 2)
+      graph.executeByComponent() shouldBe Seq(Seq(1, 0, 2))
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -151,19 +151,19 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a complex graph in order" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(0, 0, Set())
-      graph.execute() shouldBe Seq(0)
+      graph.executeByComponent() shouldBe Seq(Seq(0))
       graph.commit(1, 0, Set(0, 2))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(2, 1, Set(1))
-      graph.execute() shouldBe Seq(1, 2)
+      graph.executeByComponent() shouldBe Seq(Seq(1, 2))
       graph.commit(3, 0, Set(1, 2))
-      graph.execute() shouldBe Seq(3)
+      graph.executeByComponent() shouldBe Seq(Seq(3))
       graph.commit(4, 0, Set(2))
-      graph.execute() shouldBe Seq(4)
+      graph.executeByComponent() shouldBe Seq(Seq(4))
       graph.commit(5, 0, Set(3, 4, 6))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(6, 1, Set(4, 5))
-      graph.execute() shouldBe Seq(5, 6)
+      graph.executeByComponent() shouldBe Seq(Seq(5, 6))
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -172,22 +172,22 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a complex graph in reverse order" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(6, 1, Set(4, 5))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(5, 0, Set(3, 4, 6))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(4, 0, Set(2))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(3, 0, Set(1, 2))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(2, 1, Set(1))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(1, 0, Set(0, 2))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(0, 0, Set())
       Set(
-        Seq(0, 1, 2, 3, 4, 5, 6),
-        Seq(0, 1, 2, 4, 3, 5, 6)
-      ) should contain(graph.execute())
+        Seq(Seq(0), Seq(1, 2), Seq(3), Seq(4), Seq(5, 6)),
+        Seq(Seq(0), Seq(1, 2), Seq(4), Seq(3), Seq(5, 6))
+      ) should contain(graph.executeByComponent())
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -196,19 +196,19 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a complex graph in random order" in {
     def test(graph: DependencyGraph[Int, Int]): Unit = {
       graph.commit(6, 1, Set(4, 5))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(4, 0, Set(2))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(0, 0, Set())
-      graph.execute() shouldBe Seq(0)
+      graph.executeByComponent() shouldBe Seq(Seq(0))
       graph.commit(2, 1, Set(1))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(5, 0, Set(3, 4, 6))
-      graph.execute() shouldBe Seq()
+      graph.executeByComponent() shouldBe Seq()
       graph.commit(1, 0, Set(0, 2))
-      graph.execute() shouldBe Seq(1, 2, 4)
+      graph.executeByComponent() shouldBe Seq(Seq(1, 2), Seq(4))
       graph.commit(3, 0, Set(1, 2))
-      graph.execute() shouldBe Seq(3, 5, 6)
+      graph.executeByComponent() shouldBe Seq(Seq(3), Seq(5, 6))
     }
     runTest(test)
   }
@@ -225,10 +225,10 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.commit(7, 7, Set(4))
       graph.commit(8, 8, Set(7))
       Set(
-        Seq(1, 2, 6, 5, 3, 4, 7, 8, 0),
-        Seq(6, 1, 2, 5, 3, 4, 7, 8, 0),
-        Seq(6, 5, 1, 2, 3, 4, 7, 8, 0)
-      ) should contain(graph.execute())
+        Seq(Seq(1, 2), Seq(6), Seq(5), Seq(3, 4, 7, 8), Seq(0)),
+        Seq(Seq(6), Seq(1, 2), Seq(5), Seq(3, 4, 7, 8), Seq(0)),
+        Seq(Seq(6), Seq(5), Seq(1, 2), Seq(3, 4, 7, 8), Seq(0))
+      ) should contain(graph.executeByComponent())
     }
     runTest(test)
     test(new IncrementalTarjanDependencyGraph[Int, Int]())
@@ -272,10 +272,10 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
         // Note that we check that the graphs have the same elements. It's
         // possible that they return elements in different orders, though, so
         // they may not be exactly equal.
-        val jgraphtOutput = jgrapht.execute()
-        val scalagraphOutput = scalagraph.execute()
-        val tarjanOutput = tarjan.execute()
-        val incrementalOutput = incremental.execute()
+        val jgraphtOutput = jgrapht.executeByComponent()
+        val scalagraphOutput = scalagraph.executeByComponent()
+        val tarjanOutput = tarjan.executeByComponent()
+        val incrementalOutput = incremental.executeByComponent()
         jgraphtOutput should contain theSameElementsAs scalagraphOutput
         jgraphtOutput should contain theSameElementsAs tarjanOutput
         if (numVertices == maxVertex) {

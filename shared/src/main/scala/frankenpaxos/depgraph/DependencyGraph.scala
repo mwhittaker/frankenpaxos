@@ -127,15 +127,27 @@ abstract class DependencyGraph[Key, SequenceNumber](
       dependencies: Set[Key]
   ): Unit
 
-  // Execute finds all vertices in the graph that are eligible for execution,
-  // and then returns them in an order that is compatible with the graph (i.e.
-  // a reverse topological order of components, with a deterministic ordering
-  // of commands within components).
+  // Execute finds vertices in the graph that are eligible for execution, and
+  // then returns them in an order that is compatible with the graph (i.e. a
+  // reverse topological order of components, with a deterministic ordering of
+  // commands within components). Note that a dependency graph is not
+  // guaranteed to return a component that is eligible as soon as it is
+  // eligible.
   //
   // It is the responsibility of the caller of execute to execute the commands
   // associated with the vertices. Once a dependency graph returns a command
   // from execute, it will never return it again.
-  def execute(): Seq[Key]
+  def execute(): Seq[Key] = {
+    for {
+      component <- executeByComponent()
+      key <- component
+    } yield key
+  }
+
+  // executeByComponent is the same as execute, except that strongly connected
+  // components are returned in their own Seq. This is mostly useful for
+  // testing.
+  def executeByComponent(): Seq[Seq[Key]]
 
   // Returns the current number of vertices in the graph. This is used mainly
   // for monitoring. A dependency graph implementation may or may not prune

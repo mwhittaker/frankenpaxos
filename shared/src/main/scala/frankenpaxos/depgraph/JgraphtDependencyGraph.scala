@@ -85,8 +85,7 @@ class JgraphtDependencyGraph[Key, SequenceNumber]()(
     iterator.asScala.forall(committed.contains(_))
   }
 
-  // Try to execute as much of the graph as possible.
-  override def execute(): Seq[Key] = {
+  override def executeByComponent(): Seq[Seq[Key]] = {
     // 1. Filter out all vertices that are not eligible.
     // 2. Condense the graph.
     // 3. Execute the graph in reverse topological order, sorting by sequence
@@ -97,14 +96,17 @@ class JgraphtDependencyGraph[Key, SequenceNumber]()(
     val condensation = components.getCondensation()
     val reversed = new EdgeReversedGraph(condensation)
     val iterator = new TopologicalOrderIterator(reversed)
-    val executable: Seq[Key] = iterator.asScala
-      .flatMap(component => {
+    val executable: Seq[Seq[Key]] = iterator.asScala
+      .map(component => {
         component.vertexSet.asScala.toSeq
           .sortBy(key => (sequenceNumbers(key), key))
       })
       .toSeq
 
-    for (key <- executable) {
+    for {
+      component <- executable
+      key <- component
+    } {
       graph.removeVertex(key)
       committed -= key
       sequenceNumbers -= key

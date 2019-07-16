@@ -73,7 +73,7 @@ class IncrementalTarjanDependencyGraph[Key, SequenceNumber]()(
   // The state of Tarjan's algorithm.
   val metadatas = mutable.Map[Key, VertexMetadata]()
   val stack = mutable.Buffer[Key]()
-  val executables = mutable.Buffer[Key]()
+  val executables = mutable.Buffer[Seq[Key]]()
 
   override def commit(
       key: Key,
@@ -99,7 +99,7 @@ class IncrementalTarjanDependencyGraph[Key, SequenceNumber]()(
     vertices(key) = Vertex(key, sequenceNumber, committed ++ uncommitted)
   }
 
-  override def execute(): Seq[Key] = {
+  override def executeByComponent(): Seq[Seq[Key]] = {
     if (!callstack.isEmpty) {
       strongConnect() match {
         case Paused  => return collectExecutables()
@@ -126,12 +126,17 @@ class IncrementalTarjanDependencyGraph[Key, SequenceNumber]()(
   }
 
   // Return and prune the executable vertices.
-  private def collectExecutables(): Seq[Key] = {
-    vertices --= executables
-    executed ++= executables
+  private def collectExecutables(): Seq[Seq[Key]] = {
+    for {
+      component <- executables
+      key <- component
+    } {
+      vertices -= key
+      executed += key
+    }
     // Note that toSeq is not correct here. Clearing executables clears the
     // toSeq.
-    val seq = Seq[Key]() ++ executables.toSeq
+    val seq = Seq[Seq[Key]]() ++ executables
     executables.clear()
     return seq
   }
@@ -213,11 +218,11 @@ class IncrementalTarjanDependencyGraph[Key, SequenceNumber]()(
           component += stack.last
           stack.remove(stack.size - 1)
           metadatas(v) = metadatas(v).copy(onStack = false)
-          executables ++= component.sortBy(k => (vertices(k).sequenceNumber, k))
+          executables += component.sortBy(k => (vertices(k).sequenceNumber, k))
         }
 
-        // This code would normally be in the loop higher up, but since we're not
-        // actually recursing, we move it down here.
+        // This code would normally be in the loop higher up, but since we're
+        // not actually recursing, we move it down here.
         callstack.remove(callstack.size - 1)
         if (!callstack.isEmpty) {
           metadatas(callstack.last) = metadatas(callstack.last).copy(
