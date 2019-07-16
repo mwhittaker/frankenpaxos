@@ -43,6 +43,8 @@ object ThriftySystem {
     ): Set[Transport#Address] = delays.keySet
   }
 
+  // TODO(mwhittaker): Pass in a seed so that thriftiness can be made
+  // deterministic for testing.
   object Random extends ThriftySystem {
     def choose[Transport <: frankenpaxos.Transport[Transport]](
         delays: Map[Transport#Address, java.time.Duration],

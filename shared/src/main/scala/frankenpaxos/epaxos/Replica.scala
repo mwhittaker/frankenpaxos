@@ -18,6 +18,7 @@ import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.statemachine.StateMachine
+import frankenpaxos.thrifty.ThriftySystem
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -31,6 +32,7 @@ object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
 
 @JSExportAll
 case class ReplicaOptions(
+    thriftySystem: ThriftySystem,
     resendPreAcceptsTimerPeriod: java.time.Duration,
     defaultToSlowPathTimerPeriod: java.time.Duration,
     resendAcceptsTimerPeriod: java.time.Duration,
@@ -62,6 +64,7 @@ case class ReplicaOptions(
 @JSExportAll
 object ReplicaOptions {
   val default = ReplicaOptions(
+    thriftySystem = ThriftySystem.NotThrifty,
     resendPreAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
     defaultToSlowPathTimerPeriod = java.time.Duration.ofSeconds(1),
     resendAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
@@ -287,12 +290,12 @@ object Replica {
       triple: CommandTriple
   ) extends CmdLogEntry
 
-// When a replica receives a command from a client, it becomes the leader of
-// the command, the designated replica that is responsible for driving the
-// protocol through its phases to get the command chosen. LeaderState
-// represents the state of a leader during various points in the lifecycle of
-// the protocol, whether the leader is pre-accepting, accepting, or preparing
-// (during recovery).
+  // When a replica receives a command from a client, it becomes the leader of
+  // the command, the designated replica that is responsible for driving the
+  // protocol through its phases to get the command chosen. LeaderState
+  // represents the state of a leader during various points in the lifecycle of
+  // the protocol, whether the leader is pre-accepting, accepting, or preparing
+  // (during recovery).
   sealed trait LeaderState[Transport <: frankenpaxos.Transport[Transport]]
 
   @JSExportAll
@@ -375,13 +378,25 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   logger.check(config.replicaAddresses.contains(address))
   private val index: ReplicaIndex = config.replicaAddresses.indexOf(address)
 
+  private val me: Chan[Replica[Transport]] =
+    chan[Replica[Transport]](address, Replica.serializer)
+
   private val replicas: Seq[Chan[Replica[Transport]]] =
     for (replicaAddress <- config.replicaAddresses)
       yield chan[Replica[Transport]](replicaAddress, Replica.serializer)
 
+  private val otherReplicaAddresses: Seq[Transport#Address] =
+    config.replicaAddresses.filter(_ != address)
+
   private val otherReplicas: Seq[Chan[Replica[Transport]]] =
-    for (a <- config.replicaAddresses if a != address)
+    for (a <- otherReplicaAddresses)
       yield chan[Replica[Transport]](a, Replica.serializer)
+
+  private val otherReplicasByAddress
+    : Map[Transport#Address, Chan[Replica[Transport]]] = {
+    for (a <- otherReplicaAddresses)
+      yield a -> chan[Replica[Transport]](a, Replica.serializer)
+  }.toMap
 
   // Public for testing.
   val cmdLog: mutable.Map[Instance, CmdLogEntry] =
@@ -479,6 +494,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         false
       case Some(_: CommittedEntry) => true
     }
+  }
+
+  private def thriftyOtherReplicas(n: Int): Set[Chan[Replica[Transport]]] = {
+    // TODO(mwhittaker): Add heartbeats to real delays.
+    val delays: Map[Transport#Address, java.time.Duration] = {
+      for (a <- otherReplicaAddresses)
+        yield a -> java.time.Duration.ofSeconds(0)
+    }.toMap
+    options.thriftySystem.choose(delays, n).map(otherReplicasByAddress(_))
   }
 
   private def computeSequenceNumberAndDependencies(
@@ -587,10 +611,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     )
     updateConflictIndex(instance, commandOrNoop)
 
-    // Send PreAccept messages to all other replicas.
-    //
-    // TODO(mwhittaker): Maybe add thriftiness. Thriftiness is less important
-    // for basic EPaxos since the fast quorum sizes are so big.
+    // Send PreAccept messages to other replicas in a fast quorum.
     val preAccept = PreAccept(
       instance = instance,
       ballot = ballot,
@@ -598,7 +619,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       sequenceNumber = sequenceNumber,
       dependencies = dependencies.toSeq
     )
-    otherReplicas.foreach(_.send(ReplicaInbound().withPreAccept(preAccept)))
+    thriftyOtherReplicas(config.fastQuorumSize - 1)
+      .foreach(_.send(ReplicaInbound().withPreAccept(preAccept)))
 
     // Stop existing timers.
     stopTimers(instance)
@@ -658,7 +680,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     updateConflictIndex(instance, triple.commandOrNoop)
 
     // Send out an accept message to other replicas.
-    // TODO(mwhittaker): Implement thriftiness.
     val accept = Accept(
       instance = instance,
       ballot = ballot,
@@ -666,7 +687,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       sequenceNumber = triple.sequenceNumber,
       dependencies = triple.dependencies.toSeq
     )
-    otherReplicas.foreach(_.send(ReplicaInbound().withAccept(accept)))
+    thriftyOtherReplicas(config.slowQuorumSize - 1)
+      .foreach(_.send(ReplicaInbound().withAccept(accept)))
 
     // Stop existing timers.
     stopTimers(instance)
@@ -855,7 +877,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Send Prepares to all replicas, including ourselves.
     val prepare = Prepare(instance = instance, ballot = ballot)
-    replicas.foreach(_.send(ReplicaInbound().withPrepare(prepare)))
+    (thriftyOtherReplicas(config.slowQuorumSize - 1) + me).foreach(
+      _.send(ReplicaInbound().withPrepare(prepare))
+    )
 
     // Update our leader state.
     leaderStates -= instance
@@ -1612,7 +1636,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
         responses(prepareOk.replicaIndex) = prepareOk
 
-        // If we don't have a quorum of responses yet, we have to wait to get one.
+        // If we don't have a quorum of responses yet, we have to wait to get
+        // one.
         if (responses.size < config.slowQuorumSize) {
           return
         }
