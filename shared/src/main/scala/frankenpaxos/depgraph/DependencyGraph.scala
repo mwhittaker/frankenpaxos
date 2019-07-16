@@ -89,7 +89,7 @@ import scala.scalajs.js.annotation.JSExportAll
 //
 // Now, all three vertices are eligible. Like how MultiPaxos executes log
 // entries in prefix order, protocols like EPaxos and BPaxos execute commands
-// in "prefix order". More carefully, they executes strongly connected
+// in "prefix order". More carefully, they execute strongly connected
 // components of eligible commands in reverse topological order.
 //
 // In the example above, vertices A and B form a strongly connected component
@@ -110,10 +110,16 @@ import scala.scalajs.js.annotation.JSExportAll
 //   - A, C, B
 //   - B, C, A
 //
+// All implementations of DependencyGraph here return commands within a
+// component sorted first by sequence number and then by vertex key. So, the
+// above graph would be executed as A, B, C.
+//
 // # API
 // Note that vertex identifiers and sequence numbers are both generic. This is
 // because EPaxos and BPaxos use different types of vertex identifiers, and
-// BPaxos doesn't even use sequence numbers.
+// BPaxos doesn't even use sequence numbers. The key and sequence number
+// orderings are used to execute commands within a component in a deterministic
+// order.
 @JSExportAll
 abstract class DependencyGraph[Key, SequenceNumber](
     implicit val keyOrdering: Ordering[Key],
