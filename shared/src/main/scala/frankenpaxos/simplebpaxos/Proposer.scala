@@ -150,7 +150,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   private def thriftyAcceptors(n: Int): Set[Chan[Acceptor[Transport]]] = {
     // TODO(mwhittaker): Add heartbeats to real delays.
     val delays: Map[Transport#Address, java.time.Duration] = {
-      for (a <- config.depServiceNodeAddresses)
+      for (a <- config.acceptorAddresses)
         yield a -> java.time.Duration.ofSeconds(0)
     }.toMap
     options.thriftySystem.choose(delays, n).map(acceptorsByAddress(_))
