@@ -343,6 +343,10 @@ class NettyTcpTransport(private val logger: Logger)
       )
   }
 
+  // TODO(mwhittaker): If we're sending a message to an address for which we
+  // have an actor registered. There is no need to actually send it. We can
+  // pass it directly to the actor. The one hiccup is that want to schedule the
+  // sending to happen after the code calling send finishes.
   def send(
       src: NettyTcpTransport#Address,
       dst: NettyTcpTransport#Address,
