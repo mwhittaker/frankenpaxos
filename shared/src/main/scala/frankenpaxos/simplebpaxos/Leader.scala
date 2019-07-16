@@ -9,6 +9,7 @@ import frankenpaxos.Util
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.thrifty.ThriftySystem
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -22,12 +23,14 @@ object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
 
 @JSExportAll
 case class LeaderOptions(
+    thriftySystem: ThriftySystem,
     resendDependencyRequestsTimerPeriod: java.time.Duration
 )
 
 @JSExportAll
 object LeaderOptions {
   val default = LeaderOptions(
+    thriftySystem = ThriftySystem.NotThrifty,
     resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(1)
   )
 }
@@ -103,6 +106,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.depServiceNodeAddresses)
       yield chan[DepServiceNode[Transport]](address, DepServiceNode.serializer)
 
+  // Channels to the dependency service nodes, indexed by address.
+  private val depServiceNodesByAddress
+    : Map[Transport#Address, Chan[DepServiceNode[Transport]]] = {
+    for (a <- config.depServiceNodeAddresses)
+      yield a -> chan[DepServiceNode[Transport]](a, DepServiceNode.serializer)
+  }.toMap
+
   // Channel to accompanying proposer.
   private val proposer: Chan[Proposer[Transport]] =
     chan[Proposer[Transport]](config.proposerAddresses(index),
@@ -135,6 +145,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     )
     t.start()
     t
+  }
+
+  // Helpers ///////////////////////////////////////////////////////////////////
+  private def thriftyDepServiceNodes(
+      n: Int
+  ): Set[Chan[DepServiceNode[Transport]]] = {
+    // TODO(mwhittaker): Add heartbeats to real delays.
+    val delays: Map[Transport#Address, java.time.Duration] = {
+      for (a <- config.depServiceNodeAddresses)
+        yield a -> java.time.Duration.ofSeconds(0)
+    }.toMap
+    options.thriftySystem.choose(delays, n).map(depServiceNodesByAddress(_))
   }
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -174,11 +196,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // Send a request to the dependency service.
     val dependencyRequest =
       DependencyRequest(vertexId = vertexId, command = clientRequest.command)
-    for (depServiceNode <- depServiceNodes) {
-      depServiceNode.send(
-        DepServiceNodeInbound().withDependencyRequest(dependencyRequest)
-      )
-    }
+    thriftyDepServiceNodes(config.quorumSize).foreach(
+      _.send(DepServiceNodeInbound().withDependencyRequest(dependencyRequest))
+    )
 
     // Update our state.
     states(vertexId) = WaitingForDeps(

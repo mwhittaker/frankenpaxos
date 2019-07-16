@@ -7,6 +7,7 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.roundsystem.RoundSystem
+import frankenpaxos.thrifty.ThriftySystem
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -20,6 +21,7 @@ object ProposerInboundSerializer extends ProtoSerializer[ProposerInbound] {
 
 @JSExportAll
 case class ProposerOptions(
+    thriftySystem: ThriftySystem,
     resendPhase1asTimerPeriod: java.time.Duration,
     resendPhase2asTimerPeriod: java.time.Duration
 )
@@ -27,6 +29,7 @@ case class ProposerOptions(
 @JSExportAll
 object ProposerOptions {
   val default = ProposerOptions(
+    thriftySystem = ThriftySystem.NotThrifty,
     resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(1),
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(1)
   )
@@ -126,6 +129,12 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.acceptorAddresses)
       yield chan[Acceptor[Transport]](address, Acceptor.serializer)
 
+  private val acceptorsByAddress
+    : Map[Transport#Address, Chan[Acceptor[Transport]]] = {
+    for (a <- config.acceptorAddresses)
+      yield a -> chan[Acceptor[Transport]](a, Acceptor.serializer)
+  }.toMap
+
   private val replicas: Seq[Chan[Replica[Transport]]] =
     for (address <- config.replicaAddresses)
       yield chan[Replica[Transport]](address, Replica.serializer)
@@ -137,6 +146,15 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   def roundSystem(vertexId: VertexId): RoundSystem =
     new RoundSystem.RotatedClassicRoundRobin(config.leaderAddresses.size,
                                              vertexId.leaderIndex)
+
+  private def thriftyAcceptors(n: Int): Set[Chan[Acceptor[Transport]]] = {
+    // TODO(mwhittaker): Add heartbeats to real delays.
+    val delays: Map[Transport#Address, java.time.Duration] = {
+      for (a <- config.depServiceNodeAddresses)
+        yield a -> java.time.Duration.ofSeconds(0)
+    }.toMap
+    options.thriftySystem.choose(delays, n).map(acceptorsByAddress(_))
+  }
 
   private def proposeImpl(
       vertexId: VertexId,
@@ -161,11 +179,11 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // phase 2.
         if (round == 0) {
           // Send phase2a to all acceptors.
-          // TODO(mwhittaker): Add thriftiness.
           val phase2a = Phase2a(vertexId = vertexId,
                                 round = round,
                                 voteValue = Acceptor.toProto(value))
-          acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+          thriftyAcceptors(config.quorumSize)
+            .foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
 
           // Update our state.
           states(vertexId) = Phase2(
@@ -176,9 +194,9 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           )
         } else {
           // Send phase1a to all acceptors.
-          // TODO(mwhittaker): Add thriftiness.
           val phase1a = Phase1a(vertexId = vertexId, round = round)
-          acceptors.foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
+          thriftyAcceptors(config.quorumSize)
+            .foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
 
           // Update our state.
           states(vertexId) = Phase1(
@@ -309,13 +327,13 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Send phase2as to the acceptors.
-        // TODO(mwhittaker): Implement thriftiness.
         val phase2a = Phase2a(
           vertexId = phase1b.vertexId,
           round = phase1.round,
           voteValue = Acceptor.toProto(proposal)
         )
-        acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+        thriftyAcceptors(config.quorumSize)
+          .foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
 
         // Stop existing timers and update our state.
         phase1.resendPhase1as.stop()
@@ -411,9 +429,9 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Send phase1as to all acceptors.
-        // TODO(mwhittaker): Implement thriftiness.
         val phase1a = Phase1a(vertexId = nack.vertexId, round = round)
-        acceptors.foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
+        thriftyAcceptors(config.quorumSize)
+          .foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
 
         // Stop existing timers and update state.
         phase1.resendPhase1as.stop()
@@ -435,9 +453,9 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Send phase1as to all acceptors.
-        // TODO(mwhittaker): Implement thriftiness.
         val phase1a = Phase1a(vertexId = nack.vertexId, round = round)
-        acceptors.foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
+        thriftyAcceptors(config.quorumSize)
+          .foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
 
         // Stop existing timers and update state.
         phase2.resendPhase2as.stop()
