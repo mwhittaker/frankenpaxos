@@ -50,6 +50,7 @@ def _main(args) -> None:
                             datetime.timedelta(seconds=1)
                     ),
                     replica_log_level = args.log_level,
+                    replica_dependency_graph = "Tarjan",
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(seconds=1),
                     ),

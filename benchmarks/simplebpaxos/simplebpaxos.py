@@ -111,6 +111,7 @@ class Input(NamedTuple):
     # Replica options. ########################################################
     replica_options: ReplicaOptions
     replica_log_level: str
+    replica_dependency_graph: str
 
     # Client options. ##########################################################
     client_options: ClientOptions
@@ -429,6 +430,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.replica_log_level,
+                    '--dependency_graph', input.replica_dependency_graph,
                     '--prometheus_host', replica.host.ip(),
                     '--prometheus_port',
                         str(replica.port + 1) if input.monitored else '-1',

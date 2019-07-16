@@ -25,6 +25,7 @@ def main(args) -> None:
                         datetime.timedelta(milliseconds=200),
                     replica_options = ReplicaOptions(),
                     replica_log_level = args.log_level,
+                    replica_dependency_graph = "Tarjan",
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(milliseconds=500),
                     ),
