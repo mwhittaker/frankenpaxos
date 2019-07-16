@@ -9,6 +9,9 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
+  // Run a unit test on JgraphtDependencyGraph, ScalaGraphDependencyGraph, and
+  // TarjanDependencyGraph. We don't run on IncrementalTarjanDependencyGraph
+  // because it behaves differently than the others.
   private def runTest(test: (DependencyGraph[Int, Int]) => Unit): Unit = {
     test(new JgraphtDependencyGraph[Int, Int]())
     info("JgraphtDependencyGraph passed")
@@ -25,6 +28,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() shouldBe Seq()
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "ignore repeated commands" in {
@@ -37,6 +41,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() shouldBe Seq()
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "correctly commit a chain of commands" in {
@@ -52,6 +57,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() shouldBe Seq()
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "correctly commit a reverse chain of commands" in {
@@ -67,6 +73,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() shouldBe Seq()
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "correctly commit a reverse chain with sequence numbers" in {
@@ -82,6 +89,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() shouldBe Seq()
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "correctly commit a two cycle" in {
@@ -92,6 +100,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() should contain theSameElementsAs Set(0, 1)
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "correctly commit a two cycle with sequence numbers" in {
@@ -102,6 +111,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() shouldBe Seq(1, 0)
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "correctly commit a three cycle" in {
@@ -114,6 +124,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() should contain theSameElementsAs Set(0, 1, 2)
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "correctly commit a three cycle with sequence numbers" in {
@@ -126,6 +137,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() shouldBe Seq(1, 0, 2)
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   // +---+     +---+     +---+     +---+
@@ -154,6 +166,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.execute() shouldBe Seq(5, 6)
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "correctly commit a complex graph in reverse order" in {
@@ -177,6 +190,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       ) should contain(graph.execute())
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   it should "correctly commit a complex graph in random order" in {
@@ -217,44 +231,62 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       ) should contain(graph.execute())
     }
     runTest(test)
+    test(new IncrementalTarjanDependencyGraph[Int, Int]())
   }
 
   "All dep graph implementations" should "agree" in {
-    val n = 100
+    def test(numVertices: Int, maxVertex: Int): Unit = {
+      require(maxVertex >= numVertices)
+      info(s"numVertices = $numVertices, maxVertex = $maxVertex")
 
-    val seqDepGen: Gen[(Int, Set[Int])] = for {
-      sequenceNumber <- Gen.choose[Int](0, n)
-      numDependencies <- Gen.choose[Int](0, n)
-      dependencies <- Gen.containerOfN[Set, Int](numDependencies,
-                                                 Gen.choose[Int](0, n))
-    } yield (sequenceNumber, dependencies)
+      val keysGen = Gen.pick(numVertices, 0 until maxVertex)
+      val sequencesGen = Gen.listOfN(numVertices, Gen.chooseNum(0, 1000))
+      val depsGen = Gen.listOfN(
+        numVertices,
+        Gen.choose(0, numVertices).flatMap(Gen.pick(_, 0 until maxVertex))
+      )
+      val nodesGen: Gen[Seq[(Int, Int, Set[Int])]] = for {
+        keys <- keysGen
+        sequences <- sequencesGen
+        deps <- depsGen
+        ((k, s), d) <- keys zip sequences zip deps
+      } yield (k, s, Set() ++ d)
 
-    val nodesGen: Gen[Seq[(Int, Int, Set[Int])]] =
-      for (nodes <- Gen.containerOfN[Seq, (Int, Set[Int])](n, seqDepGen))
-        yield {
-          for (((sequenceNumber, dependencies), i) <- nodes.zipWithIndex)
-            yield (i, sequenceNumber, dependencies)
-
+      forAll(nodesGen) { (nodes: Seq[(Int, Int, Set[Int])]) =>
+        val jgrapht = new JgraphtDependencyGraph[Int, Int]()
+        val scalagraph = new ScalaGraphDependencyGraph[Int, Int]()
+        val tarjan = new TarjanDependencyGraph[Int, Int]()
+        val incremental = new IncrementalTarjanDependencyGraph[Int, Int]()
+        for ((id, sequenceNumber, dependencies) <- nodes) {
+          jgrapht.commit(id, sequenceNumber, dependencies - id)
+          scalagraph.commit(id, sequenceNumber, dependencies - id)
+          tarjan.commit(id, sequenceNumber, dependencies - id)
+          incremental.commit(id, sequenceNumber, dependencies - id)
         }
 
-    forAll(nodesGen) { (nodes: Seq[(Int, Int, Set[Int])]) =>
-      val jgrapht = new JgraphtDependencyGraph[Int, Int]()
-      val scalagraph = new ScalaGraphDependencyGraph[Int, Int]()
-      val tarjan = new TarjanDependencyGraph[Int, Int]()
-      for ((id, sequenceNumber, dependencies) <- nodes) {
-        jgrapht.commit(id, sequenceNumber, dependencies - id)
-        scalagraph.commit(id, sequenceNumber, dependencies - id)
-        tarjan.commit(id, sequenceNumber, dependencies - id)
+        // If numVertices is equal to maxVertex, then every dependency is
+        // committed. In this case, all four graph algorithms should behave
+        // identically. Otherwise, all the graphs except for
+        // IncrementalTarjanDependencyGraph behave identically.
+        //
+        // Note that we check that the graphs have the same elements. It's
+        // possible that they return elements in different orders, though, so
+        // they may not be exactly equal.
+        val jgraphtOutput = jgrapht.execute()
+        val scalagraphOutput = scalagraph.execute()
+        val tarjanOutput = tarjan.execute()
+        val incrementalOutput = incremental.execute()
+        jgraphtOutput should contain theSameElementsAs scalagraphOutput
+        jgraphtOutput should contain theSameElementsAs tarjanOutput
+        if (numVertices == maxVertex) {
+          jgraphtOutput should contain theSameElementsAs incrementalOutput
+        }
       }
-
-      // We check that the three graphs have the same elements. It's possible
-      // that they return elements in different orders, though, so they may not
-      // be exactly equal.
-      val jgraphtOutput = jgrapht.execute()
-      val scalagraphOutput = scalagraph.execute()
-      val tarjanOutput = tarjan.execute()
-      jgraphtOutput should contain theSameElementsAs scalagraphOutput
-      jgraphtOutput should contain theSameElementsAs tarjanOutput
     }
+
+    test(numVertices = 10, maxVertex = 20)
+    test(numVertices = 10, maxVertex = 10)
+    test(numVertices = 100, maxVertex = 200)
+    test(numVertices = 100, maxVertex = 100)
   }
 }
