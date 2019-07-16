@@ -10,6 +10,7 @@ import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.statemachine.KeyValueStore
+import frankenpaxos.thrifty.ThriftySystem
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
@@ -53,6 +54,8 @@ object ProposerMain extends App {
       .text(s"-1 to disable")
 
     // Options.
+    opt[ThriftySystem]("options.thriftySystem")
+      .optionAction((x, o) => o.copy(thriftySystem = x))
     opt[java.time.Duration]("options.resendPhase1asTimerPeriod")
       .optionAction((x, o) => o.copy(resendPhase1asTimerPeriod = x))
     opt[java.time.Duration]("options.resendPhase2asTimerPeriod")

@@ -29,6 +29,7 @@ class ClientOptions(NamedTuple):
 
 
 class ProposerOptions(NamedTuple):
+    thrifty_system: str = 'NotThrifty'
     resend_phase1as_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
     resend_phase2as_timer_period: datetime.timedelta = \
@@ -36,6 +37,7 @@ class ProposerOptions(NamedTuple):
 
 
 class LeaderOptions(NamedTuple):
+    thrifty_system: str = 'NotThrifty'
     resend_dependency_requests_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
 
@@ -474,6 +476,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', proposer.host.ip(),
                     '--prometheus_port',
                         str(proposer.port + 1) if input.monitored else '-1',
+                    '--options.thrifty_system',
+                        input.proposer_options.thrifty_system,
                     '--options.resendPhase1asTimerPeriod',
                         '{}s'.format(input.proposer_options
                                      .resend_phase1as_timer_period
@@ -503,6 +507,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', leader.host.ip(),
                     '--prometheus_port',
                         str(leader.port + 1) if input.monitored else '-1',
+                    '--options.thrifty_system',
+                        input.leader_options.thrifty_system,
                     '--options.resendDependencyRequestsTimerPeriod',
                         '{}s'.format(input.leader_options
                                      .resend_dependency_requests_timer_period
