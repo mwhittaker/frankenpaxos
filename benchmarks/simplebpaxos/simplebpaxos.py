@@ -53,6 +53,7 @@ class ReplicaOptions(NamedTuple):
         datetime.timedelta(seconds=1)
     recover_vertex_timer_max_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
+    unsafe_skip_graph_execution: bool = False
     execute_graph_batch_size: int = 1
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
@@ -442,6 +443,10 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         '{}s'.format(input.replica_options
                                      .recover_vertex_timer_max_period
                                      .total_seconds()),
+                    '--options.unsafeSkipGraphExecution',
+                        "true"
+                        if input.replica_options.unsafe_skip_graph_execution
+                        else "false",
                     '--options.executeGraphBatchSize',
                         str(input.replica_options.execute_graph_batch_size),
                     '--options.executeGraphTimerPeriod',

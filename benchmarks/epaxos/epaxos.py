@@ -31,6 +31,7 @@ class ReplicaOptions(NamedTuple):
         datetime.timedelta(milliseconds=500)
     recover_instance_timer_max_period: datetime.timedelta = \
         datetime.timedelta(milliseconds=1500)
+    unsafe_skip_graph_execution: bool = False
     execute_graph_batch_size: int = 1
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
@@ -285,6 +286,16 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                         input.replica_options
                              .recover_instance_timer_max_period
                              .total_seconds() * 1000),
+                    '--options.unsafeSkipGraphExecution',
+                        "true"
+                        if input.replica_options.unsafe_skip_graph_execution
+                        else "false",
+                    '--options.executeGraphBatchSize',
+                        str(input.replica_options.execute_graph_batch_size),
+                    '--options.executeGraphTimerPeriod', '{}s'.format(
+                        input.replica_options
+                             .execute_graph_timer_period
+                             .total_seconds()),
                 ],
             )
             replica_procs.append(proc)
