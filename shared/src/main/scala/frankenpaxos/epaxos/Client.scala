@@ -35,6 +35,12 @@ object ClientOptions {
 
 @JSExportAll
 class ClientMetrics(collectors: Collectors) {
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("epaxos_client_requests_total")
+    .help("Total number of client requests sent to consensus.")
+    .register()
+
   val responsesTotal: Counter = collectors.counter
     .build()
     .name("epaxos_client_responses_total")
@@ -185,6 +191,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           .getOrElseUpdate(pseudonym, reproposeTimer(pseudonym))
           .start()
         ids(pseudonym) = id + 1
+        metrics.requestsTotal.inc()
     }
   }
 

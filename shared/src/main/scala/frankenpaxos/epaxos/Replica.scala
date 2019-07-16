@@ -1152,21 +1152,21 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     leaderStates.get(preAcceptOk.instance) match {
       case None =>
-        logger.warn(
+        logger.debug(
           s"Replica received a PreAcceptOk in instance " +
             s"${preAcceptOk.instance} but is not leading the instance."
         )
         return
 
       case Some(_: Accepting) =>
-        logger.warn(
+        logger.debug(
           s"Replica received a PreAcceptOk in instance " +
             s"${preAcceptOk.instance} but is accepting."
         )
         return
 
       case Some(_: Preparing) =>
-        logger.warn(
+        logger.debug(
           s"Replica received a PreAcceptOk in instance " +
             s"${preAcceptOk.instance} but is preparing."
         )
@@ -1181,7 +1181,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                                               defaultToSlowPathTimer)
           ) =>
         if (preAcceptOk.ballot != ballot) {
-          logger.warn(
+          logger.debug(
             s"Replica received a preAcceptOk in ballot " +
               s"${preAcceptOk.instance} but is currently leading ballot " +
               s"$ballot."
@@ -1366,19 +1366,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     leaderStates.get(acceptOk.instance) match {
       case None =>
-        logger.warn(
+        logger.debug(
           s"Replica received an AcceptOk in instance ${acceptOk.instance} " +
             s"but is not leading the instance."
         )
 
       case Some(_: PreAccepting) =>
-        logger.warn(
+        logger.debug(
           s"Replica received an AcceptOk in instance ${acceptOk.instance} " +
             s"but is pre-accepting."
         )
 
       case Some(_: Preparing) =>
-        logger.warn(
+        logger.debug(
           s"Replica received an AcceptOk in instance ${acceptOk.instance} " +
             s"but is preparing."
         )
@@ -1390,7 +1390,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                                         resendAcceptsTimer)
           ) =>
         if (acceptOk.ballot != ballot) {
-          logger.warn(
+          logger.debug(
             s"Replica received an AcceptOk in ballot ${acceptOk.instance} " +
               s"but is currently leading ballot $ballot."
           )
@@ -1579,19 +1579,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     leaderStates.get(prepareOk.instance) match {
       case None =>
-        logger.warn(
+        logger.debug(
           s"Replica received a PrepareOk in instance ${prepareOk.instance} " +
             s"but is not leading the instance."
         )
 
       case Some(_: PreAccepting) =>
-        logger.warn(
+        logger.debug(
           s"Replica received a PrepareOk in instance ${prepareOk.instance} " +
             s"but is pre-accepting."
         )
 
       case Some(_: Accepting) =>
-        logger.warn(
+        logger.debug(
           s"Replica received a PrepareOk in instance ${prepareOk.instance} " +
             s"but is accepting."
         )
@@ -1600,7 +1600,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           preparing @ Replica.Preparing(ballot, responses, resendAcceptsTimer)
           ) =>
         if (prepareOk.ballot != ballot) {
-          logger.warn(
+          logger.debug(
             s"Replica received a preAcceptOk in ballot ${prepareOk.instance} " +
               s"but is currently leading ballot $ballot."
           )
