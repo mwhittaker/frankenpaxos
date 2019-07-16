@@ -161,3 +161,21 @@ abstract class DependencyGraph[Key, SequenceNumber](
   // up and down over time.
   def numVertices: Int
 }
+
+object DependencyGraph {
+  def read[K, S](
+      implicit keyOrdering: Ordering[K],
+      sequenceNumberOrdering: Ordering[S]
+  ): scopt.Read[DependencyGraph[K, S]] = {
+    scopt.Read.reads({
+      case "Jgrapht"           => new JgraphtDependencyGraph[K, S]()
+      case "ScalaGraph"        => new ScalaGraphDependencyGraph[K, S]()
+      case "Tarjan"            => new TarjanDependencyGraph[K, S]()
+      case "IncrementalTarjan" => new IncrementalTarjanDependencyGraph[K, S]()
+      case x =>
+        throw new IllegalArgumentException(
+          s"$x is not one of Jgrapht, ScalaGraph, Tarjan, or IncrementalTarjan."
+        )
+    })
+  }
+}

@@ -8,7 +8,8 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
-import frankenpaxos.depgraph.JgraphtDependencyGraph
+import frankenpaxos.depgraph.DependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraph
 import frankenpaxos.statemachine.KeyValueStore
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
@@ -23,12 +24,16 @@ object ReplicaMain extends App {
       index: Int = -1,
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
+      dependencyGraph: DependencyGraph[VertexId, Unit] =
+        new TarjanDependencyGraph(),
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
       // Options.
       options: ReplicaOptions = ReplicaOptions.default
   )
+
+  implicit val dependencyGraphRead = DependencyGraph.read[VertexId, Unit]
 
   implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def optionAction(
@@ -44,6 +49,9 @@ object ReplicaMain extends App {
     opt[Int]("index").required().action((x, f) => f.copy(index = x))
     opt[File]("config").required().action((x, f) => f.copy(configFile = x))
     opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))
+    opt[DependencyGraph[VertexId, Unit]]("dependency_graph")
+      .required()
+      .action((x, f) => f.copy(dependencyGraph = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
@@ -80,7 +88,7 @@ object ReplicaMain extends App {
     logger = logger,
     config = config,
     stateMachine = new KeyValueStore(),
-    dependencyGraph = new JgraphtDependencyGraph(),
+    dependencyGraph = flags.dependencyGraph,
     options = flags.options
   )
 
