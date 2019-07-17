@@ -4,6 +4,8 @@ from .. import parser_util
 from .. import prometheus
 from .. import proto_util
 from .. import util
+from .. import workload
+from ..workload import Workload
 from typing import Any, Callable, Collection, Dict, List, NamedTuple
 import argparse
 import csv
@@ -66,6 +68,10 @@ class Input(NamedTuple):
     timeout: datetime.timedelta
     # Delay between starting replicas and clients.
     client_lag: datetime.timedelta
+    # State machine
+    state_machine: str
+    # Client workload.
+    workload: Workload
     # Profile the code with perf.
     profiled: bool
     # Monitor the code with prometheus.
@@ -82,7 +88,6 @@ class Input(NamedTuple):
     # Client parameters. #######################################################
     client_options: ClientOptions
     client_log_level: str
-    client_num_keys: int
 
 
 Output = benchmark.RecorderOutput
@@ -259,6 +264,7 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.replica_log_level,
+                    '--state_machine', input.state_machine,
                     '--dependency_graph', input.replica_dependency_graph,
                     '--prometheus_host', replica.host.ip(),
                     '--prometheus_port',
@@ -332,6 +338,11 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
         bench.log('Client lag ended.')
 
         # Launch clients.
+        workload_filename = bench.abspath('workload.pbtxt')
+        bench.write_string(
+            workload_filename,
+            proto_util.message_to_pbtext(input.workload.to_proto()))
+
         client_procs = []
         for (i, client) in enumerate(net.clients()):
             proc = bench.popen(
@@ -359,7 +370,7 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                     '--duration', f'{input.duration.total_seconds()}s',
                     '--timeout', f'{input.timeout.total_seconds()}s',
                     '--num_clients', f'{input.num_clients_per_proc}',
-                    '--num_keys', f'{input.client_num_keys}',
+                    '--workload', f'{workload_filename}',
                     '--output_file_prefix', bench.abspath(f'client_{i}'),
                     '--options.reproposePeriod',
                         '{}s'.format(input.client_options

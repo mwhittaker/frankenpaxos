@@ -9,12 +9,9 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
+import frankenpaxos.StringWorkload
+import frankenpaxos.Workload
 import frankenpaxos.monitoring.PrometheusCollectors
-import frankenpaxos.statemachine.GetRequest
-import frankenpaxos.statemachine.KeyValueStore
-import frankenpaxos.statemachine.KeyValueStoreInput
-import frankenpaxos.statemachine.SetKeyValuePair
-import frankenpaxos.statemachine.SetRequest
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -43,7 +40,7 @@ object BenchmarkClientMain extends App {
       duration: java.time.Duration = java.time.Duration.ofSeconds(5),
       timeout: Duration = 10 seconds,
       numClients: Int = 1,
-      numKeys: Int = 1,
+      workload: Workload = new StringWorkload(0, 0),
       outputFilePrefix: String = "",
       // Options.
       options: ClientOptions = ClientOptions.default
@@ -85,8 +82,8 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(timeout = x))
     opt[Int]("num_clients")
       .action((x, f) => f.copy(numClients = x))
-    opt[Int]("num_keys")
-      .action((x, f) => f.copy(numKeys = x))
+    opt[Workload]("workload")
+      .action((x, f) => f.copy(workload = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
 
@@ -118,27 +115,13 @@ object BenchmarkClientMain extends App {
     metrics = new ClientMetrics(PrometheusCollectors)
   )
 
-  // Helper function to generate command.
-  val keys = for (i <- 0 until flags.numKeys) yield i.toString()
-  val keyValues = keys.map((_, "unimportant_value"))
-  var seed = Seed.random()
-  val gen = Gen.oneOf(
-    KeyValueStore.getOneOf(keys),
-    KeyValueStore.setOneOf(keyValues)
-  )
-  def randomProposal(): KeyValueStoreInput = {
-    val proposal = gen.apply(Gen.Parameters.default, seed).get
-    seed = seed.next
-    proposal
-  }
-
   // Function to run client.
   val recorder =
     new BenchmarkUtil.Recorder(s"${flags.outputFilePrefix}_data.csv")
   def run(pseudonym: Int): Future[Unit] = {
     implicit val context = transport.executionContext
     BenchmarkUtil
-      .timed(() => client.propose(pseudonym, randomProposal().toByteArray))
+      .timed(() => client.propose(pseudonym, flags.workload.get()))
       .transformWith({
         case scala.util.Failure(_) =>
           logger.debug("Request failed.")

@@ -20,6 +20,12 @@ def main(args) -> None:
                     duration = datetime.timedelta(seconds=10),
                     timeout = datetime.timedelta(seconds=15),
                     client_lag = datetime.timedelta(seconds=2),
+                    state_machine = 'KeyValueStore',
+                    workload = workload.UniformSingleKeyWorkload(
+                        num_keys=1000000,
+                        size_mean=1,
+                        size_std=0,
+                    ),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -50,12 +56,11 @@ def main(args) -> None:
                             datetime.timedelta(seconds=1)
                     ),
                     replica_log_level = args.log_level,
-                    replica_dependency_graph = "Tarjan",
+                    replica_dependency_graph = 'Tarjan',
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(seconds=60),
                     ),
                     client_log_level = args.log_level,
-                    client_num_keys = 1000000,
                 )
                 for f in [1, 2]
                 for num_leaders in

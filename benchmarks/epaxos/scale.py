@@ -19,6 +19,12 @@ def main(args) -> None:
                     duration = datetime.timedelta(seconds=20),
                     timeout = datetime.timedelta(seconds=60),
                     client_lag = datetime.timedelta(seconds=5),
+                    state_machine = 'KeyValueStore',
+                    workload = workload.UniformSingleKeyWorkload(
+                        num_keys=1000000,
+                        size_mean=1,
+                        size_std=0,
+                    ),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -47,7 +53,6 @@ def main(args) -> None:
                         repropose_period = datetime.timedelta(seconds=60),
                     ),
                     client_log_level = args.log_level,
-                    client_num_keys = 1000000,
                 )
                 for f in [1, 2]
                 for (num_client_procs, num_clients_per_proc) in

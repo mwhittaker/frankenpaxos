@@ -15,19 +15,25 @@ def _main(args) -> None:
                     duration = datetime.timedelta(seconds=20),
                     timeout = datetime.timedelta(seconds=45),
                     client_lag = datetime.timedelta(seconds=5),
+                    state_machine = 'KeyValueStore',
+                    workload = workload.UniformSingleKeyWorkload(
+                        num_keys = 1000000,
+                        size_mean = 1,
+                        size_std = 0,
+                    ),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     leader_options = LeaderOptions(),
                     leader_log_level = args.log_level,
+                    leader_dependency_graph = 'Tarjan',
                     dep_service_node_options = DepServiceNodeOptions(),
                     dep_service_node_log_level = args.log_level,
                     acceptor_options = AcceptorOptions(),
                     acceptor_log_level = args.log_level,
                     client_options = ClientOptions(),
                     client_log_level = args.log_level,
-                    client_num_keys = 1000,
                 )
                 for f in [1, 2]
                 for (num_client_procs, num_clients_per_proc) in

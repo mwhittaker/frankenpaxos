@@ -30,6 +30,7 @@ class RoundSystemType(enum.Enum):
     MIXED_ROUND_ROBIN = 'MIXED_ROUND_ROBIN'
 
 
+# TODO(mwhittaker): Remove, or pull up so all benchmarks can use.
 class ThriftySystemType:
     NOT_THRIFTY = 'NotThrifty'
     RANDOM = 'Random'

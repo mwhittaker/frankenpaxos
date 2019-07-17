@@ -1,4 +1,5 @@
 from .epaxos import *
+from typing import cast
 
 
 def main(args) -> None:
@@ -19,6 +20,12 @@ def main(args) -> None:
                     duration = datetime.timedelta(seconds=20),
                     timeout = datetime.timedelta(seconds=60),
                     client_lag = datetime.timedelta(seconds=5),
+                    state_machine = 'KeyValueStore',
+                    workload = workload.UniformSingleKeyWorkload(
+                        num_keys=num_keys,
+                        size_mean=1,
+                        size_std=0,
+                    ),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -30,16 +37,17 @@ def main(args) -> None:
                         repropose_period = datetime.timedelta(milliseconds=500),
                     ),
                     client_log_level = args.log_level,
-                    client_num_keys = client_num_keys,
                 )
                 for f in [1, 2]
-                for client_num_keys in [1, 10, 100, 1000, 10000]
+                for num_keys in [1, 10, 100, 1000, 10000]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
-                'client_num_keys': input.client_num_keys,
+                'num_keys':
+                    cast(workload.UniformSingleKeyWorkload, input.workload)
+                    .num_keys,
                 'throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 

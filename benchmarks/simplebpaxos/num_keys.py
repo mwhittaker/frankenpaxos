@@ -1,5 +1,5 @@
 from .simplebpaxos import *
-
+from typing import cast
 
 def _main(args) -> None:
     class NumKeysSimpleBPaxosSuite(SimpleBPaxosSuite):
@@ -20,6 +20,12 @@ def _main(args) -> None:
                     duration = datetime.timedelta(seconds=20),
                     timeout = datetime.timedelta(seconds=30),
                     client_lag = datetime.timedelta(seconds=2),
+                    state_machine = 'KeyValueStore',
+                    workload = workload.UniformSingleKeyWorkload(
+                        num_keys = num_keys,
+                        size_mean = 1,
+                        size_std = 0,
+                    ),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -50,21 +56,22 @@ def _main(args) -> None:
                             datetime.timedelta(seconds=1)
                     ),
                     replica_log_level = args.log_level,
-                    replica_dependency_graph = "Tarjan",
+                    replica_dependency_graph = 'Tarjan',
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(seconds=1),
                     ),
                     client_log_level = args.log_level,
-                    client_num_keys = client_num_keys,
                 )
                 for f in [1, 2]
-                for client_num_keys in [1, 10, 100, 1000, 10000, 100000]
+                for num_keys in [1, 10, 100, 1000, 10000, 100000]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
-                'num_keys': input.client_num_keys,
+                'num_keys':
+                    cast(workload.UniformSingleKeyWorkload, input.workload)
+                    .num_keys,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.median':
                     f'{output.stop_throughput_1s.median:.6}',

@@ -10,7 +10,9 @@ import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.TarjanDependencyGraph
+import frankenpaxos.statemachine
 import frankenpaxos.statemachine.KeyValueStore
+import frankenpaxos.statemachine.StateMachine
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
@@ -24,6 +26,7 @@ object ReplicaMain extends App {
       index: Int = -1,
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
+      stateMachine: StateMachine = new statemachine.Noop(),
       dependencyGraph: DependencyGraph[VertexId, Unit] =
         new TarjanDependencyGraph(),
       // Monitoring.
@@ -49,6 +52,9 @@ object ReplicaMain extends App {
     opt[Int]("index").required().action((x, f) => f.copy(index = x))
     opt[File]("config").required().action((x, f) => f.copy(configFile = x))
     opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))
+    opt[StateMachine]("state_machine")
+      .required()
+      .action((x, f) => f.copy(stateMachine = x))
     opt[DependencyGraph[VertexId, Unit]]("dependency_graph")
       .required()
       .action((x, f) => f.copy(dependencyGraph = x))
@@ -89,7 +95,7 @@ object ReplicaMain extends App {
     transport = new NettyTcpTransport(logger),
     logger = logger,
     config = config,
-    stateMachine = new KeyValueStore(),
+    stateMachine = flags.stateMachine,
     dependencyGraph = flags.dependencyGraph,
     options = flags.options
   )
