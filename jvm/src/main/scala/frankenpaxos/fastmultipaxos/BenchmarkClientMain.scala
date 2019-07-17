@@ -10,9 +10,9 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
+import frankenpaxos.StringWorkload
+import frankenpaxos.Workload
 import frankenpaxos.monitoring.PrometheusCollectors
-import frankenpaxos.statemachine.SleepRequest
-import frankenpaxos.statemachine.SleeperInput
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
@@ -36,10 +36,7 @@ object BenchmarkClientMain extends App {
       duration: java.time.Duration = java.time.Duration.ofSeconds(5),
       timeout: Duration = 10 seconds,
       numClients: Int = 1,
-      commandSizeBytesMean: Int = 100,
-      commandSizeBytesStddev: Int = 0,
-      sleepTimeNanosMean: Int = 1,
-      sleepTimeNanosStddev: Int = 0,
+      workload: Workload = new StringWorkload(0, 0),
       outputFilePrefix: String = "",
       // Options.
       options: ClientOptions = ClientOptions.default
@@ -72,14 +69,8 @@ object BenchmarkClientMain extends App {
       .action((x, f) => f.copy(timeout = x))
     opt[Int]("num_clients")
       .action((x, f) => f.copy(numClients = x))
-    opt[Int]("command_size_bytes_mean")
-      .action((x, f) => f.copy(commandSizeBytesMean = x))
-    opt[Int]("command_size_bytes_stddev")
-      .action((x, f) => f.copy(commandSizeBytesStddev = x))
-    opt[Int]("sleep_time_nanos_mean")
-      .action((x, f) => f.copy(sleepTimeNanosMean = x))
-    opt[Int]("sleep_time_nanos_stddev")
-      .action((x, f) => f.copy(sleepTimeNanosStddev = x))
+    opt[Workload]("workload")
+      .action((x, f) => f.copy(workload = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
 
@@ -111,46 +102,25 @@ object BenchmarkClientMain extends App {
     metrics = new ClientMetrics(PrometheusCollectors)
   )
 
-  // Helper function to generate command.
-  def randomProposal(): SleeperInput = {
-    var commandSizeBytes: Int =
-      (Random.nextGaussian() * flags.commandSizeBytesStddev).toInt
-    commandSizeBytes += flags.commandSizeBytesMean
-    commandSizeBytes = Math.max(0, commandSizeBytes)
-
-    var sleepTimeNanos: Int =
-      (Random.nextGaussian() * flags.sleepTimeNanosStddev).toInt
-    sleepTimeNanos += flags.sleepTimeNanosMean
-    sleepTimeNanos = Math.max(0, sleepTimeNanos)
-
-    SleeperInput().withSleepRequest(
-      SleepRequest(sleepNanos = sleepTimeNanos,
-                   padding =
-                     ByteString.copyFrom(Array.fill[Byte](commandSizeBytes)(0)))
-    )
-  }
-
   // Run clients.
-  val latencyWriter =
-    CSVWriter.open(new File(s"${flags.outputFilePrefix}_data.csv"))
-  latencyWriter.writeRow(Seq("start", "stop", "latency_nanos", "host", "port"))
-
+  val recorder =
+    new BenchmarkUtil.Recorder(s"${flags.outputFilePrefix}_data.csv")
   def run(pseudonym: Int): Future[Unit] = {
     implicit val context = transport.executionContext
     BenchmarkUtil
-      .timed(() => client.propose(pseudonym, randomProposal().toByteArray))
+      .timed(() => client.propose(pseudonym, flags.workload.get()))
       .transformWith({
         case scala.util.Failure(_) =>
           logger.debug("Fast Multipaxos request failed.")
           Future.successful(())
 
         case scala.util.Success((_, timing)) =>
-          latencyWriter.writeRow(
-            Seq(timing.startTime.toString(),
-                timing.stopTime.toString(),
-                timing.durationNanos.toString(),
-                flags.host,
-                flags.port)
+          recorder.record(
+            start = timing.startTime,
+            stop = timing.stopTime,
+            latencyNanos = timing.durationNanos,
+            host = flags.host,
+            port = flags.port
           )
           Future.successful(())
       })

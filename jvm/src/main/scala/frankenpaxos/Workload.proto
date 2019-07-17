@@ -1,0 +1,28 @@
+syntax = "proto2";
+
+package frankenpaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos"
+  flat_package: true
+};
+
+message StringWorkloadProto {
+  required int32 size_mean = 1;
+  required int32 size_std = 2;
+}
+
+message UniformSingleKeyWorkloadProto {
+  required int32 num_keys = 1;
+  required int32 size_mean = 2;
+  required int32 size_std = 3;
+}
+
+message WorkloadProto {
+  oneof value {
+    StringWorkloadProto string_workload = 1;
+    UniformSingleKeyWorkloadProto uniform_single_key_workload = 2;
+  }
+}

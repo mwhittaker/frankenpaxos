@@ -18,10 +18,8 @@ def _main(args) -> None:
                     duration_seconds = 20,
                     timeout_seconds = 30,
                     client_lag_seconds = 5,
-                    command_size_bytes_mean = command_size_bytes_mean,
-                    command_size_bytes_stddev = 0,
-                    command_sleep_time_nanos_mean = 0,
-                    command_sleep_time_nanos_stddev = 0,
+                    state_machine = 'Register',
+                    workload = workload.StringWorkload(10, 0),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval_ms = 200,
@@ -58,7 +56,6 @@ def _main(args) -> None:
                 for n in [num_client_procs * num_clients_per_proc]
                 for phase2a_max_buffer_size in
                     [1 if x == 0 else x for x in range(0, n + 1, 10)]
-                for command_size_bytes_mean in [1, 10, 100, 1000, 5000, 10000]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
@@ -69,7 +66,6 @@ def _main(args) -> None:
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'phase2a_max_buffer_size': input.leader.phase2a_max_buffer_size,
-                'command_size_bytes_mean': input.command_size_bytes_mean,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })

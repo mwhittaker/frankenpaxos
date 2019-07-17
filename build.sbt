@@ -2,6 +2,7 @@ import sbtcrossproject.CrossPlugin.autoImport.CrossType
 import sbtcrossproject.CrossPlugin.autoImport.crossProject
 
 name := "frankenpaxos"
+scalaVersion := "2.13.0"
 
 lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
   .in(file("."))

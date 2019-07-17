@@ -6,10 +6,11 @@ import frankenpaxos.LogLevel
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
+import frankenpaxos.PrometheusUtil
 import frankenpaxos.election.LeaderElectionOptions
 import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.statemachine
-import frankenpaxos.statemachine.Sleeper
+import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.thrifty.ThriftySystem
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
@@ -22,6 +23,7 @@ object LeaderMain extends App {
       index: Int = -1,
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
+      stateMachine: StateMachine = new statemachine.Noop(),
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
@@ -69,6 +71,9 @@ object LeaderMain extends App {
     opt[Int]("index").required().action((x, f) => f.copy(index = x))
     opt[File]('c', "config").required().action((x, f) => f.copy(configFile = x))
     opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))
+    opt[StateMachine]("state_machine")
+      .required()
+      .action((x, f) => f.copy(stateMachine = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
@@ -121,30 +126,18 @@ object LeaderMain extends App {
       throw new IllegalArgumentException("Could not parse flags.")
   }
 
+  // Start the leader.
   val logger = new PrintLogger(flags.logLevel)
-  val transport = new NettyTcpTransport(logger)
   val config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath())
-  val address = config.leaderAddresses(flags.index)
-  // This benchmark hard codes the use of the sleeper state machine.
-  val stateMachine = new Sleeper()
-  val server = new Leader[NettyTcpTransport](address,
-                                             transport,
-                                             logger,
-                                             config,
-                                             stateMachine,
-                                             flags.options)
+  val server = new Leader[NettyTcpTransport](
+    address = config.leaderAddresses(flags.index),
+    transport = new NettyTcpTransport(logger),
+    logger = logger,
+    config = config,
+    stateMachine = flags.stateMachine,
+    options = flags.options
+  )
 
-  if (flags.prometheusPort != -1) {
-    DefaultExports.initialize()
-    val prometheusServer =
-      new HTTPServer(flags.prometheusHost, flags.prometheusPort)
-    logger.info(
-      s"Prometheus server running on ${flags.prometheusHost}:" +
-        s"${flags.prometheusPort}"
-    )
-  } else {
-    logger.info(
-      s"Prometheus server not running because a port of -1 was given."
-    )
-  }
+  // Start Prometheus.
+  PrometheusUtil.server(flags.prometheusHost, flags.prometheusPort)
 }

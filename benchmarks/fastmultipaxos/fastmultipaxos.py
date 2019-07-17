@@ -5,6 +5,8 @@ from .. import pd_util
 from .. import prometheus
 from .. import proto_util
 from .. import util
+from .. import workload
+from ..workload import Workload
 from typing import Any, Callable, Dict, List, NamedTuple
 import argparse
 import csv
@@ -88,14 +90,10 @@ class Input(NamedTuple):
     timeout_seconds: float
     # Delay between starting leaders and clients.
     client_lag_seconds: float
-    # The mean command size (in bytes), drawn from a Gaussian.
-    command_size_bytes_mean: int
-    # The stddev command size (in bytes), drawn from a Gaussian.
-    command_size_bytes_stddev: int
-    # The mean command sleep time (in milliseconds), drawn from a Gaussian.
-    command_sleep_time_nanos_mean: int
-    # The stddev command sleep time (in milliseconds), drawn from a Gaussian.
-    command_sleep_time_nanos_stddev: int
+    # State machine
+    state_machine: str
+    # Client workload.
+    workload: Workload
     # Profile the code with perf.
     profiled: bool
     # Monitor the code with prometheus.
@@ -401,6 +399,7 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.leader_log_level,
+                    '--state_machine', input.state_machine,
                     '--prometheus_host', leader.host.ip(),
                     '--prometheus_port',
                         str(leader.port + 1) if input.monitored else '-1',
@@ -472,6 +471,11 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
         bench.log('Client lag ended.')
 
         # Launch clients.
+        workload_filename = bench.abspath('workload.pbtxt')
+        bench.write_string(
+            workload_filename,
+            proto_util.message_to_pbtext(input.workload.to_proto()))
+
         client_procs = []
         for (i, client) in enumerate(net.clients()):
             proc = bench.popen(
@@ -490,22 +494,11 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     '--config', config_filename,
                     '--options.reproposePeriod',
                         f'{input.client.repropose_period_ms}ms',
-                    '--duration',
-                        f'{input.duration_seconds}s',
-                    '--timeout',
-                        f'{input.timeout_seconds}s',
-                    '--num_clients',
-                        f'{input.num_clients_per_proc}',
-                    '--command_size_bytes_mean',
-                        f'{input.command_size_bytes_mean}',
-                    '--command_size_bytes_stddev',
-                        f'{input.command_size_bytes_stddev}',
-                    '--sleep_time_nanos_mean',
-                        f'{input.command_sleep_time_nanos_mean}',
-                    '--sleep_time_nanos_stddev',
-                        f'{input.command_sleep_time_nanos_stddev}',
-                    '--output_file_prefix',
-                        bench.abspath(f'client_{i}'),
+                    '--duration', f'{input.duration_seconds}s',
+                    '--timeout', f'{input.timeout_seconds}s',
+                    '--num_clients', f'{input.num_clients_per_proc}',
+                    '--workload', f'{workload_filename}',
+                    '--output_file_prefix', bench.abspath(f'client_{i}'),
                 ]
             )
             client_procs.append(proc)

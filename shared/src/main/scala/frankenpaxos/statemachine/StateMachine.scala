@@ -15,3 +15,16 @@ trait StateMachine {
   def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
     new NaiveConflictIndex(conflicts)
 }
+
+object StateMachine {
+  implicit val read: scopt.Read[StateMachine] = scopt.Read.reads({
+    case "AppendLog"     => new AppendLog()
+    case "KeyValueStore" => new KeyValueStore()
+    case "Noop"          => new Noop()
+    case "Register"      => new Register()
+    case x =>
+      throw new IllegalArgumentException(
+        s"$x is not one of AppendLog, KeyValueStore, Noop, or Register."
+      )
+  })
+}
