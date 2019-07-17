@@ -1,6 +1,0 @@
-f: 1
-leaderAddress { host: "localhost" port: 9001}
-leaderAddress { host: "localhost" port: 9002}
-acceptorAddress { host: "localhost" port: 9003}
-acceptorAddress { host: "localhost" port: 9004}
-acceptorAddress { host: "localhost" port: 9005}
