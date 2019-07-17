@@ -476,7 +476,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', proposer.host.ip(),
                     '--prometheus_port',
                         str(proposer.port + 1) if input.monitored else '-1',
-                    '--options.thrifty_system',
+                    '--options.thriftySystem',
                         input.proposer_options.thrifty_system,
                     '--options.resendPhase1asTimerPeriod',
                         '{}s'.format(input.proposer_options
@@ -507,7 +507,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', leader.host.ip(),
                     '--prometheus_port',
                         str(leader.port + 1) if input.monitored else '-1',
-                    '--options.thrifty_system',
+                    '--options.thriftySystem',
                         input.leader_options.thrifty_system,
                     '--options.resendDependencyRequestsTimerPeriod',
                         '{}s'.format(input.leader_options
