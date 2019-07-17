@@ -21,13 +21,13 @@ class EPaxos(val f: Int) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = f + 1
-  val numReplicas = 2 * f + 1
+  val numLeaders = 2 * f + 1
 
   // Configuration.
   val config = Config[FakeTransport](
     f = f,
-    replicaAddresses = for (i <- 1 to numReplicas)
-      yield FakeTransportAddress(s"Replica $i")
+    leaderAddresses = for (i <- 1 to numLeaders)
+      yield FakeTransportAddress(s"Leader $i")
   )
 
   // Clients.
@@ -40,18 +40,18 @@ class EPaxos(val f: Int) {
                                 options = ClientOptions.default,
                                 metrics = new ClientMetrics(FakeCollectors))
 
-  // Replicas
-  val replicas = for (i <- 1 to numReplicas)
+  // Leaders
+  val leaders = for (i <- 1 to numLeaders)
     yield
-      new Replica[FakeTransport](
-        FakeTransportAddress(s"Replica $i"),
+      new Leader[FakeTransport](
+        FakeTransportAddress(s"Leader $i"),
         transport,
         logger,
         config,
         stateMachine = new KeyValueStore(),
         dependencyGraph = new JgraphtDependencyGraph[Instance, Int](),
-        options = ReplicaOptions.default,
-        metrics = new ReplicaMetrics(FakeCollectors)
+        options = LeaderOptions.default,
+        metrics = new LeaderMetrics(FakeCollectors)
       )
 }
 
@@ -70,7 +70,7 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
 
   override type System = EPaxos
   // TODO(mwhittaker): Implement.
-  override type State = Map[Instance, Set[Replica.CommandTriple]]
+  override type State = Map[Instance, Set[Leader.CommandTriple]]
   override type Command = SimulatedEPaxos.Command
 
   // True if some value has been chosen in some execution of the system.
@@ -88,17 +88,17 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
       Map(merged.toSeq: _*)
     }
 
-    // We look at the commands recorded chosen by the replicas.
-    val chosen = epaxos.replicas
-      .map(replica => Map() ++ replica.cmdLog)
+    // We look at the commands recorded chosen by the leaders.
+    val chosen = epaxos.leaders
+      .map(leader => Map() ++ leader.cmdLog)
       .map(cmdLog => {
         cmdLog.flatMap({
-          case (i, Replica.CommittedEntry(triple)) => Some(i -> triple)
-          case _                                   => None
+          case (i, Leader.CommittedEntry(triple)) => Some(i -> triple)
+          case _                                  => None
         })
       })
-      .map(cmdLog => cmdLog.mapValues(Set[Replica.CommandTriple](_)))
-      .foldLeft(Map[Instance, Set[Replica.CommandTriple]]())(merge(_, _))
+      .map(cmdLog => cmdLog.mapValues(Set[Leader.CommandTriple](_)))
+      .foldLeft(Map[Instance, Set[Leader.CommandTriple]]())(merge(_, _))
     if (chosen.size > 0) {
       valueChosen = true
     }
@@ -160,8 +160,8 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
         if instanceA != instanceB
         if chosenB.size > 0
       } {
-        val Replica.CommandTriple(commandOrNoopA, _, depsA) = chosenA.head
-        val Replica.CommandTriple(commandOrNoopB, _, depsB) = chosenB.head
+        val Leader.CommandTriple(commandOrNoopA, _, depsA) = chosenA.head
+        val Leader.CommandTriple(commandOrNoopB, _, depsB) = chosenB.head
 
         import CommandOrNoop.Value
         (commandOrNoopA.value, commandOrNoopB.value) match {
@@ -195,8 +195,8 @@ class SimulatedEPaxos(val f: Int) extends SimulatedSystem {
       newState: State
   ): SimulatedSystem.InvariantResult = {
     for (instance <- oldState.keys ++ newState.keys) {
-      val oldChosen = oldState.getOrElse(instance, Set[Replica.CommandTriple]())
-      val newChosen = newState.getOrElse(instance, Set[Replica.CommandTriple]())
+      val oldChosen = oldState.getOrElse(instance, Set[Leader.CommandTriple]())
+      val newChosen = newState.getOrElse(instance, Set[Leader.CommandTriple]())
       if (!oldChosen.subsetOf(newChosen)) {
         SimulatedSystem.InvariantViolated(
           s"Instance $instance was $oldChosen but now is $newChosen."

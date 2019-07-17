@@ -29,7 +29,7 @@ def main(args) -> None:
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
-                    replica_options = ReplicaOptions(
+                    leader_options = LeaderOptions(
                         resend_pre_accepts_timer_period = \
                             datetime.timedelta(seconds=60),
                         default_to_slow_path_timer_period = \
@@ -48,16 +48,16 @@ def main(args) -> None:
                         execute_graph_timer_period = \
                             datetime.timedelta(seconds=1)
                     ),
-                    replica_log_level = args.log_level,
-                    replica_dependency_graph =
-                        replica_dependency_graph,
+                    leader_log_level = args.log_level,
+                    leader_dependency_graph =
+                        leader_dependency_graph,
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(seconds=60),
                     ),
                     client_log_level = args.log_level,
                 )
                 for unsafe_skip_graph_execution in [True, False]
-                for replica_dependency_graph in (
+                for leader_dependency_graph in (
                     ["Jgrapht", "Tarjan", "IncrementalTarjan"]
                     if not unsafe_skip_graph_execution else ["Tarjan"])
                 for (num_client_procs, num_clients_per_proc) in
@@ -67,8 +67,8 @@ def main(args) -> None:
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'skip_graph_execution':
-                    input.replica_options.unsafe_skip_graph_execution,
-                'dep_graph': input.replica_dependency_graph,
+                    input.leader_options.unsafe_skip_graph_execution,
+                'dep_graph': input.leader_dependency_graph,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',

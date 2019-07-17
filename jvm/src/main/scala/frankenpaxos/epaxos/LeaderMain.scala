@@ -18,7 +18,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import scala.concurrent.duration
 
-object ReplicaMain extends App {
+object LeaderMain extends App {
   case class Flags(
       // Basic flags.
       index: Int = -1,
@@ -31,14 +31,14 @@ object ReplicaMain extends App {
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
       // Options.
-      options: ReplicaOptions = ReplicaOptions.default
+      options: LeaderOptions = LeaderOptions.default
   )
 
   implicit val dependencyGraphRead = DependencyGraph.read[Instance, Int]
 
   implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def optionAction(
-        f: (A, ReplicaOptions) => ReplicaOptions
+        f: (A, LeaderOptions) => LeaderOptions
     ): scopt.OptionDef[A, Flags] =
       o.action((x, flags) => flags.copy(options = f(x, flags.options)))
   }
@@ -95,11 +95,11 @@ object ReplicaMain extends App {
       throw new IllegalArgumentException("Could not parse flags.")
   }
 
-  // Construct replica.
+  // Construct leader.
   val logger = new PrintLogger(flags.logLevel)
   val config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath())
-  val replica = new Replica[NettyTcpTransport](
-    address = config.replicaAddresses(flags.index),
+  val leader = new Leader[NettyTcpTransport](
+    address = config.leaderAddresses(flags.index),
     transport = new NettyTcpTransport(logger),
     logger = logger,
     config = config,

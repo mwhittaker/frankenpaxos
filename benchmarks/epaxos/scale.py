@@ -29,7 +29,7 @@ def main(args) -> None:
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
-                    replica_options = ReplicaOptions(
+                    leader_options = LeaderOptions(
                         thrifty_system = 'Random',
                         resend_pre_accepts_timer_period = \
                             datetime.timedelta(seconds=60),
@@ -47,8 +47,8 @@ def main(args) -> None:
                         execute_graph_timer_period = \
                             datetime.timedelta(seconds=1)
                     ),
-                    replica_log_level = args.log_level,
-                    replica_dependency_graph = "Tarjan",
+                    leader_log_level = args.log_level,
+                    leader_dependency_graph = "Tarjan",
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(seconds=60),
                     ),

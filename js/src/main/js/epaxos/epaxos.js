@@ -23,8 +23,8 @@ let preaccept_ok = {
     <fp-object :value="preaccept_ok">
       <fp-field :name="'instance'" :value="preaccept_ok.instance"></fp-field>
       <fp-field :name="'ballot'" :value="preaccept_ok.ballot"></fp-field>
-      <fp-field :name="'replicaIndex'"
-                :value="preaccept_ok.replicaIndex"></fp-field>
+      <fp-field :name="'leaderIndex'"
+                :value="preaccept_ok.leaderIndex"></fp-field>
       <fp-field :name="'sequenceNumber'"
                 :value="preaccept_ok.sequenceNumber"></fp-field>
       <fp-field :name="'dependencies'" :value="preaccept_ok.dependencies">
@@ -42,8 +42,8 @@ let accept_ok = {
     <fp-object :value="accept_ok">
       <fp-field :name="'instance'" :value="accept_ok.instance"></fp-field>
       <fp-field :name="'ballot'" :value="accept_ok.ballot"></fp-field>
-      <fp-field :name="'replicaIndex'"
-                :value="accept_ok.replicaIndex"></fp-field>
+      <fp-field :name="'leaderIndex'"
+                :value="accept_ok.leaderIndex"></fp-field>
     </fp-object>
   `,
 };
@@ -55,8 +55,8 @@ let prepare_ok = {
     <fp-object :value="prepare_ok">
       <fp-field :name="'instance'" :value="prepare_ok.instance"></fp-field>
       <fp-field :name="'ballot'" :value="prepare_ok.ballot"></fp-field>
-      <fp-field :name="'replicaIndex'"
-                :value="prepare_ok.replicaIndex"></fp-field>
+      <fp-field :name="'leaderIndex'"
+                :value="prepare_ok.leaderIndex"></fp-field>
       <fp-field :name="'voteBallot'" :value="prepare_ok.voteBallot"></fp-field>
       <fp-field :name="'status'"
                 :value="prepare_ok.status"></fp-field>
@@ -116,7 +116,7 @@ let client_info = {
   `,
 };
 
-let replica_info = {
+let leader_info = {
   props: ['node'],
 
   components: {
@@ -138,7 +138,7 @@ let replica_info = {
 
   methods: {
     instance_to_string: function(instance) {
-      return instance.replicaIndex + "." + instance.instanceNumber;
+      return instance.leaderIndex + "." + instance.instanceNumber;
     },
 
     nodes: function() {
@@ -337,7 +337,7 @@ function make_nodes(EPaxos, snap) {
   }
 
   let client_x = 125;
-  let replica_x = 275;
+  let leader_x = 275;
 
   let nodes = {};
 
@@ -370,56 +370,56 @@ function make_nodes(EPaxos, snap) {
     component: client_info,
   };
 
-  // Replicas.
-  nodes[EPaxos.replica1.address] = {
-    actor: EPaxos.replica1,
+  // Leaders.
+  nodes[EPaxos.leader1.address] = {
+    actor: EPaxos.leader1,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x, 100, 20).attr(colored(flat_blue)),
-      snap.text(replica_x, 100, '1').attr(number_style),
+      snap.circle(leader_x, 100, 20).attr(colored(flat_blue)),
+      snap.text(leader_x, 100, '1').attr(number_style),
     ],
-    component: replica_info,
+    component: leader_info,
   };
-  nodes[EPaxos.replica2.address] = {
-    actor: EPaxos.replica2,
+  nodes[EPaxos.leader2.address] = {
+    actor: EPaxos.leader2,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x + 100, 200, 20).attr(colored(flat_blue)),
-      snap.text(replica_x + 100, 200, '2').attr(number_style),
+      snap.circle(leader_x + 100, 200, 20).attr(colored(flat_blue)),
+      snap.text(leader_x + 100, 200, '2').attr(number_style),
     ],
-    component: replica_info,
+    component: leader_info,
   };
-  nodes[EPaxos.replica3.address] = {
-    actor: EPaxos.replica3,
+  nodes[EPaxos.leader3.address] = {
+    actor: EPaxos.leader3,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x - 100, 300, 20).attr(colored(flat_blue)),
-      snap.text(replica_x - 100, 300, '3').attr(number_style),
+      snap.circle(leader_x - 100, 300, 20).attr(colored(flat_blue)),
+      snap.text(leader_x - 100, 300, '3').attr(number_style),
     ],
-    component: replica_info,
+    component: leader_info,
   };
-  nodes[EPaxos.replica4.address] = {
-    actor: EPaxos.replica4,
+  nodes[EPaxos.leader4.address] = {
+    actor: EPaxos.leader4,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x + 100, 400, 20).attr(colored(flat_blue)),
-      snap.text(replica_x + 100, 400, '4').attr(number_style),
+      snap.circle(leader_x + 100, 400, 20).attr(colored(flat_blue)),
+      snap.text(leader_x + 100, 400, '4').attr(number_style),
     ],
-    component: replica_info,
+    component: leader_info,
   };
-  nodes[EPaxos.replica5.address] = {
-    actor: EPaxos.replica5,
+  nodes[EPaxos.leader5.address] = {
+    actor: EPaxos.leader5,
     color: flat_blue,
     svgs: [
-      snap.circle(replica_x, 500, 20).attr(colored(flat_blue)),
-      snap.text(replica_x, 500, '5').attr(number_style),
+      snap.circle(leader_x, 500, 20).attr(colored(flat_blue)),
+      snap.text(leader_x, 500, '5').attr(number_style),
     ],
-    component: replica_info,
+    component: leader_info,
   };
 
   // Node titles.
   snap.text(client_x - 50, 15, 'Clients').attr({'text-anchor': 'middle'});
-  snap.text(replica_x + 50, 15, 'Replicas').attr({'text-anchor': 'middle'});
+  snap.text(leader_x + 50, 15, 'Leaders').attr({'text-anchor': 'middle'});
 
   return nodes;
 }

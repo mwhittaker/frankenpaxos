@@ -10,8 +10,8 @@ import scala.scalajs.js.annotation._
 object BallotHelpers {
   object Ordering extends scala.math.Ordering[Ballot] {
     private def ballotToTuple(ballot: Ballot): (Int, Int) = {
-      val Ballot(ordering, replicaIndex) = ballot
-      (ordering, replicaIndex)
+      val Ballot(ordering, leaderIndex) = ballot
+      (ordering, leaderIndex)
     }
 
     override def compare(lhs: Ballot, rhs: Ballot): Int = {

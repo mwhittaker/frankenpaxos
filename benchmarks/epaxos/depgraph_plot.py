@@ -17,8 +17,8 @@ def wrapped(s: str, width: int = 60) -> str:
 
 def plot(df: pd.DataFrame, ax, column: str, pretty_column: str) -> None:
     for ((skip, depgraph), group) in df.groupby([
-            'replica_options.unsafe_skip_graph_execution',
-            'replica_dependency_graph',
+            'leader_options.unsafe_skip_graph_execution',
+            'leader_dependency_graph',
         ]):
         stats = group.groupby(['num_clients'])[column].agg([np.mean, np.std])
         mean = stats['mean']

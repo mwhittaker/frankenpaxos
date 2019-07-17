@@ -108,14 +108,14 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var pendingCommands = mutable.Map[Pseudonym, PendingCommand]()
 
-  // Replica channels.
-  private val replicas: Map[Int, Chan[Replica[Transport]]] = {
-    for ((address, i) <- config.replicaAddresses.zipWithIndex)
-      yield i -> chan[Replica[Transport]](address, Replica.serializer)
+  // Leader channels.
+  private val leaders: Map[Int, Chan[Leader[Transport]]] = {
+    for ((address, i) <- config.leaderAddresses.zipWithIndex)
+      yield i -> chan[Leader[Transport]](address, Leader.serializer)
   }.toMap
 
   // Timers to resend a proposed value. If a client doesn't hear back from a
-  // replica quickly enough, it resends its proposal.
+  // leader quickly enough, it resends its proposal.
   private val reproposeTimers = mutable.Map[Pseudonym, Transport#Timer]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
@@ -130,12 +130,12 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
-    // TODO(mwhittaker): Abstract out the policy of which replica to send to.
+    // TODO(mwhittaker): Abstract out the policy of which leader to send to.
     val rand = new Random(System.currentTimeMillis())
-    val randomIndex = rand.nextInt(replicas.size)
-    val replica = replicas(randomIndex)
+    val randomIndex = rand.nextInt(leaders.size)
+    val leader = leaders(randomIndex)
     val request = toClientRequest(pendingCommand)
-    replica.send(ReplicaInbound().withClientRequest(request))
+    leader.send(LeaderInbound().withClientRequest(request))
   }
 
   private def reproposeTimer(pseudonym: Pseudonym): Transport#Timer = {
@@ -152,7 +152,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             )
 
           case Some(pendingCommand) =>
-            // Ideally, we would re-send our request to all replicas. But, since
+            // Ideally, we would re-send our request to all leaders. But, since
             // EPaxos doesn't have a mechanism to prevent dueling leaders, we
             // send to one leader at a time.
             sendProposeRequest(pendingCommand)

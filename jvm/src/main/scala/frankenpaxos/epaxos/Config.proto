@@ -16,5 +16,5 @@ message HostPortProto {
 
 message NettyConfigProto {
   required int32 f = 1;
-  repeated HostPortProto replicaAddress = 2;
+  repeated HostPortProto leaderAddress = 2;
 }

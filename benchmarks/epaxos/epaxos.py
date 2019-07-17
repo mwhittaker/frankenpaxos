@@ -20,7 +20,7 @@ import yaml
 
 
 # Input/Output #################################################################
-class ReplicaOptions(NamedTuple):
+class LeaderOptions(NamedTuple):
     thrifty_system: str = 'NotThrifty'
     resend_pre_accepts_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
@@ -66,7 +66,7 @@ class Input(NamedTuple):
     duration: datetime.timedelta
     # Global timeout.
     timeout: datetime.timedelta
-    # Delay between starting replicas and clients.
+    # Delay between starting leaders and clients.
     client_lag: datetime.timedelta
     # State machine
     state_machine: str
@@ -80,10 +80,10 @@ class Input(NamedTuple):
     # monitoring is enabled.
     prometheus_scrape_interval: datetime.timedelta
 
-    # Replica options. #########################################################
-    replica_options: ReplicaOptions
-    replica_log_level: str
-    replica_dependency_graph: str
+    # Leader options. #########################################################
+    leader_options: LeaderOptions
+    leader_log_level: str
+    leader_dependency_graph: str
 
     # Client parameters. #######################################################
     client_options: ClientOptions
@@ -110,14 +110,14 @@ class EPaxosNet(object):
     def clients(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
-    def replicas(self) -> List[host.Endpoint]:
+    def leaders(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
     def config(self) -> proto_util.Message:
         return {
             'f': self.f(),
-            'replicaAddress': [
-                {'host': e.host.ip(), 'port': e.port} for e in self.replicas()
+            'leaderAddress': [
+                {'host': e.host.ip(), 'port': e.port} for e in self.leaders()
             ],
         }
 
@@ -140,7 +140,7 @@ class RemoteEPaxosNet(EPaxosNet):
 
     class _Placement(NamedTuple):
         clients: List[host.Endpoint]
-        replicas: List[host.Endpoint]
+        leaders: List[host.Endpoint]
 
     def _placement(self) -> '_Placement':
         ports = itertools.count(10000, 100)
@@ -150,12 +150,12 @@ class RemoteEPaxosNet(EPaxosNet):
         if len(self._hosts) == 1:
             return self._Placement(
                 clients = portify(self._hosts * self._num_client_procs),
-                replicas = portify(self._hosts * (2*self.f() + 1)),
+                leaders = portify(self._hosts * (2*self.f() + 1)),
             )
         else:
             return self._Placement(
                 clients = portify([self._hosts[0]] * self._num_client_procs),
-                replicas = portify(list(itertools.islice(
+                leaders = portify(list(itertools.islice(
                     itertools.cycle(self._hosts[1:]), 2*self.f() + 1))),
             )
 
@@ -165,8 +165,8 @@ class RemoteEPaxosNet(EPaxosNet):
     def clients(self) -> List[host.Endpoint]:
         return self._placement().clients
 
-    def replicas(self) -> List[host.Endpoint]:
-        return self._placement().replicas
+    def leaders(self) -> List[host.Endpoint]:
+        return self._placement().leaders
 
 
 class EPaxosMininet(EPaxosNet):
@@ -190,7 +190,7 @@ class SingleSwitchMininet(EPaxosMininet):
                  num_client_procs: int) -> None:
         self._f = f
         self._clients: List[host.Endpoint] = []
-        self._replicas: List[host.Endpoint] = []
+        self._leaders: List[host.Endpoint] = []
         self._net = mininet.net.Mininet()
 
         switch = self._net.addSwitch('s1')
@@ -201,12 +201,12 @@ class SingleSwitchMininet(EPaxosMininet):
             self._net.addLink(client, switch)
             self._clients.append(host.Endpoint(host.MininetHost(client), 10000))
 
-        num_replicas = 2*f + 1
-        for i in range(num_replicas):
-            replica = self._net.addHost(f'r{i}')
-            self._net.addLink(replica, switch)
-            self._replicas.append(
-                host.Endpoint(host.MininetHost(replica), 11000))
+        num_leaders = 2*f + 1
+        for i in range(num_leaders):
+            leader = self._net.addHost(f'r{i}')
+            self._net.addLink(leader, switch)
+            self._leaders.append(
+                host.Endpoint(host.MininetHost(leader), 11000))
 
     def net(self) -> mininet.net.Mininet:
         return self._net
@@ -217,8 +217,8 @@ class SingleSwitchMininet(EPaxosMininet):
     def clients(self) -> List[host.Endpoint]:
         return self._clients
 
-    def replicas(self) -> List[host.Endpoint]:
-        return self._replicas
+    def leaders(self) -> List[host.Endpoint]:
+        return self._leaders
 
 
 class EPaxosSuite(benchmark.Suite[Input, Output]):
@@ -251,79 +251,79 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                            proto_util.message_to_pbtext(net.config()))
         bench.log('Config file config.pbtxt written.')
 
-        # Launch replicas.
-        replica_procs = []
-        for (i, replica) in enumerate(net.replicas()):
+        # Launch leaders.
+        leader_procs = []
+        for (i, leader) in enumerate(net.leaders()):
             proc = bench.popen(
-                host=replica.host,
-                label=f'replica_{i}',
+                host=leader.host,
+                label=f'leader_{i}',
                 cmd = [
                     'java',
                     '-cp', os.path.abspath(args['jar']),
-                    'frankenpaxos.epaxos.ReplicaMain',
+                    'frankenpaxos.epaxos.LeaderMain',
                     '--index', str(i),
                     '--config', config_filename,
-                    '--log_level', input.replica_log_level,
+                    '--log_level', input.leader_log_level,
                     '--state_machine', input.state_machine,
-                    '--dependency_graph', input.replica_dependency_graph,
-                    '--prometheus_host', replica.host.ip(),
+                    '--dependency_graph', input.leader_dependency_graph,
+                    '--prometheus_host', leader.host.ip(),
                     '--prometheus_port',
-                        str(replica.port + 1) if input.monitored else '-1',
+                        str(leader.port + 1) if input.monitored else '-1',
                     '--options.thriftySystem',
-                        input.replica_options.thrifty_system,
+                        input.leader_options.thrifty_system,
                     '--options.resendPreAcceptsTimerPeriod', '{}ms'.format(
-                        input.replica_options
+                        input.leader_options
                              .resend_pre_accepts_timer_period
                              .total_seconds() * 1000),
                     '--options.defaultToSlowPathTimerPeriod', '{}ms'.format(
-                        input.replica_options
+                        input.leader_options
                              .default_to_slow_path_timer_period
                              .total_seconds() * 1000),
                     '--options.resendAcceptsTimerPeriod', '{}ms'.format(
-                        input.replica_options
+                        input.leader_options
                              .resend_accepts_timer_period
                              .total_seconds() * 1000),
                     '--options.resendPreparesTimerPeriod', '{}ms'.format(
-                        input.replica_options
+                        input.leader_options
                              .resend_prepares_timer_period
                              .total_seconds() * 1000),
                     '--options.recoverInstanceTimerMinPeriod', '{}ms'.format(
-                        input.replica_options
+                        input.leader_options
                              .recover_instance_timer_min_period
                              .total_seconds() * 1000),
                     '--options.recoverInstanceTimerMaxPeriod', '{}ms'.format(
-                        input.replica_options
+                        input.leader_options
                              .recover_instance_timer_max_period
                              .total_seconds() * 1000),
                     '--options.unsafeSkipGraphExecution',
                         "true"
-                        if input.replica_options.unsafe_skip_graph_execution
+                        if input.leader_options.unsafe_skip_graph_execution
                         else "false",
                     '--options.executeGraphBatchSize',
-                        str(input.replica_options.execute_graph_batch_size),
+                        str(input.leader_options.execute_graph_batch_size),
                     '--options.executeGraphTimerPeriod', '{}s'.format(
-                        input.replica_options
+                        input.leader_options
                              .execute_graph_timer_period
                              .total_seconds()),
                 ],
             )
-            replica_procs.append(proc)
-        bench.log('Replicas started.')
+            leader_procs.append(proc)
+        bench.log('Leaders started.')
 
         # Launch Prometheus.
         if input.monitored:
             prometheus_config = prometheus.prometheus_config(
                 int(input.prometheus_scrape_interval.total_seconds() * 1000),
                 {
-                  'epaxos_replica': [f'{e.host.ip()}:{e.port + 1}'
-                                     for e in net.replicas()],
+                  'epaxos_leader': [f'{e.host.ip()}:{e.port + 1}'
+                                     for e in net.leaders()],
                   'epaxos_client': [f'{e.host.ip()}:{e.port + 1}'
                                     for e in net.clients()],
                 }
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
             prometheus_server = bench.popen(
-                host=net.replicas()[0].host,
+                host=net.leaders()[0].host,
                 label='prometheus',
                 cmd = [
                     'prometheus',
@@ -384,7 +384,7 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
         # Wait for clients to finish and then terminate leaders and acceptors.
         for proc in client_procs:
             proc.wait()
-        for proc in replica_procs:
+        for proc in leader_procs:
             proc.kill()
         bench.log('Clients finished and processes terminated.')
 

@@ -7,7 +7,7 @@ import java.net.InetSocketAddress
 object ConfigUtil {
   def fromProto(proto: NettyConfigProto): Config[NettyTcpTransport] = {
     Config(f = proto.f,
-           replicaAddresses = proto.replicaAddress.map(
+           leaderAddresses = proto.leaderAddress.map(
              hp => NettyTcpAddress(new InetSocketAddress(hp.host, hp.port))
            ))
   }

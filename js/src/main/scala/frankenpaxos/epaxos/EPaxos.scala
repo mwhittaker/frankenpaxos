@@ -18,12 +18,12 @@ class EPaxos {
   // Configuration.
   val config = Config[JsTransport](
     f = 2,
-    replicaAddresses = Seq(
-      JsTransportAddress("Replica 1"),
-      JsTransportAddress("Replica 2"),
-      JsTransportAddress("Replica 3"),
-      JsTransportAddress("Replica 4"),
-      JsTransportAddress("Replica 5")
+    leaderAddresses = Seq(
+      JsTransportAddress("Leader 1"),
+      JsTransportAddress("Leader 2"),
+      JsTransportAddress("Leader 3"),
+      JsTransportAddress("Leader 4"),
+      JsTransportAddress("Leader 5")
     )
   )
 
@@ -47,11 +47,11 @@ class EPaxos {
   val (client2logger, client2) = clients(1)
   val (client3logger, client3) = clients(2)
 
-  // Replicas.
-  val replicas = for (i <- 1 to 5) yield {
+  // Leaders.
+  val leaders = for (i <- 1 to 5) yield {
     val logger = new JsLogger()
-    val address = JsTransportAddress(s"Replica $i")
-    val options = ReplicaOptions.default.copy(
+    val address = JsTransportAddress(s"Leader $i")
+    val options = LeaderOptions.default.copy(
       resendPreAcceptsTimerPeriod = java.time.Duration.ofSeconds(3),
       defaultToSlowPathTimerPeriod = java.time.Duration.ofSeconds(5),
       resendAcceptsTimerPeriod = java.time.Duration.ofSeconds(5),
@@ -61,21 +61,21 @@ class EPaxos {
       executeGraphBatchSize = 1,
       executeGraphTimerPeriod = java.time.Duration.ofSeconds(10)
     )
-    val replica = new Replica[JsTransport](address,
-                                           transport,
-                                           logger,
-                                           config,
-                                           new Register(),
-                                           new ScalaGraphDependencyGraph(),
-                                           options,
-                                           new ReplicaMetrics(FakeCollectors))
-    (logger, replica)
+    val leader = new Leader[JsTransport](address,
+                                         transport,
+                                         logger,
+                                         config,
+                                         new Register(),
+                                         new ScalaGraphDependencyGraph(),
+                                         options,
+                                         new LeaderMetrics(FakeCollectors))
+    (logger, leader)
   }
-  val (replica1logger, replica1) = replicas(0)
-  val (replica2logger, replica2) = replicas(1)
-  val (replica3logger, replica3) = replicas(2)
-  val (replica4logger, replica4) = replicas(3)
-  val (replica5logger, replica5) = replicas(4)
+  val (leader1logger, leader1) = leaders(0)
+  val (leader2logger, leader2) = leaders(1)
+  val (leader3logger, leader3) = leaders(2)
+  val (leader4logger, leader4) = leaders(3)
+  val (leader5logger, leader5) = leaders(4)
 }
 
 @JSExportAll

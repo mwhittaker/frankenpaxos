@@ -30,9 +30,9 @@ def main(args) -> None:
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
-                    replica_options = ReplicaOptions(),
-                    replica_log_level = args.log_level,
-                    replica_dependency_graph = "Tarjan",
+                    leader_options = LeaderOptions(),
+                    leader_log_level = args.log_level,
+                    leader_dependency_graph = "Tarjan",
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(milliseconds=500),
                     ),
