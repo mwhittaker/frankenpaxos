@@ -31,11 +31,13 @@ def main(args) -> None:
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     leader_options = LeaderOptions(
+                        thrifty_system = thrifty_system,
                         resend_dependency_requests_timer_period = \
                             datetime.timedelta(seconds=60)
                     ),
                     leader_log_level = args.log_level,
                     proposer_options = ProposerOptions(
+                        thrifty_system = thrifty_system,
                         resend_phase1as_timer_period = \
                             datetime.timedelta(seconds=60),
                         resend_phase2as_timer_period = \
@@ -51,39 +53,51 @@ def main(args) -> None:
                             datetime.timedelta(seconds=60),
                         recover_vertex_timer_max_period = \
                             datetime.timedelta(seconds=120),
-                        execute_graph_batch_size = execute_graph_batch_size,
+                        execute_graph_batch_size = 100,
                         execute_graph_timer_period = \
                             datetime.timedelta(seconds=1)
                     ),
                     replica_log_level = args.log_level,
-                    replica_dependency_graph = 'Tarjan',
+                    replica_dependency_graph = dependency_graph,
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(seconds=60),
                     ),
                     client_log_level = args.log_level,
                 )
-                for f in [1, 2]
-                for num_leaders in
-                    [x for x in [2, 7] if f == 1] +
-                    [x for x in [3, 10] if f == 2]
-                for execute_graph_batch_size in [1, 10, 100, 1000]
-                for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1000),  # 1000
-                     (3, 1000),  # 3000
-                     (5, 1000),  # 5000
-                     (5, 2000),  # 10,000
-                     (5, 6000),  # 30,000
-                     (5, 10000)] # 50,000
-            ] * 3
+                for (f, num_leaders, dependency_graph, thrifty_system) in [
+                    # Sweep the number of leaders.
+                    (1, 2, 'Tarjan', 'Random'),
+                    (1, 3, 'Tarjan', 'Random'),
+                    (1, 4, 'Tarjan', 'Random'),
+                    (1, 5, 'Tarjan', 'Random'),
+                    (1, 6, 'Tarjan', 'Random'),
+                    (1, 7, 'Tarjan', 'Random'),
+                    # Sweep the dependency graph.
+                    (1, 6, 'IncrementalTarjan', 'Random'),
+                    (1, 6, 'Jgrapht', 'Random'),
+                    # Sweep the thriftiness.
+                    (1, 6, 'Tarjan', 'NotThrifty'),
+                    # Sweep f.
+                    (2, 6, 'Tarjan', 'Random'),
+                ]
+                for (num_client_procs, num_clients_per_proc) in [
+                    (2, 100),
+                    (4, 100),
+                    (6, 100),
+                    (6, 500),
+                    (6, 1000),
+                    (6, 2000),
+                ]
+            ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
                 'num_leaders': input.num_leaders,
-                'execute_graph_batch_size':
-                    input.replica_options.execute_graph_batch_size,
-                'num_client_procs': input.num_client_procs,
-                'num_clients_per_proc': input.num_clients_per_proc,
+                'dep_graph': input.replica_dependency_graph,
+                'thrifty_system': input.leader_options.thrifty_system,
+                'num_clients':
+                    (input.num_client_procs, input.num_clients_per_proc),
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })

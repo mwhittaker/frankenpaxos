@@ -34,7 +34,7 @@ def plot_vs_num_clients(df: pd.DataFrame,
         mean = stats['mean']
         std = stats['std'].fillna(0)
 
-        label = ','.join([f'{k}={sanitize(v)}'
+        label = '\n'.join([f'{k}={sanitize(v)}'
                           for (k, v) in zip(group_by, name)])
         line = ax.semilogx(mean, '.-', label=label)[0]
         color = line.get_color()
@@ -53,7 +53,7 @@ def plot_latency_throughput(df: pd.DataFrame,
                             line_group_by: List[str],
                             title: str) -> None:
     for (name, group) in df.groupby(line_group_by):
-        label = ','.join([f'{k}={sanitize(v)}'
+        label = '\n'.join([f'{k}={sanitize(v)}'
                           for (k, v) in zip(line_group_by, name)])
         grouped = group.groupby('num_clients')
         ax.plot(grouped['stop_throughput_1s.p90'].agg(np.mean),
@@ -73,30 +73,39 @@ def main(args) -> None:
     df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
 
     num_plots = 6
-    fig, ax = plt.subplots(num_plots, 1, figsize=(3 * 6.4, 2 * num_plots * 4.8))
+    scale = 2
+    fig, ax = plt.subplots(num_plots, 1, figsize=(scale * 6.4, scale * num_plots * 4.8))
     ax_iter = iter(ax)
     line_group_by = [
         'f',
         'num_leaders',
-        'replica_options.execute_graph_batch_size'
+        'replica_dependency_graph',
+        'leader_options.thrifty_system',
     ]
-    plot_vs_num_clients(df[df['f'] == 1], next(ax_iter), line_group_by,
-         'Throughput f == 1', 'latency.median_ms', 'Median latency (ms)')
-    plot_vs_num_clients(df[df['f'] == 1], next(ax_iter), line_group_by,
-         'Latency f == 1', 'stop_throughput_1s.p90',
-         'P90 throughput (1 second windows)')
-    plot_latency_throughput(df[df['f'] == 1], next(ax_iter), line_group_by,
-         'Latency vs Throughput f == 1')
-    plot_vs_num_clients(df[df['f'] == 2], next(ax_iter), line_group_by,
-         'Throughput f == 2', 'latency.median_ms', 'Median latency (ms)')
-    plot_vs_num_clients(df[df['f'] == 2], next(ax_iter), line_group_by,
-         'Latency f == 2', 'stop_throughput_1s.p90',
-         'P90 throughput (1 second windows)')
-    plot_latency_throughput(df[df['f'] == 2], next(ax_iter), line_group_by,
-         'Latency vs Throughput f == 2')
 
-    fig.set_tight_layout(True)
-    fig.savefig(args.output)
+    leader_df = df[
+        (df['f'] == 1) &
+        (df['replica_dependency_graph'] == 'Tarjan') &
+        (df['leader_options.thrifty_system'] == 'Random')
+    ]
+    plot_vs_num_clients(leader_df, next(ax_iter), line_group_by,
+         'Throughput', 'latency.median_ms', 'Median latency (ms)')
+    plot_vs_num_clients(leader_df, next(ax_iter), line_group_by,
+         'Latency', 'stop_throughput_1s.p90',
+         'P90 throughput (1 second windows)')
+    plot_latency_throughput(leader_df, next(ax_iter), line_group_by,
+         'Latency vs Throughput')
+
+    other_df = df[df['num_leaders'] == 6]
+    plot_vs_num_clients(other_df, next(ax_iter), line_group_by,
+         'Throughput', 'latency.median_ms', 'Median latency (ms)')
+    plot_vs_num_clients(other_df, next(ax_iter), line_group_by,
+         'Latency', 'stop_throughput_1s.p90',
+         'P90 throughput (1 second windows)')
+    plot_latency_throughput(other_df, next(ax_iter), line_group_by,
+         'Latency vs Throughput')
+
+    fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')
 
 
