@@ -177,6 +177,14 @@ message ClientReply {
   required bytes result = 3;
 }
 
+message Recover {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // TODO(mwhittaker): Figure out what other fields need to go here.
+  required Instance instance = 1;
+}
+
 message Prepare {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -229,10 +237,19 @@ message LeaderInbound {
     PreAcceptOk pre_accept_ok = 3;
     Accept accept = 4;
     AcceptOk accept_ok = 5;
-    Commit commit = 6;
+    Recover recover = 6;
     Prepare prepare = 7;
     PrepareOk prepare_ok = 8;
     Nack nack = 9;
+  }
+}
+
+message ReplicaInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Commit commit = 1;
   }
 }
 

@@ -36,29 +36,7 @@ case class LeaderOptions(
     resendPreAcceptsTimerPeriod: java.time.Duration,
     defaultToSlowPathTimerPeriod: java.time.Duration,
     resendAcceptsTimerPeriod: java.time.Duration,
-    resendPreparesTimerPeriod: java.time.Duration,
-    recoverInstanceTimerMinPeriod: java.time.Duration,
-    recoverInstanceTimerMaxPeriod: java.time.Duration,
-    // If `unsafeSkipGraphExecution` is true, leaders skip graph execution
-    // entirely. Instead, they execute commands as soon as they are committed.
-    //
-    // As the name suggests, this is not safe. It completely breaks the
-    // protocol. This flag should only be used to debug performance issues. For
-    // example, disabling graph execution makes it easier to see if graph
-    // execution is a bottleneck.
-    //
-    // Note that if unsafeSkipGraphExecution is true, then
-    // executeGraphBatchSize and executeGraphTimerPeriod are completely
-    // ignored.
-    unsafeSkipGraphExecution: Boolean,
-    // When a leader receives a committed command, it adds it to its
-    // dependency graph. When executeGraphBatchSize commands have been
-    // committed, the leader attempts to execute as many commands in the graph
-    // as possible. If executeGraphBatchSize commands have not been committed
-    // within executeGraphTimerPeriod since the last time the graph was
-    // executed, the graph is executed.
-    executeGraphBatchSize: Int,
-    executeGraphTimerPeriod: java.time.Duration
+    resendPreparesTimerPeriod: java.time.Duration
 )
 
 @JSExportAll
@@ -68,12 +46,7 @@ object LeaderOptions {
     resendPreAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
     defaultToSlowPathTimerPeriod = java.time.Duration.ofSeconds(1),
     resendAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
-    resendPreparesTimerPeriod = java.time.Duration.ofSeconds(1),
-    recoverInstanceTimerMinPeriod = java.time.Duration.ofMillis(500),
-    recoverInstanceTimerMaxPeriod = java.time.Duration.ofMillis(1500),
-    unsafeSkipGraphExecution = false,
-    executeGraphBatchSize = 1,
-    executeGraphTimerPeriod = java.time.Duration.ofSeconds(1)
+    resendPreparesTimerPeriod = java.time.Duration.ofSeconds(1)
   )
 }
 
@@ -84,39 +57,6 @@ class LeaderMetrics(collectors: Collectors) {
     .name("epaxos_leader_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
-    .register()
-
-  val executeGraphTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_leader_execute_graph_total")
-    .help("Total number of times the leader executed the dependency graph.")
-    .register()
-
-  val executeGraphTimerTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_leader_execute_graph_timer_total")
-    .help(
-      "Total number of times the leader executed the dependency graph from " +
-        "a timer."
-    )
-    .register()
-
-  val executedCommandsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_leader_executed_commands_total")
-    .help("Total number of executed state machine commands.")
-    .register()
-
-  val executedNoopsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_leader_executed_noops_total")
-    .help("Total number of \"executed\" noops.")
-    .register()
-
-  val repeatedCommandsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_leader_repeated_commands_total")
-    .help("Total number of commands that were redundantly chosen.")
     .register()
 
   val committedCommandsTotal: Counter = collectors.counter
@@ -157,12 +97,6 @@ class LeaderMetrics(collectors: Collectors) {
     .build()
     .name("epaxos_leader_default_to_slow_path_total")
     .help("Total number of times the leader defaulted to the slow path.")
-    .register()
-
-  val dependencyGraphNumVertices: Gauge = collectors.gauge
-    .build()
-    .name("epaxos_leader_dependency_graph_num_vertices")
-    .help("The number of vertices in the dependency graph.")
     .register()
 
   val dependencies: Summary = collectors.summary
@@ -353,13 +287,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
-    // Public for the JS visualizations.
-    val stateMachine: StateMachine,
-    // An empty dependency graph. This is a constructor argument so that
-    // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
-    // Public for the JS visualizations.
-    val dependencyGraph: DependencyGraph[Instance, Int] =
-      new JgraphtDependencyGraph(),
     options: LeaderOptions = LeaderOptions.default,
     metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
