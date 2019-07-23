@@ -6,6 +6,7 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.thrifty.ThriftySystem
 import scala.collection.mutable
@@ -42,6 +43,15 @@ class ProposerMetrics(collectors: Collectors) {
     .name("simple_bpaxos_proposer_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
+    .register()
+
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_proposer_requests_latency")
+    .labelNames("type")
+    .quantile(0.5, 0.05)
+    .quantile(0.9, 0.01)
+    .help("Latency (in milliseconds) of a request.")
     .register()
 
   val chosenCommandsTotal: Counter = collectors.counter
@@ -248,26 +258,33 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       inbound: ProposerInbound
   ): Unit = {
     import ProposerInbound.Request
-    inbound.request match {
+
+    val startNanos = System.nanoTime
+    val label = inbound.request match {
       case Request.Propose(r) =>
-        metrics.requestsTotal.labels("Propose").inc()
         handlePropose(src, r)
+        "Propose"
       case Request.Phase1B(r) =>
-        metrics.requestsTotal.labels("Phase1b").inc()
         handlePhase1b(src, r)
+        "Phase1b"
       case Request.Phase2B(r) =>
-        metrics.requestsTotal.labels("Phase2b").inc()
         handlePhase2b(src, r)
+        "Phase2b"
       case Request.Nack(r) =>
-        metrics.requestsTotal.labels("Nack").inc()
         handleNack(src, r)
+        "Nack"
       case Request.Recover(r) =>
-        metrics.requestsTotal.labels("Recover").inc()
         handleRecover(src, r)
+        "Recover"
       case Request.Empty => {
         logger.fatal("Empty ProposerInbound encountered.")
       }
     }
+    val stopNanos = System.nanoTime
+    metrics.requestsTotal.labels(label).inc()
+    metrics.requestsLatency
+      .labels(label)
+      .observe((stopNanos - startNanos).toDouble / 1000000)
   }
 
   private def handlePropose(

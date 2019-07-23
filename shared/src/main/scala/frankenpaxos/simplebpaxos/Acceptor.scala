@@ -6,6 +6,7 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -35,6 +36,15 @@ class AcceptorMetrics(collectors: Collectors) {
     .name("simple_bpaxos_acceptor_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
+    .register()
+
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_acceptor_requests_latency")
+    .labelNames("type")
+    .quantile(0.5, 0.05)
+    .quantile(0.9, 0.01)
+    .help("Latency (in milliseconds) of a request.")
     .register()
 }
 
@@ -97,17 +107,24 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       inbound: AcceptorInbound
   ): Unit = {
     import AcceptorInbound.Request
-    inbound.request match {
+
+    val startNanos = System.nanoTime
+    val label = inbound.request match {
       case Request.Phase1A(r) =>
-        metrics.requestsTotal.labels("Phase1a").inc()
         handlePhase1a(src, r)
+        "Phase1A"
       case Request.Phase2A(r) =>
-        metrics.requestsTotal.labels("Phase2a").inc()
         handlePhase2a(src, r)
+        "Phase2A"
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
     }
+    val stopNanos = System.nanoTime
+    metrics.requestsTotal.labels(label).inc()
+    metrics.requestsLatency
+      .labels(label)
+      .observe((stopNanos - startNanos).toDouble / 1000000)
   }
 
   private def handlePhase1a(

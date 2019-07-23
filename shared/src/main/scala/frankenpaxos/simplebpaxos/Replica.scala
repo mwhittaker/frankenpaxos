@@ -63,6 +63,15 @@ class ReplicaMetrics(collectors: Collectors) {
     .help("Total number of processed requests.")
     .register()
 
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_replica_requests_latency")
+    .labelNames("type")
+    .quantile(0.5, 0.05)
+    .quantile(0.9, 0.01)
+    .help("Latency (in milliseconds) of a request.")
+    .register()
+
   val executeGraphTotal: Counter = collectors.counter
     .build()
     .name("simple_bpaxos_replica_execute_graph_total")
@@ -331,14 +340,21 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       inbound: ReplicaInbound
   ): Unit = {
     import ReplicaInbound.Request
-    inbound.request match {
+
+    val startNanos = System.nanoTime
+    val label = inbound.request match {
       case Request.Commit(r) =>
-        metrics.requestsTotal.labels("Commit").inc()
         handleCommit(src, r)
+        "Commit"
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
       }
     }
+    val stopNanos = System.nanoTime
+    metrics.requestsTotal.labels(label).inc()
+    metrics.requestsLatency
+      .labels(label)
+      .observe((stopNanos - startNanos).toDouble / 1000000)
   }
 
   // Public for testing.

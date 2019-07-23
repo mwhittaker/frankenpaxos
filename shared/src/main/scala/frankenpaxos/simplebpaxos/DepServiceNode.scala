@@ -41,6 +41,15 @@ class DepServiceNodeMetrics(collectors: Collectors) {
     .help("Total number of processed requests.")
     .register()
 
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_dep_service_node_requests_latency")
+    .labelNames("type")
+    .quantile(0.5, 0.05)
+    .quantile(0.9, 0.01)
+    .help("Latency (in milliseconds) of a request.")
+    .register()
+
   val dependencies: Summary = collectors.summary
     .build()
     .name("simple_bpaxos_dep_service_node_dependencies")
@@ -98,14 +107,20 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       inbound: DepServiceNodeInbound
   ): Unit = {
     import DepServiceNodeInbound.Request
-    inbound.request match {
+    val startNanos = System.nanoTime
+    val label = inbound.request match {
       case Request.DependencyRequest(r) =>
-        metrics.requestsTotal.labels("DependencyRequest").inc()
         handleDependencyRequest(src, r)
+        "DependencyRequest"
       case Request.Empty => {
         logger.fatal("Empty DepServiceNodeInbound encountered.")
       }
     }
+    val stopNanos = System.nanoTime
+    metrics.requestsTotal.labels(label).inc()
+    metrics.requestsLatency
+      .labels(label)
+      .observe((stopNanos - startNanos).toDouble / 1000000)
   }
 
   private def handleDependencyRequest(

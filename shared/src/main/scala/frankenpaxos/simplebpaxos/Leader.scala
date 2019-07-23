@@ -9,6 +9,7 @@ import frankenpaxos.Util
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import frankenpaxos.thrifty.ThriftySystem
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
@@ -42,6 +43,15 @@ class LeaderMetrics(collectors: Collectors) {
     .name("simple_bpaxos_leader_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
+    .register()
+
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_leader_requests_latency")
+    .labelNames("type")
+    .quantile(0.5, 0.05)
+    .quantile(0.9, 0.01)
+    .help("Latency (in milliseconds) of a request.")
     .register()
 
   val proposalsSentTotal: Counter = collectors.counter
@@ -165,17 +175,24 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       inbound: LeaderInbound
   ): Unit = {
     import LeaderInbound.Request
-    inbound.request match {
+
+    val startNanos = System.nanoTime
+    val label = inbound.request match {
       case Request.ClientRequest(r) =>
-        metrics.requestsTotal.labels("ClientRequest").inc()
         handleClientRequest(src, r)
+        "ClientRequest"
       case Request.DependencyReply(r) =>
-        metrics.requestsTotal.labels("DependencyReply").inc()
         handleDependencyReply(src, r)
+        "DependencyReply"
       case Request.Empty => {
         logger.fatal("Empty LeaderInbound encountered.")
       }
     }
+    val stopNanos = System.nanoTime
+    metrics.requestsTotal.labels(label).inc()
+    metrics.requestsLatency
+      .labels(label)
+      .observe((stopNanos - startNanos).toDouble / 1000000)
   }
 
   private def handleClientRequest(

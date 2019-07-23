@@ -60,6 +60,125 @@
       "steppedLine": false,
       "targets": [
         {
+          "expr": "rate(simple_bpaxos_leader_requests_latency[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(simple_bpaxos_dep_service_node_requests_latency[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(simple_bpaxos_proposer_requests_latency[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(simple_bpaxos_acceptor_requests_latency[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "D"
+        },
+        {
+          "expr": "rate(simple_bpaxos_replica_requests_latency[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "E"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Latency",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 16,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
           "expr": "rate(simple_bpaxos_leader_requests_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
@@ -147,7 +266,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 14
       },
       "id": 10,
       "legend": {
@@ -235,7 +354,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 21
       },
       "id": 12,
       "legend": {
@@ -354,7 +473,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 28
       },
       "id": 11,
       "legend": {
@@ -452,7 +571,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 35
       },
       "id": 14,
       "legend": {
@@ -548,7 +667,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 42
       },
       "id": 6,
       "legend": {
@@ -683,7 +802,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 49
       },
       "id": 4,
       "legend": {
@@ -790,7 +909,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 57
       },
       "id": 7,
       "legend": {
@@ -876,7 +995,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 65
       },
       "id": 13,
       "legend": {
@@ -969,7 +1088,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 73
       },
       "id": 15,
       "legend": {
@@ -1062,7 +1181,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 81
       },
       "id": 8,
       "legend": {
@@ -1148,7 +1267,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 89
       },
       "id": 9,
       "legend": {
@@ -1253,8 +1372,8 @@
     "list": []
   },
   "time": {
-    "from": "2019-07-05T21:12:14.800Z",
-    "to": "2019-07-05T21:12:50.151Z"
+    "from": "2019-07-22T23:10:08.734Z",
+    "to": "2019-07-22T23:10:16.320Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1284,5 +1403,5 @@
   "timezone": "",
   "title": "Simple BPaxos",
   "uid": "4mBsFHVWk",
-  "version": 15
+  "version": 2
 }
