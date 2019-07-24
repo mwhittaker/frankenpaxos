@@ -67,8 +67,6 @@ class ReplicaMetrics(collectors: Collectors) {
     .build()
     .name("simple_bpaxos_replica_requests_latency")
     .labelNames("type")
-    .quantile(0.5, 0.05)
-    .quantile(0.9, 0.01)
     .help("Latency (in milliseconds) of a request.")
     .register()
 
