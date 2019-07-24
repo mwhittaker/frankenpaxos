@@ -18,7 +18,7 @@ from . import pd_util
 from . import proc
 from . import util
 from typing import (Any, Collection, Dict, Generic, Iterable, IO, List,
-                    NamedTuple, Optional, Sequence, TypeVar, Union)
+                    NamedTuple, Optional, Sequence, Tuple, TypeVar, Union)
 import colorful
 import contextlib
 import csv
@@ -98,6 +98,10 @@ class BenchmarkDirectory(object):
         # this stack.
         self.process_stack = contextlib.ExitStack()
 
+        # A mapping from (ip address, pid) to the process running at that pid
+        # on that ip address. Recording pids helps debug perf.
+        self.pids: Dict[Tuple[str, int], str] = dict()
+
         # A file for logging.
         self.logfile = self.create_file('log.txt')
 
@@ -111,6 +115,9 @@ class BenchmarkDirectory(object):
 
     def __exit__(self, cls, exn, trace):
         self.process_stack.__exit__(cls, exn, trace)
+        self.write_dict('pids.json',
+                        {f'{ip}:{pid}': label
+                         for ((ip, pid), label) in self.pids.items()})
         self.write_string('stop_time.txt', str(datetime.datetime.now()))
 
     def abspath(self, filename: str) -> str:
@@ -154,6 +161,7 @@ class BenchmarkDirectory(object):
         self.write_string(f'{label}_cmd.txt', proc.get_cmd())
         self.process_stack.enter_context(
             _Reaped(proc, self.abspath(f'{label}_returncode.txt')))
+        self.pids[(host.ip(), proc.pid())] = label
         return proc
 
 

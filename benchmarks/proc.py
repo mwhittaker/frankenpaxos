@@ -49,6 +49,9 @@ class Proc:
     def get_cmd(self) -> str:
         return self.cmd
 
+    def pid(self) -> int:
+        raise NotImplementedError()
+
     def wait(self) -> Optional[int]:
         raise NotImplementedError()
 
@@ -67,6 +70,9 @@ class PopenProc(Proc):
                                       stdout=open(stdout, 'w'),
                                       stderr=open(stderr, 'w'))
         self.returncode = None
+
+    def pid(self) -> int:
+        return self.popen.pid
 
     def wait(self) -> Optional[int]:
         self.popen.wait()
@@ -96,8 +102,8 @@ class PopenProc(Proc):
 # `channel.exec_command`, we echo the nonce before the command, like this:
 # `echo <nonce>; <cmd>`. When we do this, calling `pgrep -f <nonce>` returns
 # the pid of a command that looks like this: `bash -c echo <nonce>; <cmd>`.
-# This command is the parent of `<cmd>`. We then kill the entire process group
-# rooted by the `bash -c` command. This also kill `<cmd>`.
+# This command is the parent of `<cmd>`. We then use `pgrep -P` to get the pid
+# of the subprocess `<cmd>`. We then kill the process using this pid.
 #
 # [1]: https://stackoverflow.com/q/7734679/3187068
 # [2]: http://docs.paramiko.org/en/latest/api/channel.html#paramiko.channel.Channel.get_pty
@@ -114,21 +120,28 @@ class ParamikoProc(Proc):
         self.channel = client.get_transport().open_session()
         self.channel.exec_command(self.cmd)
 
+        # Get the process group id of the command, and then use it to find the
+        # pid of the child.
+        _, out, _ = self.client.exec_command(f'pgrep -f {self.nonce}')
+        out.channel.recv_exit_status()
+        pgid = out.read().decode("utf-8").strip()
+        _, out, _ = self.client.exec_command(f'pgrep -P {pgid}')
+        out.channel.recv_exit_status()
+        self._pid = out.read().decode("utf-8").strip()
+
     def get_cmd(self) -> str:
         return self.cmd
+
+    def pid(self) -> int:
+        return self._pid
 
     def wait(self) -> Optional[int]:
         self.returncode = self.channel.recv_exit_status()
         return self.returncode
 
     def kill(self) -> None:
-        # Get the process group id of the command.
-        _, stdout, _ = self.client.exec_command(f'pgrep -f {self.nonce}')
-        stdout.channel.recv_exit_status()
-        pgid = stdout.read().decode("utf-8").strip()
-
-        # Kill the process group.
-        _, stdout, _ = self.client.exec_command(f'kill -- -{pgid}')
+        # Kill the process.
+        _, stdout, _ = self.client.exec_command(f'kill -- {self.pid()}')
         stdout.channel.recv_exit_status()
 
         # Close the channel.
@@ -147,6 +160,9 @@ class MininetProc(Proc):
                                 stdout=open(stdout, 'w'),
                                 stderr=open(stderr, 'w'))
         self.returncode = None
+
+    def pid(self) -> int:
+        return self.popen.pid
 
     def wait(self) -> Optional[int]:
         self.popen.wait()
