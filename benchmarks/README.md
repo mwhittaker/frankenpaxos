@@ -95,3 +95,20 @@ prometheus \
     --storage.tsdb.path=prometheus_data \
     --web.listen-address=0.0.0.0:8003
 ```
+
+## Running on EC2
+```bash
+sudo apt-get update && sudo apt-get upgrade
+sudo apt-get install git tmux vim
+# Install dotfiles if wanted.
+# Install Java (https://github.com/mwhittaker/vms/blob/master/install_java8.sh)
+# Install Scala (https://github.com/mwhittaker/vms/blob/master/install_scala.sh)
+# Install efs-utils (https://docs.aws.amazon.com/efs/latest/ug/gs-step-three-connect-to-ec2-instance.html)
+git clone git@github.com:aws/efs-utils.git
+cd efs-utils
+sudo apt-get install binutils nfs-common stunnel4
+./build-deb.sh
+sudo dpkg -i ./build/amazon-efs-utils*.deb
+sudo mkdir /mnt/efs
+sudo mount -t efs <fs-id> /mnt/efs
+```
