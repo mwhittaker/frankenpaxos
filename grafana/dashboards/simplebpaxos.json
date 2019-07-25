@@ -60,38 +60,38 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "rate(simple_bpaxos_leader_requests_latency[1s])",
+          "expr": "rate(simple_bpaxos_leader_requests_latency_sum[1s])\n/ rate(simple_bpaxos_leader_requests_latency_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "A"
         },
         {
-          "expr": "rate(simple_bpaxos_dep_service_node_requests_latency[1s])",
+          "expr": "rate(simple_bpaxos_dep_service_node_requests_latency_sum[1s])\n/ rate(simple_bpaxos_dep_service_node_requests_latency_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "B"
         },
         {
-          "expr": "rate(simple_bpaxos_proposer_requests_latency[1s])",
+          "expr": "rate(simple_bpaxos_proposer_requests_latency_sum[1s])\n/ rate(simple_bpaxos_proposer_requests_latency_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "C"
         },
         {
-          "expr": "rate(simple_bpaxos_acceptor_requests_latency[1s])",
+          "expr": "rate(simple_bpaxos_acceptor_requests_latency_sum[1s])\n/ rate(simple_bpaxos_acceptor_requests_latency_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "D"
         },
         {
-          "expr": "rate(simple_bpaxos_replica_requests_latency[1s])",
+          "expr": "rate(simple_bpaxos_replica_requests_latency_sum[1s])\n/ rate(simple_bpaxos_replica_requests_latency_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{type}} {{quantile}} latency (ms) ({{job}}:{{instance}})",
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "E"
         }
       ],
@@ -1372,8 +1372,8 @@
     "list": []
   },
   "time": {
-    "from": "2019-07-22T23:10:08.734Z",
-    "to": "2019-07-22T23:10:16.320Z"
+    "from": "2019-07-25T16:54:39.607Z",
+    "to": "2019-07-25T16:54:47.589Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1403,5 +1403,5 @@
   "timezone": "",
   "title": "Simple BPaxos",
   "uid": "4mBsFHVWk",
-  "version": 2
+  "version": 3
 }

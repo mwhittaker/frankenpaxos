@@ -243,8 +243,14 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
                 dep_service_nodes = portify(self._hosts[1:4]),
                 acceptors = portify(self._hosts[1:4]),
                 replicas = portify(self._hosts[4:6]),
-                leaders = portify(self._hosts[6:]),
-                proposers = portify(self._hosts[6:]),
+                leaders = portify(list(
+                    itertools.islice(itertools.cycle(self._hosts[6:]),
+                                     self._num_leaders)
+                )),
+                proposers = portify(list(
+                    itertools.islice(itertools.cycle(self._hosts[6:]),
+                                     self._num_leaders)
+                )),
             )
         else:
             raise NotImplementedError()
@@ -412,6 +418,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         str(dep.port + 1) if input.monitored else '-1',
                 ],
             )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, dep.host, p,
+                                           f'dep_service_node_{i}')
             dep_service_node_procs.append(p)
         bench.log('DepServiceNodes started.')
 
@@ -433,6 +442,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         str(acceptor.port + 1) if input.monitored else '-1',
                 ],
             )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, acceptor.host, p,
+                                           f'acceptor_{i}')
             acceptor_procs.append(p)
         bench.log('Acceptors started.')
 
@@ -474,8 +486,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                      .total_seconds()),
                 ],
             )
-            p = perf_util.JavaPerfProc(
-                bench, replica.host, p, f'replica_{i}')
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, replica.host, p,
+                                           f'replica_{i}')
             replica_procs.append(p)
         bench.log('Replicas started.')
 
@@ -507,6 +520,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                      .total_seconds()),
                 ],
             )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, proposer.host, p,
+                                           f'proposer_{i}')
             proposer_procs.append(p)
         bench.log('Proposers started.')
 
@@ -534,6 +550,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                      .total_seconds()),
                 ],
             )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, leader.host, p,
+                                           f'leader_{i}')
             leader_procs.append(p)
         bench.log('Leaders started.')
 
@@ -613,6 +632,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                      .total_seconds()),
                 ]
             )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, client.host, p, f'client_{i}')
             client_procs.append(p)
         bench.log(f'Clients started and running for {input.duration}.')
 
