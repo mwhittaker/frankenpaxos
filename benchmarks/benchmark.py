@@ -190,7 +190,7 @@ class BenchmarkDirectory(object):
         proc = host.popen(cmd,
                           stdout=self.abspath(f'{label}_out.txt'),
                           stderr=self.abspath(f'{label}_err.txt'))
-        self.write_string(f'{label}_cmd.txt', proc.get_cmd())
+        self.write_string(f'{label}_cmd.txt', proc.cmd())
         self.process_stack.enter_context(
             _Reaped(proc, self.abspath(f'{label}_returncode.txt')))
         pid = proc.pid()
@@ -376,99 +376,3 @@ def parse_recorder_data(bench: BenchmarkDirectory,
         stop_throughput_2s = throughput(pd_util.throughput(df['stop'], 2000)),
         stop_throughput_5s = throughput(pd_util.throughput(df['stop'], 5000)),
     )
-
-
-# TODO(mwhittaker): Reimplement or delete.
-#
-# class _ProfiledPopen(object):
-#     """A _ProfiledPopen looks like a subprocess.Popen, but isn't."""
-#
-#     def __init__(self,
-#                  bench: BenchmarkDirectory,
-#                  label: str,
-#                  proc: subprocess.Popen,
-#                  f,
-#                  profile_frequency: int) -> None:
-#         self.bench = bench
-#         self.label = label
-#         self.proc = proc
-#         self.f = f
-#         self.terminated = False
-#
-#         self.perf_record_proc = self.bench.popen(
-#             label=f'{label}_perf_record',
-#             cmd=[
-#                 'perf',
-#                 'record',
-#                 '-F', str(profile_frequency),
-#                 '-o', f'/tmp/perf-{self.proc.pid}.data',
-#                 '-p', str(self.proc.pid),
-#                 '--timestamp',
-#                 '-g',
-#                 '--', 'sleep', '1000000000000000000000'
-#             ],
-#             f=f,
-#         )
-#
-#     @property
-#     def args(self):
-#         return self.proc.args
-#
-#     @property
-#     def stdin(self):
-#         return self.proc.stdin
-#
-#     @property
-#     def stdout(self):
-#         return self.proc.stdout
-#
-#     @property
-#     def pid(self):
-#         return self.proc.pid
-#
-#     @property
-#     def returncode(self):
-#         return self.proc.returncode
-#
-#     def poll(self, *args, **kwargs):
-#         return self.proc.poll(*args, **kwargs)
-#
-#     def wait(self, *args, **kwargs):
-#         return self.proc.wait(*args, **kwargs)
-#
-#     def communicate(self, *args, **kwargs):
-#         return self.proc.communicate(*args, **kwargs)
-#
-#     def send_signal(self, *args, **kwargs):
-#         return self.proc.send_signal(*args, **kwargs)
-#
-#     def terminate(self, *args, **kwargs):
-#         if self.terminated:
-#             return
-#
-#         # Stop perf recording.
-#         self.perf_record_proc.terminate()
-#
-#         # Generate the java map while the process is still running.
-#         self.bench.popen(
-#             label=f'{self.label}_perf_map',
-#             cmd = ['create-java-perf-map.sh', str(self.proc.pid)],
-#             f=self.f,
-#         ).wait()
-#
-#         # Extract the stack traces.
-#         self.bench.popen(
-#             label=f'{self.label}_perf_script',
-#             cmd=['perf', 'script', '-i', f'/tmp/perf-{self.proc.pid}.data'],
-#             out=self.bench.create_file(f'{self.label}_stacks.txt'),
-#             f=self.f,
-#         ).wait()
-#         subprocess.call(['gzip',
-#                          self.bench.abspath(f'{self.label}_stacks.txt')])
-#
-#         # And finally, kill the process.
-#         self.proc.terminate(*args, **kwargs)
-#         self.terminated = True
-#
-#     def kill(self, *args, **kwargs):
-#         return self.proc.kill(*args, **kwargs)

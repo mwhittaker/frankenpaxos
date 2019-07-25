@@ -394,9 +394,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
         bench.log('Config file config.pbtxt written.')
 
         # Launch dep service nodes.
-        dep_service_node_procs = []
+        dep_service_node_procs: List[proc.Proc] = []
         for (i, dep) in enumerate(net.dep_service_nodes()):
-            proc = bench.popen(
+            p = bench.popen(
                 host=dep.host,
                 label=f'dep_service_node_{i}',
                 cmd = [
@@ -412,13 +412,13 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         str(dep.port + 1) if input.monitored else '-1',
                 ],
             )
-            dep_service_node_procs.append(proc)
+            dep_service_node_procs.append(p)
         bench.log('DepServiceNodes started.')
 
         # Launch acceptors.
-        acceptor_procs = []
+        acceptor_procs: List[proc.Proc] = []
         for (i, acceptor) in enumerate(net.acceptors()):
-            proc = bench.popen(
+            p = bench.popen(
                 host=acceptor.host,
                 label=f'acceptor_{i}',
                 cmd = [
@@ -433,13 +433,13 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         str(acceptor.port + 1) if input.monitored else '-1',
                 ],
             )
-            acceptor_procs.append(proc)
+            acceptor_procs.append(p)
         bench.log('Acceptors started.')
 
         # Launch replicas.
-        replica_procs = []
+        replica_procs: List[proc.Proc] = []
         for (i, replica) in enumerate(net.replicas()):
-            proc = bench.popen(
+            p = bench.popen(
                 host=replica.host,
                 label=f'replica_{i}',
                 cmd = [
@@ -474,15 +474,15 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                      .total_seconds()),
                 ],
             )
-            proc = perf_util.JavaPerfProc(
-                bench, replica.host, proc, f'replica_{i}')
-            replica_procs.append(proc)
+            p = perf_util.JavaPerfProc(
+                bench, replica.host, p, f'replica_{i}')
+            replica_procs.append(p)
         bench.log('Replicas started.')
 
         # Launch proposers.
-        proposer_procs = []
+        proposer_procs: List[proc.Proc] = []
         for (i, proposer) in enumerate(net.proposers()):
-            proc = bench.popen(
+            p = bench.popen(
                 host=proposer.host,
                 label=f'proposer_{i}',
                 cmd = [
@@ -507,13 +507,13 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                      .total_seconds()),
                 ],
             )
-            proposer_procs.append(proc)
+            proposer_procs.append(p)
         bench.log('Proposers started.')
 
         # Launch leaders.
-        leader_procs = []
+        leader_procs: List[proc.Proc] = []
         for (i, leader) in enumerate(net.leaders()):
-            proc = bench.popen(
+            p = bench.popen(
                 host=leader.host,
                 label=f'leader_{i}',
                 cmd = [
@@ -534,7 +534,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                      .total_seconds()),
                 ],
             )
-            leader_procs.append(proc)
+            leader_procs.append(p)
         bench.log('Leaders started.')
 
         # Launch Prometheus.
@@ -578,9 +578,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             workload_filename,
             proto_util.message_to_pbtext(input.workload.to_proto()))
 
-        client_procs = []
+        client_procs: List[proc.Proc] = []
         for (i, client) in enumerate(net.clients()):
-            proc = bench.popen(
+            p = bench.popen(
                 host=client.host,
                 label=f'client_{i}',
                 cmd = [
@@ -613,15 +613,15 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                      .total_seconds()),
                 ]
             )
-            client_procs.append(proc)
+            client_procs.append(p)
         bench.log(f'Clients started and running for {input.duration}.')
 
         # Wait for clients to finish and then terminate leaders and acceptors.
-        for proc in client_procs:
-            proc.wait()
-        for proc in (leader_procs + proposer_procs + acceptor_procs +
-                     dep_service_node_procs + replica_procs):
-            proc.kill()
+        for p in client_procs:
+            p.wait()
+        for p in (leader_procs + proposer_procs + acceptor_procs +
+                  dep_service_node_procs + replica_procs):
+            p.kill()
         bench.log('Clients finished and processes terminated.')
 
         # Client i writes results to `client_i_data.csv`.

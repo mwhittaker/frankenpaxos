@@ -1,4 +1,5 @@
 from typing import Optional, Sequence, Union
+import abc
 import mininet
 import mininet.node
 import paramiko
@@ -6,6 +7,17 @@ import random
 import string
 import subprocess
 import time
+
+
+def _random_string(n: int) -> str:
+    return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
+
+
+def _canonicalize_args(args: Union[str, Sequence[str]]) -> str:
+    if isinstance(args, str):
+        return args
+    else:
+        return subprocess.list2cmdline(args)
 
 
 # A Proc represents a process running on some machine. A Proc is like a
@@ -33,29 +45,20 @@ import time
 # >>> client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
 # >>> client.connect('1.2.3.4')
 # >>> proc = ParamikoProc('hostname', '/tmp/out.txt', '/tmp/err.txt')
-class Proc:
-    def __init__(self,
-                 args: Union[str, Sequence[str]],
-                 stdout: str,
-                 stderr: str) -> None:
-        if isinstance(args, str):
-            self.cmd = args
-        else:
-            self.cmd = subprocess.list2cmdline(args)
-        self.args = args
-        self.stdout = stdout
-        self.stderr = stderr
-        self.returncode: Optional[int] = None
+class Proc(abc.ABC):
+    @abc.abstractmethod
+    def cmd(self) -> str:
+        raise NotImplementedError()
 
-    def get_cmd(self) -> str:
-        return self.cmd
-
+    @abc.abstractmethod
     def pid(self) -> Optional[int]:
         raise NotImplementedError()
 
+    @abc.abstractmethod
     def wait(self) -> Optional[int]:
         raise NotImplementedError()
 
+    @abc.abstractmethod
     def kill(self) -> None:
         raise NotImplementedError()
 
@@ -66,23 +69,23 @@ class PopenProc(Proc):
                  args: Union[str, Sequence[str]],
                  stdout: str,
                  stderr: str) -> None:
-        super().__init__(args, stdout, stderr)
-        self.popen = subprocess.Popen(args,
-                                      stdout=open(stdout, 'w'),
-                                      stderr=open(stderr, 'w'))
-        self.returncode = None
+        self._cmd = _canonicalize_args(args)
+        self._popen = subprocess.Popen(args,
+                                       stdout=open(stdout, 'w'),
+                                       stderr=open(stderr, 'w'))
+
+    def cmd(self) -> str:
+        return self._cmd
 
     def pid(self) -> Optional[int]:
-        return self.popen.pid
+        return self._popen.pid
 
     def wait(self) -> Optional[int]:
-        self.popen.wait()
-        self.returncode = self.popen.returncode
-        return self.returncode
+        self._popen.wait()
+        return self._popen.returncode
 
     def kill(self) -> None:
-        self.popen.kill()
-        self.returncode = self.popen.returncode
+        self._popen.kill()
 
 
 # A ParamikoProc is a process run on a remote machine over SSH via paramiko.
@@ -114,26 +117,24 @@ class ParamikoProc(Proc):
                  args: Union[str, Sequence[str]],
                  stdout: str,
                  stderr: str) -> None:
-        super().__init__(args, stdout, stderr)
-        self.nonce = _random_string(80)
-        self.cmd = f'echo {self.nonce}; ({self.cmd}) 2> "{stderr}" > "{stdout}"'
-        self.client = client
-        self.channel = client.get_transport().open_session()
-        self.channel.exec_command(self.cmd)
+        self._nonce = _random_string(80)
+        self._cmd = (f'echo {self._nonce}; ' +
+                     f'({_canonicalize_args(args)}) 2> "{stderr}" > "{stdout}"')
+        self._client = client
+        self._channel = client.get_transport().open_session()
+        self._channel.exec_command(self._cmd)
         self._pgid: Optional[int] = None
         self._pid: Optional[int] = None
-
-    def get_cmd(self) -> str:
-        return self.cmd
+        self._killed: bool = False
 
     def _get_pgid(self) -> Optional[int]:
         while True:
             # If the channel is already finished, then it's too late for us to
             # get a pid.
-            if self.channel.exit_status_ready():
+            if self._channel.exit_status_ready():
                 return None
             try:
-                _, out, _ = self.client.exec_command(f'pgrep -f {self.nonce}')
+                _, out, _ = self._client.exec_command(f'pgrep -f {self._nonce}')
                 out.channel.recv_exit_status()
                 return int(out.read().decode("utf-8").strip())
             except ValueError:
@@ -143,7 +144,7 @@ class ParamikoProc(Proc):
         while True:
             # If the channel is already finished, then it's too late for us to
             # get a pid.
-            if self.channel.exit_status_ready():
+            if self._channel.exit_status_ready():
                 return None
 
             # If the pgid is None, we can't get the pid.
@@ -151,11 +152,14 @@ class ParamikoProc(Proc):
                 return None
 
             try:
-                _, out, _ = self.client.exec_command(f'pgrep -P {self.pgid()}')
+                _, out, _ = self._client.exec_command(f'pgrep -P {self.pgid()}')
                 out.channel.recv_exit_status()
                 return int(out.read().decode("utf-8").strip())
             except ValueError:
                 pass
+
+    def cmd(self) -> str:
+        return self._cmd
 
     def pgid(self) -> Optional[int]:
         if self._pgid is not None:
@@ -172,17 +176,26 @@ class ParamikoProc(Proc):
             return self._pid
 
     def wait(self) -> Optional[int]:
-        self.returncode = self.channel.recv_exit_status()
+        self.returncode = self._channel.recv_exit_status()
         return self.returncode
 
     def kill(self) -> None:
-        # Kill the process group.
-        _, stdout, _ = self.client.exec_command(f'sudo kill -- -{self.pgid()}')
-        stdout.channel.recv_exit_status()
+        # If we've already killed the process, we don't have to kill it again.
+        if self._killed:
+            return
 
-        # Close the channel.
-        self.channel.close()
-        self.returncode = self.channel.recv_exit_status()
+        # If the process is already dead, we don't have to kill it. Otherwise,
+        # we do.
+        if self._channel.exit_status_ready():
+            pass
+        else:
+            pgid = self.pgid()
+            if pgid:
+                _, out, _ = self._client.exec_command(f'sudo kill -- -{pgid}')
+                out.channel.recv_exit_status()
+
+        self._channel.close()
+        self._killed = True
 
 
 class MininetProc(Proc):
@@ -191,24 +204,20 @@ class MininetProc(Proc):
                  args: Union[str, Sequence[str]],
                  stdout: str,
                  stderr: str) -> None:
-        super().__init__(args, stdout, stderr)
-        self.popen = node.popen(args,
-                                stdout=open(stdout, 'w'),
-                                stderr=open(stderr, 'w'))
-        self.returncode = None
+        self._node = node
+        self._cmd = _canonicalize_args(args)
+        self._popen = node.popen(args,
+                                 stdout=open(stdout, 'w'),
+                                 stderr=open(stderr, 'w'))
+
+    def cmd(self) -> str:
+        return self._cmd
 
     def pid(self) -> Optional[int]:
-        return self.popen.pid
+        return self._popen.pid
 
     def wait(self) -> Optional[int]:
-        self.popen.wait()
-        self.returncode = self.popen.returncode
-        return self.returncode
+        return self._popen.wait()
 
     def kill(self) -> None:
-        self.popen.kill()
-        self.returncode = self.popen.returncode
-
-
-def _random_string(n: int) -> str:
-    return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
+        self._popen.kill()

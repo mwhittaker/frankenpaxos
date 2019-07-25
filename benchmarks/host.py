@@ -1,5 +1,6 @@
 from . import proc
 from typing import NamedTuple, Sequence, Union
+import abc
 import mininet
 import mininet.node
 import paramiko
@@ -7,10 +8,12 @@ import paramiko
 # A Host represents a machine (potentially virtual) on which you can run
 # processes. A Host may represent the local machine (LocalHost), a remote
 # machine (RemoteHost), or a virtual machine in Mininet (MininetHost).
-class Host:
+class Host(abc.ABC):
+    @abc.abstractmethod
     def ip(self) -> str:
         raise NotImplementedError()
 
+    @abc.abstractmethod
     def popen(self,
               args: Union[str, Sequence[str]],
               stdout: str,
