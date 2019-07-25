@@ -2,6 +2,7 @@ from .. import benchmark
 from .. import host
 from .. import parser_util
 from .. import pd_util
+from .. import perf_util
 from .. import proc
 from .. import prometheus
 from .. import proto_util
@@ -236,6 +237,15 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
                 acceptors = portify([self._hosts[2]] * (2*self.f()+1)),
                 replicas = portify([self._hosts[3]] * (self.f()+1)),
             )
+        elif self.f() == 1 and len(self._hosts) > 6:
+            return self._Placement(
+                clients = portify([self._hosts[0]] * self._num_client_procs),
+                dep_service_nodes = portify(self._hosts[1:4]),
+                acceptors = portify(self._hosts[1:4]),
+                replicas = portify(self._hosts[4:6]),
+                leaders = portify(self._hosts[6:]),
+                proposers = portify(self._hosts[6:]),
+            )
         else:
             raise NotImplementedError()
 
@@ -396,6 +406,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.dep_service_node_log_level,
+                    '--state_machine', input.state_machine,
                     '--prometheus_host', dep.host.ip(),
                     '--prometheus_port',
                         str(dep.port + 1) if input.monitored else '-1',
@@ -463,6 +474,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                      .total_seconds()),
                 ],
             )
+            proc = perf_util.JavaPerfProc(
+                bench, replica.host, proc, f'replica_{i}')
             replica_procs.append(proc)
         bench.log('Replicas started.')
 

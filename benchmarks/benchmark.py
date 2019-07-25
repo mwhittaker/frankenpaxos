@@ -32,6 +32,38 @@ import string
 import subprocess
 
 
+def _random_string(n: int) -> str:
+    return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
+
+
+def _now_string() -> str:
+    return str(datetime.datetime.now()).replace(' ', '_')
+
+
+def _pretty_now_string() -> str:
+    return datetime.datetime.now().strftime('%A %B %d, %H:%M:%S.%f')
+
+
+class _Reaped(object):
+    """
+    The _Reaped context manager ensures that a process is killed, even if an
+    exception is thrown. Moreover, the return code of the process is written to
+    a file.
+    """
+    def __init__(self, proc: proc.Proc, returncode_file: str) -> None:
+        self.proc = proc
+        self.returncode_file = returncode_file
+
+    def __enter__(self) -> proc.Proc:
+        return self.proc
+
+    def __exit__(self, cls, exn, traceback) -> None:
+        self.proc.kill()
+        returncode = self.proc.wait()
+        with open(self.returncode_file, 'w') as f:
+            f.write(str(returncode) + '\n')
+
+
 # A SuiteDirectory is a directory in which you can run a suite. It has
 # convenient methods to record information within the directory (e.g., the
 # start time, the set of inputs). It also contains methods to create
@@ -161,7 +193,9 @@ class BenchmarkDirectory(object):
         self.write_string(f'{label}_cmd.txt', proc.get_cmd())
         self.process_stack.enter_context(
             _Reaped(proc, self.abspath(f'{label}_returncode.txt')))
-        self.pids[(host.ip(), proc.pid())] = label
+        pid = proc.pid()
+        if pid:
+            self.pids[(host.ip(), pid)] = label
         return proc
 
 
@@ -343,37 +377,6 @@ def parse_recorder_data(bench: BenchmarkDirectory,
         stop_throughput_5s = throughput(pd_util.throughput(df['stop'], 5000)),
     )
 
-
-def _random_string(n: int) -> str:
-    return ''.join(random.choice(string.ascii_uppercase) for _ in range(n))
-
-
-def _now_string() -> str:
-    return str(datetime.datetime.now()).replace(' ', '_')
-
-
-def _pretty_now_string() -> str:
-    return datetime.datetime.now().strftime('%A %B %d, %H:%M:%S.%f')
-
-
-class _Reaped(object):
-    """
-    The _Reaped context manager ensures that a process is killed, even if an
-    exception is thrown. Moreover, the return code of the process is written to
-    a file.
-    """
-    def __init__(self, proc: proc.Proc, returncode_file: str) -> None:
-        self.proc = proc
-        self.returncode_file = returncode_file
-
-    def __enter__(self) -> proc.Proc:
-        return self.proc
-
-    def __exit__(self, cls, exn, traceback) -> None:
-        self.proc.kill()
-        returncode = self.proc.wait()
-        with open(self.returncode_file, 'w') as f:
-            f.write(str(returncode) + '\n')
 
 # TODO(mwhittaker): Reimplement or delete.
 #

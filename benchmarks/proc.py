@@ -5,6 +5,7 @@ import paramiko
 import random
 import string
 import subprocess
+import time
 
 
 # A Proc represents a process running on some machine. A Proc is like a
@@ -49,7 +50,7 @@ class Proc:
     def get_cmd(self) -> str:
         return self.cmd
 
-    def pid(self) -> int:
+    def pid(self) -> Optional[int]:
         raise NotImplementedError()
 
     def wait(self) -> Optional[int]:
@@ -71,7 +72,7 @@ class PopenProc(Proc):
                                       stderr=open(stderr, 'w'))
         self.returncode = None
 
-    def pid(self) -> int:
+    def pid(self) -> Optional[int]:
         return self.popen.pid
 
     def wait(self) -> Optional[int]:
@@ -119,29 +120,64 @@ class ParamikoProc(Proc):
         self.client = client
         self.channel = client.get_transport().open_session()
         self.channel.exec_command(self.cmd)
-
-        # Get the process group id of the command, and then use it to find the
-        # pid of the child.
-        _, out, _ = self.client.exec_command(f'pgrep -f {self.nonce}')
-        out.channel.recv_exit_status()
-        pgid = out.read().decode("utf-8").strip()
-        _, out, _ = self.client.exec_command(f'pgrep -P {pgid}')
-        out.channel.recv_exit_status()
-        self._pid = out.read().decode("utf-8").strip()
+        self._pgid: Optional[int] = None
+        self._pid: Optional[int] = None
 
     def get_cmd(self) -> str:
         return self.cmd
 
-    def pid(self) -> int:
-        return self._pid
+    def _get_pgid(self) -> Optional[int]:
+        while True:
+            # If the channel is already finished, then it's too late for us to
+            # get a pid.
+            if self.channel.exit_status_ready():
+                return None
+            try:
+                _, out, _ = self.client.exec_command(f'pgrep -f {self.nonce}')
+                out.channel.recv_exit_status()
+                return int(out.read().decode("utf-8").strip())
+            except ValueError:
+                pass
+
+    def _get_pid(self) -> Optional[int]:
+        while True:
+            # If the channel is already finished, then it's too late for us to
+            # get a pid.
+            if self.channel.exit_status_ready():
+                return None
+
+            # If the pgid is None, we can't get the pid.
+            if self.pgid() is None:
+                return None
+
+            try:
+                _, out, _ = self.client.exec_command(f'pgrep -P {self.pgid()}')
+                out.channel.recv_exit_status()
+                return int(out.read().decode("utf-8").strip())
+            except ValueError:
+                pass
+
+    def pgid(self) -> Optional[int]:
+        if self._pgid is not None:
+            return self._pgid
+        else:
+            self._pgid = self._get_pgid()
+            return self._pgid
+
+    def pid(self) -> Optional[int]:
+        if self._pid is not None:
+            return self._pid
+        else:
+            self._pid = self._get_pid()
+            return self._pid
 
     def wait(self) -> Optional[int]:
         self.returncode = self.channel.recv_exit_status()
         return self.returncode
 
     def kill(self) -> None:
-        # Kill the process.
-        _, stdout, _ = self.client.exec_command(f'kill -- {self.pid()}')
+        # Kill the process group.
+        _, stdout, _ = self.client.exec_command(f'sudo kill -- -{self.pgid()}')
         stdout.channel.recv_exit_status()
 
         # Close the channel.
@@ -161,7 +197,7 @@ class MininetProc(Proc):
                                 stderr=open(stderr, 'w'))
         self.returncode = None
 
-    def pid(self) -> int:
+    def pid(self) -> Optional[int]:
         return self.popen.pid
 
     def wait(self) -> Optional[int]:
