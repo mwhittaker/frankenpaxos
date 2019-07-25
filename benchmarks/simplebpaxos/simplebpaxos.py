@@ -237,18 +237,18 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
                 acceptors = portify([self._hosts[2]] * (2*self.f()+1)),
                 replicas = portify([self._hosts[3]] * (self.f()+1)),
             )
-        elif self.f() == 1 and len(self._hosts) > 6:
+        elif self.f() == 1 and len(self._hosts) > 9:
             return self._Placement(
                 clients = portify([self._hosts[0]] * self._num_client_procs),
                 dep_service_nodes = portify(self._hosts[1:4]),
-                acceptors = portify(self._hosts[1:4]),
-                replicas = portify(self._hosts[4:6]),
+                acceptors = portify(self._hosts[4:7]),
+                replicas = portify(self._hosts[7:9]),
                 leaders = portify(list(
-                    itertools.islice(itertools.cycle(self._hosts[6:]),
+                    itertools.islice(itertools.cycle(self._hosts[9:]),
                                      self._num_leaders)
                 )),
                 proposers = portify(list(
-                    itertools.islice(itertools.cycle(self._hosts[6:]),
+                    itertools.islice(itertools.cycle(self._hosts[9:]),
                                      self._num_leaders)
                 )),
             )

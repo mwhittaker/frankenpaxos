@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1564077747719,
+  "iteration": 1564089808902,
   "links": [],
   "panels": [
     {
@@ -61,8 +61,9 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "rate($metric{instance=~\"$instance\", job=~\"$job\"}[1s])",
+          "expr": "$function($metric{job=~\"$job\"}[1s])",
           "format": "time_series",
+          "hide": false,
           "intervalFactor": 1,
           "legendFormat": "",
           "refId": "A"
@@ -1848,167 +1849,11 @@
       {
         "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "tags": [],
           "text": "All",
           "value": [
             "$__all"
-          ]
-        },
-        "datasource": "Prometheus",
-        "definition": "label_values(instance)",
-        "hide": 0,
-        "includeAll": true,
-        "label": null,
-        "multi": true,
-        "name": "instance",
-        "options": [
-          {
-            "selected": true,
-            "text": "All",
-            "value": "$__all"
-          },
-          {
-            "selected": false,
-            "text": "172.31.11.62:11701",
-            "value": "172.31.11.62:11701"
-          },
-          {
-            "selected": false,
-            "text": "172.31.11.62:12201",
-            "value": "172.31.11.62:12201"
-          },
-          {
-            "selected": false,
-            "text": "172.31.12.156:10001",
-            "value": "172.31.12.156:10001"
-          },
-          {
-            "selected": false,
-            "text": "172.31.12.156:10101",
-            "value": "172.31.12.156:10101"
-          },
-          {
-            "selected": false,
-            "text": "172.31.12.156:10201",
-            "value": "172.31.12.156:10201"
-          },
-          {
-            "selected": false,
-            "text": "172.31.12.156:10301",
-            "value": "172.31.12.156:10301"
-          },
-          {
-            "selected": false,
-            "text": "172.31.12.156:10401",
-            "value": "172.31.12.156:10401"
-          },
-          {
-            "selected": false,
-            "text": "172.31.12.156:10501",
-            "value": "172.31.12.156:10501"
-          },
-          {
-            "selected": false,
-            "text": "172.31.12.77:10701",
-            "value": "172.31.12.77:10701"
-          },
-          {
-            "selected": false,
-            "text": "172.31.12.77:11001",
-            "value": "172.31.12.77:11001"
-          },
-          {
-            "selected": false,
-            "text": "172.31.13.137:10601",
-            "value": "172.31.13.137:10601"
-          },
-          {
-            "selected": false,
-            "text": "172.31.13.137:10901",
-            "value": "172.31.13.137:10901"
-          },
-          {
-            "selected": false,
-            "text": "172.31.14.153:11601",
-            "value": "172.31.14.153:11601"
-          },
-          {
-            "selected": false,
-            "text": "172.31.14.153:12101",
-            "value": "172.31.14.153:12101"
-          },
-          {
-            "selected": false,
-            "text": "172.31.5.174:11401",
-            "value": "172.31.5.174:11401"
-          },
-          {
-            "selected": false,
-            "text": "172.31.5.174:11901",
-            "value": "172.31.5.174:11901"
-          },
-          {
-            "selected": false,
-            "text": "172.31.6.132:11301",
-            "value": "172.31.6.132:11301"
-          },
-          {
-            "selected": false,
-            "text": "172.31.7.100:11201",
-            "value": "172.31.7.100:11201"
-          },
-          {
-            "selected": false,
-            "text": "172.31.7.181:10801",
-            "value": "172.31.7.181:10801"
-          },
-          {
-            "selected": false,
-            "text": "172.31.7.181:11101",
-            "value": "172.31.7.181:11101"
-          },
-          {
-            "selected": false,
-            "text": "172.31.8.141:11801",
-            "value": "172.31.8.141:11801"
-          },
-          {
-            "selected": false,
-            "text": "172.31.8.141:12301",
-            "value": "172.31.8.141:12301"
-          },
-          {
-            "selected": false,
-            "text": "172.31.9.102:11501",
-            "value": "172.31.9.102:11501"
-          },
-          {
-            "selected": false,
-            "text": "172.31.9.102:12001",
-            "value": "172.31.9.102:12001"
-          }
-        ],
-        "query": "label_values(instance)",
-        "refresh": 0,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
-        "tagValuesQuery": "",
-        "tags": [],
-        "tagsQuery": "",
-        "type": "query",
-        "useTags": false
-      },
-      {
-        "allValue": null,
-        "current": {
-          "tags": [],
-          "text": "bpaxos_acceptor + bpaxos_dep_service_node + bpaxos_replica",
-          "value": [
-            "bpaxos_acceptor",
-            "bpaxos_dep_service_node",
-            "bpaxos_replica"
           ]
         },
         "datasource": "Prometheus",
@@ -2020,12 +1865,12 @@
         "name": "job",
         "options": [
           {
-            "selected": false,
+            "selected": true,
             "text": "All",
             "value": "$__all"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "bpaxos_acceptor",
             "value": "bpaxos_acceptor"
           },
@@ -2035,7 +1880,7 @@
             "value": "bpaxos_client"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "bpaxos_dep_service_node",
             "value": "bpaxos_dep_service_node"
           },
@@ -2050,7 +1895,7 @@
             "value": "bpaxos_proposer"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "bpaxos_replica",
             "value": "bpaxos_replica"
           }
@@ -2065,12 +1910,40 @@
         "tagsQuery": "",
         "type": "query",
         "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "tags": [],
+          "text": "avg_over_time",
+          "value": "avg_over_time"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "function",
+        "options": [
+          {
+            "selected": false,
+            "text": "rate",
+            "value": "rate"
+          },
+          {
+            "selected": true,
+            "text": "avg_over_time",
+            "value": "avg_over_time"
+          }
+        ],
+        "query": "rate, avg_over_time",
+        "skipUrlSync": false,
+        "type": "custom"
       }
     ]
   },
   "time": {
-    "from": "2019-07-25T17:58:20.985Z",
-    "to": "2019-07-25T17:58:58.631Z"
+    "from": "2019-07-25T21:01:34.335Z",
+    "to": "2019-07-25T21:02:38.165Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -2100,5 +1973,5 @@
   "timezone": "",
   "title": "Simple BPaxos",
   "uid": "4mBsFHVWk",
-  "version": 5
+  "version": 6
 }
