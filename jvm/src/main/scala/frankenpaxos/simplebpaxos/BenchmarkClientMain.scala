@@ -115,7 +115,22 @@ object BenchmarkClientMain extends App {
     metrics = new ClientMetrics(PrometheusCollectors)
   )
 
-  // Function to run client.
+  // Functions to warmup and run the clients. When warming up, we don't record
+  // any stats.
+  def warmupRun(pseudonym: Int): Future[Unit] = {
+    implicit val context = transport.executionContext
+    client
+      .propose(pseudonym, flags.workload.get())
+      .transformWith({
+        case scala.util.Failure(_) =>
+          logger.debug("Request failed.")
+          Future.successful(())
+
+        case scala.util.Success(_) =>
+          Future.successful(())
+      })
+  }
+
   val recorder =
     new BenchmarkUtil.Recorder(s"${flags.outputFilePrefix}_data.csv")
   def run(pseudonym: Int): Future[Unit] = {
@@ -142,7 +157,7 @@ object BenchmarkClientMain extends App {
   // Warm up the protocol.
   implicit val context = transport.executionContext
   val warmupFutures = for (pseudonym <- 0 to flags.numWarmupClients)
-    yield BenchmarkUtil.runFor(() => run(pseudonym), flags.warmupDuration)
+    yield BenchmarkUtil.runFor(() => warmupRun(pseudonym), flags.warmupDuration)
   try {
     logger.info("Client warmup started.")
     concurrent.Await.result(Future.sequence(warmupFutures), flags.warmupTimeout)
