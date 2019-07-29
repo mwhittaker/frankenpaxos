@@ -49,6 +49,10 @@ def get_benchmark_parser() -> argparse.ArgumentParser:
         action='append',
         help='Remote addresses for benchmark'
     )
+    parser.add_argument(
+        '-i', '--identity_file',
+        help='SSH identity file for remote benchmarks'
+    )
     return parser
 
 

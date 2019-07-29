@@ -9,7 +9,7 @@ from .. import proto_util
 from .. import util
 from .. import workload
 from ..workload import Workload
-from typing import Any, Callable, Collection, Dict, List, NamedTuple
+from typing import Any, Callable, Collection, Dict, List, NamedTuple, Optional
 import argparse
 import csv
 import datetime
@@ -191,10 +191,12 @@ class SimpleBPaxosNet(object):
 class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
     def __init__(self,
                  addresses: List[str],
+                 key_filename: Optional[str],
                  f: int,
                  num_client_procs: int,
                  num_leaders: int) -> None:
         assert len(addresses) > 0
+        self._key_filename = key_filename
         self._f = f
         self._num_client_procs = num_client_procs
         self._num_leaders = num_leaders
@@ -203,7 +205,10 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
     def _make_host(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
-        client.connect(address)
+        if self._key_filename:
+            client.connect(address, key_filename=self._key_filename)
+        else:
+            client.connect(address)
         return host.RemoteHost(client)
 
     class _Placement(NamedTuple):
@@ -371,6 +376,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
         if args['address'] is not None:
             return RemoteSimpleBPaxosNet(
                         args['address'],
+                        args['identity_file'],
                         f=input.f,
                         num_client_procs=input.num_client_procs,
                         num_leaders=input.num_leaders)
@@ -399,14 +405,30 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                            proto_util.message_to_pbtext(config))
         bench.log('Config file config.pbtxt written.')
 
+        # If we're monitoring the code, run garbage collection verbosely.
+        java = ['java']
+        if input.monitored:
+            java += [
+                '-verbose:gc',
+                '-XX:-PrintGC',
+                '-XX:+PrintHeapAtGC',
+                '-XX:+PrintGCDetails',
+                '-XX:+PrintGCTimeStamps',
+                '-XX:+PrintGCDateStamps',
+            ]
+        # Increase the heap size.
+        # TODO(mwhittaker): Right now, not much thought has been put into the
+        # heap size. Think more carefully about this. We may want, for example,
+        # to increase the size of the young generation.
+        java += ['-Xms32G', '-Xmx32G']
+
         # Launch dep service nodes.
         dep_service_node_procs: List[proc.Proc] = []
         for (i, dep) in enumerate(net.dep_service_nodes()):
             p = bench.popen(
                 host=dep.host,
                 label=f'dep_service_node_{i}',
-                cmd = [
-                    'java',
+                cmd = java + [
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.simplebpaxos.DepServiceNodeMain',
                     '--index', str(i),
@@ -430,8 +452,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=acceptor.host,
                 label=f'acceptor_{i}',
-                cmd = [
-                    'java',
+                cmd = java + [
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.simplebpaxos.AcceptorMain',
                     '--index', str(i),
@@ -454,8 +475,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=replica.host,
                 label=f'replica_{i}',
-                cmd = [
-                    'java',
+                cmd = java + [
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.simplebpaxos.ReplicaMain',
                     '--index', str(i),
@@ -498,8 +518,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=proposer.host,
                 label=f'proposer_{i}',
-                cmd = [
-                    'java',
+                cmd = java + [
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.simplebpaxos.ProposerMain',
                     '--index', str(i),
@@ -532,8 +551,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=leader.host,
                 label=f'leader_{i}',
-                cmd = [
-                    'java',
+                cmd = java + [
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.simplebpaxos.LeaderMain',
                     '--index', str(i),
@@ -602,6 +620,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=client.host,
                 label=f'client_{i}',
+                # TODO(mwhittaker): For now, we don't run clients with large
+                # heaps and verbose garbage collection because they are all
+                # colocated on one machine.
                 cmd = [
                     'java',
                     '-cp', os.path.abspath(args['jar']),
@@ -649,7 +670,7 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
         client_csvs = [bench.abspath(f'client_{i}_data.csv')
                        for i in range(input.num_client_procs)]
         return benchmark.parse_recorder_data(bench, client_csvs,
-                drop_prefix=datetime.timedelta(seconds=2))
+                drop_prefix=datetime.timedelta(seconds=0))
 
 
 def get_parser() -> argparse.ArgumentParser:
