@@ -107,6 +107,8 @@ object Proposer {
 
   @JSExportAll
   case class Chosen[Transport <: frankenpaxos.Transport[Transport]](
+      // We need to remember the chosen values for recovery. See handleRecover
+      // for details.
       commandOrNoop: CommandOrNoop,
       dependencies: Set[VertexId]
   ) extends State[Transport]
