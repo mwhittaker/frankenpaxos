@@ -73,19 +73,11 @@ object Leader {
   type DepServiceNodeIndex = Int
 
   @JSExportAll
-  sealed trait State[Transport <: frankenpaxos.Transport[Transport]]
-
-  @JSExportAll
-  case class WaitingForDeps[Transport <: frankenpaxos.Transport[Transport]](
+  case class State[Transport <: frankenpaxos.Transport[Transport]](
       command: Command,
       dependencyReplies: mutable.Map[DepServiceNodeIndex, DependencyReply],
       resendDependencyRequestsTimer: Transport#Timer
-  ) extends State[Transport]
-
-  // TODO(mwhittaker): Garbage collect these entries.
-  @JSExportAll
-  case class Proposed[Transport <: frankenpaxos.Transport[Transport]]()
-      extends State[Transport]
+  )
 }
 
 @JSExportAll
@@ -122,12 +114,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }.toMap
 
   // Channel to accompanying proposer.
-  private val proposer: Chan[Proposer[Transport]] =
-    chan[Proposer[Transport]](config.proposerAddresses(index),
-                              Proposer.serializer)
+  private val proposer: Chan[Proposer[Transport]] = chan[Proposer[Transport]](
+    config.proposerAddresses(index),
+    Proposer.serializer
+  )
 
   // The next available vertex id. When a leader receives a command, it assigns
-  // it a vertex id using nextVertexId and then increments nextVertexId.
+  // it a vertex id using nextVertexId and then increments nextVertexId. Note
+  // that vertex ids are assigned contiguously. This is important for garbage
+  // collection.
   @JSExport
   protected var nextVertexId: Int = 0
 
@@ -156,6 +151,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  private def getAndIncrementNextVertexId(): VertexId = {
+    val vertexId = nextVertexId
+    nextVertexId += 1
+    VertexId(leaderIndex = index, id = vertexId)
+  }
+
   private def thriftyDepServiceNodes(
       n: Int
   ): Set[Chan[DepServiceNode[Transport]]] = {
@@ -205,8 +206,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // problem.
 
     // Create a new vertex id for this command.
-    val vertexId = VertexId(index, nextVertexId)
-    nextVertexId += 1
+    val vertexId = getAndIncrementNextVertexId()
 
     // Send a request to the dependency service.
     val dependencyRequest =
@@ -216,7 +216,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     )
 
     // Update our state.
-    states(vertexId) = WaitingForDeps(
+    states(vertexId) = State(
       command = clientRequest.command,
       dependencyReplies = mutable.Map[DepServiceNodeIndex, DependencyReply](),
       resendDependencyRequestsTimer =
@@ -229,43 +229,47 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       dependencyReply: DependencyReply
   ): Unit = {
     states.get(dependencyReply.vertexId) match {
-      case state @ (None | Some(_: Proposed[_])) =>
+      case None =>
         logger.debug(
           s"Leader received DependencyReply for vertex " +
             s"${dependencyReply.vertexId}, but is not currently waiting for " +
-            s"dependencies for that vertex. The state is $state."
+            s"dependencies for that vertex. This means that either (a) the " +
+            s"leader has already computed dependencies for the vertex and " +
+            s"subsequently garbage collected information about it or (b) the " +
+            s"leader never received any information about this vertex " +
+            s"before. In either case, we ignore the dependency reply."
         )
 
-      case Some(waitingForDeps: WaitingForDeps[Transport]) =>
+      case Some(state: State[Transport]) =>
         // Wait for a quorum of responses.
-        waitingForDeps.dependencyReplies(dependencyReply.depServiceNodeIndex) =
+        state.dependencyReplies(dependencyReply.depServiceNodeIndex) =
           dependencyReply
-        if (waitingForDeps.dependencyReplies.size < config.quorumSize) {
+        if (state.dependencyReplies.size < config.quorumSize) {
           return
         }
 
         // Once we have a quorum of respones, we take the union of all returned
         // dependencies as the final set of dependencies.
         val dependencyReplies: Set[DependencyReply] =
-          waitingForDeps.dependencyReplies.values.toSet
+          state.dependencyReplies.values.toSet
         val dependencies: Set[VertexId] =
           dependencyReplies.map(_.dependency.toSet).flatten
 
         // Stop the running timers.
-        waitingForDeps.resendDependencyRequestsTimer.stop()
+        state.resendDependencyRequestsTimer.stop()
 
         // Propose our command and dependencies to the consensus service.
         proposer.send(
           ProposerInbound().withPropose(
             Propose(vertexId = dependencyReply.vertexId,
-                    command = waitingForDeps.command,
+                    command = state.command,
                     dependency = dependencies.toSeq)
           )
         )
         metrics.proposalsSentTotal.inc()
 
-        // Update our state.
-        states(dependencyReply.vertexId) = Proposed()
+        // Forget about the command.
+        states -= dependencyReply.vertexId
     }
   }
 }
