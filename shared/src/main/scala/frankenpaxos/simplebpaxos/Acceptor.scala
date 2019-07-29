@@ -114,6 +114,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Phase2A(r) =>
         handlePhase2a(src, r)
         "Phase2A"
+      case Request.GarbageCollect(r) =>
+        handleGarbageCollect(src, r)
+        "GarbageCollect"
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -207,5 +210,13 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
                 round = phase2a.round)
       )
     )
+  }
+
+  private def handleGarbageCollect(
+      src: Transport#Address,
+      garbageCollect: GarbageCollect
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
   }
 }

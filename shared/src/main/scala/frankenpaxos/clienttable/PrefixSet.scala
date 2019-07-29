@@ -28,6 +28,8 @@ class PrefixSet {
   override def toString(): String =
     s"{x | 0 <= x < $watermark} + $values"
 
+  def getWatermark(): Int = watermark
+
   def contains(x: Int): Boolean = {
     if (x < 0) {
       throw new IllegalArgumentException(s"$x < 0.")
@@ -35,6 +37,8 @@ class PrefixSet {
     x < watermark || values.contains(x)
   }
 
+  // add(x) adds x to the prefix set and returns whether x didn't previously
+  // exist in the set. This mirrors the Scala collection API.
   def add(x: Int): Boolean = {
     if (x < 0) {
       throw new IllegalArgumentException(s"$x < 0.")

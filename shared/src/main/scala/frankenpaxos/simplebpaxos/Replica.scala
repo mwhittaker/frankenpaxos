@@ -7,6 +7,7 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
+import frankenpaxos.clienttable.PrefixSet
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.Collectors
@@ -40,7 +41,10 @@ case class ReplicaOptions(
     // See frankenpaxos.epaxos.Replica for information on the following options.
     unsafeSkipGraphExecution: Boolean,
     executeGraphBatchSize: Int,
-    executeGraphTimerPeriod: java.time.Duration
+    executeGraphTimerPeriod: java.time.Duration,
+    // A replica sends a GarbageCollect message to the proposers and acceptors
+    // every `garbageCollectEveryNCommands` commands that it receives.
+    garbageCollectEveryNCommands: Int
 )
 
 @JSExportAll
@@ -50,7 +54,8 @@ object ReplicaOptions {
     recoverVertexTimerMaxPeriod = java.time.Duration.ofMillis(1500),
     unsafeSkipGraphExecution = false,
     executeGraphBatchSize = 1,
-    executeGraphTimerPeriod = java.time.Duration.ofSeconds(1)
+    executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
+    garbageCollectEveryNCommands = 1000000
   )
 }
 
@@ -171,15 +176,59 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     for (a <- config.proposerAddresses)
       yield chan[Proposer[Transport]](a, Proposer.serializer)
 
+  // Channels to the acceptors.
+  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
+    for (a <- config.acceptorAddresses)
+      yield chan[Acceptor[Transport]](a, Acceptor.serializer)
+
+  // The number of committed commands that the replica has received since the
+  // last time it sent a GarbageCollect message to the proposers and acceptors.
+  // Every `options.garbageCollectEveryNCommands` commands, this value is reset
+  // and GarbageCollect messages are sent.
+  @JSExportAll
+  protected var numCommandsPendingGc: Int = 0
+
   // The number of committed commands that are in the graph that have not yet
   // been processed. We process the graph every `options.executeGraphBatchSize`
   // committed commands and every `options.executeGraphTimerPeriod` seconds. If
   // the timer expires, we clear this number.
   @JSExportAll
-  protected var numPendingCommittedCommands: Int = 0
+  protected var numCommandsPendingExecution: Int = 0
 
-  // The committed commands.
+  // The committed commands. Recall that logically, commands forms a
+  // two-dimensional array indexed by leader index and id.
+  //
+  //            .   .   .
+  //            .   .   .
+  //            .   .   .
+  //          +---+---+---+
+  //        3 |   |   | f |
+  //          +---+---+---+
+  //        2 |   | c | e |
+  //     i    +---+---+---+
+  //     d  1 | a |   |   |
+  //          +---+---+---+
+  //        0 | b |   | d |
+  //          +---+---+---+
+  //            0   1   2
+  //          leader index
+  //
+  // We represent this log as a map, where commands[VertexId(leaderIndex, id)]
+  // stores entry found in row id and column leaderIndex in the array.
+  //
+  // TODO(mwhittaker): Garbage collect commands. This is challenging. It will
+  // likely involve checkpointing prefixes of the dependency graph. The tricky
+  // bit is that a prefix of the graph is not a prefix of the array.
   val commands = mutable.Map[VertexId, Committed]()
+
+  // `commands` is a two-dimensional array. committedVertices stores a prefix
+  // set for each column of the array, recording the set of ids that have been
+  // committed. For example, given the example above, committedVertices would
+  // look like this:
+  //
+  //     [{0, 1}, {2}, {0, 2, 3}]
+  val committedVertices: Seq[PrefixSet] =
+    for (i <- 0 to config.leaderAddresses.size) yield new PrefixSet()
 
   // The client table, which records the latest commands for each client.
   @JSExport
@@ -206,7 +255,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         () => {
           metrics.executeGraphTimerTotal.inc()
           execute()
-          numPendingCommittedCommands = 0
+          numCommandsPendingExecution = 0
           t.start()
         }
       )
@@ -215,6 +264,24 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  // Refer to the documentation on the `commands` field above.
+  // committedFrontier returns the committed prefix of the commands array. It
+  // is used for garbage collection.
+  private def committedFrontier(): Seq[Int] = {
+    committedVertices.map(_.getWatermark())
+  }
+
+  // Add a committed command to `commands`. The reason this is pulled into a
+  // helper function is to ensure that we don't forget to also update
+  // `committedVertices`.
+  private def recordCommitted(
+      vertexId: VertexId,
+      committed: Committed
+  ): Unit = {
+    commands(vertexId) = committed
+    committedVertices(vertexId.leaderIndex).add(vertexId.id)
+  }
+
   private def execute(): Unit = {
     val executable: Seq[VertexId] = dependencyGraph.execute()
     metrics.executeGraphTotal.inc()
@@ -368,7 +435,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Record the committed command.
     val dependencies = commit.dependency.toSet
-    commands(commit.vertexId) = Committed(commit.commandOrNoop, dependencies)
+    recordCommitted(commit.vertexId,
+                    Committed(commit.commandOrNoop, dependencies))
     metrics.dependencies.observe(dependencies.size)
 
     // Stop any recovery timer for the current vertex, and start recovery
@@ -390,12 +458,22 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       executeCommand(commit.vertexId, commit.commandOrNoop)
     } else {
       dependencyGraph.commit(commit.vertexId, (), dependencies)
-      numPendingCommittedCommands += 1
-      if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
+      numCommandsPendingExecution += 1
+      if (numCommandsPendingExecution % options.executeGraphBatchSize == 0) {
         execute()
-        numPendingCommittedCommands = 0
+        numCommandsPendingExecution = 0
         executeGraphTimer.foreach(_.reset())
       }
+    }
+
+    // Send GarbageCollect messages if needed.
+    numCommandsPendingGc += 1
+    if (numCommandsPendingGc % options.garbageCollectEveryNCommands == 0) {
+      val gc =
+        GarbageCollect(replicaIndex = index, frontier = committedFrontier())
+      proposers.foreach(_.send(ProposerInbound().withGarbageCollect(gc)))
+      acceptors.foreach(_.send(AcceptorInbound().withGarbageCollect(gc)))
+      numCommandsPendingGc = 0
     }
   }
 }

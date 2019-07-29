@@ -276,6 +276,9 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Recover(r) =>
         handleRecover(src, r)
         "Recover"
+      case Request.GarbageCollect(r) =>
+        handleGarbageCollect(src, r)
+        "GarbageCollect"
       case Request.Empty => {
         logger.fatal("Empty ProposerInbound encountered.")
       }
@@ -514,5 +517,13 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
     }
+  }
+
+  private def handleGarbageCollect(
+      src: Transport#Address,
+      garbageCollect: GarbageCollect
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
   }
 }

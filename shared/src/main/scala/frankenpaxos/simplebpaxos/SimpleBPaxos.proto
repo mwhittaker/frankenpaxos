@@ -30,6 +30,8 @@
 //                      Service
 //   Client    Leader    Node   Proposer Acceptor Replica
 //      |        |        |        | <----- |        |     Nack
+//      |        |        |        |        | <----- |     Nack
+//      |        |        |        | <------^------- |     GarbageCollect
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
@@ -201,6 +203,17 @@ message Recover {
   required VertexId vertex_id = 1;
 }
 
+message GarbageCollect {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The index of the replica sending the message.
+  required int32 replica_index = 1;
+
+  // The committed frontier. See Replica.committedFrontier for documentation.
+  repeated int32 frontier = 3;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
 message LeaderInbound {
   option (scalapb.message).annotations =
@@ -231,6 +244,7 @@ message ProposerInbound {
     Phase2b phase2b = 3;
     Nack nack = 4;
     Recover recover = 5;
+    GarbageCollect garbageCollect = 6;
   }
 }
 
@@ -241,6 +255,7 @@ message AcceptorInbound {
   oneof request {
     Phase1a phase1a = 1;
     Phase2a phase2a = 2;
+    GarbageCollect garbageCollect = 3;
   }
 }
 
