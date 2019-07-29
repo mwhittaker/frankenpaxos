@@ -6,6 +6,11 @@ from .. import benchmark, workload
 #from ..fastmultipaxos.fastmultipaxos import FastMultiPaxosSuite, Input, Output, ThriftySystemType, RoundSystemType, AcceptorOptions, LeaderOptions, ClientOptions
 from ..fastmultipaxos.fastmultipaxos import *
 from typing import Any, Callable, Dict, List, NamedTuple, Collection
+import io
+from contextlib import redirect_stdout
+import ast
+import yaml
+import json
 
 round_dict = {'CLASSIC_ROUND_ROBIN': 0, 'MIXED_ROUND_ROBIN': 1}
 thrifty_dict = {'NotThrifty': 0, 'Closest': 1, 'Random': 2}
@@ -25,7 +30,7 @@ user_param_list = [1, 1000, 60, 2, 'KeyValueStore',
         200, 'debug']
 
 def parse_bb_input(param_list, user_param_list):
-    num_runs = 3
+    num_runs = 1
     rev_round_dict = {0: RoundSystemType.CLASSIC_ROUND_ROBIN, 1: RoundSystemType.ROUND_ZERO_FAST,
             2: RoundSystemType.MIXED_ROUND_ROBIN}
     state_machine_dict = {0: 'Register', 1: 'KeyValue'}
@@ -63,7 +68,7 @@ def parse_bb_input(param_list, user_param_list):
         )
     return [input_tuple] * num_runs
 
-def get_lower_bounds():
+def get_lower_bounds(user_params):
     lower_bounds_dict = {'f': 1, 'round_system_type': 0,
             'timeout_seconds': 60, 'wait_period_ms': 0, 'wait_stagger_ms': 0,
             'thrifty_system': 0, 'resend_phase1as_timer_period_ms': 1, 'resend_phase2as_timer_period_ms': 1,
@@ -76,17 +81,17 @@ def get_lower_bounds():
     return lower_bounds
 
 def get_upper_bounds(user_params):
-    upper_bounds_dict = {'f': 5, 'round_system_type': 1,
-            'timeout_seconds': user_params['duration_seconds'],
-            'wait_period_ms': user_params['duration_seconds'],
-            'wait_stagger_ms': user_params['duration_seconds'],
-            'thrifty_system': 2, 'resend_phase1as_timer_period_ms': user_params['duration_seconds'],
-            'resend_phase2as_timer_period_ms': user_params['duration_seconds'],
-            'phase2a_max_buffer_size': user_params['num_client_procs'] * user_params['num_clients_per_proc'],
-            'phase2a_buffer_flush_period_ms': user_params['duration_seconds'],
+    upper_bounds_dict = {'f': 5, 'round_system_type': 2,
+            'timeout_seconds': user_params[2],
+            'wait_period_ms': user_params[2],
+            'wait_stagger_ms': user_params[2],
+            'thrifty_system': 2, 'resend_phase1as_timer_period_ms': user_params[2],
+            'resend_phase2as_timer_period_ms': user_params[2],
+            'phase2a_max_buffer_size': user_params[0] * user_params[1],
+            'phase2a_buffer_flush_period_ms': user_params[2],
             'value_chosen_max_buffer_size': 10000000,
-            'value_chosen_buffer_flush_period_ms': user_params['duration_seconds'],
-            'repropose_period_ms': user_params['duration_seconds']}
+            'value_chosen_buffer_flush_period_ms': user_params[2],
+            'repropose_period_ms': user_params[2]}
     upper_bounds = []
     for key in protocol_param_to_index_dict:
         upper_bounds.insert(protocol_param_to_index_dict[key], upper_bounds_dict[key])
@@ -106,29 +111,38 @@ class BBFastMultiPaxosSuite(FastMultiPaxosSuite):
 
     def summary(self, input: Input, output: Output) -> str:
         return str({
-            'f': input.f,
             'latency.median_ms': f'{output.latency.median_ms:.6}',
             'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}'})
 
 def run_objective_function(x):
-    suite = BBFastMultiPaxosSuite(x, user_param_list)
-    print(suite.args())
+    new_x = [int(element) for element in x]
+    suite = BBFastMultiPaxosSuite(new_x, user_param_list)
+    print('Selected parameters are ')
+    print(new_x)
+    f = io.StringIO()
     with benchmark.SuiteDirectory(suite.args()['suite_directory'], 'fastmultipaxos_blackbox') as dir:
-        suite.run_suite(dir)
+        with redirect_stdout(f):
+            suite.run_suite(dir)
+        out = f.getvalue()
+        out_dict_str = (out[out.find('{'):out.find('}')+1]).strip()
+        out_dict = ast.literal_eval(str(out_dict_str))
+        print('Output is ' + out_dict['stop_throughput_1s.p90'])
+        return float(out_dict['stop_throughput_1s.p90'])
 
-run_objective_function(get_lower_bounds())
-#lower_bounds = get_lower_bounds(data)
-#upper_bounds = get_upper_bounds(data)
-#types = ['I' for i in range(len(lower_bounds) - 2)]
+
+#print(run_objective_function(get_lower_bounds(user_param_list)))
+lower_bounds = get_lower_bounds(user_param_list)
+upper_bounds = get_upper_bounds(user_param_list)
+types = ['I' for i in range(len(lower_bounds))]
 #types.append('R')
 #types.append('R')
 #types = np.array(types)
-#dimension = len(lower_bounds)
+dimension = len(lower_bounds)
 #print(objective_function(lower_bounds))
 #print(dimension, len(types))
 
-#bb = rbfopt.RbfoptUserBlackBox(dimension, lower_bounds, upper_bounds, types, objective_function)
-#settings = rbfopt.RbfoptSettings(max_evaluations=50)
-#alg = rbfopt.RbfoptAlgorithm(settings, bb)
-#print(alg.optimize())
+bb = rbfopt.RbfoptUserBlackBox(dimension, lower_bounds, upper_bounds, types, run_objective_function)
+settings = rbfopt.RbfoptSettings(max_evaluations=50)
+alg = rbfopt.RbfoptAlgorithm(settings, bb)
+print(alg.optimize())
 #alg.optimize()
