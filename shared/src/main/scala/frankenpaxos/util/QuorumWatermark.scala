@@ -1,4 +1,4 @@
-package frankenpaxos.simplebpaxos
+package frankenpaxos.util
 
 import scala.collection.mutable
 

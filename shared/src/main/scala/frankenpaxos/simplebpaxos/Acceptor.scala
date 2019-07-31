@@ -7,6 +7,7 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
+import frankenpaxos.util
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -105,7 +106,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   // entry of the watermark is j. Then all vertices with leader index i and id
   // less than j can be garbage collected.
   @JSExport
-  protected val gcQuorumWatermarkVector = new QuorumWatermarkVector(
+  protected val gcQuorumWatermarkVector = new util.QuorumWatermarkVector(
     n = config.replicaAddresses.size,
     depth = config.leaderAddresses.size
   )

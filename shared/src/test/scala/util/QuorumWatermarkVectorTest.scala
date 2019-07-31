@@ -1,4 +1,4 @@
-package frankenpaxos.simplebpaxos
+package frankenpaxos.util
 
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
