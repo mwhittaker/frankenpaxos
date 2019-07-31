@@ -1,11 +1,11 @@
-package frankenpaxos.clienttable
+package frankenpaxos.util
 
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
 
-class PrefixSetSpec extends FlatSpec with Matchers {
-  "A prefix set" should "insert 0 correctly" in {
-    val prefixSet = new PrefixSet()
+class IntPrefixSetSpec extends FlatSpec with Matchers {
+  "An IntPrefixSet" should "insert 0 correctly" in {
+    val prefixSet = IntPrefixSet()
     prefixSet.add(0)
     prefixSet.contains(0) shouldBe true
     prefixSet.contains(1) shouldBe false
@@ -13,7 +13,7 @@ class PrefixSetSpec extends FlatSpec with Matchers {
   }
 
   it should "insert ascending chain correctly" in {
-    val prefixSet = new PrefixSet()
+    val prefixSet = IntPrefixSet()
     prefixSet.add(0)
     prefixSet.add(1)
     prefixSet.add(2)
@@ -25,7 +25,7 @@ class PrefixSetSpec extends FlatSpec with Matchers {
   }
 
   it should "insert contiguous chain in random order correctly" in {
-    val prefixSet = new PrefixSet()
+    val prefixSet = IntPrefixSet()
     prefixSet.add(4)
     prefixSet.add(0)
     prefixSet.add(2)
@@ -40,7 +40,7 @@ class PrefixSetSpec extends FlatSpec with Matchers {
   }
 
   it should "insert disjoint set in random order correctly" in {
-    val prefixSet = new PrefixSet()
+    val prefixSet = IntPrefixSet()
     prefixSet.add(20)
     prefixSet.add(7)
     prefixSet.add(0)

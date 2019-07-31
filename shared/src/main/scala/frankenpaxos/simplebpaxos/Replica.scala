@@ -7,7 +7,6 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
-import frankenpaxos.clienttable.PrefixSet
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.Collectors
@@ -226,15 +225,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // bit is that a prefix of the graph is not a prefix of the array.
   val commands = mutable.Map[VertexId, Committed]()
 
-  // `commands` is a two-dimensional array. committedVertices stores a prefix
-  // set for each column of the array, recording the set of ids that have been
-  // committed. For example, given the example above, committedVertices would
-  // look like this:
-  //
-  //     [{0, 1}, {2}, {0, 2, 3}]
+  // `committedVertices` stores the set of vertex ids that appear in
+  // `commands`. It should be identical to commands.keys except that it is
+  // compact.
   @JSExport
-  protected val committedVertices: Seq[PrefixSet] =
-    for (i <- 0 until config.leaderAddresses.size) yield new PrefixSet()
+  protected val committedVertices = VertexIdPrefixSet(
+    config.leaderAddresses.size
+  )
 
   // The client table, which records the latest commands for each client.
   @JSExport
@@ -270,13 +267,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
   // Helpers ///////////////////////////////////////////////////////////////////
-  // Refer to the documentation on the `commands` field above.
-  // committedFrontier returns the committed prefix of the commands array. It
-  // is used for garbage collection.
-  private def committedFrontier(): Seq[Int] = {
-    committedVertices.map(_.getWatermark())
-  }
-
   // Add a committed command to `commands`. The reason this is pulled into a
   // helper function is to ensure that we don't forget to also update
   // `committedVertices`.
@@ -285,7 +275,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       committed: Committed
   ): Unit = {
     commands(vertexId) = committed
-    committedVertices(vertexId.leaderIndex).add(vertexId.id)
+    committedVertices.add(vertexId)
   }
 
   private def execute(): Unit = {
@@ -485,7 +475,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     numCommandsPendingGc += 1
     if (numCommandsPendingGc % options.garbageCollectEveryNCommands == 0) {
       val gc =
-        GarbageCollect(replicaIndex = index, frontier = committedFrontier())
+        GarbageCollect(replicaIndex = index,
+                       frontier = committedVertices.getWatermark())
       proposers.foreach(_.send(ProposerInbound().withGarbageCollect(gc)))
       acceptors.foreach(_.send(AcceptorInbound().withGarbageCollect(gc)))
       numCommandsPendingGc = 0

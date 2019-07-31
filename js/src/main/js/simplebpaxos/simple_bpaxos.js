@@ -476,9 +476,7 @@ let replica_info = {
       </div>
 
       <div>
-        committedVertices =
-        <frankenpaxos-seq :seq="node.actor.committedVertices">
-        </frankenpaxos-seq>
+        committedVertices = {{node.actor.committedVertices}}
       </div>
 
       <div>

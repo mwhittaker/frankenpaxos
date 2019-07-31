@@ -1,5 +1,6 @@
 package frankenpaxos.clienttable
 
+import frankenpaxos.util.IntPrefixSet
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -96,7 +97,7 @@ class ClientTable[ClientAddress, Output] {
   case class ClientState(
       largestId: ClientId,
       largestOutput: Output,
-      executedIds: PrefixSet
+      executedIds: IntPrefixSet
   )
 
   @JSExport
@@ -130,7 +131,7 @@ class ClientTable[ClientAddress, Output] {
         table(clientAddress) = ClientState(
           largestId = clientId,
           largestOutput = output,
-          executedIds = new PrefixSet() + clientId
+          executedIds = IntPrefixSet() + clientId
         )
 
       case Some(state) =>
