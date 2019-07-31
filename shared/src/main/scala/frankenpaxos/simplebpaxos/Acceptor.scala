@@ -97,7 +97,24 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   logger.check(config.acceptorAddresses.contains(address))
   private val index = config.acceptorAddresses.indexOf(address)
 
+  // The state of every vertex.
   val states = mutable.Map[VertexId, State]()
+
+  // The garbage collection watermark. If n is the number of leaders, then
+  // gcQuorumWatermarkVector.watermark() is a vector of length n. Say the ith
+  // entry of the watermark is j. Then all vertices with leader index i and id
+  // less than j can be garbage collected.
+  @JSExport
+  protected val gcQuorumWatermarkVector = new QuorumWatermarkVector(
+    n = config.replicaAddresses.size,
+    depth = config.leaderAddresses.size
+  )
+
+  // gcWatermark is the cached value of gcQuorumWatermarkVector.watermark(). We
+  // cache it because we refer to it often, but it's ok if its stale.
+  @JSExport
+  protected var gcWatermark: Seq[Int] =
+    gcQuorumWatermarkVector.watermark(quorumSize = config.f + 1)
 
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
@@ -132,6 +149,23 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1a: Phase1a
   ): Unit = {
+    // Ignore garbage collected vertices.
+    //
+    // TODO(mwhittaker): This is not super live. If an acceptor garbage
+    // collects something but a proposer does not, it's possible the proposer
+    // will keep re-sending to the acceptors. In the normal case, the proposers
+    // and acceptors will garbage collect the same things, so it should be
+    // fine. If we wanted to be more thorough, we could have acceptors return
+    // the watermark it knows about to the proposer.
+    if (phase1a.vertexId.id < gcWatermark(phase1a.vertexId.leaderIndex)) {
+      logger.debug(
+        s"Acceptor received a Phase1a message for vertex ${phase1a.vertexId} " +
+          s"but has a watermark of $gcWatermark, so the vertex has already " +
+          s"been garbage collected. The message is being ignored."
+      )
+      return
+    }
+
     val state = states.getOrElse(
       phase1a.vertexId,
       State(round = -1, voteRound = -1, voteValue = None)
@@ -173,6 +207,18 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2a: Phase2a
   ): Unit = {
+    // Ignore garbage collected vertices.
+    //
+    // TODO(mwhittaker): See the note above on liveness.
+    if (phase2a.vertexId.id < gcWatermark(phase2a.vertexId.leaderIndex)) {
+      logger.debug(
+        s"Acceptor received a Phase2a message for vertex ${phase2a.vertexId} " +
+          s"but has a watermark of $gcWatermark, so the vertex has already " +
+          s"been garbage collected. The message is being ignored."
+      )
+      return
+    }
+
     val state = states.getOrElse(
       phase2a.vertexId,
       State(round = -1, voteRound = -1, voteValue = None)
@@ -216,7 +262,16 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       garbageCollect: GarbageCollect
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    // Update the GC watermark.
+    gcQuorumWatermarkVector.update(
+      garbageCollect.replicaIndex,
+      garbageCollect.frontier
+    )
+    gcWatermark = gcQuorumWatermarkVector.watermark(quorumSize = config.f + 1)
+
+    // Garbage collect all entries lower than the watermark.
+    states.retain({
+      case (vertexId, _) => vertexId.id >= gcWatermark(vertexId.leaderIndex)
+    })
   }
 }

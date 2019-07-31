@@ -185,14 +185,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // last time it sent a GarbageCollect message to the proposers and acceptors.
   // Every `options.garbageCollectEveryNCommands` commands, this value is reset
   // and GarbageCollect messages are sent.
-  @JSExportAll
+  @JSExport
   protected var numCommandsPendingGc: Int = 0
 
   // The number of committed commands that are in the graph that have not yet
   // been processed. We process the graph every `options.executeGraphBatchSize`
   // committed commands and every `options.executeGraphTimerPeriod` seconds. If
   // the timer expires, we clear this number.
-  @JSExportAll
+  @JSExport
   protected var numCommandsPendingExecution: Int = 0
 
   // The committed commands. Recall that logically, commands forms a
@@ -227,8 +227,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // look like this:
   //
   //     [{0, 1}, {2}, {0, 2, 3}]
-  val committedVertices: Seq[PrefixSet] =
-    for (i <- 0 to config.leaderAddresses.size) yield new PrefixSet()
+  @JSExport
+  protected val committedVertices: Seq[PrefixSet] =
+    for (i <- 0 until config.leaderAddresses.size) yield new PrefixSet()
 
   // The client table, which records the latest commands for each client.
   @JSExport

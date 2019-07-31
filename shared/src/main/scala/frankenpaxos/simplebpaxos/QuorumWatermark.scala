@@ -32,6 +32,8 @@ class QuorumWatermark(numWatermarks: Int) {
   private val watermarks: mutable.Buffer[Int] =
     mutable.Buffer.fill(numWatermarks)(0)
 
+  override def toString(): String = s"[${watermarks.mkString(",")}]"
+
   // Update the ith watermark to `watermark`, unless `watermark` is smaller
   // than the current watermark. Watermarks can only increase over time.
   def update(index: Int, watermark: Int): Unit =

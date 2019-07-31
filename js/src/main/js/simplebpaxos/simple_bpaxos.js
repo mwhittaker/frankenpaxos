@@ -356,20 +356,30 @@ let acceptor_info = {
 
   template: `
     <div>
-      states =
-      <frankenpaxos-map :map="node.actor.states" v-slot="{value: state}">
-        <fp-object>
-          <fp-field :name="'round'" :value="state.round"></fp-field>
-          <fp-field :name="'voteRound'" :value="state.voteRound"></fp-field>
-          <fp-field :name="'voteValue'">
-            <vote-value
-              v-if="JsUtils.optionToJs(state.voteValue) !== undefined"
-              :value="JsUtils.optionToJs(state.voteValue)">
-            </vote-value>
-            <div v-else>None</div>
-          </fp-field>
-        </fp-object>
-      </frankenpaxos-map>
+      <div>
+        states =
+        <frankenpaxos-map :map="node.actor.states" v-slot="{value: state}">
+          <fp-object>
+            <fp-field :name="'round'" :value="state.round"></fp-field>
+            <fp-field :name="'voteRound'" :value="state.voteRound"></fp-field>
+            <fp-field :name="'voteValue'">
+              <vote-value
+                v-if="JsUtils.optionToJs(state.voteValue) !== undefined"
+                :value="JsUtils.optionToJs(state.voteValue)">
+              </vote-value>
+              <div v-else>None</div>
+            </fp-field>
+          </fp-object>
+        </frankenpaxos-map>
+      </div>
+
+      <div>
+        gcQuorumWatermarkVector = {{node.actor.gcQuorumWatermarkVector}}
+      </div>
+
+      <div>
+        gcWatermark = {{node.actor.gcWatermark}}
+      </div>
     </div>
   `,
 };
@@ -425,24 +435,18 @@ let replica_info = {
     <div>
       <div>stateMachine = {{node.actor.stateMachine}}</div>
       <div>
-        numPendingCommittedCommands =
-        {{node.actor.numPendingCommittedCommands}}
+        numCommandsPendingGc =
+        {{node.actor.numCommandsPendingGc}}
+      </div>
+      <div>
+        numCommandsPendingExecution =
+        {{node.actor.numCommandsPendingExecution}}
       </div>
 
       <div>
         clientTable =
         <frankenpaxos-client-table :clientTable="node.actor.clientTable">
         </frankenpaxos-client-table>
-      </div>
-
-      <div>
-        dependencyGraph =
-        <frankenpaxos-graph
-          style="height: 200px; border: 1pt solid black;"
-          :nodes="nodes()"
-          :edges="edges()"
-          :options="options">
-        </frankenpaxos-graph>
       </div>
 
       <div>
@@ -457,6 +461,22 @@ let replica_info = {
             </fp-field>
           </fp-object>
         </frankenpaxos-map>
+      </div>
+
+      <div>
+        committedVertices =
+        <frankenpaxos-seq :seq="node.actor.committedVertices">
+        </frankenpaxos-seq>
+      </div>
+
+      <div>
+        dependencyGraph =
+        <frankenpaxos-graph
+          style="height: 200px; border: 1pt solid black;"
+          :nodes="nodes()"
+          :edges="edges()"
+          :options="options">
+        </frankenpaxos-graph>
       </div>
     </div>
   `,

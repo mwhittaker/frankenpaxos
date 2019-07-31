@@ -149,7 +149,8 @@ class SimpleBPaxos {
         recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
         recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(15),
         executeGraphBatchSize = 1,
-        executeGraphTimerPeriod = java.time.Duration.ofSeconds(10)
+        executeGraphTimerPeriod = java.time.Duration.ofSeconds(10),
+        garbageCollectEveryNCommands = 2
       ),
       metrics = new ReplicaMetrics(FakeCollectors)
     )

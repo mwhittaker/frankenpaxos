@@ -23,6 +23,8 @@ class QuorumWatermarkVector(n: Int, depth: Int) {
       new QuorumWatermark(numWatermarks = n)
     }
 
+  override def toString(): String = quorumWatermarks.mkString("\n")
+
   def update(index: Int, watermark: Seq[Int]): Unit = {
     for ((watermark, quorumWatermark) <- watermark.zip(quorumWatermarks)) {
       quorumWatermark.update(index, watermark)
