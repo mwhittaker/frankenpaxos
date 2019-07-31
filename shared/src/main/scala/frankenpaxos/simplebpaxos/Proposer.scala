@@ -600,7 +600,19 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     )
     gcWatermark = gcQuorumWatermarkVector.watermark(quorumSize = config.f + 1)
 
-    // Garbage collect all entries lower than the watermark.
+    // Garbage collect all entries lower than the watermark, but first stop
+    // their timers.
+    states.foreach({
+      case (vertexId, phase1: Phase1[_]) =>
+        if (vertexId.id >= gcWatermark(vertexId.leaderIndex)) {
+          phase1.resendPhase1as.stop()
+        }
+      case (vertexId, phase2: Phase2[_]) =>
+        if (vertexId.id >= gcWatermark(vertexId.leaderIndex)) {
+          phase2.resendPhase2as.stop()
+        }
+      case (_, _: Chosen[_]) =>
+    })
     states.retain({
       case (vertexId, _) => vertexId.id >= gcWatermark(vertexId.leaderIndex)
     })
