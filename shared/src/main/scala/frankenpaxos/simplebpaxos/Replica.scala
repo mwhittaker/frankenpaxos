@@ -181,6 +181,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     for (a <- config.acceptorAddresses)
       yield chan[Acceptor[Transport]](a, Acceptor.serializer)
 
+  // Channels to the other replicas acceptors.
+  private val otherReplicas: Seq[Chan[Replica[Transport]]] =
+    for (a <- config.replicaAddresses if a != address)
+      yield chan[Replica[Transport]](a, Replica.serializer)
+
   // The number of committed commands that the replica has received since the
   // last time it sent a GarbageCollect message to the proposers and acceptors.
   // Every `options.garbageCollectEveryNCommands` commands, this value is reset
@@ -393,6 +398,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
 
+        // We also send recovery messages to all other replicas. If proposers
+        // have garbage collected the vertex that we're trying to recover,
+        // they'll ignore us, so it's up to us to contact the replicas.
+        otherReplicas.foreach(
+          _.send(ReplicaInbound().withRecover(Recover(vertexId = vertexId)))
+        )
+
         t.start()
       }
     )
@@ -484,7 +496,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       recover: Recover
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    commands.get(recover.vertexId) match {
+      case None =>
+      // If we don't have the vertex, we simply ignore the message.
+
+      case Some(committed: Committed) =>
+        val replica = chan[Replica[Transport]](src, Replica.serializer)
+        replica.send(
+          ReplicaInbound().withCommit(
+            Commit(vertexId = recover.vertexId,
+                   commandOrNoop = committed.commandOrNoop,
+                   dependency = committed.dependencies.toSeq)
+          )
+        )
+    }
   }
 }
