@@ -267,58 +267,70 @@ const proposer_info = {
 
   template: `
     <div>
-      states =
-      <frankenpaxos-map :map="node.actor.states" v-slot="{value: state}">
-        <div v-if="state.constructor.name.endsWith('Phase1')">
-          Phase1
-          <fp-object>
-            <fp-field :name="'round'" :value="state.round"></fp-field>
-            <fp-field :name="'value'">
-              <vote-value :value="state.value"></vote-value>
-            </fp-field>
-            <fp-field :name="'phase1bs'">
-              <frankenpaxos-map :map="state.phase1bs" v-slot="{value: phase1b}">
-                <phase1b :value="phase1b"></phase1b>
-              </frankenpaxos-map>
-            </fp-field>
-            <fp-field
-              :name="'resendPhase1as'"
-              :value="state.resendPhase1as">
-            </fp-field>
-          </fp-object>
-        </div>
+      <div>
+        states =
+        <frankenpaxos-map :map="node.actor.states" v-slot="{value: state}">
+          <div v-if="state.constructor.name.endsWith('Phase1')">
+            Phase1
+            <fp-object>
+              <fp-field :name="'round'" :value="state.round"></fp-field>
+              <fp-field :name="'value'">
+                <vote-value :value="state.value"></vote-value>
+              </fp-field>
+              <fp-field :name="'phase1bs'">
+                <frankenpaxos-map :map="state.phase1bs"
+                                  v-slot="{value: phase1b}">
+                  <phase1b :value="phase1b"></phase1b>
+                </frankenpaxos-map>
+              </fp-field>
+              <fp-field
+                :name="'resendPhase1as'"
+                :value="state.resendPhase1as">
+              </fp-field>
+            </fp-object>
+          </div>
 
-        <div v-if="state.constructor.name.endsWith('Phase2')">
-          Phase2
-          <fp-object v-if="state.constructor.name.endsWith('Phase2')">
-            <fp-field :name="'round'" :value="state.round"></fp-field>
-            <fp-field :name="'value'">
-              <vote-value :value="state.value"></vote-value>
-            </fp-field>
-            <fp-field :name="'phase2bs'">
-              <frankenpaxos-map :map="state.phase2bs" v-slot="{value: phase2b}">
-                <phase2b :value="phase2b"></phase2b>
-              </frankenpaxos-map>
-            </fp-field>
-            <fp-field
-              :name="'resendPhase2as'"
-              :value="state.resendPhase2as">
-            </fp-field>
-          </fp-object>
-        </div>
+          <div v-if="state.constructor.name.endsWith('Phase2')">
+            Phase2
+            <fp-object v-if="state.constructor.name.endsWith('Phase2')">
+              <fp-field :name="'round'" :value="state.round"></fp-field>
+              <fp-field :name="'value'">
+                <vote-value :value="state.value"></vote-value>
+              </fp-field>
+              <fp-field :name="'phase2bs'">
+                <frankenpaxos-map :map="state.phase2bs"
+                                  v-slot="{value: phase2b}">
+                  <phase2b :value="phase2b"></phase2b>
+                </frankenpaxos-map>
+              </fp-field>
+              <fp-field
+                :name="'resendPhase2as'"
+                :value="state.resendPhase2as">
+              </fp-field>
+            </fp-object>
+          </div>
 
-        <div v-if="state.constructor.name.endsWith('Chosen')">
-          Chosen
-          <fp-object>
-            <fp-field :name="'commandOrNoop'">
-              <command-or-noop :set="state.commandOrNoop"></command-or-noop>
-            </fp-field>
-            <fp-field :name="'dependencies'">
-              <frankenpaxos-set :set="state.dependencies"></frankenpaxos-set>
-            </fp-field>
-          </fp-object>
-        </div>
-      </frankenpaxos-map>
+          <div v-if="state.constructor.name.endsWith('Chosen')">
+            Chosen
+            <fp-object>
+              <fp-field :name="'commandOrNoop'">
+                <command-or-noop :set="state.commandOrNoop"></command-or-noop>
+              </fp-field>
+              <fp-field :name="'dependencies'">
+                <frankenpaxos-set :set="state.dependencies"></frankenpaxos-set>
+              </fp-field>
+            </fp-object>
+          </div>
+        </frankenpaxos-map>
+      </div>
+
+      <div>
+        gcQuorumWatermarkVector = {{node.actor.gcQuorumWatermarkVector}}
+      </div>
+
+      <div>
+        gcWatermark = {{node.actor.gcWatermark}}
+      </div>
     </div>
   `,
 };

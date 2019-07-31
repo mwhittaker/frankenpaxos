@@ -412,6 +412,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Commit(r) =>
         handleCommit(src, r)
         "Commit"
+      case Request.Recover(r) =>
+        handleRecover(src, r)
+        "Recover"
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -423,8 +426,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       .observe((stopNanos - startNanos).toDouble / 1000000)
   }
 
-  // Public for testing.
-  def handleCommit(
+  private def handleCommit(
       src: Transport#Address,
       commit: Commit
   ): Unit = {
@@ -476,5 +478,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       acceptors.foreach(_.send(AcceptorInbound().withGarbageCollect(gc)))
       numCommandsPendingGc = 0
     }
+  }
+
+  private def handleRecover(
+      src: Transport#Address,
+      recover: Recover
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
   }
 }

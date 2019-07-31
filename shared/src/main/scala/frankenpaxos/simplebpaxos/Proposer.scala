@@ -152,6 +152,22 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val states = mutable.Map[VertexId, State[Transport]]()
 
+  // The garbage collection watermark. If n is the number of leaders, then
+  // gcQuorumWatermarkVector.watermark() is a vector of length n. Say the ith
+  // entry of the watermark is j. Then all vertices with leader index i and id
+  // less than j can be garbage collected.
+  @JSExport
+  protected val gcQuorumWatermarkVector = new QuorumWatermarkVector(
+    n = config.replicaAddresses.size,
+    depth = config.leaderAddresses.size
+  )
+
+  // gcWatermark is the cached value of gcQuorumWatermarkVector.watermark(). We
+  // cache it because we refer to it often, but it's ok if its stale.
+  @JSExport
+  protected var gcWatermark: Seq[Int] =
+    gcQuorumWatermarkVector.watermark(quorumSize = config.f + 1)
+
   // Helpers ///////////////////////////////////////////////////////////////////
   def roundSystem(vertexId: VertexId): RoundSystem =
     new RoundSystem.RotatedClassicRoundRobin(config.leaderAddresses.size,
@@ -294,6 +310,17 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       propose: Propose
   ): Unit = {
+    // Ignore garbage collected vertices. This is live because if a client
+    // re-sends its request, a leader will assign it a new vertex id.
+    if (propose.vertexId.id < gcWatermark(propose.vertexId.leaderIndex)) {
+      logger.debug(
+        s"Proposer received a Propose message for vertex ${propose.vertexId} " +
+          s"but has a watermark of $gcWatermark, so the vertex has already " +
+          s"been garbage collected. The message is being ignored."
+      )
+      return
+    }
+
     proposeImpl(propose.vertexId,
                 CommandOrNoop().withCommand(propose.command),
                 propose.dependency.toSet)
@@ -303,6 +330,16 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1b: Phase1b
   ): Unit = {
+    // Ignore garbage collected vertices.
+    if (phase1b.vertexId.id < gcWatermark(phase1b.vertexId.leaderIndex)) {
+      logger.debug(
+        s"Proposer received a Phase1b message for vertex ${phase1b.vertexId} " +
+          s"but has a watermark of $gcWatermark, so the vertex has already " +
+          s"been garbage collected. The message is being ignored."
+      )
+      return
+    }
+
     states.get(phase1b.vertexId) match {
       case state @ (None | Some(_: Phase2[_]) | Some(_: Chosen[_])) =>
         logger.debug(
@@ -370,6 +407,16 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2b: Phase2b
   ): Unit = {
+    // Ignore garbage collected vertices.
+    if (phase2b.vertexId.id < gcWatermark(phase2b.vertexId.leaderIndex)) {
+      logger.debug(
+        s"Proposer received a Phase2b message for vertex ${phase2b.vertexId} " +
+          s"but has a watermark of $gcWatermark, so the vertex has already " +
+          s"been garbage collected. The message is being ignored."
+      )
+      return
+    }
+
     states.get(phase2b.vertexId) match {
       case state @ (None | Some(_: Phase1[_]) | Some(_: Chosen[_])) =>
         logger.debug(
@@ -423,6 +470,16 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       nack: Nack
   ): Unit = {
+    // Ignore garbage collected vertices.
+    if (nack.vertexId.id < gcWatermark(nack.vertexId.leaderIndex)) {
+      logger.debug(
+        s"Proposer received a Nack message for vertex ${nack.vertexId} " +
+          s"but has a watermark of $gcWatermark, so the vertex has already " +
+          s"been garbage collected. The message is being ignored."
+      )
+      return
+    }
+
     val round =
       roundSystem(nack.vertexId).nextClassicRound(index, nack.higherRound)
     states.get(nack.vertexId) match {
@@ -492,6 +549,19 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       recover: Recover
   ): Unit = {
+    // Ignore garbage collected vertices. This is live because a replica will
+    // also contact other replicas for recovery. If the proposer has garbage
+    // collected a vertex, f + 1 replicas have stored it, and one of those
+    // replicas will reply with the chosen value.
+    if (recover.vertexId.id < gcWatermark(recover.vertexId.leaderIndex)) {
+      logger.debug(
+        s"Proposer received a Recover message for vertex ${recover.vertexId} " +
+          s"but has a watermark of $gcWatermark, so the vertex has already " +
+          s"been garbage collected. The message is being ignored."
+      )
+      return
+    }
+
     states.get(recover.vertexId) match {
       case None =>
         // Propose a noop.
@@ -523,7 +593,16 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       garbageCollect: GarbageCollect
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    // Update the GC watermark.
+    gcQuorumWatermarkVector.update(
+      garbageCollect.replicaIndex,
+      garbageCollect.frontier
+    )
+    gcWatermark = gcQuorumWatermarkVector.watermark(quorumSize = config.f + 1)
+
+    // Garbage collect all entries lower than the watermark.
+    states.retain({
+      case (vertexId, _) => vertexId.id >= gcWatermark(vertexId.leaderIndex)
+    })
   }
 }

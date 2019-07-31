@@ -13,7 +13,7 @@
 //      |        |        |        | -------^------> |     Commit
 //      | <------^--------^--------^--------^------- |     ClientReply
 //
-// Recovery.
+// Recovery via proposer.
 //                     Dependency
 //                      Service
 //   Client    Leader    Node   Proposer Acceptor Replica
@@ -25,12 +25,22 @@
 //      |        |        |        | -------^------> |     Commit
 //      | <------^--------^--------^--------^------- |     ClientReply
 //
+// Recovery via replica.
+//                     Dependency
+//                      Service
+//   Client    Leader    Node   Proposer Acceptor Replica
+//      |        |        |        |        |   .--- |     Recover
+//      |        |        |        |        |   '--> |
+//      |        |        |        |        |   .--- |     Commit
+//      |        |        |        |        |   '--> |
+//      | <------^--------^--------^--------^------- |     ClientReply
+//
 // Misc.
 //                     Dependency
 //                      Service
 //   Client    Leader    Node   Proposer Acceptor Replica
 //      |        |        |        | <----- |        |     Nack
-//      |        |        |        |        | <----- |     Nack
+//      |        |        |        |        | <----- |     GarbageCollect
 //      |        |        |        | <------^------- |     GarbageCollect
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
@@ -265,6 +275,7 @@ message ReplicaInbound {
 
   oneof request {
     Commit commit = 1;
+    Recover recover = 2;
   }
 }
 
