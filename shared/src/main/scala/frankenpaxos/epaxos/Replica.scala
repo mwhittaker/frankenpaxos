@@ -19,6 +19,7 @@ import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.thrifty.ThriftySystem
+import frankenpaxos.util
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -358,8 +359,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // An empty dependency graph. This is a constructor argument so that
     // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
     // Public for the JS visualizations.
-    val dependencyGraph: DependencyGraph[Instance, Int] =
-      new JgraphtDependencyGraph(),
+    val dependencyGraph: DependencyGraph[
+      Instance,
+      Int,
+      util.FakeCompactSet[Instance]
+    ] = new JgraphtDependencyGraph(new util.FakeCompactSet[Instance]()),
     options: ReplicaOptions = ReplicaOptions.default,
     metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
@@ -779,9 +783,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     if (options.unsafeSkipGraphExecution) {
       executeCommand(instance, triple.commandOrNoop)
     } else {
-      dependencyGraph.commit(instance,
-                             triple.sequenceNumber,
-                             triple.dependencies)
+      dependencyGraph.commit(
+        instance,
+        triple.sequenceNumber,
+        new util.FakeCompactSet[Instance](triple.dependencies)
+      )
       numPendingCommittedCommands += 1
       if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
         execute()

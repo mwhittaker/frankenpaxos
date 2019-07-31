@@ -16,6 +16,7 @@ import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.statemachine.StateMachine
+import frankenpaxos.util
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.scalajs.js.annotation._
@@ -229,8 +230,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // Public for Javascript visualizations.
     val stateMachine: StateMachine,
     // Public for Javascript visualizations.
-    val dependencyGraph: DependencyGraph[VertexId, Unit] =
-      new JgraphtDependencyGraph(),
+    val dependencyGraph: DependencyGraph[
+      VertexId,
+      Unit,
+      util.FakeCompactSet[VertexId]
+    ] = new JgraphtDependencyGraph(new util.FakeCompactSet[VertexId]()),
     options: LeaderOptions = LeaderOptions.default,
     metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
@@ -393,7 +397,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Execute commands.
-    dependencyGraph.commit(vertexId, (), dependencies)
+    dependencyGraph.commit(vertexId,
+                           (),
+                           new util.FakeCompactSet[VertexId](dependencies))
     val executable: Seq[VertexId] = dependencyGraph.execute()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 

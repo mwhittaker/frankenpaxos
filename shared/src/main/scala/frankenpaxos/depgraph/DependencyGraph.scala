@@ -1,5 +1,6 @@
 package frankenpaxos.depgraph
 
+import frankenpaxos.util
 import scala.scalajs.js.annotation.JSExportAll
 
 // # MultiPaxos
@@ -121,7 +122,11 @@ import scala.scalajs.js.annotation.JSExportAll
 // orderings are used to execute commands within a component in a deterministic
 // order.
 @JSExportAll
-abstract class DependencyGraph[Key, SequenceNumber](
+abstract class DependencyGraph[
+    Key,
+    SequenceNumber,
+    KeySet <: util.CompactSet[KeySet] { type T = Key }
+](
     implicit val keyOrdering: Ordering[Key],
     implicit val sequenceNumberOrdering: Ordering[SequenceNumber]
 ) {
@@ -130,7 +135,7 @@ abstract class DependencyGraph[Key, SequenceNumber](
   def commit(
       key: Key,
       sequenceNumber: SequenceNumber,
-      dependencies: Set[Key]
+      dependencies: KeySet
   ): Unit
 
   // Execute finds vertices in the graph that are eligible for execution, and
@@ -163,15 +168,20 @@ abstract class DependencyGraph[Key, SequenceNumber](
 }
 
 object DependencyGraph {
-  def read[K, S](
+  def read[K, S, KSet <: util.CompactSet[KSet] { type T = K }](
       implicit keyOrdering: Ordering[K],
       sequenceNumberOrdering: Ordering[S]
-  ): scopt.Read[DependencyGraph[K, S]] = {
+  ): scopt.Read[(KSet) => DependencyGraph[K, S, KSet]] = {
     scopt.Read.reads({
-      case "Jgrapht"           => new JgraphtDependencyGraph[K, S]()
-      case "ScalaGraph"        => new ScalaGraphDependencyGraph[K, S]()
-      case "Tarjan"            => new TarjanDependencyGraph[K, S]()
-      case "IncrementalTarjan" => new IncrementalTarjanDependencyGraph[K, S]()
+      case "Jgrapht" =>
+        emptyKeySet => new JgraphtDependencyGraph[K, S, KSet](emptyKeySet)
+      case "ScalaGraph" =>
+        emptyKeySet => new ScalaGraphDependencyGraph[K, S, KSet](emptyKeySet)
+      case "Tarjan" =>
+        emptyKeySet => new TarjanDependencyGraph[K, S, KSet](emptyKeySet)
+      case "IncrementalTarjan" =>
+        emptyKeySet =>
+          new IncrementalTarjanDependencyGraph[K, S, KSet](emptyKeySet)
       case x =>
         throw new IllegalArgumentException(
           s"$x is not one of Jgrapht, ScalaGraph, Tarjan, or IncrementalTarjan."

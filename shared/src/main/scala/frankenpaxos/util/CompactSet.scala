@@ -32,8 +32,19 @@ trait CompactSet[Self <: CompactSet[Self]] {
   // Return whether an element exists in the set.
   def contains(x: T): Boolean
 
+  // Compute the set union of two compact sets.
+  def union(other: Self): Self
+
   // Compute the set difference of two compact sets.
   def diff(other: Self): Self
+
+  // Returns the number of elements in the set, even if some of these elements
+  // are compacted.
+  def size: Int
+
+  // Returns the number of uncompacted elements in the set. The exact
+  // definition of an "uncompated element" will vary based on the CompactSet.
+  def uncompactedSize: Int
 
   // Materialize the compact set as an actual Set.
   def materialize(): Set[T]

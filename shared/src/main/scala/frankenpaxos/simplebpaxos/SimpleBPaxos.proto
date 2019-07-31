@@ -50,12 +50,12 @@ syntax = "proto2";
 package frankenpaxos.simplebpaxos;
 
 import "scalapb/scalapb.proto";
+import "frankenpaxos/util/IntPrefixSet.proto";
 
 option (scalapb.options) = {
   package_name: "frankenpaxos.simplebpaxos"
   flat_package: true
 };
-
 
 // Helper messages. ////////////////////////////////////////////////////////////
 message VertexId {
@@ -102,9 +102,14 @@ message CommandOrNoop {
   }
 }
 
+message VertexIdPrefixSetProto {
+  required int32 numLeaders = 1;
+  repeated frankenpaxos.util.IntPrefixSetProto int_prefix_set = 2;
+}
+
 message VoteValueProto {
   required CommandOrNoop commandOrNoop = 1;
-  repeated VertexId dependency = 2;
+  required VertexIdPrefixSetProto dependencies = 2;
 }
 
 // Protocol messages. //////////////////////////////////////////////////////////
@@ -129,7 +134,7 @@ message DependencyReply {
 
   required VertexId vertex_id = 1;
   required int32 dep_service_node_index = 2;
-  repeated VertexId dependency = 3;
+  required VertexIdPrefixSetProto dependencies = 3;
 }
 
 message Propose {
@@ -138,7 +143,7 @@ message Propose {
 
   required VertexId vertex_id = 1;
   required Command command = 2;
-  repeated VertexId dependency = 3;
+  required VertexIdPrefixSetProto dependencies = 3;
 }
 
 message Phase1a {
@@ -192,7 +197,7 @@ message Commit {
 
   required VertexId vertex_id = 1;
   required CommandOrNoop command_or_noop = 2;
-  repeated VertexId dependency = 3;
+  required VertexIdPrefixSetProto dependencies = 3;
 }
 
 message ClientReply {

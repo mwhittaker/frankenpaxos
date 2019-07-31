@@ -1,0 +1,15 @@
+syntax = "proto2";
+
+package frankenpaxos.util;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.util"
+  flat_package: true
+};
+
+message IntPrefixSetProto {
+  required int32 watermark = 1;
+  repeated int32 value = 2;
+}

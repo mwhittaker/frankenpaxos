@@ -56,6 +56,15 @@ class DepServiceNodeMetrics(collectors: Collectors) {
         "for a command."
     )
     .register()
+
+  val uncompactedDependencies: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_dep_service_node_uncompacted_dependencies")
+    .help(
+      "The number of uncompacted dependencies that a dependency service node " +
+        "computes for a command."
+    )
+    .register()
 }
 
 @JSExportAll
@@ -97,7 +106,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   // dependency service node receives a command more than once, it returns the
   // same set of dependencies.
   @JSExport
-  protected val dependenciesCache = mutable.Map[VertexId, Set[VertexId]]()
+  protected val dependenciesCache = mutable.Map[VertexId, VertexIdPrefixSet]()
 
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
@@ -125,16 +134,23 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       dependencyRequest: DependencyRequest
   ): Unit = {
+    // TODO(mwhittaker): Compute dependencies as a VertexIdPrefixSet directly,
+    // while garbage collecting old entries. This will likely involve a rewrite
+    // of the conflict index trait.
     val vertexId = dependencyRequest.vertexId
     val dependencies = dependenciesCache.get(vertexId) match {
       case Some(dependencies) => dependencies
 
       case None =>
         val command = dependencyRequest.command.command.toByteArray
-        val dependencies = conflictIndex.getConflicts(vertexId, command)
+        val dependencies = VertexIdPrefixSet(
+          config.leaderAddresses.size,
+          conflictIndex.getConflicts(vertexId, command)
+        )
         conflictIndex.put(vertexId, command)
         dependenciesCache(vertexId) = dependencies
         metrics.dependencies.observe(dependencies.size)
+        metrics.uncompactedDependencies.observe(dependencies.size)
         dependencies
     }
 
@@ -143,7 +159,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       LeaderInbound().withDependencyReply(
         DependencyReply(vertexId = dependencyRequest.vertexId,
                         depServiceNodeIndex = index,
-                        dependency = dependencies.toSeq)
+                        dependencies = dependencies.toProto)
       )
     )
   }

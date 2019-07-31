@@ -1,5 +1,6 @@
 package frankenpaxos.depgraph
 
+import frankenpaxos.util
 import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExportAll
 
@@ -73,11 +74,16 @@ import scala.scalajs.js.annotation.JSExportAll
 // [2]: https://scholar.google.com/scholar?cluster=15533190727229683002
 // [3]: https://github.com/nvanbenschoten/epaxos/blob/master/epaxos/execute.go
 // [4]: https://github.com/efficient/epaxos/blob/master/src/epaxos/epaxos-exec.go
-class TarjanDependencyGraph[Key, SequenceNumber]()(
+class TarjanDependencyGraph[
+    Key,
+    SequenceNumber,
+    KeySet <: util.CompactSet[KeySet] { type T = Key }
+](
+    emptyKeySet: KeySet
+)(
     implicit override val keyOrdering: Ordering[Key],
     implicit override val sequenceNumberOrdering: Ordering[SequenceNumber]
-) extends DependencyGraph[Key, SequenceNumber] {
-
+) extends DependencyGraph[Key, SequenceNumber, KeySet] {
   case class Vertex(
       key: Key,
       sequenceNumber: SequenceNumber,
@@ -92,12 +98,12 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
   )
 
   val vertices = mutable.Map[Key, Vertex]()
-  val executed = mutable.Set[Key]()
+  val executed: KeySet = emptyKeySet
 
   override def commit(
       key: Key,
       sequenceNumber: SequenceNumber,
-      dependencies: Set[Key]
+      dependencies: KeySet
   ): Unit = {
     // Ignore repeated commands.
     if (vertices.contains(key) || executed.contains(key)) {
@@ -105,7 +111,7 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
     }
 
     vertices(key) =
-      Vertex(key, sequenceNumber, dependencies.filter(!executed.contains(_)))
+      Vertex(key, sequenceNumber, dependencies.diff(executed).materialize())
   }
 
   override def executeByComponent(): Seq[Seq[Key]] = {
@@ -125,7 +131,7 @@ class TarjanDependencyGraph[Key, SequenceNumber]()(
       key <- component
     } {
       vertices -= key
-      executed += key
+      executed.add(key)
     }
 
     executables.toSeq

@@ -2,9 +2,10 @@ package frankenpaxos.depgraph
 
 import frankenpaxos.simplebpaxos.VertexId
 import frankenpaxos.simplebpaxos.VertexIdHelpers.vertexIdOrdering
-import org.scalameter.picklers.noPickler._
+import frankenpaxos.util
 import org.scalameter.api._
 import org.scalameter.picklers.Implicits._
+import org.scalameter.picklers.noPickler._
 
 object DependencyGraphBenchmark extends Bench.ForkedTime {
   override def aggregator: Aggregator[Double] = Aggregator.average
@@ -13,12 +14,32 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
   case object Jgrapht extends GraphType
   case object ScalaGraph extends GraphType
   case object Tarjan extends GraphType
+  case object IncrementalTarjan extends GraphType
 
-  private def makeGraph(t: GraphType): DependencyGraph[VertexId, Unit] = {
+  private def makeGraph(
+      t: GraphType
+  ): DependencyGraph[VertexId, Unit, util.FakeCompactSet[VertexId]] = {
     t match {
-      case Jgrapht    => new JgraphtDependencyGraph[VertexId, Unit]()
-      case ScalaGraph => new ScalaGraphDependencyGraph[VertexId, Unit]()
-      case Tarjan     => new TarjanDependencyGraph[VertexId, Unit]()
+      case Jgrapht =>
+        new JgraphtDependencyGraph[VertexId, Unit, util.FakeCompactSet[
+          VertexId
+        ]](new util.FakeCompactSet[VertexId]())
+      case ScalaGraph =>
+        new ScalaGraphDependencyGraph[VertexId, Unit, util.FakeCompactSet[
+          VertexId
+        ]](new util.FakeCompactSet[VertexId]())
+      case Tarjan =>
+        new TarjanDependencyGraph[VertexId, Unit, util.FakeCompactSet[
+          VertexId
+        ]](new util.FakeCompactSet[VertexId]())
+      case IncrementalTarjan =>
+        new IncrementalTarjanDependencyGraph[
+          VertexId,
+          Unit,
+          util.FakeCompactSet[
+            VertexId
+          ]
+        ](new util.FakeCompactSet[VertexId]())
     }
   }
 
@@ -31,7 +52,9 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
 
     val params =
       for {
-        graphType <- Gen.enumeration("graph_type")(Jgrapht, Tarjan)
+        graphType <- Gen.enumeration("graph_type")(Jgrapht,
+                                                   Tarjan,
+                                                   IncrementalTarjan)
         numCommands <- Gen.enumeration("num_commands")(10000)
         depSize <- Gen.enumeration("dep_size")(1, 10, 25)
       } yield Params(graphType, numCommands, depSize)
@@ -44,7 +67,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       for (i <- 0 until params.numCommands) {
         val deps = for (d <- i - params.depSize until i if d >= 0)
           yield VertexId(d, d)
-        g.commit(VertexId(i, i), (), deps.toSet)
+        g.commit(VertexId(i, i), (), new util.FakeCompactSet(deps.toSet))
       }
     }
   }
@@ -59,7 +82,9 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
 
     val params =
       for {
-        graphType <- Gen.enumeration("graph_type")(Jgrapht, Tarjan)
+        graphType <- Gen.enumeration("graph_type")(Jgrapht,
+                                                   Tarjan,
+                                                   IncrementalTarjan)
         numCommands <- Gen.enumeration("num_commands")(10000)
         cycleSize <- Gen.enumeration("cycle_size")(1, 10, 25)
         batchSize <- Gen.enumeration("batch_size")(1, 100, 1000)
@@ -76,7 +101,9 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       } {
         val deps = for (d <- i until i + params.cycleSize if d != i + j)
           yield VertexId(d, d)
-        g.commit(VertexId(i + j, i + j), (), deps.toSet)
+        g.commit(VertexId(i + j, i + j),
+                 (),
+                 new util.FakeCompactSet(deps.toSet))
         if ((i + 1) % params.batchSize == 0) {
           g.execute()
         }
@@ -94,7 +121,9 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
 
     val params =
       for {
-        graphType <- Gen.enumeration("graph_type")(Jgrapht, Tarjan)
+        graphType <- Gen.enumeration("graph_type")(Jgrapht,
+                                                   Tarjan,
+                                                   IncrementalTarjan)
         numCommands <- Gen.enumeration("num_commands")(10000)
         depSize <- Gen.enumeration("depSize")(1, 10, 25)
         batchSize <- Gen.enumeration("batch_size")(1, 100)
@@ -108,7 +137,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       for (i <- 0 until params.numCommands) {
         val deps = for (d <- i - params.depSize until i if d >= 0)
           yield VertexId(d, d)
-        g.commit(VertexId(i, i), (), deps.toSet)
+        g.commit(VertexId(i, i), (), new util.FakeCompactSet(deps.toSet))
         if ((i + 1) % params.batchSize == 0) {
           g.execute()
         }

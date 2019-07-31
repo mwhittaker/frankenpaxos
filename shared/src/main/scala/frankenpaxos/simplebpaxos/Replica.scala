@@ -124,6 +124,12 @@ class ReplicaMetrics(collectors: Collectors) {
     .name("simple_bpaxos_replica_dependencies")
     .help("The number of dependencies that a command has.")
     .register()
+
+  val uncompactedDependencies: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_replica_uncompacted_dependencies")
+    .help("The number of uncompacted dependencies that a command has.")
+    .register()
 }
 
 @JSExportAll
@@ -136,7 +142,7 @@ object Replica {
   @JSExportAll
   case class Committed(
       commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId]
+      dependencies: VertexIdPrefixSet
   )
 }
 
@@ -149,8 +155,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // Public for Javascript visualizations.
     val stateMachine: StateMachine,
     // Public for Javascript visualizations.
-    val dependencyGraph: DependencyGraph[VertexId, Unit] =
-      new JgraphtDependencyGraph(),
+    val dependencyGraph: DependencyGraph[VertexId, Unit, VertexIdPrefixSet],
     options: ReplicaOptions = ReplicaOptions.default,
     metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors),
     seed: Long = System.currentTimeMillis()
@@ -439,18 +444,18 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Record the committed command.
-    val dependencies = commit.dependency.toSet
+    val dependencies = VertexIdPrefixSet.fromProto(commit.dependencies)
     recordCommitted(commit.vertexId,
                     Committed(commit.commandOrNoop, dependencies))
     metrics.dependencies.observe(dependencies.size)
+    metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
 
     // Stop any recovery timer for the current vertex, and start recovery
     // timers for any uncommitted vertices on which we depend.
     recoverVertexTimers.get(commit.vertexId).foreach(_.stop())
     recoverVertexTimers -= commit.vertexId
     for {
-      v <- dependencies
-      if !commands.contains(v)
+      v <- dependencies.diff(committedVertices).materialize()
       if !recoverVertexTimers.contains(v)
     } {
       recoverVertexTimers(v) = makeRecoverVertexTimer(v)
@@ -497,7 +502,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           ReplicaInbound().withCommit(
             Commit(vertexId = recover.vertexId,
                    commandOrNoop = committed.commandOrNoop,
-                   dependency = committed.dependencies.toSeq)
+                   dependencies = committed.dependencies.toProto)
           )
         )
     }

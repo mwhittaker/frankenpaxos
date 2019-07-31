@@ -13,6 +13,7 @@ import frankenpaxos.statemachine.GetRequest
 import frankenpaxos.statemachine.KeyValueStore
 import frankenpaxos.statemachine.KeyValueStoreInput
 import frankenpaxos.statemachine.SetRequest
+import frankenpaxos.util
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -57,7 +58,9 @@ class UnanimousBPaxos(val f: Int) {
       logger = new FakeLogger(),
       config = config,
       stateMachine = new KeyValueStore(),
-      dependencyGraph = new JgraphtDependencyGraph(),
+      dependencyGraph = new JgraphtDependencyGraph(
+        new util.FakeCompactSet[VertexId]()
+      ),
       options = LeaderOptions.default,
       metrics = new LeaderMetrics(FakeCollectors)
     )

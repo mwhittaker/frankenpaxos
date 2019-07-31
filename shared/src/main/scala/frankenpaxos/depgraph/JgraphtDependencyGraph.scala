@@ -1,5 +1,6 @@
 package frankenpaxos.depgraph
 
+import frankenpaxos.util
 import org.jgrapht.Graph
 import org.jgrapht.alg.KosarajuStrongConnectivityInspector
 import org.jgrapht.alg.interfaces.StrongConnectivityAlgorithm
@@ -19,10 +20,16 @@ import scala.scalajs.js.annotation.JSExportAll
 // JS visualizations.
 //
 // [1]: https://jgrapht.org/
-class JgraphtDependencyGraph[Key, SequenceNumber]()(
+class JgraphtDependencyGraph[
+    Key,
+    SequenceNumber,
+    KeySet <: util.CompactSet[KeySet] { type T = Key }
+](
+    val emptyKeySet: KeySet
+)(
     implicit override val keyOrdering: Ordering[Key],
     implicit override val sequenceNumberOrdering: Ordering[SequenceNumber]
-) extends DependencyGraph[Key, SequenceNumber] {
+) extends DependencyGraph[Key, SequenceNumber, KeySet] {
   // The underlying graph. When a strongly connected component is "executed"
   // (i.e., returned by the `commit` method), it is removed from the graph.
   // This keeps the graph small.
@@ -43,14 +50,14 @@ class JgraphtDependencyGraph[Key, SequenceNumber]()(
   private val sequenceNumbers = mutable.Map[Key, SequenceNumber]()
 
   // The keys that have already been executed and removed from the graph.
-  private val executed = mutable.Set[Key]()
+  private val executed: KeySet = emptyKeySet
 
   override def toString(): String = graph.toString
 
   override def commit(
       key: Key,
       sequenceNumber: SequenceNumber,
-      dependencies: Set[Key]
+      dependencies: KeySet
   ): Unit = {
     // Ignore commands that have already been committed.
     if (committed.contains(key) || executed.contains(key)) {
@@ -61,14 +68,12 @@ class JgraphtDependencyGraph[Key, SequenceNumber]()(
     committed += key
     sequenceNumbers(key) = sequenceNumber
 
-    // Update the graph.
+    // Update the graph. If a dependency has already been executed, we don't
+    // add an edge to it.
     graph.addVertex(key)
-    for (dependency <- dependencies) {
-      // If a dependency has already been executed, we don't add an edge to it.
-      if (!executed.contains(dependency)) {
-        graph.addVertex(dependency)
-        graph.addEdge(key, dependency)
-      }
+    for (dependency <- dependencies.diff(executed).materialize()) {
+      graph.addVertex(dependency)
+      graph.addEdge(key, dependency)
     }
   }
 
@@ -110,7 +115,7 @@ class JgraphtDependencyGraph[Key, SequenceNumber]()(
       graph.removeVertex(key)
       committed -= key
       sequenceNumbers -= key
-      executed += key
+      executed.add(key)
     }
 
     executable

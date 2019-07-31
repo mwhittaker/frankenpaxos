@@ -13,6 +13,7 @@ import frankenpaxos.statemachine.GetRequest
 import frankenpaxos.statemachine.KeyValueStore
 import frankenpaxos.statemachine.KeyValueStoreInput
 import frankenpaxos.statemachine.SetRequest
+import frankenpaxos.util
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -119,7 +120,9 @@ class SimpleBPaxos(val f: Int, seed: Long) {
       logger = new FakeLogger(),
       config = config,
       stateMachine = new KeyValueStore(),
-      dependencyGraph = new JgraphtDependencyGraph(),
+      dependencyGraph = new JgraphtDependencyGraph(
+        VertexIdPrefixSet(config.leaderAddresses.size)
+      ),
       options = ReplicaOptions.default.copy(
         recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
         recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(20)

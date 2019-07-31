@@ -1,5 +1,6 @@
 package frankenpaxos.depgraph
 
+import frankenpaxos.util
 import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExportAll
 import scala.util.control.Breaks._
@@ -25,10 +26,16 @@ import scala.util.control.Breaks._
 //
 // [1]: https://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm
 // [2]: https://scholar.google.com/scholar?cluster=15533190727229683002
-class IncrementalTarjanDependencyGraph[Key, SequenceNumber]()(
+class IncrementalTarjanDependencyGraph[
+    Key,
+    SequenceNumber,
+    KeySet <: util.CompactSet[KeySet] { type T = Key }
+](
+    val emptyKeySet: KeySet
+)(
     implicit override val keyOrdering: Ordering[Key],
     implicit override val sequenceNumberOrdering: Ordering[SequenceNumber]
-) extends DependencyGraph[Key, SequenceNumber] {
+) extends DependencyGraph[Key, SequenceNumber, KeySet] {
   // The result of calling the `strongConnect` method. When we call
   // strongConnect, if Tarjan's algorithm encounters an uncommitted vertex, it
   // must pause and resume later. Otherwise, if no uncommitted vertices are
@@ -63,7 +70,7 @@ class IncrementalTarjanDependencyGraph[Key, SequenceNumber]()(
   val vertices = mutable.Map[Key, Vertex]()
 
   // The set of executed vertices.
-  val executed = mutable.Set[Key]()
+  val executed: KeySet = emptyKeySet
 
   // callstack simulates a recursive implementation of strongConnect. We have
   // to manually manage our own stack because we pause the algorithm and resume
@@ -78,7 +85,7 @@ class IncrementalTarjanDependencyGraph[Key, SequenceNumber]()(
   override def commit(
       key: Key,
       sequenceNumber: SequenceNumber,
-      dependencies: Set[Key]
+      dependencies: KeySet
   ): Unit = {
     // Ignore repeated commands.
     if (vertices.contains(key) || executed.contains(key)) {
@@ -93,7 +100,8 @@ class IncrementalTarjanDependencyGraph[Key, SequenceNumber]()(
     // the algorithm. Thus, placing dependencies on committed commands first
     // helps the algorithm run as far along as possible.
     val (committed, uncommitted) = dependencies
-      .filter(!executed.contains(_))
+      .diff(executed)
+      .materialize()
       .toSeq
       .partition(vertices.contains(_))
     vertices(key) = Vertex(key, sequenceNumber, committed ++ uncommitted)
@@ -132,7 +140,7 @@ class IncrementalTarjanDependencyGraph[Key, SequenceNumber]()(
       key <- component
     } {
       vertices -= key
-      executed += key
+      executed.add(key)
     }
     // Note that toSeq is not correct here. Clearing executables clears the
     // toSeq.

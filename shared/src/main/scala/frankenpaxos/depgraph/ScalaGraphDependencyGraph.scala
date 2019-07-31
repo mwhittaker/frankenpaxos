@@ -1,5 +1,6 @@
 package frankenpaxos.depgraph
 
+import frankenpaxos.util
 import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExportAll
 import scalax.collection.GraphEdge.DiEdge
@@ -15,23 +16,29 @@ import scalax.collection.mutable.Graph
 //
 // [1]: http://www.scala-graph.org/
 @JSExportAll
-class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
+class ScalaGraphDependencyGraph[
+    Key,
+    SequenceNumber,
+    KeySet <: util.CompactSet[KeySet] { type T = Key }
+](
+    val emptyKeySet: KeySet
+)(
     implicit override val keyOrdering: Ordering[Key],
     implicit override val sequenceNumberOrdering: Ordering[SequenceNumber]
-) extends DependencyGraph[Key, SequenceNumber] {
+) extends DependencyGraph[Key, SequenceNumber, KeySet] {
   // We implement ScalaGraphDependencyGraph the same way we implement
   // JgraphtDependencyGraph. See JgraphtDependencyGraph for documentation.
   private val graph = Graph[Key, DiEdge]()
   private val committed = mutable.Set[Key]()
   private val sequenceNumbers = mutable.Map[Key, SequenceNumber]()
-  private val executed = mutable.Set[Key]()
+  private val executed: KeySet = emptyKeySet
 
   override def toString(): String = graph.toString
 
   override def commit(
       key: Key,
       sequenceNumber: SequenceNumber,
-      dependencies: Set[Key]
+      dependencies: KeySet
   ): Unit = {
     // Ignore commands that have already been committed.
     if (committed.contains(key) || executed.contains(key)) {
@@ -42,14 +49,12 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
     committed += key
     sequenceNumbers(key) = sequenceNumber
 
-    // Update the graph.
+    // Update the graph. If a dependency has already been executed, we don't
+    // add an edge to it.
     graph.add(key)
-    for (dependency <- dependencies) {
-      // If a dependency has already been executed, we don't add an edge to it.
-      if (!executed.contains(dependency)) {
-        graph.add(dependency)
-        graph.add(key ~> dependency)
-      }
+    for (dependency <- dependencies.diff(executed).materialize()) {
+      graph.add(dependency)
+      graph.add(key ~> dependency)
     }
   }
 
@@ -117,7 +122,7 @@ class ScalaGraphDependencyGraph[Key, SequenceNumber]()(
       graph.remove(key)
       committed -= key
       sequenceNumbers -= key
-      executed += key
+      executed.add(key)
     }
 
     executable

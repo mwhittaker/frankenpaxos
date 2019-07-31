@@ -7,6 +7,7 @@ import frankenpaxos.JsTransportAddress
 import frankenpaxos.depgraph.ScalaGraphDependencyGraph
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.AppendLog
+import frankenpaxos.util
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -59,7 +60,11 @@ class UnanimousBPaxos {
       logger = new JsLogger(),
       config = config,
       stateMachine = new AppendLog(),
-      dependencyGraph = new ScalaGraphDependencyGraph(),
+      dependencyGraph = new ScalaGraphDependencyGraph[
+        VertexId,
+        Unit,
+        util.FakeCompactSet[VertexId]
+      ](new util.FakeCompactSet[VertexId]()),
       options = LeaderOptions.default.copy(
         resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(5),
         resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(5),

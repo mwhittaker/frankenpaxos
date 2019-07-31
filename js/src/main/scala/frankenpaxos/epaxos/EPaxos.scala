@@ -7,6 +7,7 @@ import frankenpaxos.JsTransportAddress
 import frankenpaxos.depgraph.ScalaGraphDependencyGraph
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.Register
+import frankenpaxos.util
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -61,14 +62,20 @@ class EPaxos {
       executeGraphBatchSize = 1,
       executeGraphTimerPeriod = java.time.Duration.ofSeconds(10)
     )
-    val replica = new Replica[JsTransport](address,
-                                           transport,
-                                           logger,
-                                           config,
-                                           new Register(),
-                                           new ScalaGraphDependencyGraph(),
-                                           options,
-                                           new ReplicaMetrics(FakeCollectors))
+    val replica = new Replica[JsTransport](
+      address,
+      transport,
+      logger,
+      config,
+      new Register(),
+      new ScalaGraphDependencyGraph[
+        Instance,
+        Int,
+        util.FakeCompactSet[Instance]
+      ](new util.FakeCompactSet[Instance]()),
+      options,
+      new ReplicaMetrics(FakeCollectors)
+    )
     (logger, replica)
   }
   val (replica1logger, replica1) = replicas(0)

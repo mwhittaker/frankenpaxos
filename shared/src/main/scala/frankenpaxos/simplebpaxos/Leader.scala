@@ -252,8 +252,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // dependencies as the final set of dependencies.
         val dependencyReplies: Set[DependencyReply] =
           state.dependencyReplies.values.toSet
-        val dependencies: Set[VertexId] =
-          dependencyReplies.map(_.dependency.toSet).flatten
+        val dependencies: VertexIdPrefixSet = dependencyReplies
+          .map(reply => VertexIdPrefixSet.fromProto(reply.dependencies))
+          .fold(VertexIdPrefixSet(config.leaderAddresses.size))({
+            case (x, y) => x.union(y)
+          })
 
         // Stop the running timers.
         state.resendDependencyRequestsTimer.stop()
@@ -263,7 +266,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           ProposerInbound().withPropose(
             Propose(vertexId = dependencyReply.vertexId,
                     command = state.command,
-                    dependency = dependencies.toSeq)
+                    dependencies = dependencies.toProto)
           )
         )
         metrics.proposalsSentTotal.inc()

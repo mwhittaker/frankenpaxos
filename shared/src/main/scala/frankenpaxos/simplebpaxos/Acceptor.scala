@@ -56,17 +56,18 @@ object Acceptor {
   @JSExportAll
   case class VoteValue(
       commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId]
+      dependencies: VertexIdPrefixSet
   )
 
   def toProto(voteValue: VoteValue): VoteValueProto = {
     VoteValueProto(commandOrNoop = voteValue.commandOrNoop,
-                   dependency = voteValue.dependencies.toSeq)
+                   dependencies = voteValue.dependencies.toProto)
   }
 
   def fromProto(voteValueProto: VoteValueProto): VoteValue = {
     VoteValue(commandOrNoop = voteValueProto.commandOrNoop,
-              dependencies = voteValueProto.dependency.toSet)
+              dependencies =
+                VertexIdPrefixSet.fromProto(voteValueProto.dependencies))
   }
 
   @JSExportAll

@@ -144,7 +144,9 @@ class SimpleBPaxos {
       logger = new JsLogger(),
       config = config,
       stateMachine = new AppendLog(),
-      dependencyGraph = new ScalaGraphDependencyGraph(),
+      dependencyGraph = new ScalaGraphDependencyGraph(
+        VertexIdPrefixSet(config.leaderAddresses.size)
+      ),
       options = ReplicaOptions.default.copy(
         recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
         recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(15),

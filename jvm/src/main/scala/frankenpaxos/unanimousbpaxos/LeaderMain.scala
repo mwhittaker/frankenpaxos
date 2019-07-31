@@ -12,6 +12,7 @@ import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.TarjanDependencyGraph
 import frankenpaxos.statemachine
 import frankenpaxos.statemachine.StateMachine
+import frankenpaxos.util
 import io.prometheus.client.exporter.HTTPServer
 import io.prometheus.client.hotspot.DefaultExports
 import java.io.File
@@ -26,8 +27,11 @@ object LeaderMain extends App {
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       stateMachine: StateMachine = new statemachine.Noop(),
-      dependencyGraph: DependencyGraph[VertexId, Unit] =
-        new TarjanDependencyGraph(),
+      dependencyGraphFactory: util.FakeCompactSet[VertexId] => DependencyGraph[
+        VertexId,
+        Unit,
+        util.FakeCompactSet[VertexId]
+      ] = _ => ???,
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
@@ -35,7 +39,8 @@ object LeaderMain extends App {
       options: LeaderOptions = LeaderOptions.default
   )
 
-  implicit val dependencyGraphRead = DependencyGraph.read[VertexId, Unit]
+  implicit val dependencyGraphRead =
+    DependencyGraph.read[VertexId, Unit, util.FakeCompactSet[VertexId]]
 
   implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def optionAction(
@@ -54,9 +59,14 @@ object LeaderMain extends App {
     opt[StateMachine]("state_machine")
       .required()
       .action((x, f) => f.copy(stateMachine = x))
-    opt[DependencyGraph[VertexId, Unit]]("dependency_graph")
-      .required()
-      .action((x, f) => f.copy(dependencyGraph = x))
+    opt[util.FakeCompactSet[VertexId] => DependencyGraph[
+      VertexId,
+      Unit,
+      util.FakeCompactSet[VertexId]
+    ]](
+      "dependency_graph"
+    ).required()
+      .action((x, f) => f.copy(dependencyGraphFactory = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
@@ -95,7 +105,8 @@ object LeaderMain extends App {
     logger = logger,
     config = config,
     stateMachine = flags.stateMachine,
-    dependencyGraph = flags.dependencyGraph,
+    dependencyGraph =
+      flags.dependencyGraphFactory(new util.FakeCompactSet[VertexId]()),
     options = flags.options
   )
 

@@ -13,6 +13,7 @@ import frankenpaxos.depgraph.TarjanDependencyGraph
 import frankenpaxos.statemachine
 import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.thrifty.ThriftySystem
+import frankenpaxos.util
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -25,8 +26,11 @@ object ReplicaMain extends App {
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       stateMachine: StateMachine = new statemachine.Noop(),
-      dependencyGraph: DependencyGraph[Instance, Int] =
-        new TarjanDependencyGraph(),
+      dependencyGraphFactory: util.FakeCompactSet[Instance] => DependencyGraph[
+        Instance,
+        Int,
+        util.FakeCompactSet[Instance]
+      ] = _ => ???,
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
@@ -34,7 +38,8 @@ object ReplicaMain extends App {
       options: ReplicaOptions = ReplicaOptions.default
   )
 
-  implicit val dependencyGraphRead = DependencyGraph.read[Instance, Int]
+  implicit val dependencyGraphRead =
+    DependencyGraph.read[Instance, Int, util.FakeCompactSet[Instance]]
 
   implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def optionAction(
@@ -53,9 +58,14 @@ object ReplicaMain extends App {
     opt[StateMachine]("state_machine")
       .required()
       .action((x, f) => f.copy(stateMachine = x))
-    opt[DependencyGraph[Instance, Int]]("dependency_graph")
-      .required()
-      .action((x, f) => f.copy(dependencyGraph = x))
+    opt[util.FakeCompactSet[Instance] => DependencyGraph[
+      Instance,
+      Int,
+      util.FakeCompactSet[Instance]
+    ]](
+      "dependency_graph"
+    ).required()
+      .action((x, f) => f.copy(dependencyGraphFactory = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
@@ -104,7 +114,8 @@ object ReplicaMain extends App {
     logger = logger,
     config = config,
     stateMachine = flags.stateMachine,
-    dependencyGraph = flags.dependencyGraph,
+    dependencyGraph =
+      flags.dependencyGraphFactory(new util.FakeCompactSet[Instance]()),
     options = flags.options
   )
 

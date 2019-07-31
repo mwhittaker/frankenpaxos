@@ -12,6 +12,7 @@ import frankenpaxos.statemachine.KeyValueStore
 import frankenpaxos.statemachine.KeyValueStoreInput
 import frankenpaxos.statemachine.SetKeyValuePair
 import frankenpaxos.statemachine.SetRequest
+import frankenpaxos.util
 import org.scalacheck
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -49,7 +50,7 @@ class EPaxos(val f: Int) {
         logger,
         config,
         stateMachine = new KeyValueStore(),
-        dependencyGraph = new JgraphtDependencyGraph[Instance, Int](),
+        dependencyGraph = new JgraphtDependencyGraph(new util.FakeCompactSet()),
         options = ReplicaOptions.default,
         metrics = new ReplicaMetrics(FakeCollectors)
       )

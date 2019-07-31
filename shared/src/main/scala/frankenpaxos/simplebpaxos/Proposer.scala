@@ -111,7 +111,7 @@ object Proposer {
       // We need to remember the chosen values for recovery. See handleRecover
       // for details.
       commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId]
+      dependencies: VertexIdPrefixSet
   ) extends State[Transport]
 }
 
@@ -186,7 +186,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   private def proposeImpl(
       vertexId: VertexId,
       commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId]
+      dependencies: VertexIdPrefixSet
   ): Unit = {
     states.get(vertexId) match {
       case Some(_) =>
@@ -324,7 +324,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
     proposeImpl(propose.vertexId,
                 CommandOrNoop().withCommand(propose.command),
-                propose.dependency.toSet)
+                VertexIdPrefixSet.fromProto(propose.dependencies))
   }
 
   private def handlePhase1b(
@@ -459,7 +459,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
             ReplicaInbound().withCommit(
               Commit(vertexId = phase2b.vertexId,
                      commandOrNoop = phase2.value.commandOrNoop,
-                     dependency = phase2.value.dependencies.toSeq)
+                     dependencies = phase2.value.dependencies.toProto)
             )
           )
         }
@@ -569,7 +569,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         proposeImpl(
           recover.vertexId,
           CommandOrNoop().withNoop(Noop()),
-          Set[VertexId]()
+          VertexIdPrefixSet(config.leaderAddresses.size)
         )
 
       case Some(_: Phase1[_]) | Some(_: Phase2[_]) =>
@@ -584,7 +584,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           ReplicaInbound().withCommit(
             Commit(vertexId = recover.vertexId,
                    commandOrNoop = chosen.commandOrNoop,
-                   dependency = chosen.dependencies.toSeq)
+                   dependencies = chosen.dependencies.toProto)
           )
         )
     }

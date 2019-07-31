@@ -5,8 +5,21 @@ import scala.scalajs.js.annotation._
 
 @JSExportAll
 object IntPrefixSet {
+  // Construct an empty IntPrefixSet.
   @JSExport("apply")
-  def apply(): IntPrefixSet = new IntPrefixSet(Set())
+  def apply(): IntPrefixSet = new IntPrefixSet(0, mutable.Set())
+
+  // Construct an IntPrefixSet from a standard, uncompacted set.
+  @JSExport("apply")
+  def apply(values: Set[Int]): IntPrefixSet =
+    new IntPrefixSet(0, values.to[mutable.Set])
+
+  // Construct an IntPrefixSet from an IntPrefixSetProto. It is a precondition
+  // that `proto` was generated using `IntPrefixSet.toProto`. You cannot pass
+  // in an arbitrary IntPrefixSetProto.
+  def fromProto(proto: IntPrefixSetProto): IntPrefixSet = {
+    new IntPrefixSet(proto.watermark, proto.value.to[mutable.Set])
+  }
 }
 
 // An IntPrefixSetis an add-only set of natural numbers (i.e., integers greater
@@ -27,12 +40,12 @@ object IntPrefixSet {
 //   | {0, 1, 3, 4}    | watermark: 2; values: {3, 4} |
 //   | {0, 1, 2, 3, 4} | watermark: 5; values: {}     |
 @JSExportAll
-class IntPrefixSet private (initialValues: Set[Int])
-    extends CompactSet[IntPrefixSet] {
+class IntPrefixSet private (
+    private var watermark: Int,
+    private val values: mutable.Set[Int]
+) extends CompactSet[IntPrefixSet] {
   override type T = Int
 
-  private var watermark: Int = 0
-  private var values: mutable.Set[Int] = mutable.Set() ++ initialValues
   compact()
 
   override def toString(): String =
@@ -55,11 +68,24 @@ class IntPrefixSet private (initialValues: Set[Int])
     x < watermark || values.contains(x)
   }
 
-  override def diff(other: IntPrefixSet): IntPrefixSet = {
+  override def union(other: IntPrefixSet): IntPrefixSet = {
+    val maxWatermark = Math.max(watermark, other.watermark)
     new IntPrefixSet(
-      values.toSet ++ (other.watermark until watermark) -- other.values.toSet
+      maxWatermark,
+      (values ++ other.values).filter(_ >= maxWatermark)
     )
   }
+
+  override def diff(other: IntPrefixSet): IntPrefixSet = {
+    new IntPrefixSet(
+      0,
+      values ++ (other.watermark until watermark) -- other.values
+    )
+  }
+
+  override def size: Int = watermark + values.size
+
+  override def uncompactedSize: Int = values.size
 
   override def materialize(): Set[Int] = values.toSet ++ (0 until watermark)
 
@@ -69,6 +95,9 @@ class IntPrefixSet private (initialValues: Set[Int])
     add(x)
     this
   }
+
+  def toProto(): IntPrefixSetProto =
+    IntPrefixSetProto(watermark = watermark, value = values.toSeq)
 
   // Compact `values`, making it as small as possible and making `watermark` as
   // large as possible.
