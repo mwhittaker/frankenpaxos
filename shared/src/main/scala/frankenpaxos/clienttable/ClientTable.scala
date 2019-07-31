@@ -1,6 +1,6 @@
 package frankenpaxos.clienttable
 
-import frankenpaxos.util.IntPrefixSet
+import frankenpaxos.compact.IntPrefixSet
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 

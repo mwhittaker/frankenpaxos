@@ -1,4 +1,4 @@
-package frankenpaxos.util
+package frankenpaxos.compact
 
 // A CompactSet is an add-only set of values that can _sometimes_ be compacted
 // to use O(1) space. For example, imagine we have the following set of natural

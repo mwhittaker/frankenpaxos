@@ -4,10 +4,10 @@ import InstanceHelpers.instanceOrdering
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
+import frankenpaxos.compact.FakeCompactSet
 import frankenpaxos.depgraph.ScalaGraphDependencyGraph
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.Register
-import frankenpaxos.util
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -68,11 +68,7 @@ class EPaxos {
       logger,
       config,
       new Register(),
-      new ScalaGraphDependencyGraph[
-        Instance,
-        Int,
-        util.FakeCompactSet[Instance]
-      ](new util.FakeCompactSet[Instance]()),
+      new ScalaGraphDependencyGraph(new FakeCompactSet()),
       options,
       new ReplicaMetrics(FakeCollectors)
     )

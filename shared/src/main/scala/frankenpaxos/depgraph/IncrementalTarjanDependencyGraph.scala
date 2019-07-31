@@ -1,6 +1,6 @@
 package frankenpaxos.depgraph
 
-import frankenpaxos.util
+import frankenpaxos.compact.CompactSet
 import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExportAll
 import scala.util.control.Breaks._
@@ -29,7 +29,7 @@ import scala.util.control.Breaks._
 class IncrementalTarjanDependencyGraph[
     Key,
     SequenceNumber,
-    KeySet <: util.CompactSet[KeySet] { type T = Key }
+    KeySet <: CompactSet[KeySet] { type T = Key }
 ](
     val emptyKeySet: KeySet
 )(

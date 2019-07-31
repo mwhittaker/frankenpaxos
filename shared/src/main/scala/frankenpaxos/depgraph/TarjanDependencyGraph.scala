@@ -1,6 +1,6 @@
 package frankenpaxos.depgraph
 
-import frankenpaxos.util
+import frankenpaxos.compact.CompactSet
 import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExportAll
 
@@ -77,7 +77,7 @@ import scala.scalajs.js.annotation.JSExportAll
 class TarjanDependencyGraph[
     Key,
     SequenceNumber,
-    KeySet <: util.CompactSet[KeySet] { type T = Key }
+    KeySet <: CompactSet[KeySet] { type T = Key }
 ](
     emptyKeySet: KeySet
 )(

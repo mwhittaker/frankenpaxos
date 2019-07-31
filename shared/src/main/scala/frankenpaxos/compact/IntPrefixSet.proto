@@ -1,11 +1,11 @@
 syntax = "proto2";
 
-package frankenpaxos.util;
+package frankenpaxos.compact;
 
 import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
-  package_name: "frankenpaxos.util"
+  package_name: "frankenpaxos.compact"
   flat_package: true
 };
 

@@ -50,7 +50,7 @@ syntax = "proto2";
 package frankenpaxos.simplebpaxos;
 
 import "scalapb/scalapb.proto";
-import "frankenpaxos/util/IntPrefixSet.proto";
+import "frankenpaxos/compact/IntPrefixSet.proto";
 
 option (scalapb.options) = {
   package_name: "frankenpaxos.simplebpaxos"
@@ -104,7 +104,7 @@ message CommandOrNoop {
 
 message VertexIdPrefixSetProto {
   required int32 numLeaders = 1;
-  repeated frankenpaxos.util.IntPrefixSetProto int_prefix_set = 2;
+  repeated frankenpaxos.compact.IntPrefixSetProto int_prefix_set = 2;
 }
 
 message VoteValueProto {

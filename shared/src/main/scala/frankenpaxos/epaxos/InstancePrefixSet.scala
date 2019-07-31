@@ -1,5 +1,7 @@
 package frankenpaxos.epaxos
 
+import frankenpaxos.compact.CompactSet
+import frankenpaxos.compact.IntPrefixSet
 import frankenpaxos.util
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
@@ -9,15 +11,15 @@ object InstancePrefixSet {
   @JSExport("apply")
   def apply(numReplicas: Int): InstancePrefixSet = {
     new InstancePrefixSet(numReplicas,
-                          mutable.Buffer.fill(numReplicas)(util.IntPrefixSet()))
+                          mutable.Buffer.fill(numReplicas)(IntPrefixSet()))
   }
 }
 
 @JSExportAll
 class InstancePrefixSet private (
     numReplicas: Int,
-    val intPrefixSets: mutable.Buffer[util.IntPrefixSet]
-) extends util.CompactSet[InstancePrefixSet] {
+    val intPrefixSets: mutable.Buffer[IntPrefixSet]
+) extends CompactSet[InstancePrefixSet] {
   override type T = Instance
 
   override def toString(): String = intPrefixSets.toString()

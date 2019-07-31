@@ -1,6 +1,6 @@
 package frankenpaxos.depgraph
 
-import frankenpaxos.util
+import frankenpaxos.compact.CompactSet
 import scala.scalajs.js.annotation.JSExportAll
 
 // # MultiPaxos
@@ -125,7 +125,7 @@ import scala.scalajs.js.annotation.JSExportAll
 abstract class DependencyGraph[
     Key,
     SequenceNumber,
-    KeySet <: util.CompactSet[KeySet] { type T = Key }
+    KeySet <: CompactSet[KeySet] { type T = Key }
 ](
     implicit val keyOrdering: Ordering[Key],
     implicit val sequenceNumberOrdering: Ordering[SequenceNumber]
@@ -168,7 +168,7 @@ abstract class DependencyGraph[
 }
 
 object DependencyGraph {
-  def read[K, S, KSet <: util.CompactSet[KSet] { type T = K }](
+  def read[K, S, KSet <: CompactSet[KSet] { type T = K }](
       implicit keyOrdering: Ordering[K],
       sequenceNumberOrdering: Ordering[S]
   ): scopt.Read[(KSet) => DependencyGraph[K, S, KSet]] = {

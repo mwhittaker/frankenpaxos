@@ -1,5 +1,6 @@
 package frankenpaxos.depgraph
 
+import frankenpaxos.compact.FakeCompactSet
 import frankenpaxos.simplebpaxos.VertexId
 import frankenpaxos.simplebpaxos.VertexIdHelpers.vertexIdOrdering
 import frankenpaxos.util
@@ -18,28 +19,28 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
 
   private def makeGraph(
       t: GraphType
-  ): DependencyGraph[VertexId, Unit, util.FakeCompactSet[VertexId]] = {
+  ): DependencyGraph[VertexId, Unit, FakeCompactSet[VertexId]] = {
     t match {
       case Jgrapht =>
-        new JgraphtDependencyGraph[VertexId, Unit, util.FakeCompactSet[
+        new JgraphtDependencyGraph[VertexId, Unit, FakeCompactSet[
           VertexId
-        ]](new util.FakeCompactSet[VertexId]())
+        ]](new FakeCompactSet[VertexId]())
       case ScalaGraph =>
-        new ScalaGraphDependencyGraph[VertexId, Unit, util.FakeCompactSet[
+        new ScalaGraphDependencyGraph[VertexId, Unit, FakeCompactSet[
           VertexId
-        ]](new util.FakeCompactSet[VertexId]())
+        ]](new FakeCompactSet[VertexId]())
       case Tarjan =>
-        new TarjanDependencyGraph[VertexId, Unit, util.FakeCompactSet[
+        new TarjanDependencyGraph[VertexId, Unit, FakeCompactSet[
           VertexId
-        ]](new util.FakeCompactSet[VertexId]())
+        ]](new FakeCompactSet[VertexId]())
       case IncrementalTarjan =>
         new IncrementalTarjanDependencyGraph[
           VertexId,
           Unit,
-          util.FakeCompactSet[
+          FakeCompactSet[
             VertexId
           ]
-        ](new util.FakeCompactSet[VertexId]())
+        ](new FakeCompactSet[VertexId]())
     }
   }
 
@@ -67,7 +68,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       for (i <- 0 until params.numCommands) {
         val deps = for (d <- i - params.depSize until i if d >= 0)
           yield VertexId(d, d)
-        g.commit(VertexId(i, i), (), new util.FakeCompactSet(deps.toSet))
+        g.commit(VertexId(i, i), (), new FakeCompactSet(deps.toSet))
       }
     }
   }
@@ -101,9 +102,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       } {
         val deps = for (d <- i until i + params.cycleSize if d != i + j)
           yield VertexId(d, d)
-        g.commit(VertexId(i + j, i + j),
-                 (),
-                 new util.FakeCompactSet(deps.toSet))
+        g.commit(VertexId(i + j, i + j), (), new FakeCompactSet(deps.toSet))
         if ((i + 1) % params.batchSize == 0) {
           g.execute()
         }
@@ -137,7 +136,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       for (i <- 0 until params.numCommands) {
         val deps = for (d <- i - params.depSize until i if d >= 0)
           yield VertexId(d, d)
-        g.commit(VertexId(i, i), (), new util.FakeCompactSet(deps.toSet))
+        g.commit(VertexId(i, i), (), new FakeCompactSet(deps.toSet))
         if ((i + 1) % params.batchSize == 0) {
           g.execute()
         }

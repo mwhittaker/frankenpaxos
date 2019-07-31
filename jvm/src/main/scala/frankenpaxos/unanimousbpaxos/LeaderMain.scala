@@ -8,6 +8,7 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
+import frankenpaxos.compact.FakeCompactSet
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.TarjanDependencyGraph
 import frankenpaxos.statemachine
@@ -27,10 +28,10 @@ object LeaderMain extends App {
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       stateMachine: StateMachine = new statemachine.Noop(),
-      dependencyGraphFactory: util.FakeCompactSet[VertexId] => DependencyGraph[
+      dependencyGraphFactory: FakeCompactSet[VertexId] => DependencyGraph[
         VertexId,
         Unit,
-        util.FakeCompactSet[VertexId]
+        FakeCompactSet[VertexId]
       ] = _ => ???,
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
@@ -40,7 +41,7 @@ object LeaderMain extends App {
   )
 
   implicit val dependencyGraphRead =
-    DependencyGraph.read[VertexId, Unit, util.FakeCompactSet[VertexId]]
+    DependencyGraph.read[VertexId, Unit, FakeCompactSet[VertexId]]
 
   implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def optionAction(
@@ -59,10 +60,10 @@ object LeaderMain extends App {
     opt[StateMachine]("state_machine")
       .required()
       .action((x, f) => f.copy(stateMachine = x))
-    opt[util.FakeCompactSet[VertexId] => DependencyGraph[
+    opt[FakeCompactSet[VertexId] => DependencyGraph[
       VertexId,
       Unit,
-      util.FakeCompactSet[VertexId]
+      FakeCompactSet[VertexId]
     ]](
       "dependency_graph"
     ).required()
@@ -106,7 +107,7 @@ object LeaderMain extends App {
     config = config,
     stateMachine = flags.stateMachine,
     dependencyGraph =
-      flags.dependencyGraphFactory(new util.FakeCompactSet[VertexId]()),
+      flags.dependencyGraphFactory(new FakeCompactSet[VertexId]()),
     options = flags.options
   )
 

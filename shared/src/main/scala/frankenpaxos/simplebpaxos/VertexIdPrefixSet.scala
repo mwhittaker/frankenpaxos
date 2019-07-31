@@ -1,5 +1,7 @@
 package frankenpaxos.simplebpaxos
 
+import frankenpaxos.compact.CompactSet
+import frankenpaxos.compact.IntPrefixSet
 import frankenpaxos.util
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
@@ -10,7 +12,7 @@ object VertexIdPrefixSet {
   @JSExport("apply")
   def apply(numLeaders: Int): VertexIdPrefixSet = {
     new VertexIdPrefixSet(numLeaders,
-                          mutable.Buffer.fill(numLeaders)(util.IntPrefixSet()))
+                          mutable.Buffer.fill(numLeaders)(IntPrefixSet()))
   }
 
   // Construct a VertexIdPrefixSet from a set of uncompacted vertex ids.
@@ -25,7 +27,7 @@ object VertexIdPrefixSet {
       (0 until numLeaders)
         .map(leaderId => idsByLeader.getOrElse(leaderId, Set[VertexId]()))
         .map(vertexIds => vertexIds.map(_.id))
-        .map(util.IntPrefixSet(_))
+        .map(IntPrefixSet(_))
         .to[mutable.Buffer]
     )
   }
@@ -35,7 +37,7 @@ object VertexIdPrefixSet {
   def fromProto(proto: VertexIdPrefixSetProto): VertexIdPrefixSet = {
     new VertexIdPrefixSet(
       proto.numLeaders,
-      proto.intPrefixSet.map(util.IntPrefixSet.fromProto).to[mutable.Buffer]
+      proto.intPrefixSet.map(IntPrefixSet.fromProto).to[mutable.Buffer]
     )
   }
 }
@@ -43,8 +45,8 @@ object VertexIdPrefixSet {
 @JSExportAll
 class VertexIdPrefixSet private (
     numLeaders: Int,
-    val intPrefixSets: mutable.Buffer[util.IntPrefixSet]
-) extends util.CompactSet[VertexIdPrefixSet] {
+    val intPrefixSets: mutable.Buffer[IntPrefixSet]
+) extends CompactSet[VertexIdPrefixSet] {
   override type T = VertexId
 
   override def toString(): String = intPrefixSets.toString()

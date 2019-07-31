@@ -1,6 +1,6 @@
 package frankenpaxos.depgraph
 
-import frankenpaxos.util
+import frankenpaxos.compact.CompactSet
 import org.jgrapht.Graph
 import org.jgrapht.alg.KosarajuStrongConnectivityInspector
 import org.jgrapht.alg.interfaces.StrongConnectivityAlgorithm
@@ -23,7 +23,7 @@ import scala.scalajs.js.annotation.JSExportAll
 class JgraphtDependencyGraph[
     Key,
     SequenceNumber,
-    KeySet <: util.CompactSet[KeySet] { type T = Key }
+    KeySet <: CompactSet[KeySet] { type T = Key }
 ](
     val emptyKeySet: KeySet
 )(

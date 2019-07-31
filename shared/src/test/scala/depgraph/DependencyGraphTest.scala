@@ -1,7 +1,7 @@
 package frankenpaxos.depgraph
 
 import com.google.protobuf.ByteString
-import frankenpaxos.util.IntPrefixSet
+import frankenpaxos.compact.IntPrefixSet
 import org.scalacheck.Gen
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers

@@ -1,6 +1,7 @@
 package frankenpaxos.epaxos
 
 import InstanceHelpers.instanceOrdering
+import frankenpaxos.compact.FakeCompactSet
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator.FakeLogger
@@ -50,7 +51,7 @@ class EPaxos(val f: Int) {
         logger,
         config,
         stateMachine = new KeyValueStore(),
-        dependencyGraph = new JgraphtDependencyGraph(new util.FakeCompactSet()),
+        dependencyGraph = new JgraphtDependencyGraph(new FakeCompactSet()),
         options = ReplicaOptions.default,
         metrics = new ReplicaMetrics(FakeCollectors)
       )

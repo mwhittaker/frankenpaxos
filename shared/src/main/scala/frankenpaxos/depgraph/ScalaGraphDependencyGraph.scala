@@ -1,6 +1,6 @@
 package frankenpaxos.depgraph
 
-import frankenpaxos.util
+import frankenpaxos.compact.CompactSet
 import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExportAll
 import scalax.collection.GraphEdge.DiEdge
@@ -19,7 +19,7 @@ import scalax.collection.mutable.Graph
 class ScalaGraphDependencyGraph[
     Key,
     SequenceNumber,
-    KeySet <: util.CompactSet[KeySet] { type T = Key }
+    KeySet <: CompactSet[KeySet] { type T = Key }
 ](
     val emptyKeySet: KeySet
 )(

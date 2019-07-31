@@ -1,4 +1,4 @@
-package frankenpaxos.util
+package frankenpaxos.compact
 
 import scala.collection.mutable
 import scala.scalajs.js.annotation._

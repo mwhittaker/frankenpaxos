@@ -3,6 +3,7 @@ package frankenpaxos.unanimousbpaxos
 import VertexIdHelpers.vertexIdOrdering
 import frankenpaxos.Util
 import frankenpaxos.Util.MapHelpers
+import frankenpaxos.compact.FakeCompactSet
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator.FakeLogger
@@ -59,7 +60,7 @@ class UnanimousBPaxos(val f: Int) {
       config = config,
       stateMachine = new KeyValueStore(),
       dependencyGraph = new JgraphtDependencyGraph(
-        new util.FakeCompactSet[VertexId]()
+        new FakeCompactSet[VertexId]()
       ),
       options = LeaderOptions.default,
       metrics = new LeaderMetrics(FakeCollectors)

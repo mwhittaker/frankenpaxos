@@ -10,6 +10,7 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
+import frankenpaxos.compact.FakeCompactSet
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.Collectors
@@ -362,8 +363,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val dependencyGraph: DependencyGraph[
       Instance,
       Int,
-      util.FakeCompactSet[Instance]
-    ] = new JgraphtDependencyGraph(new util.FakeCompactSet[Instance]()),
+      FakeCompactSet[Instance]
+    ] = new JgraphtDependencyGraph(new FakeCompactSet[Instance]()),
     options: ReplicaOptions = ReplicaOptions.default,
     metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
@@ -786,7 +787,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       dependencyGraph.commit(
         instance,
         triple.sequenceNumber,
-        new util.FakeCompactSet[Instance](triple.dependencies)
+        new FakeCompactSet[Instance](triple.dependencies)
       )
       numPendingCommittedCommands += 1
       if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {

@@ -7,6 +7,7 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
+import frankenpaxos.compact.FakeCompactSet
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.Collectors
@@ -233,8 +234,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     val dependencyGraph: DependencyGraph[
       VertexId,
       Unit,
-      util.FakeCompactSet[VertexId]
-    ] = new JgraphtDependencyGraph(new util.FakeCompactSet[VertexId]()),
+      FakeCompactSet[VertexId]
+    ] = new JgraphtDependencyGraph(new FakeCompactSet[VertexId]()),
     options: LeaderOptions = LeaderOptions.default,
     metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
@@ -399,7 +400,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // Execute commands.
     dependencyGraph.commit(vertexId,
                            (),
-                           new util.FakeCompactSet[VertexId](dependencies))
+                           new FakeCompactSet[VertexId](dependencies))
     val executable: Seq[VertexId] = dependencyGraph.execute()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
