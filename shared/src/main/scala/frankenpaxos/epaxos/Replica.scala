@@ -516,7 +516,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): (Int, Set[Instance]) = {
     val dependencies = commandOrNoop
       .bytes()
-      .map(conflictIndex.getConflicts(instance, _))
+      .map(conflictIndex.getConflicts(_) - instance)
       .getOrElse(Set[Instance]())
     val sequenceNumber =
       (dependencies.flatMap(instanceSequenceNumber) + 0).max + 1
@@ -560,7 +560,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       avoidFastPath: Boolean
   ): Unit = {
     // Compute sequence number and dependencies.
-    val (sequenceNumber, dependencies) =
+    var (sequenceNumber, dependencies) =
       computeSequenceNumberAndDependencies(instance, commandOrNoop)
 
     // Update our command log. This part of the algorithm is a little subtle.

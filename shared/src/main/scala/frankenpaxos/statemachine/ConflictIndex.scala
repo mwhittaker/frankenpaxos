@@ -44,8 +44,7 @@ trait ConflictIndex[Key, Command] {
   def get(key: Key): Option[Command]
   def remove(key: Key): Option[Command]
 
-  // `getConflicts(key, command)` returns the set of all keys in the conflict
-  // index that map to commands that conflict with `command`. Note that `key`
-  // is never returned, even if it is in the conflict index.
-  def getConflicts(key: Key, command: Command): Set[Key]
+  // `getConflicts(command)` returns the set of all keys in the conflict index
+  // that map to commands that conflict with `command`.
+  def getConflicts(command: Command): Set[Key]
 }

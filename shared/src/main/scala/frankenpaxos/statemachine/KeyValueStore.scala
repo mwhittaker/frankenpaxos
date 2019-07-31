@@ -176,7 +176,6 @@ class KeyValueStore
       }
 
       override def getConflicts(
-          commandKey: CommandKey,
           command: KeyValueStoreInput
       ): Set[CommandKey] = {
         import KeyValueStoreInput.Request
@@ -204,7 +203,7 @@ class KeyValueStore
           case Request.Empty =>
             throw new IllegalStateException()
         }
-        commandKeys - commandKey
+        commandKeys
       }
     }
   }

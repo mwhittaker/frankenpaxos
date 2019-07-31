@@ -45,9 +45,8 @@ trait TypedStateMachine[I, O] extends StateMachine {
           .remove(key)
           .map(inputSerializer.toBytes)
 
-      override def getConflicts(key: Key, command: Array[Byte]): Set[Key] = {
-        index
-          .getConflicts(key, inputSerializer.fromBytes(command))
+      override def getConflicts(command: Array[Byte]): Set[Key] = {
+        index.getConflicts(inputSerializer.fromBytes(command))
       }
     }
   }

@@ -33,7 +33,7 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.put(0, bytes(0))
     conflictIndex.put(1, bytes(1))
     conflictIndex.put(2, bytes(2))
-    conflictIndex.getConflicts(2, bytes(2)) shouldBe Set(0, 1)
+    conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
   }
 
   "AppendLog conflict index" should "put and get correctly" in {
@@ -61,7 +61,7 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.put(0, bytes(0))
     conflictIndex.put(1, bytes(1))
     conflictIndex.put(2, bytes(2))
-    conflictIndex.getConflicts(2, bytes(2)) shouldBe Set(0, 1)
+    conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
   }
 
   private def get(keys: String*): KeyValueStoreInput =
@@ -98,12 +98,9 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.put(2, set("y", "z"))
     conflictIndex.put(3, set("z"))
 
-    conflictIndex.getConflicts(4, get("y")) shouldBe Set(2)
-    conflictIndex.getConflicts(4, set("y")) shouldBe Set(0, 1, 2)
-    conflictIndex.getConflicts(4, set("z")) shouldBe Set(1, 2, 3)
-    conflictIndex.getConflicts(2, get("y")) shouldBe Set()
-    conflictIndex.getConflicts(2, set("y")) shouldBe Set(0, 1)
-    conflictIndex.getConflicts(2, set("z")) shouldBe Set(1, 3)
-    conflictIndex.getConflicts(4, set("a")) shouldBe Set()
+    conflictIndex.getConflicts(get("y")) shouldBe Set(2)
+    conflictIndex.getConflicts(set("y")) shouldBe Set(0, 1, 2)
+    conflictIndex.getConflicts(set("z")) shouldBe Set(1, 2, 3)
+    conflictIndex.getConflicts(set("a")) shouldBe Set()
   }
 }

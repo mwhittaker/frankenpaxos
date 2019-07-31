@@ -10,6 +10,14 @@ class FakeCompactSet[A](initialValues: Set[A] = Set[A]())
     extends CompactSet[FakeCompactSet[A]] {
   override type T = A
   private val values: mutable.Set[A] = mutable.Set[A]() ++ initialValues
+
+  override def equals(other: Any): Boolean = {
+    other match {
+      case other: FakeCompactSet[A] => values == other.values
+      case _                        => false
+    }
+  }
+  override def hashCode: Int = values.hashCode
   override def add(value: A): Boolean = values.add(value)
   override def contains(value: A): Boolean = values.contains(value)
   override def union(other: FakeCompactSet[A]): FakeCompactSet[A] =
@@ -19,4 +27,11 @@ class FakeCompactSet[A](initialValues: Set[A] = Set[A]())
   override def size: Int = values.size
   override def uncompactedSize: Int = values.size
   override def materialize(): Set[A] = values.toSet
+}
+
+object FakeCompactSet {
+  def factory[A] = new CompactSetFactory[FakeCompactSet[A], A] {
+    override def empty = new FakeCompactSet[A]()
+    override def fromSet(xs: Set[A]) = new FakeCompactSet[A](xs)
+  }
 }

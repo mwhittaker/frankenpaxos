@@ -20,6 +20,11 @@ object IntPrefixSet {
   def fromProto(proto: IntPrefixSetProto): IntPrefixSet = {
     new IntPrefixSet(proto.watermark, proto.value.to[mutable.Set])
   }
+
+  implicit val factory = new CompactSetFactory[IntPrefixSet, Int] {
+    override def empty = IntPrefixSet()
+    override def fromSet(xs: Set[Int]) = IntPrefixSet(xs)
+  }
 }
 
 // An IntPrefixSetis an add-only set of natural numbers (i.e., integers greater
@@ -47,6 +52,17 @@ class IntPrefixSet private (
   override type T = Int
 
   compact()
+
+  private def toTuple(): (Int, mutable.Set[Int]) = (watermark, values)
+
+  override def equals(other: Any): Boolean = {
+    other match {
+      case other: IntPrefixSet => toTuple() == other.toTuple()
+      case _                   => false
+    }
+  }
+
+  override def hashCode: Int = toTuple().hashCode
 
   override def toString(): String =
     s"IntPrefixSet(< $watermark, $values)"
@@ -77,10 +93,17 @@ class IntPrefixSet private (
   }
 
   override def diff(other: IntPrefixSet): IntPrefixSet = {
-    new IntPrefixSet(
-      0,
-      values ++ (other.watermark until watermark) -- other.values
-    )
+    if (other.watermark <= watermark) {
+      new IntPrefixSet(
+        0,
+        values ++ (other.watermark until watermark) -- other.values
+      )
+    } else {
+      new IntPrefixSet(
+        0,
+        values -- (watermark until other.watermark) -- other.values
+      )
+    }
   }
 
   override def size: Int = watermark + values.size

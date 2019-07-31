@@ -21,8 +21,7 @@ class Noop extends StateMachine {
         commands.put(key, command)
       override def get(key: Key): Option[Array[Byte]] = commands.get(key)
       override def remove(key: Key): Option[Array[Byte]] = commands.remove(key)
-      override def getConflicts(key: Key, command: Array[Byte]): Set[Key] =
-        Set()
+      override def getConflicts(command: Array[Byte]): Set[Key] = Set()
     }
   }
 }

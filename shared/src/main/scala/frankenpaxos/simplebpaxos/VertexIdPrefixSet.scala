@@ -44,10 +44,22 @@ object VertexIdPrefixSet {
 
 @JSExportAll
 class VertexIdPrefixSet private (
-    numLeaders: Int,
+    val numLeaders: Int,
     val intPrefixSets: mutable.Buffer[IntPrefixSet]
 ) extends CompactSet[VertexIdPrefixSet] {
   override type T = VertexId
+
+  private def toTuple(): (Int, mutable.Buffer[IntPrefixSet]) =
+    (numLeaders, intPrefixSets)
+
+  override def equals(other: Any): Boolean = {
+    other match {
+      case other: VertexIdPrefixSet => toTuple() == other.toTuple()
+      case _                        => false
+    }
+  }
+
+  override def hashCode: Int = toTuple().hashCode
 
   override def toString(): String = intPrefixSets.toString()
 

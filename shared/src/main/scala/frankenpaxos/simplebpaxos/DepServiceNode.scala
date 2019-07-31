@@ -145,7 +145,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
         val command = dependencyRequest.command.command.toByteArray
         val dependencies = VertexIdPrefixSet(
           config.leaderAddresses.size,
-          conflictIndex.getConflicts(vertexId, command)
+          conflictIndex.getConflicts(command)
         )
         conflictIndex.put(vertexId, command)
         dependenciesCache(vertexId) = dependencies

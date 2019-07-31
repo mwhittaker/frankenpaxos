@@ -37,8 +37,8 @@ class Register extends StateMachine {
 
       // Since every pair of commands conflict, we return every key except for
       // `key`.
-      override def getConflicts(key: Key, command: Array[Byte]): Set[Key] =
-        commands.filterKeys(_ != key).keys.to[Set]
+      override def getConflicts(command: Array[Byte]): Set[Key] =
+        commands.keys.toSet
     }
   }
 }
