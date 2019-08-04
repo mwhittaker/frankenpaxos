@@ -32,7 +32,7 @@ protocol_param_to_index_dict = {'f': 0, 'round_system_type': 1,
 user_param_list = [1, 1000, 30, 2, 'KeyValueStore',
         workload.UniformSingleKeyWorkload(num_keys = 100, size_mean = 1, size_std = 0), False, False,
         200, 'debug']
-
+analysis = []
 def parse_bb_input(param_list, user_param_list):
     num_runs = 1
     rev_round_dict = {0: RoundSystemType.CLASSIC_ROUND_ROBIN, 1: RoundSystemType.ROUND_ZERO_FAST,
@@ -181,6 +181,7 @@ def run_objective_function(x):
         print('P90 throughput 1 second windows is ' + out_dict['stop_throughput_1s.p90'])
         objective_value = float(out_dict['stop_throughput_1s.p90'])
     shutil.rmtree(dir.path)
+    analysis.append(new_x + [objective_value])
     return objective_value
 
 def print_parameters(input_tuple):
@@ -196,6 +197,16 @@ def print_user_parameters():
         parameters = parameters + key + ': ' + str(user_param_list[value]) + '\n'
     print(parameters)
 
+def write_data_frame():
+    reversed_param_dict = {v: k for k, v in protocol_param_to_index_dict.items()}
+    column_list = []
+    for i in range(len(protocol_param_to_index_dict)):
+        column_list.append(reversed_param_dict[i])
+    column_list.append('p90 throughput 1 second windows')
+    df = pd.DataFrame(analysis, columns = column_list)
+    df.to_csv('frankenpaxos.csv', sep='\t')
+
+
 
 #print(run_objective_function(get_lower_bounds(user_param_list)))
 print_user_parameters()
@@ -210,7 +221,8 @@ dimension = len(lower_bounds)
 #print(dimension, len(types))
 
 bb = rbfopt.RbfoptUserBlackBox(dimension, lower_bounds, upper_bounds, types, run_objective_function)
-settings = rbfopt.RbfoptSettings(max_evaluations=50)
+settings = rbfopt.RbfoptSettings(max_evaluations=1)
 alg = rbfopt.RbfoptAlgorithm(settings, bb)
 print(alg.optimize())
+write_data_frame()
 #alg.optimize()
