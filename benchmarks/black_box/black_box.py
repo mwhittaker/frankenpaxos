@@ -23,9 +23,12 @@ protocol_param_to_index_dict = {'f': 0, 'round_system_type': 1,
         'thrifty_system': 5, 'resend_phase1as_timer_period_ms': 6, 'resend_phase2as_timer_period_ms': 7,
         'phase2a_max_buffer_size': 8, 'phase2a_buffer_flush_period_ms': 9,
         'value_chosen_max_buffer_size': 10, 'value_chosen_buffer_flush_period_ms': 11,
-        'repropose_period_ms': 12}
+        'ping_period_ms': 12, 'no_ping_timeout_min_ms': 13, 'no_ping_timeout_max_ms': 14,
+        'not_enough_votes_timeout_min_ms': 15, 'not_enough_votes_timeout_max_ms': 16,
+        'fail_period_ms': 17, 'success_period_ms': 18, 'num_retries': 19, 'network_delay_alpha': 21,
+        'repropose_period_ms': 20}
 
-user_param_list = [1, 1000, 60, 2, 'KeyValueStore',
+user_param_list = [1, 1000, 30, 2, 'KeyValueStore',
         workload.UniformSingleKeyWorkload(num_keys = 100, size_mean = 1, size_std = 0), False, False,
         200, 'debug']
 
@@ -60,7 +63,20 @@ def parse_bb_input(param_list, user_param_list):
                 phase2a_max_buffer_size = param_list[protocol_param_to_index_dict['phase2a_max_buffer_size']],
                 phase2a_buffer_flush_period_ms = param_list[protocol_param_to_index_dict['phase2a_buffer_flush_period_ms']],
                 value_chosen_max_buffer_size = param_list[protocol_param_to_index_dict['value_chosen_max_buffer_size']],
-                value_chosen_buffer_flush_period_ms = param_list[protocol_param_to_index_dict['value_chosen_buffer_flush_period_ms']]
+                value_chosen_buffer_flush_period_ms = param_list[protocol_param_to_index_dict['value_chosen_buffer_flush_period_ms']],
+                election = ElectionOptions()._replace(
+                    ping_period_ms = param_list[protocol_param_to_index_dict['ping_period_ms']],
+                    no_ping_timeout_min_ms = param_list[protocol_param_to_index_dict['no_ping_timeout_min_ms']],
+                    no_ping_timeout_max_ms = param_list[protocol_param_to_index_dict['no_ping_timeout_max_ms']],
+                    not_enough_votes_timeout_min_ms = param_list[protocol_param_to_index_dict['not_enough_votes_timeout_min_ms']],
+                    not_enough_votes_timeout_max_ms = param_list[protocol_param_to_index_dict['not_enough_votes_timeout_max_ms']]
+                ),
+                heartbeat = HeartbeatOptions()._replace(
+                    fail_period_ms = param_list[protocol_param_to_index_dict['fail_period_ms']],
+                    success_period_ms = param_list[protocol_param_to_index_dict['success_period_ms']],
+                    num_retries = param_list[protocol_param_to_index_dict['num_retries']],
+                    network_delay_alpha = param_list[protocol_param_to_index_dict['network_delay_alpha']]
+                )
             ),
             leader_log_level = user_param_list[user_param_to_index_dict['leader_log_level']],
             client = ClientOptions()._replace(
@@ -70,28 +86,41 @@ def parse_bb_input(param_list, user_param_list):
 
 def get_lower_bounds(user_params):
     lower_bounds_dict = {'f': 1, 'round_system_type': 0,
-            'timeout_seconds': 60, 'wait_period_ms': 0, 'wait_stagger_ms': 0,
+            'timeout_seconds': user_params[user_param_to_index_dict['duration_seconds']] + 30, 'wait_period_ms': 0, 'wait_stagger_ms': 0,
             'thrifty_system': 0, 'resend_phase1as_timer_period_ms': 1, 'resend_phase2as_timer_period_ms': 1,
             'phase2a_max_buffer_size': 1, 'phase2a_buffer_flush_period_ms': 1,
             'value_chosen_max_buffer_size': 1, 'value_chosen_buffer_flush_period_ms': 1,
-            'repropose_period_ms': 1}
+            'repropose_period_ms': 1, 'ping_period_ms': 1, 'no_ping_timeout_min_ms': 1,
+            'no_ping_timeout_max_ms': 1, 'not_enough_votes_timeout_min_ms': 1, 'not_enough_votes_timeout_max_ms': 1, 'fail_period_ms': 1, 'success_period_ms': 1, 'num_retries': 1,
+            'network_delay_alpha': 0.01}
     lower_bounds = []
     for key in protocol_param_to_index_dict.keys():
         lower_bounds.insert(protocol_param_to_index_dict[key], lower_bounds_dict[key])
     return lower_bounds
 
 def get_upper_bounds(user_params):
-    upper_bounds_dict = {'f': 5, 'round_system_type': 2,
-            'timeout_seconds': user_params[2],
-            'wait_period_ms': user_params[2],
-            'wait_stagger_ms': user_params[2],
-            'thrifty_system': 2, 'resend_phase1as_timer_period_ms': user_params[2],
-            'resend_phase2as_timer_period_ms': user_params[2],
-            'phase2a_max_buffer_size': user_params[0] * user_params[1],
-            'phase2a_buffer_flush_period_ms': user_params[2],
+    upper_bounds_dict = {'f': 5, 'round_system_type': 0,
+            'timeout_seconds': user_params[user_param_to_index_dict['duration_seconds']] + 30,
+            'wait_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'wait_stagger_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'thrifty_system': 2,
+            'resend_phase1as_timer_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'resend_phase2as_timer_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'phase2a_max_buffer_size': user_params[user_param_to_index_dict['num_client_procs']] * user_params[user_param_to_index_dict['num_clients_per_proc']],
+            'phase2a_buffer_flush_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
             'value_chosen_max_buffer_size': 10000000,
-            'value_chosen_buffer_flush_period_ms': user_params[2],
-            'repropose_period_ms': user_params[2]}
+            'value_chosen_buffer_flush_period_ms':user_params[user_param_to_index_dict['duration_seconds']],
+            'repropose_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'ping_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'no_ping_timeout_min_ms': user_params[user_param_to_index_dict['duration_seconds']] - 29,
+            'no_ping_timeout_max_ms': user_params[user_param_to_index_dict['duration_seconds']] - 25,
+            'not_enough_votes_timeout_min_ms': user_params[user_param_to_index_dict['duration_seconds']] - 29,
+            'not_enough_votes_timeout_max_ms': user_params[user_param_to_index_dict['duration_seconds']] - 25,
+            'fail_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'success_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'num_retries': 3,
+            'network_delay_alpha': 0.99
+            }
     upper_bounds = []
     for key in protocol_param_to_index_dict:
         upper_bounds.insert(protocol_param_to_index_dict[key], upper_bounds_dict[key])
@@ -115,26 +144,60 @@ class BBFastMultiPaxosSuite(FastMultiPaxosSuite):
             'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}'})
 
 def run_objective_function(x):
-    new_x = [int(element) for element in x]
+    new_x = []
+    for i in range(len(x)):
+        if i == protocol_param_to_index_dict['network_delay_alpha']:
+            new_x.append(float(x[i]))
+        else:
+            new_x.append(int(x[i]))
+
+    min_ping = new_x[protocol_param_to_index_dict['no_ping_timeout_min_ms']]
+    max_ping = new_x[protocol_param_to_index_dict['no_ping_timeout_max_ms']]
+    min_votes = new_x[protocol_param_to_index_dict['not_enough_votes_timeout_min_ms']]
+    max_votes = new_x[protocol_param_to_index_dict['not_enough_votes_timeout_max_ms']]
+
+    if min_ping > max_ping:
+        new_x[protocol_param_to_index_dict['no_ping_timeout_min_ms']] = max_ping
+        new_x[protocol_param_to_index_dict['no_ping_timeout_max_ms']] = min_ping
+    if min_votes > max_votes:
+        new_x[protocol_param_to_index_dict['not_enough_votes_timeout_min_ms']] = max_votes
+        new_x[protocol_param_to_index_dict['not_enough_votes_timeout_max_ms']] = min_votes
+
     suite = BBFastMultiPaxosSuite(new_x, user_param_list)
     print('Selected parameters are ')
-    print(new_x)
+    print_parameters(new_x)
     f = io.StringIO()
     with benchmark.SuiteDirectory(suite.args()['suite_directory'], 'fastmultipaxos_blackbox') as dir:
         with redirect_stdout(f):
+            # Call run_benchmark directly instead or in run_suite change return value
             suite.run_suite(dir)
         out = f.getvalue()
         out_dict_str = (out[out.find('{'):out.find('}')+1]).strip()
         out_dict = ast.literal_eval(str(out_dict_str))
-        print('Output is ' + out_dict['stop_throughput_1s.p90'])
+        print('P90 throughput 1 second windows is ' + out_dict['stop_throughput_1s.p90'])
         return float(out_dict['stop_throughput_1s.p90'])
 
 
+def print_parameters(input_tuple):
+    parameters = ''
+    reversed_param_dict = {v: k for k, v in protocol_param_to_index_dict.items()}
+    for i in range(len(input_tuple)):
+        parameters = parameters + reversed_param_dict[i] + ': ' + str(input_tuple[i]) + '\n'
+    print(parameters)
+
+def print_user_parameters():
+    parameters = ''
+    for key, value in user_param_to_index_dict.items():
+        parameters = parameters + key + ': ' + str(user_param_list[value]) + '\n'
+    print(parameters)
+
+
 #print(run_objective_function(get_lower_bounds(user_param_list)))
+print_user_parameters()
 lower_bounds = get_lower_bounds(user_param_list)
 upper_bounds = get_upper_bounds(user_param_list)
-types = ['I' for i in range(len(lower_bounds))]
-#types.append('R')
+types = ['I' for i in range(len(lower_bounds) - 1)]
+types.append('R')
 #types.append('R')
 #types = np.array(types)
 dimension = len(lower_bounds)
