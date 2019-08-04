@@ -11,6 +11,7 @@ from contextlib import redirect_stdout
 import ast
 import yaml
 import json
+import shutil
 
 round_dict = {'CLASSIC_ROUND_ROBIN': 0, 'MIXED_ROUND_ROBIN': 1}
 thrifty_dict = {'NotThrifty': 0, 'Closest': 1, 'Random': 2}
@@ -112,10 +113,10 @@ def get_upper_bounds(user_params):
             'value_chosen_buffer_flush_period_ms':user_params[user_param_to_index_dict['duration_seconds']],
             'repropose_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
             'ping_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
-            'no_ping_timeout_min_ms': user_params[user_param_to_index_dict['duration_seconds']] - 29,
-            'no_ping_timeout_max_ms': user_params[user_param_to_index_dict['duration_seconds']] - 25,
-            'not_enough_votes_timeout_min_ms': user_params[user_param_to_index_dict['duration_seconds']] - 29,
-            'not_enough_votes_timeout_max_ms': user_params[user_param_to_index_dict['duration_seconds']] - 25,
+            'no_ping_timeout_min_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'no_ping_timeout_max_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'not_enough_votes_timeout_min_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
+            'not_enough_votes_timeout_max_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
             'fail_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
             'success_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
             'num_retries': 3,
@@ -167,16 +168,20 @@ def run_objective_function(x):
     print('Selected parameters are ')
     print_parameters(new_x)
     f = io.StringIO()
+    objective_value = 0.0
     with benchmark.SuiteDirectory(suite.args()['suite_directory'], 'fastmultipaxos_blackbox') as dir:
+        print('Directory is: ' + str(dir.path))
         with redirect_stdout(f):
             # Call run_benchmark directly instead or in run_suite change return value
             suite.run_suite(dir)
         out = f.getvalue()
         out_dict_str = (out[out.find('{'):out.find('}')+1]).strip()
         out_dict = ast.literal_eval(str(out_dict_str))
-        print('P90 throughput 1 second windows is ' + out_dict['stop_throughput_1s.p90'])
-        return float(out_dict['stop_throughput_1s.p90'])
 
+        print('P90 throughput 1 second windows is ' + out_dict['stop_throughput_1s.p90'])
+        objective_value = float(out_dict['stop_throughput_1s.p90'])
+    shutil.rmtree(dir.path)
+    return objective_value
 
 def print_parameters(input_tuple):
     parameters = ''

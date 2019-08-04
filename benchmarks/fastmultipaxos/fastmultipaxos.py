@@ -282,8 +282,10 @@ class SingleSwitchMininet(FastMultiPaxosMininet):
             self._net.addLink(client, switch)
             self._clients.append(host.Endpoint(host.MininetHost(client), 10000))
 
+        print(f)
         num_leaders = f + 1
-        for i in range(num_leaders):
+        print(num_leaders)
+        for i in range(int(num_leaders)):
             leader = self._net.addHost(f'l{i}')
             self._net.addLink(leader, switch)
             self._leaders.append(
@@ -294,7 +296,7 @@ class SingleSwitchMininet(FastMultiPaxosMininet):
                 host.Endpoint(host.MininetHost(leader), 11020))
 
         num_acceptors = 2*f + 1
-        for i in range(num_acceptors):
+        for i in range(int(num_acceptors)):
             acceptor = self._net.addHost(f'a{i}')
             self._net.addLink(acceptor, switch)
             self._acceptors.append(
@@ -517,6 +519,8 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
         # Client i writes results to `client_i_data.csv`.
         client_csvs = [bench.abspath(f'client_{i}_data.csv')
                        for i in range(input.num_client_procs)]
+        bench.log('new data')
+        bench.log(bench.abspath('client_0_data.csv'))
         # TODO(mwhittaker): Implement.
         return benchmark.parse_recorder_data(bench, client_csvs,
                 drop_prefix=datetime.timedelta(seconds=0))

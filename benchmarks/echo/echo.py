@@ -204,6 +204,7 @@ class EchoSuite(benchmark.Suite[Input, Output]):
         # results into a single CSV file.
         client_csvs = [bench.abspath(f'client_{i}_data.csv')
                        for i in range(input.num_client_procs)]
+        print(client_csvs)
         return benchmark.parse_recorder_data(bench, client_csvs,
                 drop_prefix=datetime.timedelta(seconds=0))
 
