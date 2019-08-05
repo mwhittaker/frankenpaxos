@@ -113,7 +113,9 @@ class SimpleBPaxos {
         logger = new JsLogger(),
         config = config,
         stateMachine = new AppendLog(),
-        options = DepServiceNodeOptions.default.copy(),
+        options = DepServiceNodeOptions.default.copy(
+          garbageCollectEveryNCommands = 2
+        ),
         metrics = new DepServiceNodeMetrics(FakeCollectors)
       )
     }

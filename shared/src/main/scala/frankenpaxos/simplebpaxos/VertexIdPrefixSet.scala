@@ -1,6 +1,7 @@
 package frankenpaxos.simplebpaxos
 
 import frankenpaxos.compact.CompactSet
+import frankenpaxos.compact.CompactSetFactory
 import frankenpaxos.compact.IntPrefixSet
 import frankenpaxos.util
 import scala.collection.mutable
@@ -40,6 +41,13 @@ object VertexIdPrefixSet {
       proto.intPrefixSet.map(IntPrefixSet.fromProto).to[mutable.Buffer]
     )
   }
+
+  def factory(numLeaders: Int) =
+    new CompactSetFactory[VertexIdPrefixSet, VertexId] {
+      override def empty = VertexIdPrefixSet(numLeaders)
+      override def fromSet(xs: Set[VertexId]) =
+        VertexIdPrefixSet(numLeaders, xs)
+    }
 }
 
 @JSExportAll

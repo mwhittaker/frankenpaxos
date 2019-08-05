@@ -41,8 +41,9 @@ case class ReplicaOptions(
     unsafeSkipGraphExecution: Boolean,
     executeGraphBatchSize: Int,
     executeGraphTimerPeriod: java.time.Duration,
-    // A replica sends a GarbageCollect message to the proposers and acceptors
-    // every `garbageCollectEveryNCommands` commands that it receives.
+    // A replica sends a GarbageCollect message to the proposers, acceptors,
+    // and dependency service nodes every `garbageCollectEveryNCommands`
+    // commands that it receives.
     garbageCollectEveryNCommands: Int
 )
 
@@ -185,15 +186,21 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     for (a <- config.acceptorAddresses)
       yield chan[Acceptor[Transport]](a, Acceptor.serializer)
 
+  // Channels to the dependency service nodes.
+  private val depServiceNodes: Seq[Chan[DepServiceNode[Transport]]] =
+    for (a <- config.depServiceNodeAddresses)
+      yield chan[DepServiceNode[Transport]](a, DepServiceNode.serializer)
+
   // Channels to the other replicas acceptors.
   private val otherReplicas: Seq[Chan[Replica[Transport]]] =
     for (a <- config.replicaAddresses if a != address)
       yield chan[Replica[Transport]](a, Replica.serializer)
 
   // The number of committed commands that the replica has received since the
-  // last time it sent a GarbageCollect message to the proposers and acceptors.
-  // Every `options.garbageCollectEveryNCommands` commands, this value is reset
-  // and GarbageCollect messages are sent.
+  // last time it sent a GarbageCollect message to the proposers, acceptors,
+  // and dependency service nodes.  Every
+  // `options.garbageCollectEveryNCommands` commands, this value is reset and
+  // GarbageCollect messages are sent.
   @JSExport
   protected var numCommandsPendingGc: Int = 0
 
@@ -484,6 +491,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                        frontier = committedVertices.getWatermark())
       proposers.foreach(_.send(ProposerInbound().withGarbageCollect(gc)))
       acceptors.foreach(_.send(AcceptorInbound().withGarbageCollect(gc)))
+      depServiceNodes.foreach(
+        _.send(DepServiceNodeInbound().withGarbageCollect(gc))
+      )
       numCommandsPendingGc = 0
     }
   }

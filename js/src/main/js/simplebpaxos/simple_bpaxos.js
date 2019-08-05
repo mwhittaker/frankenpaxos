@@ -344,14 +344,23 @@ let dep_node_info = {
   template: `
     <div>
       <div>conflictIndex = {{node.actor.conflictIndex}}</div>
+      <div>numCommandsPendingGc = {{node.actor.numCommandsPendingGc}}</div>
+      <div>gcWatermark = {{node.actor.gcWatermark}}</div>
 
       <div>
         dependenciesCache =
-        <frankenpaxos-map
-          :map="node.actor.dependenciesCache"
-          v-slot="{value: deps}">
-          <frankenpaxos-set :set="deps"></frankenpaxos-set>
+        <frankenpaxos-map :map="node.actor.dependenciesCache">
         </frankenpaxos-map>
+      </div>
+
+      <div>
+        cacheGcQuorumWatermarkVector =
+        {{node.actor.cacheGcQuorumWatermarkVector}}
+      </div>
+
+      <div>
+        cacheGcWatermark =
+        <frankenpaxos-seq :seq="node.actor.cacheGcWatermark"></frankenpaxos-seq>
       </div>
     </div>
   `,
@@ -468,8 +477,7 @@ let replica_info = {
             <fp-field :name="'commandOrNoop'">
               <command-or-noop :value="cmd.commandOrNoop"></command-or-noop>
             </fp-field>
-            <fp-field :name="'dependencies'">
-              <frankenpaxos-set :set="cmd.dependencies"></frankenpaxos-set>
+            <fp-field :name="'dependencies'" :value="cmd.dependencies">
             </fp-field>
           </fp-object>
         </frankenpaxos-map>
