@@ -83,6 +83,8 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(executeGraphBatchSize = x))
     opt[java.time.Duration]("options.executeGraphTimerPeriod")
       .optionAction((x, o) => o.copy(executeGraphTimerPeriod = x))
+    opt[Int]("options.garbageCollectEveryNCommands")
+      .optionAction((x, o) => o.copy(garbageCollectEveryNCommands = x))
   }
 
   // Parse flags.
