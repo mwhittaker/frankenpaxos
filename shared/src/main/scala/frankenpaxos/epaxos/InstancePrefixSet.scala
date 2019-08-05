@@ -50,6 +50,9 @@ class InstancePrefixSet private (
 
   override def uncompactedSize: Int = intPrefixSets.map(_.uncompactedSize).sum
 
+  override def subset(): InstancePrefixSet =
+    new InstancePrefixSet(numReplicas, intPrefixSets.map(_.subset()))
+
   override def materialize(): Set[Instance] = {
     {
       for {

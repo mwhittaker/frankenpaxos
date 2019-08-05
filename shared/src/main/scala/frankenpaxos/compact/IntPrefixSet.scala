@@ -110,9 +110,12 @@ class IntPrefixSet private (
 
   override def uncompactedSize: Int = values.size
 
-  override def materialize(): Set[Int] = values.toSet ++ (0 until watermark)
+  override def subset(): IntPrefixSet =
+    new IntPrefixSet(watermark, mutable.Set())
 
   def getWatermark(): Int = watermark
+
+  override def materialize(): Set[Int] = values.toSet ++ (0 until watermark)
 
   def +(x: Int): IntPrefixSet = {
     add(x)

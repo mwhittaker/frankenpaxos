@@ -26,6 +26,7 @@ class FakeCompactSet[A](initialValues: Set[A] = Set[A]())
     new FakeCompactSet[A](values.diff(other.values).toSet)
   override def size: Int = values.size
   override def uncompactedSize: Int = values.size
+  override def subset(): FakeCompactSet[A] = new FakeCompactSet(values.toSet)
   override def materialize(): Set[A] = values.toSet
 }
 

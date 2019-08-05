@@ -175,6 +175,17 @@ class KeyValueStore
         }
       }
 
+      override def filterInPlace(
+          f: (CommandKey, KeyValueStoreInput) => Boolean
+      ): this.type = {
+        for ((commandKey, command) <- commands) {
+          if (f(commandKey, command)) {
+            remove(commandKey)
+          }
+        }
+        this
+      }
+
       override def getConflicts(
           command: KeyValueStoreInput
       ): Set[CommandKey] = {

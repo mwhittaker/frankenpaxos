@@ -89,6 +89,9 @@ class VertexIdPrefixSet private (
 
   override def uncompactedSize: Int = intPrefixSets.map(_.uncompactedSize).sum
 
+  override def subset(): VertexIdPrefixSet =
+    new VertexIdPrefixSet(numLeaders, intPrefixSets.map(_.subset()))
+
   override def materialize(): Set[VertexId] = {
     {
       for {

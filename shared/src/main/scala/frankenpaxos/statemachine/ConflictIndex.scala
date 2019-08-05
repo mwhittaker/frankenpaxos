@@ -43,6 +43,7 @@ trait ConflictIndex[Key, Command] {
   def put(key: Key, command: Command): Option[Command]
   def get(key: Key): Option[Command]
   def remove(key: Key): Option[Command]
+  def filterInPlace(f: (Key, Command) => Boolean): this.type
 
   // `getConflicts(command)` returns the set of all keys in the conflict index
   // that map to commands that conflict with `command`.

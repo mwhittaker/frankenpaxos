@@ -16,6 +16,11 @@ class NaiveConflictIndex[Key, Command](
   override def remove(key: Key): Option[Command] =
     commands.remove(key)
 
+  def filterInPlace(f: (Key, Command) => Boolean): this.type = {
+    commands.retain(f)
+    this
+  }
+
   override def getConflicts(command: Command): Set[Key] = {
     commands
       .filter({ case (_, c) => conflict(c, command) })

@@ -46,6 +46,14 @@ trait CompactSet[Self <: CompactSet[Self]] {
   // definition of an "uncompated element" will vary based on the CompactSet.
   def uncompactedSize: Int
 
+  // `x.subset()` returns an arbitrary subset of x. `subset` must be monotone.
+  // That is, given two compact sets x and y, if x is a subset of y then
+  // `x.subset()` is a subset of `y.subset()`. This also means that repeated
+  // calls to `subset`---with calls to `add` between them---will return
+  // increasingly larger sets. Typically, subset will return a subset that is
+  // especially compact.
+  def subset(): Self
+
   // Materialize the compact set as an actual Set.
   def materialize(): Set[T]
 }
