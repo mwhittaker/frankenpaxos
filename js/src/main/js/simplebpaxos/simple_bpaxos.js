@@ -81,9 +81,7 @@ const vote_value_component = {
         <command-or-noop :value="value.commandOrNoop">
         </command-or-noop>
       </fp-field>
-      <fp-field :name="'dependencies'">
-        <frankenpaxos-set :set="value.dependencies">
-        </frankenpaxos-set>
+      <fp-field :name="'dependencies'" :value="value.dependencies">
       </fp-field>
     </fp-object>
   `,
@@ -316,8 +314,7 @@ const proposer_info = {
               <fp-field :name="'commandOrNoop'">
                 <command-or-noop :set="state.commandOrNoop"></command-or-noop>
               </fp-field>
-              <fp-field :name="'dependencies'">
-                <frankenpaxos-set :set="state.dependencies"></frankenpaxos-set>
+              <fp-field :name="'dependencies'" :value="state.dependencies">
               </fp-field>
             </fp-object>
           </div>

@@ -64,8 +64,13 @@ class IntPrefixSet private (
 
   override def hashCode: Int = toTuple().hashCode
 
-  override def toString(): String =
-    s"IntPrefixSet(< $watermark, $values)"
+  override def toString(): String = {
+    if (values.isEmpty) {
+      s"{..., $watermark}"
+    } else {
+      s"{..., $watermark, ${values.mkString(",")}}"
+    }
+  }
 
   override def add(x: Int): Boolean = {
     require(x >= 0)

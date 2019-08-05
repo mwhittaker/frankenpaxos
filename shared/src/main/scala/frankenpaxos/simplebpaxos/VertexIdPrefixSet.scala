@@ -69,7 +69,8 @@ class VertexIdPrefixSet private (
 
   override def hashCode: Int = toTuple().hashCode
 
-  override def toString(): String = intPrefixSets.toString()
+  override def toString(): String =
+    s"VertexIdPrefixSet(${intPrefixSets.mkString(", ")})"
 
   override def add(vertexId: VertexId): Boolean =
     intPrefixSets(vertexId.leaderIndex).add(vertexId.id)

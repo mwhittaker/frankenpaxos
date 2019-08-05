@@ -21,6 +21,9 @@ class CompactedConflictIndex[
   // The set of keys that have been garbage collected from `conflictIndex`.
   var garbageCollectedWatermark = keySetFactory.empty
 
+  override def toString(): String =
+    s"CompactedConflictIndex($conflictIndex, $keys, $garbageCollectedWatermark)"
+
   def put(key: Key, command: Command): Unit = {
     if (garbageCollectedWatermark.contains(key)) {
       // If we've already garbage collected this key, don't add it.
@@ -42,7 +45,7 @@ class CompactedConflictIndex[
     garbageCollectedWatermark = garbageCollectedWatermark.union(garbage)
     keys = keys.union(garbageCollectedWatermark)
     conflictIndex.filterInPlace({
-      case (key, _) => garbageCollectedWatermark.contains(key)
+      case (key, _) => !garbageCollectedWatermark.contains(key)
     })
   }
 }

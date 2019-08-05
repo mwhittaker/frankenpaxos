@@ -179,7 +179,7 @@ class KeyValueStore
           f: (CommandKey, KeyValueStoreInput) => Boolean
       ): this.type = {
         for ((commandKey, command) <- commands) {
-          if (f(commandKey, command)) {
+          if (!f(commandKey, command)) {
             remove(commandKey)
           }
         }
