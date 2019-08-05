@@ -104,7 +104,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   // a dependency service node receives a new command, it uses the conflict
   // index to efficiently compute dependencies.
   @JSExport
-  protected val conflictIndex = new CompactedConflictIndex(
+  protected val conflictIndex = new CompactConflictIndex(
     stateMachine.conflictIndex[VertexId]()
   )(VertexIdPrefixSet.factory(config.leaderAddresses.size))
 

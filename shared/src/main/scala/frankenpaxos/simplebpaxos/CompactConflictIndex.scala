@@ -5,7 +5,7 @@ import frankenpaxos.compact.CompactSetFactory
 import frankenpaxos.statemachine.ConflictIndex
 
 // DO_NOT_SUBMIT(mwhittaker): Document.
-class CompactedConflictIndex[
+class CompactConflictIndex[
     Key,
     Command,
     KeySet <: CompactSet[KeySet] { type T = Key }
@@ -22,7 +22,7 @@ class CompactedConflictIndex[
   var garbageCollectedWatermark = keySetFactory.empty
 
   override def toString(): String =
-    s"CompactedConflictIndex($conflictIndex, $keys, $garbageCollectedWatermark)"
+    s"CompactConflictIndex($conflictIndex, $keys, $garbageCollectedWatermark)"
 
   def put(key: Key, command: Command): Unit = {
     if (garbageCollectedWatermark.contains(key)) {
