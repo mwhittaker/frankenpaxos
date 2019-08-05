@@ -89,18 +89,18 @@ def main(args) -> None:
         (df['leader_options.thrifty_system'] == 'Random')
     ]
     plot_vs_num_clients(leader_df, next(ax_iter), line_group_by,
-         'Throughput', 'latency.median_ms', 'Median latency (ms)')
+         'Latency', 'latency.median_ms', 'Median latency (ms)')
     plot_vs_num_clients(leader_df, next(ax_iter), line_group_by,
-         'Latency', 'stop_throughput_1s.p90',
+         'Throughput', 'stop_throughput_1s.p90',
          'P90 throughput (1 second windows)')
     plot_latency_throughput(leader_df, next(ax_iter), line_group_by,
          'Latency vs Throughput')
 
     other_df = df[df['num_leaders'] == 6]
     plot_vs_num_clients(other_df, next(ax_iter), line_group_by,
-         'Throughput', 'latency.median_ms', 'Median latency (ms)')
+         'Latency', 'latency.median_ms', 'Median latency (ms)')
     plot_vs_num_clients(other_df, next(ax_iter), line_group_by,
-         'Latency', 'stop_throughput_1s.p90',
+         'Throughput', 'stop_throughput_1s.p90',
          'P90 throughput (1 second windows)')
     plot_latency_throughput(other_df, next(ax_iter), line_group_by,
          'Latency vs Throughput')
