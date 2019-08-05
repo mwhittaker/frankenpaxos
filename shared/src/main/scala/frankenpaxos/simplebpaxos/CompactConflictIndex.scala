@@ -16,10 +16,10 @@ class CompactConflictIndex[
 ) {
   // The set of keys that have ever been stored in `conflictIndex` or garbage
   // collected from `conflictIndex`.
-  var keys = keySetFactory.empty
+  private var keys = keySetFactory.empty
 
   // The set of keys that have been garbage collected from `conflictIndex`.
-  var garbageCollectedWatermark = keySetFactory.empty
+  private var garbageCollectedWatermark = keySetFactory.empty
 
   override def toString(): String =
     s"CompactConflictIndex($conflictIndex, $keys, $garbageCollectedWatermark)"

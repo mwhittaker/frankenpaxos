@@ -66,9 +66,9 @@ class IntPrefixSet private (
 
   override def toString(): String = {
     if (values.isEmpty) {
-      s"{..., $watermark}"
+      s"{<$watermark}"
     } else {
-      s"{..., $watermark, ${values.mkString(",")}}"
+      s"{<$watermark, ${values.mkString(",")}}"
     }
   }
 
