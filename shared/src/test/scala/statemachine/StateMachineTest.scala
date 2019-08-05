@@ -8,6 +8,52 @@ class StateMachineTest extends FlatSpec with Matchers {
     Array[Byte](x.toByte)
   }
 
+  // Noop //////////////////////////////////////////////////////////////////////
+  "Noop conflict index" should "put and get correctly" in {
+    val noop = new Noop()
+    val conflictIndex = noop.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.get(0) shouldBe defined
+    conflictIndex.get(0).get shouldBe bytes(0)
+    conflictIndex.get(1) shouldBe empty
+  }
+
+  it should "remove correctly" in {
+    val noop = new Noop()
+    val conflictIndex = noop.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    val removed = conflictIndex.remove(0)
+    removed shouldBe defined
+    removed.get shouldBe bytes(0)
+    conflictIndex.get(0) shouldBe empty
+  }
+
+  it should "filterInPlace correctly" in {
+    val noop = new Noop()
+    val conflictIndex = noop.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.put(1, bytes(1))
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.put(3, bytes(3))
+    conflictIndex.filterInPlace({ case (key, _) => key >= 2 })
+    conflictIndex.get(0) shouldBe empty
+    conflictIndex.get(1) shouldBe empty
+    conflictIndex.get(2) shouldBe defined
+    conflictIndex.get(3) shouldBe defined
+  }
+
+  it should "getConflicts correctly" in {
+    val noop = new Noop()
+    val conflictIndex = noop.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.put(1, bytes(1))
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.getConflicts(bytes(0)) shouldBe Set()
+    conflictIndex.getConflicts(bytes(1)) shouldBe Set()
+    conflictIndex.getConflicts(bytes(2)) shouldBe Set()
+  }
+
+  // Register //////////////////////////////////////////////////////////////////
   "Register conflict index" should "put and get correctly" in {
     val register = new Register()
     val conflictIndex = register.conflictIndex[Int]()
@@ -27,6 +73,20 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.get(0) shouldBe empty
   }
 
+  it should "filterInPlace correctly" in {
+    val register = new Noop()
+    val conflictIndex = register.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.put(1, bytes(1))
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.put(3, bytes(3))
+    conflictIndex.filterInPlace({ case (key, _) => key >= 2 })
+    conflictIndex.get(0) shouldBe empty
+    conflictIndex.get(1) shouldBe empty
+    conflictIndex.get(2) shouldBe defined
+    conflictIndex.get(3) shouldBe defined
+  }
+
   it should "getConflicts correctly" in {
     val register = new Register()
     val conflictIndex = register.conflictIndex[Int]()
@@ -36,6 +96,7 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
   }
 
+  // AppendLog /////////////////////////////////////////////////////////////////
   "AppendLog conflict index" should "put and get correctly" in {
     val log = new AppendLog()
     val conflictIndex = log.conflictIndex[Int]()
@@ -55,6 +116,20 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.get(0) shouldBe empty
   }
 
+  it should "filterInPlace correctly" in {
+    val log = new AppendLog()
+    val conflictIndex = log.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.put(1, bytes(1))
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.put(3, bytes(3))
+    conflictIndex.filterInPlace({ case (key, _) => key >= 2 })
+    conflictIndex.get(0) shouldBe empty
+    conflictIndex.get(1) shouldBe empty
+    conflictIndex.get(2) shouldBe defined
+    conflictIndex.get(3) shouldBe defined
+  }
+
   it should "getConflicts correctly" in {
     val log = new AppendLog()
     val conflictIndex = log.conflictIndex[Int]()
@@ -64,6 +139,7 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
   }
 
+  // KeyValueStore /////////////////////////////////////////////////////////////
   private def get(keys: String*): KeyValueStoreInput =
     KeyValueStoreInput().withGetRequest(GetRequest(keys))
 
@@ -87,6 +163,20 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.put(0, get("x", "y"))
     conflictIndex.remove(0)
     conflictIndex.get(0) shouldBe empty
+  }
+
+  it should "filterInPlace correctly" in {
+    val kvs = new KeyValueStore()
+    val conflictIndex = kvs.typedConflictIndex[Int]()
+    conflictIndex.put(0, get("0"))
+    conflictIndex.put(1, get("1"))
+    conflictIndex.put(2, get("2"))
+    conflictIndex.put(3, get("3"))
+    conflictIndex.filterInPlace({ case (key, _) => key >= 2 })
+    conflictIndex.get(0) shouldBe empty
+    conflictIndex.get(1) shouldBe empty
+    conflictIndex.get(2) shouldBe defined
+    conflictIndex.get(3) shouldBe defined
   }
 
   it should "getConflicts correctly" in {
