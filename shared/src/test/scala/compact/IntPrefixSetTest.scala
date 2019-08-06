@@ -5,7 +5,7 @@ import org.scalatest.FlatSpec
 import org.scalatest.Matchers
 import org.scalatest.prop.PropertyChecks
 
-class IntPrefixSetSpec extends FlatSpec with Matchers with PropertyChecks {
+class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
   "An IntPrefixSet" should "add 0 correctly" in {
     val prefixSet = IntPrefixSet()
     prefixSet.add(0)
@@ -121,6 +121,20 @@ class IntPrefixSetSpec extends FlatSpec with Matchers with PropertyChecks {
     }
   }
 
+  it should "union random sets correctly" in {
+    val gen = for {
+      lhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
+      rhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
+    } yield (lhs, rhs)
+    forAll(gen) { (sets: (Set[Int], Set[Int])) =>
+      val (lhs, rhs) = sets
+      val lhsPrefixSet = IntPrefixSet(lhs)
+      val rhsPrefixSet = IntPrefixSet(rhs)
+      val union = lhsPrefixSet.union(rhsPrefixSet)
+      union.materialize() shouldBe lhs.union(rhs)
+    }
+  }
+
   it should "diff disjoint sets correctly" in {
     val lhs = IntPrefixSet(Set(10, 20, 30))
     val rhs = IntPrefixSet(Set(0, 1, 2))
@@ -153,6 +167,20 @@ class IntPrefixSetSpec extends FlatSpec with Matchers with PropertyChecks {
       diff shouldBe IntPrefixSet()
       diff.materialize() shouldBe Set()
       xs.exists(diff.contains) shouldBe false
+    }
+  }
+
+  it should "diff random sets correctly" in {
+    val gen = for {
+      lhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
+      rhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
+    } yield (lhs, rhs)
+    forAll(gen) { (sets: (Set[Int], Set[Int])) =>
+      val (lhs, rhs) = sets
+      val lhsPrefixSet = IntPrefixSet(lhs)
+      val rhsPrefixSet = IntPrefixSet(rhs)
+      val diff = lhsPrefixSet.diff(rhsPrefixSet)
+      diff.materialize() shouldBe lhs.diff(rhs)
     }
   }
 

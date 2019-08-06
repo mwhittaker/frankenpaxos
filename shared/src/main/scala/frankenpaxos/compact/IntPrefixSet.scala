@@ -14,6 +14,14 @@ object IntPrefixSet {
   def apply(values: Set[Int]): IntPrefixSet =
     new IntPrefixSet(0, values.to[mutable.Set])
 
+  // Construct an IntPrefixSet from a watermark and set.
+  @JSExport("apply")
+  def apply(watermark: Int, values: Set[Int]): IntPrefixSet = {
+    require(watermark >= 0)
+    require(values.forall(_ >= watermark))
+    new IntPrefixSet(watermark, values.to[mutable.Set])
+  }
+
   // Construct an IntPrefixSet from an IntPrefixSetProto. It is a precondition
   // that `proto` was generated using `IntPrefixSet.toProto`. You cannot pass
   // in an arbitrary IntPrefixSetProto.
@@ -106,7 +114,7 @@ class IntPrefixSet private (
     } else {
       new IntPrefixSet(
         0,
-        values -- (watermark until other.watermark) -- other.values
+        values.filter(_ >= other.watermark) -- other.values
       )
     }
   }
