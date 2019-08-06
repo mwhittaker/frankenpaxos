@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1564089808902,
+  "iteration": 1565043856522,
   "links": [],
   "panels": [
     {
@@ -1394,11 +1394,25 @@
           "refId": "A"
         },
         {
+          "expr": "rate(simple_bpaxos_dep_service_node_uncompacted_dependencies_sum[1s]) / rate(simple_bpaxos_dep_service_node_uncompacted_dependencies_count[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Average # of uncompacted deps on Dep Service ({{instance}})",
+          "refId": "E"
+        },
+        {
           "expr": "rate(simple_bpaxos_replica_dependencies_sum[1s]) / rate(simple_bpaxos_replica_dependencies_count[1s])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Average # of deps on Replica ({{instance}})",
           "refId": "B"
+        },
+        {
+          "expr": "rate(simple_bpaxos_replica_uncompacted_dependencies_sum[1s]) / rate(simple_bpaxos_replica_uncompacted_dependencies_count[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Average # of uncompated deps on Replica ({{instance}})",
+          "refId": "F"
         },
         {
           "expr": "rate(simple_bpaxos_replica_dependency_graph_num_vertices[1s])",
@@ -1468,8 +1482,8 @@
         "current": {
           "selected": true,
           "tags": [],
-          "text": "up",
-          "value": "up"
+          "text": "jvm_gc_collection_seconds_sum",
+          "value": "jvm_gc_collection_seconds_sum"
         },
         "datasource": "Prometheus",
         "definition": "metrics(.*)",
@@ -1520,7 +1534,7 @@
             "value": "jvm_gc_collection_seconds_count"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "jvm_gc_collection_seconds_sum",
             "value": "jvm_gc_collection_seconds_sum"
           },
@@ -1830,7 +1844,7 @@
             "value": "simple_bpaxos_replica_requests_total"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "up",
             "value": "up"
           }
@@ -1942,8 +1956,8 @@
     ]
   },
   "time": {
-    "from": "2019-07-25T21:01:34.335Z",
-    "to": "2019-07-25T21:02:38.165Z"
+    "from": "2019-08-05T22:22:42.406Z",
+    "to": "2019-08-05T22:22:51.964Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1973,5 +1987,5 @@
   "timezone": "",
   "title": "Simple BPaxos",
   "uid": "4mBsFHVWk",
-  "version": 6
+  "version": 13
 }

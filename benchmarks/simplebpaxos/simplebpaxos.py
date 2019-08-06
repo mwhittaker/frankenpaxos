@@ -46,7 +46,7 @@ class LeaderOptions(NamedTuple):
 
 
 class DepServiceNodeOptions(NamedTuple):
-    pass
+    garbage_collect_every_n_commands: int = 10000
 
 
 class AcceptorOptions(NamedTuple):
@@ -62,6 +62,7 @@ class ReplicaOptions(NamedTuple):
     execute_graph_batch_size: int = 1
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
+    garbage_collect_every_n_commands: int = 10000
 
 
 class Input(NamedTuple):
@@ -438,6 +439,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', dep.host.ip(),
                     '--prometheus_port',
                         str(dep.port + 1) if input.monitored else '-1',
+                    '--options.garbageCollectEveryNCommands',
+                        str(input.dep_service_node_options
+                                .garbage_collect_every_n_commands),
                 ],
             )
             if input.profiled:
@@ -504,6 +508,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         '{}s'.format(input.replica_options
                                      .execute_graph_timer_period
                                      .total_seconds()),
+                    '--options.garbageCollectEveryNCommands',
+                        str(input.replica_options
+                                .garbage_collect_every_n_commands),
                 ],
             )
             if input.profiled:
