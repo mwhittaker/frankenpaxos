@@ -106,7 +106,19 @@ class IntPrefixSet private (
   }
 
   override def diff(other: IntPrefixSet): IntPrefixSet = {
-    if (other.watermark <= watermark) {
+    if (other.watermark == 0 && other.values.isEmpty) {
+      new IntPrefixSet(watermark, values)
+    } else if (other.watermark == 0) {
+      val minOtherValue = other.values.min
+      if (minOtherValue >= watermark) {
+        new IntPrefixSet(watermark, values -- other.values)
+      } else {
+        new IntPrefixSet(
+          minOtherValue,
+          values ++ (minOtherValue until watermark) -- other.values
+        )
+      }
+    } else if (other.watermark <= watermark) {
       new IntPrefixSet(
         0,
         values ++ (other.watermark until watermark) -- other.values
