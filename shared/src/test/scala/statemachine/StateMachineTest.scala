@@ -9,13 +9,12 @@ class StateMachineTest extends FlatSpec with Matchers {
   }
 
   // Noop //////////////////////////////////////////////////////////////////////
-  "Noop conflict index" should "put and get correctly" in {
+  "Noop conflict index" should "put correctly" in {
     val noop = new Noop()
     val conflictIndex = noop.conflictIndex[Int]()
     conflictIndex.put(0, bytes(0))
-    conflictIndex.get(0) shouldBe defined
-    conflictIndex.get(0).get shouldBe bytes(0)
-    conflictIndex.get(1) shouldBe empty
+    conflictIndex.put(1, bytes(1))
+    conflictIndex.put(2, bytes(2))
   }
 
   it should "remove correctly" in {
@@ -25,21 +24,6 @@ class StateMachineTest extends FlatSpec with Matchers {
     val removed = conflictIndex.remove(0)
     removed shouldBe defined
     removed.get shouldBe bytes(0)
-    conflictIndex.get(0) shouldBe empty
-  }
-
-  it should "filterInPlace correctly" in {
-    val noop = new Noop()
-    val conflictIndex = noop.conflictIndex[Int]()
-    conflictIndex.put(0, bytes(0))
-    conflictIndex.put(1, bytes(1))
-    conflictIndex.put(2, bytes(2))
-    conflictIndex.put(3, bytes(3))
-    conflictIndex.filterInPlace({ case (key, _) => key >= 2 })
-    conflictIndex.get(0) shouldBe empty
-    conflictIndex.get(1) shouldBe empty
-    conflictIndex.get(2) shouldBe defined
-    conflictIndex.get(3) shouldBe defined
   }
 
   it should "getConflicts correctly" in {
@@ -58,33 +42,19 @@ class StateMachineTest extends FlatSpec with Matchers {
     val register = new Register()
     val conflictIndex = register.conflictIndex[Int]()
     conflictIndex.put(0, bytes(0))
-    conflictIndex.get(0) shouldBe defined
-    conflictIndex.get(0).get shouldBe bytes(0)
-    conflictIndex.get(1) shouldBe empty
+    conflictIndex.put(1, bytes(1))
+    conflictIndex.put(2, bytes(2))
   }
 
   it should "remove correctly" in {
     val register = new Register()
     val conflictIndex = register.conflictIndex[Int]()
     conflictIndex.put(0, bytes(0))
+    conflictIndex.put(1, bytes(1))
     val removed = conflictIndex.remove(0)
     removed shouldBe defined
     removed.get shouldBe bytes(0)
-    conflictIndex.get(0) shouldBe empty
-  }
-
-  it should "filterInPlace correctly" in {
-    val register = new Noop()
-    val conflictIndex = register.conflictIndex[Int]()
-    conflictIndex.put(0, bytes(0))
-    conflictIndex.put(1, bytes(1))
-    conflictIndex.put(2, bytes(2))
-    conflictIndex.put(3, bytes(3))
-    conflictIndex.filterInPlace({ case (key, _) => key >= 2 })
-    conflictIndex.get(0) shouldBe empty
-    conflictIndex.get(1) shouldBe empty
-    conflictIndex.get(2) shouldBe defined
-    conflictIndex.get(3) shouldBe defined
+    conflictIndex.getConflicts(bytes(2)) shouldBe Set(1)
   }
 
   it should "getConflicts correctly" in {
@@ -93,6 +63,8 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.put(0, bytes(0))
     conflictIndex.put(1, bytes(1))
     conflictIndex.put(2, bytes(2))
+    conflictIndex.getConflicts(bytes(0)) shouldBe Set(0, 1, 2)
+    conflictIndex.getConflicts(bytes(1)) shouldBe Set(0, 1, 2)
     conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
   }
 
@@ -101,33 +73,19 @@ class StateMachineTest extends FlatSpec with Matchers {
     val log = new AppendLog()
     val conflictIndex = log.conflictIndex[Int]()
     conflictIndex.put(0, bytes(0))
-    conflictIndex.get(0) shouldBe defined
-    conflictIndex.get(0).get shouldBe bytes(0)
-    conflictIndex.get(1) shouldBe empty
+    conflictIndex.put(1, bytes(1))
+    conflictIndex.put(2, bytes(2))
   }
 
   it should "remove correctly" in {
     val log = new AppendLog()
     val conflictIndex = log.conflictIndex[Int]()
     conflictIndex.put(0, bytes(0))
+    conflictIndex.put(1, bytes(1))
     val removed = conflictIndex.remove(0)
     removed shouldBe defined
     removed.get shouldBe bytes(0)
-    conflictIndex.get(0) shouldBe empty
-  }
-
-  it should "filterInPlace correctly" in {
-    val log = new AppendLog()
-    val conflictIndex = log.conflictIndex[Int]()
-    conflictIndex.put(0, bytes(0))
-    conflictIndex.put(1, bytes(1))
-    conflictIndex.put(2, bytes(2))
-    conflictIndex.put(3, bytes(3))
-    conflictIndex.filterInPlace({ case (key, _) => key >= 2 })
-    conflictIndex.get(0) shouldBe empty
-    conflictIndex.get(1) shouldBe empty
-    conflictIndex.get(2) shouldBe defined
-    conflictIndex.get(3) shouldBe defined
+    conflictIndex.getConflicts(bytes(2)) shouldBe Set(1)
   }
 
   it should "getConflicts correctly" in {
@@ -136,6 +94,8 @@ class StateMachineTest extends FlatSpec with Matchers {
     conflictIndex.put(0, bytes(0))
     conflictIndex.put(1, bytes(1))
     conflictIndex.put(2, bytes(2))
+    conflictIndex.getConflicts(bytes(0)) shouldBe Set(0, 1, 2)
+    conflictIndex.getConflicts(bytes(1)) shouldBe Set(0, 1, 2)
     conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
   }
 
@@ -152,31 +112,19 @@ class StateMachineTest extends FlatSpec with Matchers {
     val kvs = new KeyValueStore()
     val conflictIndex = kvs.typedConflictIndex[Int]()
     conflictIndex.put(0, get("x", "y"))
-    conflictIndex.get(0) shouldBe defined
-    conflictIndex.get(0).get shouldBe get("x", "y")
-    conflictIndex.get(1) shouldBe empty
+    conflictIndex.put(1, get("x", "y"))
+    conflictIndex.put(2, get("x", "y"))
   }
 
   it should "remove correctly" in {
     val kvs = new KeyValueStore()
     val conflictIndex = kvs.typedConflictIndex[Int]()
     conflictIndex.put(0, get("x", "y"))
-    conflictIndex.remove(0)
-    conflictIndex.get(0) shouldBe empty
-  }
-
-  it should "filterInPlace correctly" in {
-    val kvs = new KeyValueStore()
-    val conflictIndex = kvs.typedConflictIndex[Int]()
-    conflictIndex.put(0, get("0"))
-    conflictIndex.put(1, get("1"))
-    conflictIndex.put(2, get("2"))
-    conflictIndex.put(3, get("3"))
-    conflictIndex.filterInPlace({ case (key, _) => key >= 2 })
-    conflictIndex.get(0) shouldBe empty
-    conflictIndex.get(1) shouldBe empty
-    conflictIndex.get(2) shouldBe defined
-    conflictIndex.get(3) shouldBe defined
+    conflictIndex.put(1, get("x", "y"))
+    val removed = conflictIndex.remove(0)
+    removed shouldBe defined
+    removed.get shouldBe get("x", "y")
+    conflictIndex.getConflicts(set("x", "y")) shouldBe Set(1)
   }
 
   it should "getConflicts correctly" in {

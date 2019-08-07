@@ -42,7 +42,6 @@
 //      |        |        |        | <----- |        |     Nack
 //      |        |        |        |        | <----- |     GarbageCollect
 //      |        |        |        | <------^------- |     GarbageCollect
-//      |        |        | <------^--------^------- |     GarbageCollect
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
@@ -247,7 +246,6 @@ message DepServiceNodeInbound {
 
   oneof request {
     DependencyRequest dependency_request = 1;
-    GarbageCollect garbage_collect = 2;
   }
 }
 

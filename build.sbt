@@ -22,6 +22,8 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
     libraryDependencies ++= Seq(
       "com.github.scopt" %% "scopt" % "3.7.0",
       "com.github.tototoshi" %% "scala-csv" % "1.3.5",
+      "com.lihaoyi" %% "scalatags" % "0.7.0",
+      "com.lihaoyi" %%% "scalatags" % "0.7.0",
       "com.storm-enroute" %% "scalameter" % "0.18",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion % "protobuf",
       "com.thesamet.scalapb" %%% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion,

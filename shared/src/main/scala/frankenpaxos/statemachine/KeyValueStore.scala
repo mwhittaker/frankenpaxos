@@ -139,9 +139,6 @@ class KeyValueStore
         o
       }
 
-      override def get(commandKey: CommandKey): Option[KeyValueStoreInput] =
-        commands.get(commandKey)
-
       override def remove(
           commandKey: CommandKey
       ): Option[KeyValueStoreInput] = {
@@ -173,17 +170,6 @@ class KeyValueStore
             Some(input)
           }
         }
-      }
-
-      override def filterInPlace(
-          f: (CommandKey, KeyValueStoreInput) => Boolean
-      ): this.type = {
-        for ((commandKey, command) <- commands) {
-          if (!f(commandKey, command)) {
-            remove(commandKey)
-          }
-        }
-        this
       }
 
       override def getConflicts(

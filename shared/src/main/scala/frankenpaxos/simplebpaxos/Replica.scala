@@ -138,7 +138,6 @@ object Replica {
   val serializer = ReplicaInboundSerializer
 
   type ClientPseudonym = Int
-  type DepServiceNodeIndex = Int
 
   @JSExportAll
   case class Committed(
@@ -185,11 +184,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private val acceptors: Seq[Chan[Acceptor[Transport]]] =
     for (a <- config.acceptorAddresses)
       yield chan[Acceptor[Transport]](a, Acceptor.serializer)
-
-  // Channels to the dependency service nodes.
-  private val depServiceNodes: Seq[Chan[DepServiceNode[Transport]]] =
-    for (a <- config.depServiceNodeAddresses)
-      yield chan[DepServiceNode[Transport]](a, DepServiceNode.serializer)
 
   // Channels to the other replicas acceptors.
   private val otherReplicas: Seq[Chan[Replica[Transport]]] =
@@ -491,9 +485,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                        frontier = committedVertices.getWatermark())
       proposers.foreach(_.send(ProposerInbound().withGarbageCollect(gc)))
       acceptors.foreach(_.send(AcceptorInbound().withGarbageCollect(gc)))
-      depServiceNodes.foreach(
-        _.send(DepServiceNodeInbound().withGarbageCollect(gc))
-      )
       numCommandsPendingGc = 0
     }
   }

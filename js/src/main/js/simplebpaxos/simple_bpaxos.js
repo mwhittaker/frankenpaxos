@@ -340,25 +340,13 @@ let dep_node_info = {
   // TODO(mwhittaker): Improve display of conflictIndex.
   template: `
     <div>
-      <div>conflictIndex = {{node.actor.conflictIndex}}</div>
+      <div>
+        conflictIndex =
+        <div v-html="node.actor.conflictIndex.toHtml()">
+        {{node.actor.conflictIndex.toHtml()}}
+        </div>
+      </div>
       <div>numCommandsPendingGc = {{node.actor.numCommandsPendingGc}}</div>
-      <div>gcWatermark = {{node.actor.gcWatermark}}</div>
-
-      <div>
-        dependenciesCache =
-        <frankenpaxos-map :map="node.actor.dependenciesCache">
-        </frankenpaxos-map>
-      </div>
-
-      <div>
-        cacheGcQuorumWatermarkVector =
-        {{node.actor.cacheGcQuorumWatermarkVector}}
-      </div>
-
-      <div>
-        cacheGcWatermark =
-        <frankenpaxos-seq :seq="node.actor.cacheGcWatermark"></frankenpaxos-seq>
-      </div>
     </div>
   `,
 };

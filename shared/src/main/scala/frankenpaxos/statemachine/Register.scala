@@ -29,18 +29,8 @@ class Register extends StateMachine {
       override def put(key: Key, command: Array[Byte]): Option[Array[Byte]] =
         commands.put(key, command)
 
-      override def get(key: Key): Option[Array[Byte]] =
-        commands.get(key)
-
       override def remove(key: Key): Option[Array[Byte]] =
         commands.remove(key)
-
-      override def filterInPlace(
-          f: (Key, Array[Byte]) => Boolean
-      ): this.type = {
-        commands.retain(f)
-        this
-      }
 
       // Since every pair of commands conflict, we return every key except for
       // `key`.

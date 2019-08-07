@@ -33,6 +33,13 @@ object VertexIdPrefixSet {
     )
   }
 
+  // Construct a VertexIdPrefixSet from a set of watermarks.
+  @JSExport("apply")
+  def apply(watermarks: Seq[Int]): VertexIdPrefixSet = {
+    new VertexIdPrefixSet(watermarks.size,
+                          watermarks.map(IntPrefixSet(_, Set[Int]())).toBuffer)
+  }
+
   // Construct a VertexIdPrefixSet from a proto produced by
   // VertexIdPrefixSet.toProto.
   def fromProto(proto: VertexIdPrefixSetProto): VertexIdPrefixSet = {

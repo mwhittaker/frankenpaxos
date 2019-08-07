@@ -1,51 +1,65 @@
 package frankenpaxos.simplebpaxos
 
-import frankenpaxos.compact.CompactSet
-import frankenpaxos.compact.CompactSetFactory
 import frankenpaxos.statemachine.ConflictIndex
+import frankenpaxos.statemachine.StateMachine
+import scala.collection.mutable
+import scala.scalajs.js.annotation._
+import scalatags.Text.all._
 
-// DO_NOT_SUBMIT(mwhittaker): Document.
-class CompactConflictIndex[
-    Key,
-    Command,
-    KeySet <: CompactSet[KeySet] { type T = Key }
-](
-    conflictIndex: ConflictIndex[Key, Command]
-)(
-    implicit keySetFactory: CompactSetFactory[KeySet, Key]
-) {
-  // The set of keys that have ever been stored in `conflictIndex` or garbage
-  // collected from `conflictIndex`.
-  private var keys = keySetFactory.empty
+@JSExportAll
+class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
+  private val factory = VertexIdPrefixSet.factory(numLeaders)
 
-  // The set of keys that have been garbage collected from `conflictIndex`.
-  private var garbageCollectedWatermark = keySetFactory.empty
+  private var newConflictIndex = stateMachine.conflictIndex[VertexId]()
+  private var newWatermark = mutable.Buffer.fill(numLeaders)(0)
 
-  override def toString(): String =
-    s"CompactConflictIndex($conflictIndex, $keys, $garbageCollectedWatermark)"
+  private var oldConflictIndex = stateMachine.conflictIndex[VertexId]()
+  private var oldWatermark = mutable.Buffer.fill(numLeaders)(0)
 
-  def put(key: Key, command: Command): Unit = {
-    if (garbageCollectedWatermark.contains(key)) {
-      // If we've already garbage collected this key, don't add it.
-    } else {
-      keys.add(key)
-      conflictIndex.put(key, command)
-    }
+  private var gcWatermark = mutable.Buffer.fill(numLeaders)(0)
+
+  def toHtml(): Frag = {
+    div(
+      div("newConflictIndex = ", newConflictIndex.toString),
+      div("newWatermark = ", newWatermark.toString),
+      div("oldConflictIndex = ", oldConflictIndex.toString),
+      div("oldWatermark = ", oldWatermark.toString),
+      div("gcWatermark = ", gcWatermark.toString)
+    )
   }
 
-  def getConflicts(command: Command): KeySet = {
-    keySetFactory
-      .fromSet(conflictIndex.getConflicts(command))
-      .union(garbageCollectedWatermark)
+  def put(vertexId: VertexId, command: Array[Byte]): Unit = {
+    newConflictIndex.put(vertexId, command)
+    updateWatermark(newWatermark, vertexId.leaderIndex, vertexId.id + 1)
   }
 
-  def watermark(): KeySet = keys.subset()
+  def getConflicts(command: Array[Byte]): VertexIdPrefixSet = {
+    factory
+      .fromSet(newConflictIndex.getConflicts(command))
+      .union(factory.fromSet(oldConflictIndex.getConflicts(command)))
+      .union(VertexIdPrefixSet(gcWatermark))
+  }
 
-  def garbageCollect(garbage: KeySet): Unit = {
-    garbageCollectedWatermark = garbageCollectedWatermark.union(garbage)
-    keys = keys.union(garbageCollectedWatermark)
-    conflictIndex.filterInPlace({
-      case (key, _) => !garbageCollectedWatermark.contains(key)
-    })
+  def garbageCollect(): Unit = {
+    gcWatermark = pairwiseMaxWatermark(gcWatermark, oldWatermark)
+    oldConflictIndex = newConflictIndex
+    oldWatermark = newWatermark
+    newConflictIndex = stateMachine.conflictIndex[VertexId]()
+    newWatermark = mutable.Buffer.fill(numLeaders)(0)
+  }
+
+  private def updateWatermark(
+      watermark: mutable.Buffer[Int],
+      index: Int,
+      value: Int
+  ): Unit = {
+    watermark(index) = Math.max(watermark(index), value)
+  }
+
+  private def pairwiseMaxWatermark(
+      lhs: mutable.Buffer[Int],
+      rhs: mutable.Buffer[Int]
+  ): mutable.Buffer[Int] = {
+    lhs.zip(rhs).map({ case (l, r) => Math.max(l, r) })
   }
 }

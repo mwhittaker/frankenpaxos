@@ -37,13 +37,11 @@ package frankenpaxos.statemachine
 // couple of the ConflictIndex implementations below to get a better sense for
 // the API.
 trait ConflictIndex[Key, Command] {
-  // Put, get, and remove follow Scala's Map API [1].
+  // Put and remove follow Scala's Map API [1].
   //
   // [1]: scala-lang.org/api/current/scala/collection/mutable/Map.html
   def put(key: Key, command: Command): Option[Command]
-  def get(key: Key): Option[Command]
   def remove(key: Key): Option[Command]
-  def filterInPlace(f: (Key, Command) => Boolean): this.type
 
   // `getConflicts(command)` returns the set of all keys in the conflict index
   // that map to commands that conflict with `command`.

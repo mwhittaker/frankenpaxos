@@ -25,14 +25,7 @@ class AppendLog extends StateMachine {
       override def toString(): String = xs.toString()
       override def put(key: Key, command: Array[Byte]): Option[Array[Byte]] =
         xs.put(key, command)
-      override def get(key: Key): Option[Array[Byte]] = xs.get(key)
       override def remove(key: Key): Option[Array[Byte]] = xs.remove(key)
-      override def filterInPlace(
-          f: (Key, Array[Byte]) => Boolean
-      ): this.type = {
-        xs.retain(f)
-        this
-      }
       override def getConflicts(command: Array[Byte]): Set[Key] = xs.keys.toSet
     }
 }

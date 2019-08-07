@@ -35,25 +35,10 @@ trait TypedStateMachine[I, O] extends StateMachine {
           .put(key, inputSerializer.fromBytes(command))
           .map(inputSerializer.toBytes)
 
-      override def get(key: Key): Option[Array[Byte]] =
-        index
-          .get(key)
-          .map(inputSerializer.toBytes)
-
       override def remove(key: Key): Option[Array[Byte]] =
         index
           .remove(key)
           .map(inputSerializer.toBytes)
-
-      override def filterInPlace(
-          f: (Key, Array[Byte]) => Boolean
-      ): this.type = {
-        index
-          .filterInPlace(
-            (key, command) => f(key, inputSerializer.toBytes(command))
-          )
-        this
-      }
 
       override def getConflicts(command: Array[Byte]): Set[Key] = {
         index.getConflicts(inputSerializer.fromBytes(command))

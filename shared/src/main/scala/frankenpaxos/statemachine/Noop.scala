@@ -19,14 +19,7 @@ class Noop extends StateMachine {
       private val commands = mutable.Map[Key, Array[Byte]]()
       override def put(key: Key, command: Array[Byte]): Option[Array[Byte]] =
         commands.put(key, command)
-      override def get(key: Key): Option[Array[Byte]] = commands.get(key)
       override def remove(key: Key): Option[Array[Byte]] = commands.remove(key)
-      override def filterInPlace(
-          f: (Key, Array[Byte]) => Boolean
-      ): this.type = {
-        commands.retain(f)
-        this
-      }
       override def getConflicts(command: Array[Byte]): Set[Key] = Set()
     }
   }
