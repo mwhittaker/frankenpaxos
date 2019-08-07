@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1565043856522,
+  "iteration": 1565215889481,
   "links": [],
   "panels": [
     {
@@ -153,36 +153,41 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "rate(simple_bpaxos_leader_requests_latency_sum[1s])\n/ rate(simple_bpaxos_leader_requests_latency_count[1s])",
+          "expr": "rate(simple_bpaxos_leader_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(simple_bpaxos_leader_requests_latency_count{job=~\"$job\"}[1s])",
           "format": "time_series",
+          "hide": false,
           "intervalFactor": 1,
           "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "A"
         },
         {
-          "expr": "rate(simple_bpaxos_dep_service_node_requests_latency_sum[1s])\n/ rate(simple_bpaxos_dep_service_node_requests_latency_count[1s])",
+          "expr": "rate(simple_bpaxos_dep_service_node_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(simple_bpaxos_dep_service_node_requests_latency_count{job=~\"$job\"}[1s])",
           "format": "time_series",
+          "hide": false,
           "intervalFactor": 1,
           "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "B"
         },
         {
-          "expr": "rate(simple_bpaxos_proposer_requests_latency_sum[1s])\n/ rate(simple_bpaxos_proposer_requests_latency_count[1s])",
+          "expr": "rate(simple_bpaxos_proposer_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(simple_bpaxos_proposer_requests_latency_count{job=~\"$job\"}[1s])",
           "format": "time_series",
+          "hide": false,
           "intervalFactor": 1,
           "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "C"
         },
         {
-          "expr": "rate(simple_bpaxos_acceptor_requests_latency_sum[1s])\n/ rate(simple_bpaxos_acceptor_requests_latency_count[1s])",
+          "expr": "rate(simple_bpaxos_acceptor_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(simple_bpaxos_acceptor_requests_latency_count{job=~\"$job\"}[1s])",
           "format": "time_series",
+          "hide": false,
           "intervalFactor": 1,
           "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "D"
         },
         {
-          "expr": "rate(simple_bpaxos_replica_requests_latency_sum[1s])\n/ rate(simple_bpaxos_replica_requests_latency_count[1s])",
+          "expr": "rate(simple_bpaxos_replica_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(simple_bpaxos_replica_requests_latency_count{job=~\"$job\"}[1s])",
           "format": "time_series",
+          "hide": false,
           "intervalFactor": 1,
           "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "E"
@@ -1865,9 +1870,9 @@
         "current": {
           "selected": false,
           "tags": [],
-          "text": "All",
+          "text": "bpaxos_replica",
           "value": [
-            "$__all"
+            "bpaxos_replica"
           ]
         },
         "datasource": "Prometheus",
@@ -1879,7 +1884,7 @@
         "name": "job",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": "All",
             "value": "$__all"
           },
@@ -1909,7 +1914,7 @@
             "value": "bpaxos_proposer"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "bpaxos_replica",
             "value": "bpaxos_replica"
           }
@@ -1956,8 +1961,8 @@
     ]
   },
   "time": {
-    "from": "2019-08-05T22:22:42.406Z",
-    "to": "2019-08-05T22:22:51.964Z"
+    "from": "2019-08-07T22:11:26.382Z",
+    "to": "2019-08-07T22:11:41.328Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1987,5 +1992,5 @@
   "timezone": "",
   "title": "Simple BPaxos",
   "uid": "4mBsFHVWk",
-  "version": 13
+  "version": 14
 }
