@@ -21,4 +21,5 @@ message NettyConfigProto {
   repeated HostPortProto proposerAddress = 4;
   repeated HostPortProto acceptorAddress = 5;
   repeated HostPortProto replicaAddress = 6;
+  repeated HostPortProto garbageCollectorAddress = 7;
 }

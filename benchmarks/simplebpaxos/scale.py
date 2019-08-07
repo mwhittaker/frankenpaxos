@@ -57,6 +57,8 @@ def main(args) -> None:
                     ),
                     replica_log_level = args.log_level,
                     replica_dependency_graph = 'Tarjan',
+                    garbage_collector_options = GarbageCollectorOptions(),
+                    garbage_collector_log_level = args.log_level,
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(seconds=60),
                     ),

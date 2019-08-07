@@ -65,6 +65,10 @@ class ReplicaOptions(NamedTuple):
     garbage_collect_every_n_commands: int = 10000
 
 
+class GarbageCollectorOptions(NamedTuple):
+    pass
+
+
 class Input(NamedTuple):
     # System-wide parameters. ##################################################
     # The maximum number of tolerated faults.
@@ -124,6 +128,10 @@ class Input(NamedTuple):
     replica_log_level: str
     replica_dependency_graph: str
 
+    # Garbage collector options. ###############################################
+    garbage_collector_options: GarbageCollectorOptions
+    garbage_collector_log_level: str
+
     # Client options. ##########################################################
     client_options: ClientOptions
     client_log_level: str
@@ -164,6 +172,9 @@ class SimpleBPaxosNet(object):
     def replicas(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
+    def garbage_collectors(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
     def config(self) -> proto_util.Message:
         return {
             'f': self.f(),
@@ -184,6 +195,10 @@ class SimpleBPaxosNet(object):
                 for e in self.acceptors()
             ],
             'replicaAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.replicas()
+            ],
+            'garbageCollectorAddress': [
                 {'host': e.host.ip(), 'port': e.port}
                 for e in self.replicas()
             ],
@@ -219,6 +234,7 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
         dep_service_nodes: List[host.Endpoint]
         acceptors: List[host.Endpoint]
         replicas: List[host.Endpoint]
+        garbage_collectors: List[host.Endpoint]
 
     def _placement(self) -> '_Placement':
         ports = itertools.count(10000, 100)
@@ -233,6 +249,7 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
                 dep_service_nodes = portify(self._hosts * (2*self.f()+1)),
                 acceptors = portify(self._hosts * (2*self.f()+1)),
                 replicas = portify(self._hosts * (self.f()+1)),
+                garbage_collectors = portify(self._hosts * (self.f()+1)),
             )
         elif len(self._hosts) == 4:
             return self._Placement(
@@ -242,6 +259,7 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
                 dep_service_nodes = portify([self._hosts[2]] * (2*self.f()+1)),
                 acceptors = portify([self._hosts[2]] * (2*self.f()+1)),
                 replicas = portify([self._hosts[3]] * (self.f()+1)),
+                garbage_collectors = portify([self._hosts[3]] * (self.f()+1)),
             )
         elif self.f() == 1 and len(self._hosts) > 9:
             return self._Placement(
@@ -249,6 +267,7 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
                 dep_service_nodes = portify(self._hosts[1:4]),
                 acceptors = portify(self._hosts[4:7]),
                 replicas = portify(self._hosts[7:9]),
+                garbage_collectors = portify(self._hosts[7:9]),
                 leaders = portify(list(
                     itertools.islice(itertools.cycle(self._hosts[9:]),
                                      self._num_leaders)
@@ -282,6 +301,9 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
     def replicas(self) -> List[host.Endpoint]:
         return self._placement().replicas
 
+    def garbage_collectors(self) -> List[host.Endpoint]:
+        return self._placement().garbage_collectors
+
 
 class SimpleBPaxosMininet(SimpleBPaxosNet):
     def __enter__(self) -> 'SimpleBPaxosMininet':
@@ -307,6 +329,7 @@ class SingleSwitchMininet(SimpleBPaxosMininet):
         self._dep_service_nodes: List[host.Endpoint] = []
         self._acceptors: List[host.Endpoint] = []
         self._replicas: List[host.Endpoint] = []
+        self._garbage_collectors: List[host.Endpoint] = []
         self._net = mininet.net.Mininet()
 
         switch = self._net.addSwitch('s1')
@@ -346,6 +369,12 @@ class SingleSwitchMininet(SimpleBPaxosMininet):
             self._replicas.append(
                 host.Endpoint(host.MininetHost(replica), 15000))
 
+        for i in range(f + 1):
+            garbage_collector = self._net.addHost(f'g{i}')
+            self._net.addLink(garbage_collector, switch)
+            self._garbage_collectors.append(
+                host.Endpoint(host.MininetHost(garbage_collector), 16000))
+
     def net(self) -> mininet.net.Mininet:
         return self._net
 
@@ -369,6 +398,9 @@ class SingleSwitchMininet(SimpleBPaxosMininet):
 
     def replicas(self) -> List[host.Endpoint]:
         return self._replicas
+
+    def garbage_collectors(self) -> List[host.Endpoint]:
+        return self._garbage_collectors
 
 
 # Suite ########################################################################
@@ -519,6 +551,30 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
             replica_procs.append(p)
         bench.log('Replicas started.')
 
+        # Launch garbage collectors.
+        garbage_collector_procs: List[proc.Proc] = []
+        for (i, garbage_collector) in enumerate(net.garbage_collectors()):
+            p = bench.popen(
+                host=garbage_collector.host,
+                label=f'garbage_collector_{i}',
+                cmd = java + [
+                    '-cp', os.path.abspath(args['jar']),
+                    'frankenpaxos.simplebpaxos.GarbageCollectorMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                    '--log_level', input.garbage_collector_log_level,
+                    '--prometheus_host', garbage_collector.host.ip(),
+                    '--prometheus_port',
+                        str(garbage_collector.port + 1)
+                        if input.monitored else '-1',
+                ],
+            )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, garbage_collector.host, p,
+                                           f'garbage_collector_{i}')
+            garbage_collector_procs.append(p)
+        bench.log('GarbageCollectors started.')
+
         # Launch proposers.
         proposer_procs: List[proc.Proc] = []
         for (i, proposer) in enumerate(net.proposers()):
@@ -598,6 +654,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                     for e in net.dep_service_nodes()],
                   'bpaxos_replica': [f'{e.host.ip()}:{e.port+1}'
                                      for e in net.replicas()],
+                  'bpaxos_garbage_collector':
+                    [f'{e.host.ip()}:{e.port+1}'
+                     for e in net.garbage_collectors()],
                 }
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
@@ -669,7 +728,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
         for p in client_procs:
             p.wait()
         for p in (leader_procs + proposer_procs + acceptor_procs +
-                  dep_service_node_procs + replica_procs):
+                  dep_service_node_procs + replica_procs +
+                  garbage_collector_procs):
             p.kill()
         bench.log('Clients finished and processes terminated.')
 

@@ -284,6 +284,15 @@ message ReplicaInbound {
   }
 }
 
+message GarbageCollectorInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    GarbageCollect garbage_collect = 1;
+  }
+}
+
 message ClientInbound {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";

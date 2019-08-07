@@ -485,6 +485,14 @@ let replica_info = {
   `,
 };
 
+let garbage_collector_info = {
+  props: {
+    node: Object,
+  },
+
+  template: `<div></div>`,
+};
+
 // Main app ////////////////////////////////////////////////////////////////////
 function make_nodes(SimpleBPaxos, snap) {
   // https://flatuicolors.com/palette/defo
@@ -494,6 +502,7 @@ function make_nodes(SimpleBPaxos, snap) {
   let flat_green = '#2ecc71';
   let flat_purple = '#9b59b6';
   let flat_dark_blue = '#2c3e50';
+  let flat_dark_blue_alt = '#34495e';
 
   let colored = (color) => {
     return {
@@ -517,7 +526,8 @@ function make_nodes(SimpleBPaxos, snap) {
   const proposer_x = 335;
   const dep_service_x = 500;
   const acceptor_x = 500;
-  const replica_y = 800;
+  const replica_y = 750;
+  const garbage_collector_y = 800;
 
   let nodes = {};
 
@@ -606,8 +616,8 @@ function make_nodes(SimpleBPaxos, snap) {
 
   // Replicas.
   const replicas = [
-    {replica: SimpleBPaxos.replica1, x: 200},
-    {replica: SimpleBPaxos.replica2, x: 400},
+    {replica: SimpleBPaxos.replica1, x: 175},
+    {replica: SimpleBPaxos.replica2, x: 375},
   ]
   for (const [index, {replica, x}] of replicas.entries()) {
     nodes[replica.address] = {
@@ -617,6 +627,25 @@ function make_nodes(SimpleBPaxos, snap) {
       svgs: [
         snap.circle(x, replica_y, 20).attr(colored(flat_dark_blue)),
         snap.text(x, replica_y, (index + 1).toString()).attr(number_style),
+      ],
+    };
+  }
+
+  // Garbage collectors
+  const collectors = [
+    {garbage_collector: SimpleBPaxos.garbageCollector1, x: 225},
+    {garbage_collector: SimpleBPaxos.garbageCollector2, x: 425},
+  ]
+  for (const [index, {garbage_collector, x}] of collectors.entries()) {
+    nodes[garbage_collector.address] = {
+      actor: garbage_collector,
+      color: flat_dark_blue_alt,
+      component: garbage_collector_info,
+      svgs: [
+        snap.circle(x, garbage_collector_y, 20)
+            .attr(colored(flat_dark_blue)),
+        snap.text(x, garbage_collector_y, (index + 1).toString())
+            .attr(number_style),
       ],
     };
   }

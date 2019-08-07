@@ -40,7 +40,9 @@ class SimpleBPaxos(val f: Int, seed: Long) {
     acceptorAddresses = for (i <- 1 to numAcceptors)
       yield FakeTransportAddress(s"Acceptor $i"),
     replicaAddresses = for (i <- 1 to numReplicas)
-      yield FakeTransportAddress(s"Replica $i")
+      yield FakeTransportAddress(s"Replica $i"),
+    garbageCollectorAddresses = for (i <- 1 to numReplicas)
+      yield FakeTransportAddress(s"Garbage Collector $i")
   )
 
   // Clients.
@@ -129,6 +131,18 @@ class SimpleBPaxos(val f: Int, seed: Long) {
       ),
       metrics = new ReplicaMetrics(FakeCollectors),
       seed = seed
+    )
+  }
+
+  // GarbageCollectors.
+  val garbageCollectors = for (i <- 1 to numReplicas) yield {
+    new GarbageCollector[FakeTransport](
+      address = FakeTransportAddress(s"Garbage Collector $i"),
+      transport = transport,
+      logger = new FakeLogger(),
+      config = config,
+      options = GarbageCollectorOptions.default.copy(),
+      metrics = new GarbageCollectorMetrics(FakeCollectors)
     )
   }
 }

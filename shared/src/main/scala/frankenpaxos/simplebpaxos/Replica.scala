@@ -175,26 +175,25 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // Random number generator.
   val rand = new Random(seed)
 
+  // Channels to the co-located garbage collector.
+  private val garbageCollector: Chan[GarbageCollector[Transport]] =
+    chan[GarbageCollector[Transport]](config.garbageCollectorAddresses(index),
+                                      GarbageCollector.serializer)
+
   // Channels to the proposers.
   private val proposers: Seq[Chan[Proposer[Transport]]] =
     for (a <- config.proposerAddresses)
       yield chan[Proposer[Transport]](a, Proposer.serializer)
 
-  // Channels to the acceptors.
-  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
-    for (a <- config.acceptorAddresses)
-      yield chan[Acceptor[Transport]](a, Acceptor.serializer)
-
-  // Channels to the other replicas acceptors.
+  // Channels to the other replicas.
   private val otherReplicas: Seq[Chan[Replica[Transport]]] =
     for (a <- config.replicaAddresses if a != address)
       yield chan[Replica[Transport]](a, Replica.serializer)
 
   // The number of committed commands that the replica has received since the
-  // last time it sent a GarbageCollect message to the proposers, acceptors,
-  // and dependency service nodes.  Every
-  // `options.garbageCollectEveryNCommands` commands, this value is reset and
-  // GarbageCollect messages are sent.
+  // last time it sent a GarbageCollect message to the garbage collectors.
+  // Every `options.garbageCollectEveryNCommands` commands, this value is reset
+  // and GarbageCollect messages are sent.
   @JSExport
   protected var numCommandsPendingGc: Int = 0
 
@@ -480,11 +479,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // Send GarbageCollect messages if needed.
     numCommandsPendingGc += 1
     if (numCommandsPendingGc % options.garbageCollectEveryNCommands == 0) {
-      val gc =
-        GarbageCollect(replicaIndex = index,
-                       frontier = committedVertices.getWatermark())
-      proposers.foreach(_.send(ProposerInbound().withGarbageCollect(gc)))
-      acceptors.foreach(_.send(AcceptorInbound().withGarbageCollect(gc)))
+      garbageCollector.send(
+        GarbageCollectorInbound().withGarbageCollect(
+          GarbageCollect(replicaIndex = index,
+                         frontier = committedVertices.getWatermark())
+        )
+      )
       numCommandsPendingGc = 0
     }
   }

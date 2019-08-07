@@ -45,6 +45,10 @@ class SimpleBPaxos {
     replicaAddresses = Seq(
       JsTransportAddress("Replica 1"),
       JsTransportAddress("Replica 2")
+    ),
+    garbageCollectorAddresses = Seq(
+      JsTransportAddress("Garbage Collector 1"),
+      JsTransportAddress("Garbage Collector 2")
     )
   )
 
@@ -161,6 +165,21 @@ class SimpleBPaxos {
   }
   val replica1 = replicas(0)
   val replica2 = replicas(1)
+
+  // GarbageCollectors.
+  val garbageCollectors = for (i <- 1 to config.garbageCollectorAddresses.size)
+    yield {
+      new GarbageCollector[JsTransport](
+        address = JsTransportAddress(s"Garbage Collector $i"),
+        transport = transport,
+        logger = new JsLogger(),
+        config = config,
+        options = GarbageCollectorOptions.default.copy(),
+        metrics = new GarbageCollectorMetrics(FakeCollectors)
+      )
+    }
+  val garbageCollector1 = garbageCollectors(0)
+  val garbageCollector2 = garbageCollectors(1)
 }
 
 @JSExportAll
