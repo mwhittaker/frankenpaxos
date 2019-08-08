@@ -2,7 +2,6 @@ package frankenpaxos.util
 
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
-import scalatags.Text.all._
 
 // TODO(mwhittaker): Document.
 @JSExportAll

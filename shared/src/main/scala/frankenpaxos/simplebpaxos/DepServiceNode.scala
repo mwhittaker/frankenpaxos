@@ -12,7 +12,6 @@ import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.util
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
-import scalatags.Text.all._
 
 @JSExportAll
 object DepServiceNodeInboundSerializer

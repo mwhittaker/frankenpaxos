@@ -4,7 +4,6 @@ import frankenpaxos.statemachine.ConflictIndex
 import frankenpaxos.statemachine.StateMachine
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
-import scalatags.Text.all._
 
 @JSExportAll
 class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
