@@ -2,9 +2,12 @@ package frankenpaxos.simplebpaxos
 
 import frankenpaxos.util.BufferMap
 import scala.collection.mutable
+import scala.scalajs.js.annotation._
 
+@JSExportAll
 class VertexIdBufferMap[V](val numLeaders: Int, val growSize: Int = 5000) {
-  private val bufferMaps: mutable.Buffer[BufferMap[V]] =
+  @JSExport
+  protected val bufferMaps: mutable.Buffer[BufferMap[V]] =
     mutable.Buffer.fill(numLeaders)(new BufferMap(growSize))
 
   def get(vertexId: VertexId): Option[V] =

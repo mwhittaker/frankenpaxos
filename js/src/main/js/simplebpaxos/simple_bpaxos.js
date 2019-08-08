@@ -147,6 +147,21 @@ const phase2b_component = {
   `,
 };
 
+const buffer_map_component = {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <div>
+      watermark = {{value.watermark}}
+      <frankenpaxos-horizontal-seq :seq="value.buffer" v-slot="{value: value}">
+        <slot :value="value"></slot>
+      </frankenpaxos-horizontal-seq>
+    </div>
+  `,
+};
+
 // Node components /////////////////////////////////////////////////////////////
 const client_info = {
   props: {
@@ -358,25 +373,36 @@ let acceptor_info = {
 
   components: {
     'vote-value': vote_value_component,
+    'buffer-map': buffer_map_component,
   },
 
   template: `
     <div>
       <div>
         states =
-        <frankenpaxos-map :map="node.actor.states" v-slot="{value: state}">
-          <fp-object>
-            <fp-field :name="'round'" :value="state.round"></fp-field>
-            <fp-field :name="'voteRound'" :value="state.voteRound"></fp-field>
-            <fp-field :name="'voteValue'">
-              <vote-value
-                v-if="JsUtils.optionToJs(state.voteValue) !== undefined"
-                :value="JsUtils.optionToJs(state.voteValue)">
-              </vote-value>
-              <div v-else>None</div>
-            </fp-field>
-          </fp-object>
-        </frankenpaxos-map>
+        <frankenpaxos-seq :seq="node.actor.states.bufferMaps"
+                          v-slot="{value: value}">
+          <buffer-map :value="value" v-slot="{value: state}">
+            <fp-object v-if="JsUtils.optionToJs(state) !== undefined">
+              <fp-field
+                :name="'round'"
+                :value="JsUtils.optionToJs(state).round">
+              </fp-field>
+              <fp-field
+                :name="'voteRound'"
+                :value="JsUtils.optionToJs(state).voteRound">
+              </fp-field>
+              <fp-field :name="'voteValue'">
+                <vote-value
+                  v-if="JsUtils.optionToJs(JsUtils.optionToJs(state).voteValue) !== undefined"
+                  :value="JsUtils.optionToJs(JsUtils.optionToJs(state).voteValue)">
+                </vote-value>
+                <div v-else>None</div>
+              </fp-field>
+            </fp-object>
+            <div v-else>None</div>
+          </buffer-map>
+        </frankenpaxos-seq>
       </div>
 
       <div>

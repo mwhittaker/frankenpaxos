@@ -747,11 +747,48 @@ Vue.component('frankenpaxos-seq', {
   },
 
   template: `
-    <table class="frankenpaxos-seq">
-      <tr v-for="x in js_seq">
-        <td><slot :value="x">{{x}}</slot></td>
-      </tr>
-    </table>
+    <div style="overflow-x: scroll;">
+      <table class="frankenpaxos-seq">
+        <tr v-for="x in js_seq">
+          <td><slot :value="x">{{x}}</slot></td>
+        </tr>
+      </table>
+    </div>
+  `
+});
+
+Vue.component('frankenpaxos-horizontal-seq', {
+  props: ['seq'],
+
+  data: function() {
+    return {
+      js_seq: typeof this.seq !== 'undefined' ?
+                frankenpaxos.JsUtils.seqToJs(this.seq):
+                {},
+    };
+  },
+
+  watch: {
+    seq: {
+      handler: function(seq) {
+        this.js_seq = typeof seq !== 'undefined' ?
+                        frankenpaxos.JsUtils.seqToJs(seq) :
+                        {};
+      },
+      deep: true,
+    }
+  },
+
+  template: `
+    <div style="overflow-x: scroll;">
+      <table class="frankenpaxos-seq">
+        <tr>
+          <td v-for="x in js_seq">
+            <slot :value="x">{{x}}</slot>
+          </td>
+        </tr>
+      </table>
+    </div>
   `
 });
 

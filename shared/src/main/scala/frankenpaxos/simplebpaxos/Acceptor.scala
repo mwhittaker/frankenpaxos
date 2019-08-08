@@ -21,13 +21,16 @@ object AcceptorInboundSerializer extends ProtoSerializer[AcceptorInbound] {
 
 @JSExportAll
 case class AcceptorOptions(
-    // TODO(mwhittaker): Add options.
+    // The `growSize` of the Acceptors' underlying BufferMaps.
+    // DO_NOT_SUBMIT(mwhittaker): Add flags to executables and Python.
+    statesGrowSize: Int
 )
 
 @JSExportAll
 object AcceptorOptions {
-  // TODO(mwhittaker): Add options.
-  val default = AcceptorOptions()
+  val default = AcceptorOptions(
+    statesGrowSize = 5000
+  )
 }
 
 @JSExportAll
@@ -100,7 +103,10 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   private val index = config.acceptorAddresses.indexOf(address)
 
   // The state of every vertex.
-  val states = new VertexIdBufferMap[State](config.leaderAddresses.size)
+  val states = new VertexIdBufferMap[State](
+    numLeaders = config.leaderAddresses.size,
+    growSize = options.statesGrowSize
+  )
 
   // The garbage collection watermark. If n is the number of leaders, then
   // gcQuorumWatermarkVector.watermark() is a vector of length n. Say the ith

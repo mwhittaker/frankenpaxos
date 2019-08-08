@@ -1,12 +1,18 @@
 package frankenpaxos.util
 
 import scala.collection.mutable
+import scala.scalajs.js.annotation._
+import scalatags.Text.all._
 
 // TODO(mwhittaker): Document.
+@JSExportAll
 class BufferMap[V](val growSize: Int = 5000) {
-  private val buffer: mutable.Buffer[Option[V]] =
+  @JSExport
+  protected val buffer: mutable.Buffer[Option[V]] =
     mutable.Buffer.fill(growSize)(None)
-  private var watermark: Int = 0
+
+  @JSExport
+  protected var watermark: Int = 0
 
   private def normalize(key: Int): Int = key - watermark
 

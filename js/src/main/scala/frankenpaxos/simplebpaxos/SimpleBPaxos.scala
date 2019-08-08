@@ -134,7 +134,9 @@ class SimpleBPaxos {
       transport = transport,
       logger = new JsLogger(),
       config = config,
-      options = AcceptorOptions.default.copy(),
+      options = AcceptorOptions.default.copy(
+        statesGrowSize = 2
+      ),
       metrics = new AcceptorMetrics(FakeCollectors)
     )
   }
