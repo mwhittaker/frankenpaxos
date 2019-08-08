@@ -29,6 +29,13 @@ object AcceptorMain extends App {
       options: AcceptorOptions = AcceptorOptions.default
   )
 
+  implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def optionAction(
+        f: (A, AcceptorOptions) => AcceptorOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => flags.copy(options = f(x, flags.options)))
+  }
+
   val parser = new scopt.OptionParser[Flags]("") {
     help("help")
 
@@ -43,6 +50,12 @@ object AcceptorMain extends App {
     opt[Int]("prometheus_port")
       .action((x, f) => f.copy(prometheusPort = x))
       .text(s"-1 to disable")
+
+    // Options .
+    opt[Int]("options.statesGrowSize")
+      .optionAction((x, o) => o.copy(statesGrowSize = x))
+    opt[Boolean]("options.measureLatencies")
+      .optionAction((x, o) => o.copy(measureLatencies = x))
   }
 
   // Parse flags.

@@ -46,7 +46,6 @@ case class ReplicaOptions(
     garbageCollectEveryNCommands: Int,
     // If true, the replica records how long various things take to do and
     // reports them using the `simple_bpaxos_replica_requests_latency` metric.
-    // DO_NOT_SUBMIT(mwhittaker): Add flags to executables and python scripts.
     measureLatencies: Boolean
 )
 

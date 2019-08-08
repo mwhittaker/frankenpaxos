@@ -30,7 +30,6 @@ case class DepServiceNodeOptions(
     // If true, the dependency service node records how long various things
     // take to do and reports them using the
     // `simple_bpaxos_dep_service_node_requests_latency` metric.
-    // DO_NOT_SUBMIT(mwhittaker): Add flags to executables and python scripts.
     measureLatencies: Boolean
 )
 

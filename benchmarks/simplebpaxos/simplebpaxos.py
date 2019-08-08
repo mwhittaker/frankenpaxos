@@ -47,10 +47,12 @@ class LeaderOptions(NamedTuple):
 
 class DepServiceNodeOptions(NamedTuple):
     garbage_collect_every_n_commands: int = 10000
+    measure_latencies: bool = True
 
 
 class AcceptorOptions(NamedTuple):
-    pass
+    states_grow_size: int = 1000
+    measure_latencies: bool = True
 
 
 class ReplicaOptions(NamedTuple):
@@ -63,6 +65,7 @@ class ReplicaOptions(NamedTuple):
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
     garbage_collect_every_n_commands: int = 10000
+    measure_latencies: bool = True
 
 
 class GarbageCollectorOptions(NamedTuple):
@@ -474,6 +477,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--options.garbageCollectEveryNCommands',
                         str(input.dep_service_node_options
                                 .garbage_collect_every_n_commands),
+                    '--options.measureLatencies',
+                        str(input.dep_service_node_options.measure_latencies),
                 ],
             )
             if input.profiled:
@@ -497,6 +502,10 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', acceptor.host.ip(),
                     '--prometheus_port',
                         str(acceptor.port + 1) if input.monitored else '-1',
+                    '--options.statesGrowSize',
+                        str(input.acceptor_options.states_grow_size),
+                    '--options.measureLatencies',
+                        str(input.acceptor_options.measure_latencies),
                 ],
             )
             if input.profiled:
@@ -543,6 +552,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--options.garbageCollectEveryNCommands',
                         str(input.replica_options
                                 .garbage_collect_every_n_commands),
+                    '--options.measureLatencies',
+                        str(input.replica_options.measure_latencies),
                 ],
             )
             if input.profiled:

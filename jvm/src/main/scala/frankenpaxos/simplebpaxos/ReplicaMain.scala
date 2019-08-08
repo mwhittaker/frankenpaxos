@@ -85,6 +85,8 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(executeGraphTimerPeriod = x))
     opt[Int]("options.garbageCollectEveryNCommands")
       .optionAction((x, o) => o.copy(garbageCollectEveryNCommands = x))
+    opt[Boolean]("options.measureLatencies")
+      .optionAction((x, o) => o.copy(measureLatencies = x))
   }
 
   // Parse flags.

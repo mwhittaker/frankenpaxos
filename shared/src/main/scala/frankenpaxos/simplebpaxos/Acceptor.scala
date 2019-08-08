@@ -22,11 +22,9 @@ object AcceptorInboundSerializer extends ProtoSerializer[AcceptorInbound] {
 @JSExportAll
 case class AcceptorOptions(
     // The `growSize` of the Acceptors' underlying BufferMaps.
-    // DO_NOT_SUBMIT(mwhittaker): Add flags to executables and Python.
     statesGrowSize: Int,
     // If true, the acceptor records how long various things take to do and
     // reports them using the `simple_bpaxos_acceptor_requests_latency` metric.
-    // DO_NOT_SUBMIT(mwhittaker): Add flags to executables and python scripts.
     measureLatencies: Boolean
 )
 
