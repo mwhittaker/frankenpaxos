@@ -156,6 +156,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
         logger.fatal("Empty DepServiceNodeInbound encountered.")
       }
     }
+    metrics.requestsTotal.labels(label).inc()
 
     timed(label) {
       inbound.request match {

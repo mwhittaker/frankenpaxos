@@ -157,6 +157,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         logger.fatal("Empty AcceptorInbound encountered.")
       }
     }
+    metrics.requestsTotal.labels(label).inc()
 
     timed(label) {
       inbound.request match {

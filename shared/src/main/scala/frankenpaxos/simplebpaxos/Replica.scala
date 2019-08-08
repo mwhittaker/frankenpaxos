@@ -444,6 +444,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         logger.fatal("Empty ReplicaInbound encountered.")
       }
     }
+    metrics.requestsTotal.labels(label).inc()
 
     timed(label) {
       inbound.request match {
