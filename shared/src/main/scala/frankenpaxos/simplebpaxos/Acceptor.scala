@@ -23,13 +23,18 @@ object AcceptorInboundSerializer extends ProtoSerializer[AcceptorInbound] {
 case class AcceptorOptions(
     // The `growSize` of the Acceptors' underlying BufferMaps.
     // DO_NOT_SUBMIT(mwhittaker): Add flags to executables and Python.
-    statesGrowSize: Int
+    statesGrowSize: Int,
+    // If true, the acceptor records how long various things take to do and
+    // reports them using the `simple_bpaxos_acceptor_requests_latency` metric.
+    // DO_NOT_SUBMIT(mwhittaker): Add flags to executables and python scripts.
+    measureLatencies: Boolean
 )
 
 @JSExportAll
 object AcceptorOptions {
   val default = AcceptorOptions(
-    statesGrowSize = 5000
+    statesGrowSize = 5000,
+    measureLatencies = true
   )
 }
 
@@ -124,6 +129,21 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   protected var gcWatermark: Seq[Int] =
     gcQuorumWatermarkVector.watermark(quorumSize = config.f + 1)
 
+  // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    if (options.measureLatencies) {
+      val startNanos = System.nanoTime
+      val x = e
+      val stopNanos = System.nanoTime
+      metrics.requestsLatency
+        .labels(label)
+        .observe((stopNanos - startNanos).toDouble / 1000000)
+      x
+    } else {
+      e
+    }
+  }
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
       src: Transport#Address,
@@ -131,26 +151,25 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import AcceptorInbound.Request
 
-    val startNanos = System.nanoTime
     val label = inbound.request match {
-      case Request.Phase1A(r) =>
-        handlePhase1a(src, r)
-        "Phase1A"
-      case Request.Phase2A(r) =>
-        handlePhase2a(src, r)
-        "Phase2A"
-      case Request.GarbageCollect(r) =>
-        handleGarbageCollect(src, r)
-        "GarbageCollect"
+      case Request.Phase1A(_)        => "Phase1A"
+      case Request.Phase2A(_)        => "Phase2A"
+      case Request.GarbageCollect(_) => "GarbageCollect"
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
     }
-    val stopNanos = System.nanoTime
-    metrics.requestsTotal.labels(label).inc()
-    metrics.requestsLatency
-      .labels(label)
-      .observe((stopNanos - startNanos).toDouble / 1000000)
+
+    timed(label) {
+      inbound.request match {
+        case Request.Phase1A(r)        => handlePhase1a(src, r)
+        case Request.Phase2A(r)        => handlePhase2a(src, r)
+        case Request.GarbageCollect(r) => handleGarbageCollect(src, r)
+        case Request.Empty => {
+          logger.fatal("Empty AcceptorInbound encountered.")
+        }
+      }
+    }
   }
 
   private def handlePhase1a(
@@ -269,14 +288,18 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       garbageCollect: GarbageCollect
   ): Unit = {
-    // Update the GC watermark.
-    gcQuorumWatermarkVector.update(
-      garbageCollect.replicaIndex,
-      garbageCollect.frontier
-    )
-    gcWatermark = gcQuorumWatermarkVector.watermark(quorumSize = config.f + 1)
+    timed("GarbageCollect/updateWatermarks") {
+      // Update the GC watermark.
+      gcQuorumWatermarkVector.update(
+        garbageCollect.replicaIndex,
+        garbageCollect.frontier
+      )
+      gcWatermark = gcQuorumWatermarkVector.watermark(quorumSize = config.f + 1)
+    }
 
-    // Garbage collect all entries lower than the watermark.
-    states.garbageCollect(gcWatermark)
+    timed("GarbageCollect/garbageCollect") {
+      // Garbage collect all entries lower than the watermark.
+      states.garbageCollect(gcWatermark)
+    }
   }
 }

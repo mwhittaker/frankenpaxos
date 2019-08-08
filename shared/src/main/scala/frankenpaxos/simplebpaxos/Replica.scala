@@ -41,10 +41,13 @@ case class ReplicaOptions(
     unsafeSkipGraphExecution: Boolean,
     executeGraphBatchSize: Int,
     executeGraphTimerPeriod: java.time.Duration,
-    // A replica sends a GarbageCollect message to the proposers, acceptors,
-    // and dependency service nodes every `garbageCollectEveryNCommands`
-    // commands that it receives.
-    garbageCollectEveryNCommands: Int
+    // A replica sends a GarbageCollect message to the proposers and acceptors
+    // every `garbageCollectEveryNCommands` commands that it receives.
+    garbageCollectEveryNCommands: Int,
+    // If true, the replica records how long various things take to do and
+    // reports them using the `simple_bpaxos_replica_requests_latency` metric.
+    // DO_NOT_SUBMIT(mwhittaker): Add flags to executables and python scripts.
+    measureLatencies: Boolean
 )
 
 @JSExportAll
@@ -55,7 +58,8 @@ object ReplicaOptions {
     unsafeSkipGraphExecution = false,
     executeGraphBatchSize = 1,
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
-    garbageCollectEveryNCommands = 1000000
+    garbageCollectEveryNCommands = 10000,
+    measureLatencies = true
   )
 }
 
@@ -130,6 +134,12 @@ class ReplicaMetrics(collectors: Collectors) {
     .build()
     .name("simple_bpaxos_replica_uncompacted_dependencies")
     .help("The number of uncompacted dependencies that a command has.")
+    .register()
+
+  val uncommittedDependencies: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_replica_uncommitted_dependencies")
+    .help("The number of uncommitted dependencies that a command has.")
     .register()
 }
 
@@ -272,6 +282,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    if (options.measureLatencies) {
+      val startNanos = System.nanoTime
+      val x = e
+      val stopNanos = System.nanoTime
+      metrics.requestsLatency
+        .labels(label)
+        .observe((stopNanos - startNanos).toDouble / 1000000)
+      x
+    } else {
+      e
+    }
+  }
+
   // Add a committed command to `commands`. The reason this is pulled into a
   // helper function is to ensure that we don't forget to also update
   // `committedVertices`.
@@ -414,23 +438,23 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import ReplicaInbound.Request
 
-    val startNanos = System.nanoTime
     val label = inbound.request match {
-      case Request.Commit(r) =>
-        handleCommit(src, r)
-        "Commit"
-      case Request.Recover(r) =>
-        handleRecover(src, r)
-        "Recover"
+      case Request.Commit(_)  => "Commit"
+      case Request.Recover(_) => "Recover"
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
       }
     }
-    val stopNanos = System.nanoTime
-    metrics.requestsTotal.labels(label).inc()
-    metrics.requestsLatency
-      .labels(label)
-      .observe((stopNanos - startNanos).toDouble / 1000000)
+
+    timed(label) {
+      inbound.request match {
+        case Request.Commit(r)  => handleCommit(src, r)
+        case Request.Recover(r) => handleRecover(src, r)
+        case Request.Empty => {
+          logger.fatal("Empty ReplicaInbound encountered.")
+        }
+      }
+    }
   }
 
   private def handleCommit(
@@ -444,9 +468,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Record the committed command.
-    val dependencies = VertexIdPrefixSet.fromProto(commit.dependencies)
-    recordCommitted(commit.vertexId,
-                    Committed(commit.commandOrNoop, dependencies))
+    val dependencies = timed("Commit/parseDependencies") {
+      VertexIdPrefixSet.fromProto(commit.dependencies)
+    }
+    timed("Commit/recordCommitted") {
+      recordCommitted(commit.vertexId,
+                      Committed(commit.commandOrNoop, dependencies))
+    }
     metrics.dependencies.observe(dependencies.size)
     metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
 
@@ -454,23 +482,33 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // timers for any uncommitted vertices on which we depend.
     recoverVertexTimers.get(commit.vertexId).foreach(_.stop())
     recoverVertexTimers -= commit.vertexId
-    for {
-      v <- dependencies.diff(committedVertices).materialize()
-      if !recoverVertexTimers.contains(v)
-    } {
-      recoverVertexTimers(v) = makeRecoverVertexTimer(v)
+    val uncommittedDependencies = timed("Commit/uncommittedDependencies") {
+      dependencies
+        .diff(committedVertices)
+        .materialize()
+        .filter(!recoverVertexTimers.contains(_))
+    }
+    metrics.uncommittedDependencies.observe(uncommittedDependencies.size)
+    timed("Commit/startTimers") {
+      for (v <- uncommittedDependencies) {
+        recoverVertexTimers(v) = makeRecoverVertexTimer(v)
+      }
     }
 
     // If we're skipping the graph, execute the command right away. Otherwise,
     // commit the command to the dependency graph and execute the graph if we
     // have sufficiently many commands pending execution.
     if (options.unsafeSkipGraphExecution) {
-      executeCommand(commit.vertexId, commit.commandOrNoop)
+      timed("Commit/unsafeExecuteCommand") {
+        executeCommand(commit.vertexId, commit.commandOrNoop)
+      }
     } else {
-      dependencyGraph.commit(commit.vertexId, (), dependencies)
+      timed("Commit/dependencyGraphCommit") {
+        dependencyGraph.commit(commit.vertexId, (), dependencies)
+      }
       numCommandsPendingExecution += 1
       if (numCommandsPendingExecution % options.executeGraphBatchSize == 0) {
-        execute()
+        timed("Commit/execute") { execute() }
         numCommandsPendingExecution = 0
         executeGraphTimer.foreach(_.reset())
       }
@@ -479,12 +517,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // Send GarbageCollect messages if needed.
     numCommandsPendingGc += 1
     if (numCommandsPendingGc % options.garbageCollectEveryNCommands == 0) {
-      garbageCollector.send(
-        GarbageCollectorInbound().withGarbageCollect(
-          GarbageCollect(replicaIndex = index,
-                         frontier = committedVertices.getWatermark())
+      timed("Commit/sendGarbageCollect") {
+        garbageCollector.send(
+          GarbageCollectorInbound().withGarbageCollect(
+            GarbageCollect(replicaIndex = index,
+                           frontier = committedVertices.getWatermark())
+          )
         )
-      )
+      }
       numCommandsPendingGc = 0
     }
   }
