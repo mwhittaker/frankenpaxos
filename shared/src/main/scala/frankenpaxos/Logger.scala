@@ -38,28 +38,28 @@ abstract class Logger(logLevel: LogLevel) {
     fatalImpl(message)
   }
 
-  def error(message: String): Unit = {
+  def error(message: => String): Unit = {
     logLevel match {
       case LogDebug | LogInfo | LogWarn | LogError => errorImpl(message)
       case LogFatal                                =>
     }
   }
 
-  def warn(message: String): Unit = {
+  def warn(message: => String): Unit = {
     logLevel match {
       case LogDebug | LogInfo | LogWarn => warnImpl(message)
       case LogError | LogFatal          =>
     }
   }
 
-  def info(message: String): Unit = {
+  def info(message: => String): Unit = {
     logLevel match {
       case LogDebug | LogInfo            => infoImpl(message)
       case LogWarn | LogError | LogFatal =>
     }
   }
 
-  def debug(message: String): Unit = {
+  def debug(message: => String): Unit = {
     logLevel match {
       case LogDebug                                => debugImpl(message)
       case LogInfo | LogWarn | LogError | LogFatal =>
