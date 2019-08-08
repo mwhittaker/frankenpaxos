@@ -27,13 +27,19 @@ object DepServiceNodeInboundSerializer
 case class DepServiceNodeOptions(
     // A dependency service node garbage collects its conflict index every
     // `garbageCollectEveryNCommands` commands that it receives.
-    garbageCollectEveryNCommands: Int
+    garbageCollectEveryNCommands: Int,
+    // If true, the dependency service node records how long various things
+    // take to do and reports them using the
+    // `simple_bpaxos_dep_service_node_requests_latency` metric.
+    // DO_NOT_SUBMIT(mwhittaker): Add flags to executables and python scripts.
+    measureLatencies: Boolean
 )
 
 @JSExportAll
 object DepServiceNodeOptions {
   val default = DepServiceNodeOptions(
-    garbageCollectEveryNCommands = 100
+    garbageCollectEveryNCommands = 100,
+    measureLatencies = true
   )
 }
 
@@ -71,6 +77,12 @@ class DepServiceNodeMetrics(collectors: Collectors) {
         "computes for a command. This is the number of dependencies that " +
         "cannot be represented compactly."
     )
+    .register()
+
+  val garbageCollectionTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_dep_service_node_garbage_collection_total")
+    .help("Total number of garbage collections performed.")
     .register()
 }
 
@@ -117,26 +129,45 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var numCommandsPendingGc: Int = 0
 
+  // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    if (options.measureLatencies) {
+      val startNanos = System.nanoTime
+      val x = e
+      val stopNanos = System.nanoTime
+      metrics.requestsLatency
+        .labels(label)
+        .observe((stopNanos - startNanos).toDouble / 1000000)
+      x
+    } else {
+      e
+    }
+  }
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
       src: Transport#Address,
       inbound: DepServiceNodeInbound
   ): Unit = {
     import DepServiceNodeInbound.Request
-    val startNanos = System.nanoTime
+
     val label = inbound.request match {
-      case Request.DependencyRequest(r) =>
-        handleDependencyRequest(src, r)
+      case Request.DependencyRequest(_) =>
         "DependencyRequest"
       case Request.Empty => {
         logger.fatal("Empty DepServiceNodeInbound encountered.")
       }
     }
-    val stopNanos = System.nanoTime
-    metrics.requestsTotal.labels(label).inc()
-    metrics.requestsLatency
-      .labels(label)
-      .observe((stopNanos - startNanos).toDouble / 1000000)
+
+    timed(label) {
+      inbound.request match {
+        case Request.DependencyRequest(r) =>
+          handleDependencyRequest(src, r)
+        case Request.Empty => {
+          logger.fatal("Empty DepServiceNodeInbound encountered.")
+        }
+      }
+    }
   }
 
   private def handleDependencyRequest(
@@ -145,25 +176,36 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     val vertexId = dependencyRequest.vertexId
     val command = dependencyRequest.command.command.toByteArray
-    val dependencies = conflictIndex
-      .getConflicts(command)
-      .diff(VertexIdPrefixSet(config.leaderAddresses.size, Set(vertexId)))
+    var dependencies = timed("DependencyRequest/getConflicts") {
+      conflictIndex
+        .getConflicts(command)
+    }
+    dependencies = timed("DependencyRequest/diff") {
+      dependencies.diff(
+        VertexIdPrefixSet(config.leaderAddresses.size, Set(vertexId))
+      )
+    }
     conflictIndex.put(vertexId, command)
     metrics.dependencies.observe(dependencies.size)
     metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
 
-    val leader = chan[Leader[Transport]](src, Leader.serializer)
-    leader.send(
-      LeaderInbound().withDependencyReply(
-        DependencyReply(vertexId = dependencyRequest.vertexId,
-                        depServiceNodeIndex = index,
-                        dependencies = dependencies.toProto())
+    timed("DependencyRequest/send") {
+      val leader = chan[Leader[Transport]](src, Leader.serializer)
+      leader.send(
+        LeaderInbound().withDependencyReply(
+          DependencyReply(vertexId = dependencyRequest.vertexId,
+                          depServiceNodeIndex = index,
+                          dependencies = dependencies.toProto())
+        )
       )
-    )
+    }
 
     numCommandsPendingGc += 1
     if (numCommandsPendingGc % options.garbageCollectEveryNCommands == 0) {
-      conflictIndex.garbageCollect()
+      timed("DependencyRequest/garbageCollect") {
+        conflictIndex.garbageCollect()
+      }
+      metrics.garbageCollectionTotal.inc()
       numCommandsPendingGc = 0
     }
   }
