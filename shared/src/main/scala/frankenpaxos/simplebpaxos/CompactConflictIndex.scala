@@ -10,23 +10,20 @@ import scalatags.Text.all._
 class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
   private val factory = VertexIdPrefixSet.factory(numLeaders)
 
-  private var newConflictIndex = stateMachine.conflictIndex[VertexId]()
-  private var newWatermark = mutable.Buffer.fill(numLeaders)(0)
+  @JSExport
+  protected var newConflictIndex = stateMachine.conflictIndex[VertexId]()
 
-  private var oldConflictIndex = stateMachine.conflictIndex[VertexId]()
-  private var oldWatermark = mutable.Buffer.fill(numLeaders)(0)
+  @JSExport
+  protected var newWatermark = mutable.Buffer.fill(numLeaders)(0)
 
-  private var gcWatermark = mutable.Buffer.fill(numLeaders)(0)
+  @JSExport
+  protected var oldConflictIndex = stateMachine.conflictIndex[VertexId]()
 
-  def toHtml(): Frag = {
-    div(
-      div("newConflictIndex = ", newConflictIndex.toString),
-      div("newWatermark = ", newWatermark.toString),
-      div("oldConflictIndex = ", oldConflictIndex.toString),
-      div("oldWatermark = ", oldWatermark.toString),
-      div("gcWatermark = ", gcWatermark.toString)
-    )
-  }
+  @JSExport
+  protected var oldWatermark = mutable.Buffer.fill(numLeaders)(0)
+
+  @JSExport
+  protected var gcWatermark = mutable.Buffer.fill(numLeaders)(0)
 
   def put(vertexId: VertexId, command: Array[Byte]): Unit = {
     newConflictIndex.put(vertexId, command)

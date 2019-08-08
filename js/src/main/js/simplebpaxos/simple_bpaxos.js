@@ -357,9 +357,28 @@ let dep_node_info = {
     <div>
       <div>
         conflictIndex =
-        <div v-html="node.actor.conflictIndex.toHtml()">
-        {{node.actor.conflictIndex.toHtml()}}
-        </div>
+        <fp-object>
+          <fp-field
+            :name="'newConflictIndex'"
+            :value="node.actor.conflictIndex.newConflictIndex">
+          </fp-field>
+          <fp-field
+            :name="'newWatermark'"
+            :value="node.actor.conflictIndex.newWatermark">
+          </fp-field>
+          <fp-field
+            :name="'oldConflictIndex'"
+            :value="node.actor.conflictIndex.oldConflictIndex">
+          </fp-field>
+          <fp-field
+            :name="'oldWatermark'"
+            :value="node.actor.conflictIndex.oldWatermark">
+          </fp-field>
+          <fp-field
+            :name="'gcWatermark'"
+            :value="node.actor.conflictIndex.gcWatermark">
+          </fp-field>
+        </fp-object>
       </div>
       <div>numCommandsPendingGc = {{node.actor.numCommandsPendingGc}}</div>
     </div>
