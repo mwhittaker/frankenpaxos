@@ -203,7 +203,7 @@ class SimpleBPaxosNet(object):
             ],
             'garbageCollectorAddress': [
                 {'host': e.host.ip(), 'port': e.port}
-                for e in self.replicas()
+                for e in self.garbage_collectors()
             ],
         }
 
