@@ -100,7 +100,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   private val index = config.acceptorAddresses.indexOf(address)
 
   // The state of every vertex.
-  val states = mutable.Map[VertexId, State]()
+  val states = new VertexIdBufferMap[State](config.leaderAddresses.size)
 
   // The garbage collection watermark. If n is the number of leaders, then
   // gcQuorumWatermarkVector.watermark() is a vector of length n. Say the ith
@@ -168,10 +168,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    val state = states.getOrElse(
-      phase1a.vertexId,
-      State(round = -1, voteRound = -1, voteValue = None)
-    )
+    val state = states
+      .get(phase1a.vertexId)
+      .getOrElse(State(round = -1, voteRound = -1, voteValue = None))
 
     // Ignore messages from previous rounds. Note that we have < instead of <=
     // here. This is critical for liveness. If the proposer re-sends its
@@ -191,7 +190,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Bump our round and send the proposer our vote round and vote value.
-    states(phase1a.vertexId) = state.copy(round = phase1a.round)
+    states.put(phase1a.vertexId, state.copy(round = phase1a.round))
     proposer.send(
       ProposerInbound().withPhase1B(
         Phase1b(
@@ -221,10 +220,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    val state = states.getOrElse(
-      phase2a.vertexId,
-      State(round = -1, voteRound = -1, voteValue = None)
-    )
+    val state = states
+      .get(phase2a.vertexId)
+      .getOrElse(State(round = -1, voteRound = -1, voteValue = None))
 
     // Ignore messages from previous rounds. Note that we have < instead of <=
     // here. This is typical for phase 2, since an acceptor will often vote for
@@ -246,11 +244,12 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Update our state and send back an ack to the proposer.
-    states(phase2a.vertexId) = state.copy(
-      round = phase2a.round,
-      voteRound = phase2a.round,
-      voteValue = Some(fromProto(phase2a.voteValue))
-    )
+    states.put(phase2a.vertexId,
+               state.copy(
+                 round = phase2a.round,
+                 voteRound = phase2a.round,
+                 voteValue = Some(fromProto(phase2a.voteValue))
+               ))
     proposer.send(
       ProposerInbound().withPhase2B(
         Phase2b(vertexId = phase2a.vertexId,
@@ -272,8 +271,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     gcWatermark = gcQuorumWatermarkVector.watermark(quorumSize = config.f + 1)
 
     // Garbage collect all entries lower than the watermark.
-    states.retain({
-      case (vertexId, _) => vertexId.id >= gcWatermark(vertexId.leaderIndex)
-    })
+    states.garbageCollect(gcWatermark)
   }
 }
