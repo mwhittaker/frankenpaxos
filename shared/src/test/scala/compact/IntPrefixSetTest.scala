@@ -9,16 +9,18 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
   implicit override val generatorDrivenConfig =
     PropertyCheckConfiguration(minSuccessful = 2500)
 
-  case class Params(lhs: Set[Int], rhs: Set[Int])
+  case class OneParams(set: Set[Int])
+  case class TwoParams(lhs: Set[Int], rhs: Set[Int])
 
-  val gen = for {
-    lhsWatermark <- Gen.chooseNum(0, 100)
-    lhsValues <- Gen.containerOf[Set, Int](Gen.choose(0, 100))
-    rhsWatermark <- Gen.chooseNum(0, 100)
-    rhsValues <- Gen.containerOf[Set, Int](Gen.choose(0, 100))
-  } yield
-    Params((0 until lhsWatermark).toSet ++ lhsValues,
-           (0 until rhsWatermark).toSet ++ rhsValues)
+  val oneGen = for {
+    watermark <- Gen.chooseNum(0, 100)
+    values <- Gen.containerOf[Set, Int](Gen.choose(0, 100))
+  } yield OneParams((0 until watermark).toSet ++ values)
+
+  val twoGen = for {
+    lhs <- oneGen
+    rhs <- oneGen
+  } yield TwoParams(lhs.set, rhs.set)
 
   "An IntPrefixSet" should "add 0 correctly" in {
     val prefixSet = IntPrefixSet()
@@ -136,8 +138,8 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
   }
 
   it should "union random sets correctly" in {
-    forAll(gen) { (params: Params) =>
-      val Params(lhs, rhs) = params
+    forAll(twoGen) { (params: TwoParams) =>
+      val TwoParams(lhs, rhs) = params
       val lhsPrefixSet = IntPrefixSet(lhs)
       val rhsPrefixSet = IntPrefixSet(rhs)
       val union = lhsPrefixSet.union(rhsPrefixSet)
@@ -181,8 +183,8 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
   }
 
   it should "diff random sets correctly" in {
-    forAll(gen) { (params: Params) =>
-      val Params(lhs, rhs) = params
+    forAll(twoGen) { (params: TwoParams) =>
+      val TwoParams(lhs, rhs) = params
       val lhsPrefixSet = IntPrefixSet(lhs)
       val rhsPrefixSet = IntPrefixSet(rhs)
       val diff = lhsPrefixSet.diff(rhsPrefixSet)
@@ -191,8 +193,8 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
   }
 
   it should "addAll random sets correctly" in {
-    forAll(gen) { (params: Params) =>
-      val Params(lhs, rhs) = params
+    forAll(twoGen) { (params: TwoParams) =>
+      val TwoParams(lhs, rhs) = params
       val lhsPrefixSet = IntPrefixSet(lhs)
       val rhsPrefixSet = IntPrefixSet(rhs)
       lhsPrefixSet.addAll(rhsPrefixSet)
@@ -201,12 +203,26 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
   }
 
   it should "subtractAll random sets correctly" in {
-    forAll(gen) { (params: Params) =>
-      val Params(lhs, rhs) = params
+    forAll(twoGen) { (params: TwoParams) =>
+      val TwoParams(lhs, rhs) = params
       val lhsPrefixSet = IntPrefixSet(lhs)
       val rhsPrefixSet = IntPrefixSet(rhs)
       lhsPrefixSet.subtractAll(rhsPrefixSet)
       lhsPrefixSet.materialize() shouldBe lhs.diff(rhs)
+    }
+  }
+
+  it should "subtractOne random sets correctly" in {
+    val gen = for {
+      set <- oneGen
+      x <- Gen.chooseNum(0, 100)
+    } yield (set.set, x)
+
+    forAll(gen) { (params: (Set[Int], Int)) =>
+      val (set, x) = params
+      val prefixSet = IntPrefixSet(set)
+      prefixSet.subtractOne(x)
+      prefixSet.materialize() shouldBe set - x
     }
   }
 

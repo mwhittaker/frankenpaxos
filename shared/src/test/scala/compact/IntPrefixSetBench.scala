@@ -221,4 +221,38 @@ object IntPrefixSetBenchmark extends Bench.ForkedTime {
       }
     }
   }
+
+  performance of "subtractOne" in {
+    case class Params(
+        set: Array[Byte],
+        x: Int,
+        numSubtractOnes: Int
+    )
+
+    val params =
+      for {
+        set <- Gen.enumeration("lhs")(
+          (0, 0, 0),
+          (20, 0, 0),
+          (100, 0, 0)
+        )
+        x <- Gen.enumeration("rhs")(0, 10, 50)
+        numSubtractOnes <- Gen.enumeration("numSubtractOnes")(100000)
+      } yield
+        Params(
+          IntPrefixSet(set._1, (set._2 until set._3).toSet).toProto.toByteArray,
+          x,
+          numSubtractOnes
+        )
+
+    using(params) config (
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
+    ) in { params =>
+      val set = IntPrefixSet.fromProto(IntPrefixSetProto.parseFrom(params.set))
+      for (_ <- 0 until params.numSubtractOnes) {
+        set.subtractOne(params.x)
+      }
+    }
+  }
 }

@@ -217,6 +217,18 @@ class IntPrefixSet private (
     this
   }
 
+  override def subtractOne(x: Int): this.type = {
+    if (x >= watermark) {
+      values -= x
+    } else {
+      for (i <- x + 1 until watermark) {
+        values += i
+      }
+      watermark = x
+    }
+    this
+  }
+
   override def size: Int = watermark + values.size
 
   override def uncompactedSize: Int = values.size

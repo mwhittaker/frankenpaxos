@@ -60,6 +60,11 @@ class InstancePrefixSet private (
     this
   }
 
+  override def subtractOne(instance: Instance): this.type = {
+    intPrefixSets(instance.replicaIndex).subtractOne(instance.instanceNumber)
+    this
+  }
+
   override def size: Int = intPrefixSets.map(_.size).sum
 
   override def uncompactedSize: Int = intPrefixSets.map(_.uncompactedSize).sum

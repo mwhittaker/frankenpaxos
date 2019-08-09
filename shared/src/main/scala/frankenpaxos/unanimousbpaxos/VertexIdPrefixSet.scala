@@ -60,6 +60,11 @@ class VertexIdPrefixSet private (
     this
   }
 
+  override def subtractOne(vertexId: VertexId): this.type = {
+    intPrefixSets(vertexId.leaderIndex).subtractOne(vertexId.id)
+    this
+  }
+
   override def size: Int = intPrefixSets.map(_.size).sum
 
   override def uncompactedSize: Int = intPrefixSets.map(_.uncompactedSize).sum

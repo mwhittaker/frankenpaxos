@@ -44,6 +44,9 @@ trait CompactSet[Self <: CompactSet[Self]] {
   // Compute the set difference of two compact sets.
   def subtractAll(other: Self): this.type
 
+  // Remove an element from the set.
+  def subtractOne(x: T): this.type
+
   // Returns the number of elements in the set, even if some of these elements
   // are compacted.
   def size: Int

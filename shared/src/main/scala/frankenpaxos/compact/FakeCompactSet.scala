@@ -32,6 +32,10 @@ class FakeCompactSet[A](initialValues: Set[A] = Set[A]())
     values ++= other.values
     this
   }
+  override def subtractOne(x: A): this.type = {
+    values -= x
+    this
+  }
   override def size: Int = values.size
   override def uncompactedSize: Int = values.size
   override def subset(): FakeCompactSet[A] = new FakeCompactSet(values.toSet)
