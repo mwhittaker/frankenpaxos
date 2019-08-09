@@ -24,6 +24,14 @@ class FakeCompactSet[A](initialValues: Set[A] = Set[A]())
     new FakeCompactSet[A](values.union(other.values).toSet)
   override def diff(other: FakeCompactSet[A]): FakeCompactSet[A] =
     new FakeCompactSet[A](values.diff(other.values).toSet)
+  override def addAll(other: FakeCompactSet[A]): this.type = {
+    values ++= other.values
+    this
+  }
+  override def subtractAll(other: FakeCompactSet[A]): this.type = {
+    values ++= other.values
+    this
+  }
   override def size: Int = values.size
   override def uncompactedSize: Int = values.size
   override def subset(): FakeCompactSet[A] = new FakeCompactSet(values.toSet)

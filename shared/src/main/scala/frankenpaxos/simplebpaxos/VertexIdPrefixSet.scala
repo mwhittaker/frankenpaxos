@@ -22,22 +22,51 @@ object VertexIdPrefixSet {
       numLeaders: Int,
       vertexIds: Set[VertexId]
   ): VertexIdPrefixSet = {
-    val idsByLeader = vertexIds.groupBy(_.leaderIndex)
+    if (vertexIds.isEmpty) {
+      return new VertexIdPrefixSet(
+        numLeaders,
+        mutable.Buffer.fill(numLeaders)(IntPrefixSet())
+      )
+    }
+
+    val sets = mutable.Buffer.fill(numLeaders)(mutable.Set[Int]())
+    for (VertexId(leaderIndex, id) <- vertexIds) {
+      sets(leaderIndex).add(id)
+    }
     new VertexIdPrefixSet(
       numLeaders,
-      (0 until numLeaders)
-        .map(leaderId => idsByLeader.getOrElse(leaderId, Set[VertexId]()))
-        .map(vertexIds => vertexIds.map(_.id))
-        .map(IntPrefixSet(_))
-        .to[mutable.Buffer]
+      sets.map(IntPrefixSet.fromMutableSet(_))
     )
   }
 
   // Construct a VertexIdPrefixSet from a set of watermarks.
   @JSExport("apply")
   def apply(watermarks: Seq[Int]): VertexIdPrefixSet = {
-    new VertexIdPrefixSet(watermarks.size,
-                          watermarks.map(IntPrefixSet(_, Set[Int]())).toBuffer)
+    val intPrefixSets = mutable.Buffer[IntPrefixSet]()
+    for (watermark <- watermarks) {
+      intPrefixSets += IntPrefixSet.fromWatermark(watermark)
+    }
+    new VertexIdPrefixSet(watermarks.size, intPrefixSets)
+  }
+
+  // Construct a VertexIdPrefixSet from a set of watermarks and a set of
+  // VertexIds. It is assumed but not enforced that every vertex id in
+  // VertexIds is larger than the corresponding watermark.
+  def fromWatermarksAndSet(
+      watermarks: Seq[Int],
+      vertexIds: Set[VertexId]
+  ): VertexIdPrefixSet = {
+    val numLeaders = watermarks.size
+    val sets = mutable.Buffer.fill(numLeaders)(mutable.Set[Int]())
+    for (VertexId(leaderIndex, id) <- vertexIds) {
+      sets(leaderIndex).add(id)
+    }
+
+    val intPrefixSets = mutable.Buffer[IntPrefixSet]()
+    for ((watermark, set) <- watermarks.zip(sets)) {
+      intPrefixSets += IntPrefixSet.fromWatermarkAndMutableSet(watermark, set)
+    }
+    new VertexIdPrefixSet(watermarks.size, intPrefixSets)
   }
 
   // Construct a VertexIdPrefixSet from a proto produced by
@@ -99,6 +128,20 @@ class VertexIdPrefixSet private (
       for ((lhs, rhs) <- intPrefixSets.zip(other.intPrefixSets))
         yield lhs.diff(rhs)
     )
+  }
+
+  override def addAll(other: VertexIdPrefixSet): this.type = {
+    for ((lhs, rhs) <- intPrefixSets.zip(other.intPrefixSets)) {
+      lhs.addAll(rhs)
+    }
+    this
+  }
+
+  override def subtractAll(other: VertexIdPrefixSet): this.type = {
+    for ((lhs, rhs) <- intPrefixSets.zip(other.intPrefixSets)) {
+      lhs.subtractAll(rhs)
+    }
+    this
   }
 
   override def size: Int = intPrefixSets.map(_.size).sum

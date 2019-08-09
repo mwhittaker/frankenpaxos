@@ -22,7 +22,7 @@ class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
   protected var oldWatermark = mutable.Buffer.fill(numLeaders)(0)
 
   @JSExport
-  protected var gcWatermark = mutable.Buffer.fill(numLeaders)(0)
+  protected val gcWatermark = mutable.Buffer.fill(numLeaders)(0)
 
   def put(vertexId: VertexId, command: Array[Byte]): Unit = {
     newConflictIndex.put(vertexId, command)
@@ -31,13 +31,17 @@ class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
 
   def getConflicts(command: Array[Byte]): VertexIdPrefixSet = {
     factory
-      .fromSet(newConflictIndex.getConflicts(command))
-      .union(factory.fromSet(oldConflictIndex.getConflicts(command)))
-      .union(VertexIdPrefixSet(gcWatermark))
+      .fromSet(
+        newConflictIndex.getConflicts(command) ++
+          oldConflictIndex.getConflicts(command)
+      )
+      .addAll(VertexIdPrefixSet(gcWatermark))
   }
 
   def garbageCollect(): Unit = {
-    gcWatermark = pairwiseMaxWatermark(gcWatermark, oldWatermark)
+    for (i <- 0 until numLeaders) {
+      updateWatermark(gcWatermark, i, oldWatermark(i))
+    }
     oldConflictIndex = newConflictIndex
     oldWatermark = newWatermark
     newConflictIndex = stateMachine.conflictIndex[VertexId]()
@@ -50,12 +54,5 @@ class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
       value: Int
   ): Unit = {
     watermark(index) = Math.max(watermark(index), value)
-  }
-
-  private def pairwiseMaxWatermark(
-      lhs: mutable.Buffer[Int],
-      rhs: mutable.Buffer[Int]
-  ): mutable.Buffer[Int] = {
-    lhs.zip(rhs).map({ case (l, r) => Math.max(l, r) })
   }
 }

@@ -10,6 +10,8 @@ import org.scalatest.FlatSpec
 import org.scalatest.Matchers
 
 class CompactConflictIndexTest extends FlatSpec with Matchers {
+  // DO_NOT_SUBMIT(mwhittaker): Fix tests.
+
   // private def get(keys: String*): KeyValueStoreInput =
   //   KeyValueStoreInput().withGetRequest(GetRequest(keys))
   //

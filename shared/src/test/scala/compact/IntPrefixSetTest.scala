@@ -135,6 +135,20 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
     }
   }
 
+  it should "addAll random sets correctly" in {
+    val gen = for {
+      lhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
+      rhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
+    } yield (lhs, rhs)
+    forAll(gen) { (sets: (Set[Int], Set[Int])) =>
+      val (lhs, rhs) = sets
+      val lhsPrefixSet = IntPrefixSet(lhs)
+      val rhsPrefixSet = IntPrefixSet(rhs)
+      lhsPrefixSet.addAll(rhsPrefixSet)
+      lhsPrefixSet.materialize() shouldBe lhs.union(rhs)
+    }
+  }
+
   it should "diff disjoint sets correctly" in {
     val lhs = IntPrefixSet(Set(10, 20, 30))
     val rhs = IntPrefixSet(Set(0, 1, 2))

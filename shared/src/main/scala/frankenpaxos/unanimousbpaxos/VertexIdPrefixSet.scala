@@ -46,6 +46,20 @@ class VertexIdPrefixSet private (
     )
   }
 
+  override def addAll(other: VertexIdPrefixSet): this.type = {
+    for ((lhs, rhs) <- intPrefixSets.zip(other.intPrefixSets)) {
+      lhs.addAll(rhs)
+    }
+    this
+  }
+
+  override def subtractAll(other: VertexIdPrefixSet): this.type = {
+    for ((lhs, rhs) <- intPrefixSets.zip(other.intPrefixSets)) {
+      lhs.subtractAll(rhs)
+    }
+    this
+  }
+
   override def size: Int = intPrefixSets.map(_.size).sum
 
   override def uncompactedSize: Int = intPrefixSets.map(_.uncompactedSize).sum

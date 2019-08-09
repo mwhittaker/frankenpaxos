@@ -9,18 +9,33 @@ object IntPrefixSet {
   @JSExport("apply")
   def apply(): IntPrefixSet = new IntPrefixSet(0, mutable.Set())
 
+  // Construct an IntPrefixSet from a watermark.
+  def fromWatermark(watermark: Int): IntPrefixSet =
+    new IntPrefixSet(watermark, mutable.Set[Int]())
+
   // Construct an IntPrefixSet from a standard, uncompacted set.
   @JSExport("apply")
   def apply(values: Set[Int]): IntPrefixSet =
     new IntPrefixSet(0, values.to[mutable.Set])
 
-  // Construct an IntPrefixSet from a watermark and set.
+  // Construct an IntPrefixSet from a standard, uncompacted set.
   @JSExport("apply")
-  def apply(watermark: Int, values: Set[Int]): IntPrefixSet = {
-    require(watermark >= 0)
-    require(values.forall(_ >= watermark))
+  def fromMutableSet(values: mutable.Set[Int]): IntPrefixSet =
+    new IntPrefixSet(0, values)
+
+  // Construct an IntPrefixSet from a watermark and set. It is assumed, but not
+  // enforced, that every value in values is greater than or equal to watermark.
+  @JSExport("apply")
+  def apply(watermark: Int, values: Set[Int]): IntPrefixSet =
     new IntPrefixSet(watermark, values.to[mutable.Set])
-  }
+
+  // Construct an IntPrefixSet from a watermark and set. It is assumed, but not
+  // enforced, that every value in values is greater than or equal to watermark.
+  def fromWatermarkAndMutableSet(
+      watermark: Int,
+      values: mutable.Set[Int]
+  ): IntPrefixSet =
+    new IntPrefixSet(watermark, values)
 
   // Construct an IntPrefixSet from an IntPrefixSetProto. It is a precondition
   // that `proto` was generated using `IntPrefixSet.toProto`. You cannot pass
@@ -55,7 +70,7 @@ object IntPrefixSet {
 @JSExportAll
 class IntPrefixSet private (
     private var watermark: Int,
-    private val values: mutable.Set[Int]
+    private var values: mutable.Set[Int]
 ) extends CompactSet[IntPrefixSet] {
   override type T = Int
 
@@ -129,6 +144,47 @@ class IntPrefixSet private (
         values.filter(_ >= other.watermark) -- other.values
       )
     }
+  }
+
+  override def addAll(other: IntPrefixSet): this.type = {
+    // Through benchmarking, checking if various sets are empty actually speeds
+    // things up. I know, it's suprising.
+    if (values.isEmpty && other.values.isEmpty) {
+      watermark = Math.max(watermark, other.watermark)
+    } else if (!values.isEmpty && other.values.isEmpty) {
+      if (watermark >= other.watermark) {
+        // Do nothing.
+      } else {
+        watermark = other.watermark
+        values.retain(_ >= watermark)
+        compact()
+      }
+    } else if (values.isEmpty && !other.values.isEmpty) {
+      values = other.values.clone()
+      if (other.watermark >= watermark) {
+        watermark = other.watermark
+      } else {
+        values.retain(_ >= watermark)
+        compact()
+      }
+    } else if (!values.isEmpty && !other.values.isEmpty) {
+      if (watermark >= other.watermark) {
+        values ++= other.values.iterator.filter(_ >= watermark)
+        compact()
+      } else {
+        watermark = other.watermark
+        values.retain(_ >= other.watermark)
+        values ++= other.values
+        compact()
+      }
+    }
+
+    this
+  }
+
+  override def subtractAll(other: IntPrefixSet): this.type = {
+    // TODO(mwhittaker): Implement.
+    ???
   }
 
   override def size: Int = watermark + values.size
