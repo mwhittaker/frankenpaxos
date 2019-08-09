@@ -183,8 +183,38 @@ class IntPrefixSet private (
   }
 
   override def subtractAll(other: IntPrefixSet): this.type = {
-    // TODO(mwhittaker): Implement.
-    ???
+    if ((watermark == 0 && values.isEmpty) ||
+        (other.watermark == 0 && other.values.isEmpty)) {
+      return this
+    }
+
+    if (other.watermark == 0) {
+      val minOtherValue = other.values.min
+      if (minOtherValue >= watermark) {
+        values --= other.values
+      } else {
+        for (i <- minOtherValue + 1 until watermark) {
+          values += i
+        }
+        values --= other.values
+        watermark = minOtherValue
+      }
+    } else if (watermark == 0) {
+      values.retain(x => x >= other.watermark)
+      values --= other.values
+    } else if (other.watermark <= watermark) {
+      for (i <- other.watermark until watermark) {
+        values += i
+      }
+      values --= other.values
+      watermark = 0
+    } else {
+      values.retain(_ >= other.watermark)
+      values --= other.values
+      watermark = 0
+    }
+
+    this
   }
 
   override def size: Int = watermark + values.size

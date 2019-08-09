@@ -6,6 +6,20 @@ import org.scalatest.Matchers
 import org.scalatest.prop.PropertyChecks
 
 class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
+  implicit override val generatorDrivenConfig =
+    PropertyCheckConfiguration(minSuccessful = 2500)
+
+  case class Params(lhs: Set[Int], rhs: Set[Int])
+
+  val gen = for {
+    lhsWatermark <- Gen.chooseNum(0, 100)
+    lhsValues <- Gen.containerOf[Set, Int](Gen.choose(0, 100))
+    rhsWatermark <- Gen.chooseNum(0, 100)
+    rhsValues <- Gen.containerOf[Set, Int](Gen.choose(0, 100))
+  } yield
+    Params((0 until lhsWatermark).toSet ++ lhsValues,
+           (0 until rhsWatermark).toSet ++ rhsValues)
+
   "An IntPrefixSet" should "add 0 correctly" in {
     val prefixSet = IntPrefixSet()
     prefixSet.add(0)
@@ -122,30 +136,12 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
   }
 
   it should "union random sets correctly" in {
-    val gen = for {
-      lhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
-      rhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
-    } yield (lhs, rhs)
-    forAll(gen) { (sets: (Set[Int], Set[Int])) =>
-      val (lhs, rhs) = sets
+    forAll(gen) { (params: Params) =>
+      val Params(lhs, rhs) = params
       val lhsPrefixSet = IntPrefixSet(lhs)
       val rhsPrefixSet = IntPrefixSet(rhs)
       val union = lhsPrefixSet.union(rhsPrefixSet)
       union.materialize() shouldBe lhs.union(rhs)
-    }
-  }
-
-  it should "addAll random sets correctly" in {
-    val gen = for {
-      lhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
-      rhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
-    } yield (lhs, rhs)
-    forAll(gen) { (sets: (Set[Int], Set[Int])) =>
-      val (lhs, rhs) = sets
-      val lhsPrefixSet = IntPrefixSet(lhs)
-      val rhsPrefixSet = IntPrefixSet(rhs)
-      lhsPrefixSet.addAll(rhsPrefixSet)
-      lhsPrefixSet.materialize() shouldBe lhs.union(rhs)
     }
   }
 
@@ -185,16 +181,32 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
   }
 
   it should "diff random sets correctly" in {
-    val gen = for {
-      lhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
-      rhs <- Gen.containerOf[Set, Int](Gen.choose(0, 1000000))
-    } yield (lhs, rhs)
-    forAll(gen) { (sets: (Set[Int], Set[Int])) =>
-      val (lhs, rhs) = sets
+    forAll(gen) { (params: Params) =>
+      val Params(lhs, rhs) = params
       val lhsPrefixSet = IntPrefixSet(lhs)
       val rhsPrefixSet = IntPrefixSet(rhs)
       val diff = lhsPrefixSet.diff(rhsPrefixSet)
       diff.materialize() shouldBe lhs.diff(rhs)
+    }
+  }
+
+  it should "addAll random sets correctly" in {
+    forAll(gen) { (params: Params) =>
+      val Params(lhs, rhs) = params
+      val lhsPrefixSet = IntPrefixSet(lhs)
+      val rhsPrefixSet = IntPrefixSet(rhs)
+      lhsPrefixSet.addAll(rhsPrefixSet)
+      lhsPrefixSet.materialize() shouldBe lhs.union(rhs)
+    }
+  }
+
+  it should "subtractAll random sets correctly" in {
+    forAll(gen) { (params: Params) =>
+      val Params(lhs, rhs) = params
+      val lhsPrefixSet = IntPrefixSet(lhs)
+      val rhsPrefixSet = IntPrefixSet(rhs)
+      lhsPrefixSet.subtractAll(rhsPrefixSet)
+      lhsPrefixSet.materialize() shouldBe lhs.diff(rhs)
     }
   }
 

@@ -3,9 +3,91 @@ package frankenpaxos.compact
 import org.scalameter.api._
 import org.scalameter.picklers.Implicits._
 import org.scalameter.picklers.noPickler._
+import scala.collection.mutable
 
 object IntPrefixSetBenchmark extends Bench.ForkedTime {
   override def aggregator: Aggregator[Double] = Aggregator.average
+
+  performance of "Set addition" in {
+    case class Params(numAdd: Int)
+
+    val params = for (numAdd <- Gen.enumeration("numAdd")(100000))
+      yield Params(numAdd)
+
+    using(params) config (
+      exec.independentSamples -> 3,
+      exec.benchRuns -> 10,
+    ) in { params =>
+      for (i <- 0 until params.numAdd) {
+        Set() ++ Set()
+      }
+    }
+  }
+
+  performance of "Set subtraction" in {
+    case class Params(numSub: Int)
+
+    val params = for (numSub <- Gen.enumeration("numSub")(100000))
+      yield Params(numSub)
+
+    using(params) config (
+      exec.independentSamples -> 3,
+      exec.benchRuns -> 10,
+    ) in { params =>
+      for (i <- 0 until params.numSub) {
+        Set() -- Set()
+      }
+    }
+  }
+
+  performance of "range" in {
+    case class Params(
+        low: Int,
+        high: Int,
+        n: Int
+    )
+
+    val params = for {
+      low <- Gen.enumeration("low")(0)
+      high <- Gen.enumeration("high")(100)
+      n <- Gen.enumeration("n")(100000)
+    } yield Params(low, high, n)
+
+    using(params) config (
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
+    ) in { params =>
+      for (_ <- 0 until params.n) {
+        Set() ++ (params.low until params.high)
+      }
+    }
+  }
+
+  performance of "for loop add" in {
+    case class Params(
+        low: Int,
+        high: Int,
+        n: Int
+    )
+
+    val params = for {
+      low <- Gen.enumeration("low")(0)
+      high <- Gen.enumeration("high")(100)
+      n <- Gen.enumeration("n")(100000)
+    } yield Params(low, high, n)
+
+    using(params) config (
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
+    ) in { params =>
+      for (_ <- 0 until params.n) {
+        val set = mutable.Set[Int]()
+        for (j <- params.low until params.high) {
+          set += j
+        }
+      }
+    }
+  }
 
   performance of "add" in {
     case class Params(numAdd: Int)
@@ -20,45 +102,6 @@ object IntPrefixSetBenchmark extends Bench.ForkedTime {
       val prefixSet = IntPrefixSet()
       for (i <- 0 until params.numAdd) {
         prefixSet.add(i)
-      }
-    }
-  }
-
-  performance of "diff" in {
-    case class Params(
-        lhs: Array[Byte],
-        rhs: Array[Byte],
-        numDiffs: Int
-    )
-
-    val params =
-      for {
-        lhs <- Gen.enumeration("lhs")(
-          (0, Set[Int]()),
-          (10, Set[Int]()),
-          (1000, Set[Int]())
-        )
-        rhs <- Gen.enumeration("rhs")(
-          (0, Set[Int]()),
-          (20, Set[Int]()),
-          (1500, Set[Int]())
-        )
-        numDiffs <- Gen.enumeration("numDiffs")(100000)
-      } yield
-        Params(
-          IntPrefixSet(lhs._1, lhs._2).toProto.toByteArray,
-          IntPrefixSet(rhs._1, rhs._2).toProto.toByteArray,
-          numDiffs
-        )
-
-    using(params) config (
-      exec.independentSamples -> 1,
-      exec.benchRuns -> 1,
-    ) in { params =>
-      val lhs = IntPrefixSet.fromProto(IntPrefixSetProto.parseFrom(params.lhs))
-      val rhs = IntPrefixSet.fromProto(IntPrefixSetProto.parseFrom(params.rhs))
-      for (_ <- 0 until params.numDiffs) {
-        lhs.diff(rhs)
       }
     }
   }
@@ -102,33 +145,69 @@ object IntPrefixSetBenchmark extends Bench.ForkedTime {
     }
   }
 
-  performance of "addAll" in {
+  performance of "diff" in {
     case class Params(
         lhs: Array[Byte],
         rhs: Array[Byte],
-        numAddAlls: Int
+        numDiffs: Int
+    )
+
+    val params =
+      for {
+        lhs <- Gen.enumeration("lhs")(
+          (0, Set[Int]()),
+          (10, Set[Int]()),
+          (100, Set[Int]())
+        )
+        rhs <- Gen.enumeration("rhs")(
+          (0, Set[Int]()),
+          (20, Set[Int]()),
+          (150, Set[Int]())
+        )
+        numDiffs <- Gen.enumeration("numDiffs")(100000)
+      } yield
+        Params(
+          IntPrefixSet(lhs._1, lhs._2).toProto.toByteArray,
+          IntPrefixSet(rhs._1, rhs._2).toProto.toByteArray,
+          numDiffs
+        )
+
+    using(params) config (
+      exec.independentSamples -> 3,
+      exec.benchRuns -> 10,
+    ) in { params =>
+      val lhs = IntPrefixSet.fromProto(IntPrefixSetProto.parseFrom(params.lhs))
+      val rhs = IntPrefixSet.fromProto(IntPrefixSetProto.parseFrom(params.rhs))
+      for (_ <- 0 until params.numDiffs) {
+        lhs.diff(rhs)
+      }
+    }
+  }
+
+  performance of "subtractAll" in {
+    case class Params(
+        lhs: Array[Byte],
+        rhs: Array[Byte],
+        numSubtractAlls: Int
     )
 
     val params =
       for {
         lhs <- Gen.enumeration("lhs")(
           (0, 0, 0),
-          (1000, 0, 0),
-          (0, 100, 200),
-          (1000, 1600, 1700)
+          (20, 0, 0),
+          (100, 0, 0)
         )
         rhs <- Gen.enumeration("rhs")(
           (0, 0, 0),
-          (1500, 0, 0),
-          (0, 150, 250),
-          (1500, 1650, 1750)
+          (10, 0, 0)
         )
-        numAddAlls <- Gen.enumeration("numAddAlls")(100000)
+        numSubtractAlls <- Gen.enumeration("numSubtractAlls")(100000)
       } yield
         Params(
           IntPrefixSet(lhs._1, (lhs._2 until lhs._3).toSet).toProto.toByteArray,
           IntPrefixSet(rhs._1, (rhs._2 until rhs._3).toSet).toProto.toByteArray,
-          numAddAlls
+          numSubtractAlls
         )
 
     using(params) config (
@@ -137,8 +216,8 @@ object IntPrefixSetBenchmark extends Bench.ForkedTime {
     ) in { params =>
       val lhs = IntPrefixSet.fromProto(IntPrefixSetProto.parseFrom(params.lhs))
       val rhs = IntPrefixSet.fromProto(IntPrefixSetProto.parseFrom(params.rhs))
-      for (_ <- 0 until params.numAddAlls) {
-        lhs.addAll(rhs)
+      for (_ <- 0 until params.numSubtractAlls) {
+        lhs.subtractAll(rhs)
       }
     }
   }
