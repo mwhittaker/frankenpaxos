@@ -62,6 +62,8 @@ object DepServiceNodeMain extends App {
       .optionAction((x, o) => o.copy(garbageCollectEveryNCommands = x))
     opt[Boolean]("options.measureLatencies")
       .optionAction((x, o) => o.copy(measureLatencies = x))
+    opt[Boolean]("options.unsafeReturnNoDependencies")
+      .optionAction((x, o) => o.copy(unsafeReturnNoDependencies = x))
   }
 
   // Parse flags.

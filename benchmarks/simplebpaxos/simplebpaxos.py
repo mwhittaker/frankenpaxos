@@ -48,6 +48,7 @@ class LeaderOptions(NamedTuple):
 class DepServiceNodeOptions(NamedTuple):
     garbage_collect_every_n_commands: int = 10000
     measure_latencies: bool = True
+    unsafe_return_no_dependencies: bool = False
 
 
 class AcceptorOptions(NamedTuple):
@@ -479,6 +480,9 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                 .garbage_collect_every_n_commands),
                     '--options.measureLatencies',
                         str(input.dep_service_node_options.measure_latencies),
+                    '--options.unsafeReturnNoDependencies',
+                        str(input.dep_service_node_options
+                                 .unsafe_return_no_dependencies),
                 ],
             )
             if input.profiled:

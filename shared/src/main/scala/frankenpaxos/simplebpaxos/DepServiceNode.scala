@@ -30,14 +30,20 @@ case class DepServiceNodeOptions(
     // If true, the dependency service node records how long various things
     // take to do and reports them using the
     // `simple_bpaxos_dep_service_node_requests_latency` metric.
-    measureLatencies: Boolean
+    measureLatencies: Boolean,
+    // If `unsafeReturnNoDependencies` is true, dependency service nodes return
+    // no dependencies for every command. As the name suggests, this is unsafe
+    // and breaks the protocol. It should be used only for performance
+    // debugging and evaluation.
+    unsafeReturnNoDependencies: Boolean
 )
 
 @JSExportAll
 object DepServiceNodeOptions {
   val default = DepServiceNodeOptions(
     garbageCollectEveryNCommands = 100,
-    measureLatencies = true
+    measureLatencies = true,
+    unsafeReturnNoDependencies = false
   )
 }
 
@@ -173,6 +179,21 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       dependencyRequest: DependencyRequest
   ): Unit = {
+    if (options.unsafeReturnNoDependencies) {
+      val leader = chan[Leader[Transport]](src, Leader.serializer)
+      leader.send(
+        LeaderInbound().withDependencyReply(
+          DependencyReply(
+            vertexId = dependencyRequest.vertexId,
+            depServiceNodeIndex = index,
+            dependencies =
+              VertexIdPrefixSet(config.leaderAddresses.size).toProto()
+          )
+        )
+      )
+      return
+    }
+
     val vertexId = dependencyRequest.vertexId
     val command = dependencyRequest.command.command.toByteArray
     var dependencies = timed("DependencyRequest/computeDependencies") {
