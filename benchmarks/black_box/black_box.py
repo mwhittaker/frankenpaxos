@@ -12,6 +12,8 @@ import ast
 import yaml
 import json
 import shutil
+from skopt.space import Real, Integer
+from skopt import gp_minimize, dummy_minimize
 
 round_dict = {'CLASSIC_ROUND_ROBIN': 0, 'MIXED_ROUND_ROBIN': 1}
 thrifty_dict = {'NotThrifty': 0, 'Closest': 1, 'Random': 2}
@@ -100,8 +102,8 @@ def get_lower_bounds(user_params):
     return lower_bounds
 
 def get_upper_bounds(user_params):
-    upper_bounds_dict = {'f': 5, 'round_system_type': 0,
-            'timeout_seconds': user_params[user_param_to_index_dict['duration_seconds']] + 30,
+    upper_bounds_dict = {'f': 5, 'round_system_type': 1,
+            'timeout_seconds': user_params[user_param_to_index_dict['duration_seconds']] + 31,
             'wait_period_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
             'wait_stagger_ms': user_params[user_param_to_index_dict['duration_seconds']]*1000,
             'thrifty_system': 2,
@@ -182,7 +184,7 @@ def run_objective_function(x):
         objective_value = float(out_dict['stop_throughput_1s.p90'])
     shutil.rmtree(dir.path)
     analysis.append(new_x + [objective_value])
-    return objective_value
+    return -objective_value
 
 def print_parameters(input_tuple):
     parameters = ''
@@ -196,6 +198,18 @@ def print_user_parameters():
     for key, value in user_param_to_index_dict.items():
         parameters = parameters + key + ': ' + str(user_param_list[value]) + '\n'
     print(parameters)
+
+def get_scikit_optimize_dimensions():
+    lower_bounds = get_lower_bounds(user_param_list)
+    upper_bounds = get_upper_bounds(user_param_list)
+    dimensions = []
+
+    for i in range(len(lower_bounds)):
+        if i != protocol_param_to_index_dict['network_delay_alpha']:
+            dimensions.insert(i, Integer(lower_bounds[i], upper_bounds[i]))
+        else:
+            dimensions.insert(i, Real(lower_bounds[i], upper_bounds[i]))
+    return dimensions
 
 def write_data_frame():
     reversed_param_dict = {v: k for k, v in protocol_param_to_index_dict.items()}
@@ -220,9 +234,11 @@ dimension = len(lower_bounds)
 #print(objective_function(lower_bounds))
 #print(dimension, len(types))
 
-bb = rbfopt.RbfoptUserBlackBox(dimension, lower_bounds, upper_bounds, types, run_objective_function)
-settings = rbfopt.RbfoptSettings(max_evaluations=1)
-alg = rbfopt.RbfoptAlgorithm(settings, bb)
-print(alg.optimize())
+#bb = rbfopt.RbfoptUserBlackBox(dimension, lower_bounds, upper_bounds, types, run_objective_function)
+#settings = rbfopt.RbfoptSettings(max_evaluations=1)
+#alg = rbfopt.RbfoptAlgorithm(settings, bb)
+#print(alg.optimize())
+res = dummy_minimize(run_objective_function, get_scikit_optimize_dimensions(), n_calls=20)
+print(res)
 write_data_frame()
 #alg.optimize()
