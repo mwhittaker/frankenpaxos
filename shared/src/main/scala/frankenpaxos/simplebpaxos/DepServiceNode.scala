@@ -175,14 +175,10 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     val vertexId = dependencyRequest.vertexId
     val command = dependencyRequest.command.command.toByteArray
-    var dependencies = timed("DependencyRequest/getConflicts") {
-      conflictIndex
-        .getConflicts(command)
-    }
-    dependencies = timed("DependencyRequest/diff") {
-      dependencies.diff(
-        VertexIdPrefixSet(config.leaderAddresses.size, Set(vertexId))
-      )
+    var dependencies = timed("DependencyRequest/computeDependencies") {
+      val dependencies = conflictIndex.getConflicts(command)
+      dependencies.subtractOne(vertexId)
+      dependencies
     }
     conflictIndex.put(vertexId, command)
     metrics.dependencies.observe(dependencies.size)

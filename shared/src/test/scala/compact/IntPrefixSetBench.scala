@@ -15,8 +15,8 @@ object IntPrefixSetBenchmark extends Bench.ForkedTime {
       yield Params(numAdd)
 
     using(params) config (
-      exec.independentSamples -> 3,
-      exec.benchRuns -> 10,
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
     ) in { params =>
       for (i <- 0 until params.numAdd) {
         Set() ++ Set()
@@ -31,8 +31,8 @@ object IntPrefixSetBenchmark extends Bench.ForkedTime {
       yield Params(numSub)
 
     using(params) config (
-      exec.independentSamples -> 3,
-      exec.benchRuns -> 10,
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
     ) in { params =>
       for (i <- 0 until params.numSub) {
         Set() -- Set()
@@ -173,8 +173,8 @@ object IntPrefixSetBenchmark extends Bench.ForkedTime {
         )
 
     using(params) config (
-      exec.independentSamples -> 3,
-      exec.benchRuns -> 10,
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 1,
     ) in { params =>
       val lhs = IntPrefixSet.fromProto(IntPrefixSetProto.parseFrom(params.lhs))
       val rhs = IntPrefixSet.fromProto(IntPrefixSetProto.parseFrom(params.rhs))

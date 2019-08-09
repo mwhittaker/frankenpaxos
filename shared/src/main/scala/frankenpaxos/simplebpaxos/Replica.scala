@@ -140,6 +140,12 @@ class ReplicaMetrics(collectors: Collectors) {
     .name("simple_bpaxos_replica_uncommitted_dependencies")
     .help("The number of uncommitted dependencies that a command has.")
     .register()
+
+  val timerDependencies: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_replica_timer_dependencies")
+    .help("The number of timer dependencies that a command has.")
+    .register()
 }
 
 @JSExportAll
@@ -482,15 +488,21 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // timers for any uncommitted vertices on which we depend.
     recoverVertexTimers.get(commit.vertexId).foreach(_.stop())
     recoverVertexTimers -= commit.vertexId
+
     val uncommittedDependencies = timed("Commit/uncommittedDependencies") {
-      dependencies
-        .diff(committedVertices)
-        .materialize()
-        .filter(!recoverVertexTimers.contains(_))
+      dependencies.diff(committedVertices)
     }
-    metrics.uncommittedDependencies.observe(uncommittedDependencies.size)
+    val materialized = timed("Commit/materialize") {
+      uncommittedDependencies.materialize()
+    }
+    val timerDependencies = timed("Commit/timerDependencies") {
+      materialized.filter(!recoverVertexTimers.contains(_))
+    }
+    metrics.uncommittedDependencies.observe(materialized.size)
+    metrics.timerDependencies.observe(timerDependencies.size)
+
     timed("Commit/startTimers") {
-      for (v <- uncommittedDependencies) {
+      for (v <- timerDependencies) {
         recoverVertexTimers(v) = makeRecoverVertexTimer(v)
       }
     }
