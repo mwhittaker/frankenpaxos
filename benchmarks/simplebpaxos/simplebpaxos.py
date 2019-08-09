@@ -67,6 +67,7 @@ class ReplicaOptions(NamedTuple):
         datetime.timedelta(seconds=1)
     garbage_collect_every_n_commands: int = 10000
     measure_latencies: bool = True
+    unsafe_dont_recover: bool = False
 
 
 class GarbageCollectorOptions(NamedTuple):
@@ -558,6 +559,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                                 .garbage_collect_every_n_commands),
                     '--options.measureLatencies',
                         str(input.replica_options.measure_latencies),
+                    '--options.unsafeDontRecover',
+                        str(input.replica_options.unsafe_dont_recover),
                 ],
             )
             if input.profiled:

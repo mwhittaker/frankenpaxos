@@ -46,7 +46,11 @@ case class ReplicaOptions(
     garbageCollectEveryNCommands: Int,
     // If true, the replica records how long various things take to do and
     // reports them using the `simple_bpaxos_replica_requests_latency` metric.
-    measureLatencies: Boolean
+    measureLatencies: Boolean,
+    // If `unsafeDontRecover` is true, replicas don't make any attempt to
+    // recover vertices. This is not live and should only be used for
+    // performance debugging.
+    unsafeDontRecover: Boolean
 )
 
 @JSExportAll
@@ -58,7 +62,8 @@ object ReplicaOptions {
     executeGraphBatchSize = 1,
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
     garbageCollectEveryNCommands = 10000,
-    measureLatencies = true
+    measureLatencies = true,
+    unsafeDontRecover = false
   )
 }
 
@@ -484,26 +489,30 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     metrics.dependencies.observe(dependencies.size)
     metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
 
-    // Stop any recovery timer for the current vertex, and start recovery
-    // timers for any uncommitted vertices on which we depend.
-    recoverVertexTimers.get(commit.vertexId).foreach(_.stop())
-    recoverVertexTimers -= commit.vertexId
+    if (options.unsafeDontRecover) {
+      // Don't fuss with timers.
+    } else {
+      // Stop any recovery timer for the current vertex, and start recovery
+      // timers for any uncommitted vertices on which we depend.
+      recoverVertexTimers.get(commit.vertexId).foreach(_.stop())
+      recoverVertexTimers -= commit.vertexId
 
-    val uncommittedDependencies = timed("Commit/uncommittedDependencies") {
-      dependencies.diff(committedVertices)
-    }
-    val materialized = timed("Commit/materialize") {
-      uncommittedDependencies.materialize()
-    }
-    val timerDependencies = timed("Commit/timerDependencies") {
-      materialized.filter(!recoverVertexTimers.contains(_))
-    }
-    metrics.uncommittedDependencies.observe(materialized.size)
-    metrics.timerDependencies.observe(timerDependencies.size)
+      val uncommittedDependencies = timed("Commit/uncommittedDependencies") {
+        dependencies.diff(committedVertices)
+      }
+      val materialized = timed("Commit/materialize") {
+        uncommittedDependencies.materialize()
+      }
+      val timerDependencies = timed("Commit/timerDependencies") {
+        materialized.filter(!recoverVertexTimers.contains(_))
+      }
+      metrics.uncommittedDependencies.observe(materialized.size)
+      metrics.timerDependencies.observe(timerDependencies.size)
 
-    timed("Commit/startTimers") {
-      for (v <- timerDependencies) {
-        recoverVertexTimers(v) = makeRecoverVertexTimer(v)
+      timed("Commit/startTimers") {
+        for (v <- timerDependencies) {
+          recoverVertexTimers(v) = makeRecoverVertexTimer(v)
+        }
       }
     }
 

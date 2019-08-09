@@ -87,6 +87,8 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(garbageCollectEveryNCommands = x))
     opt[Boolean]("options.measureLatencies")
       .optionAction((x, o) => o.copy(measureLatencies = x))
+    opt[Boolean]("options.unsafeDontRecover")
+      .optionAction((x, o) => o.copy(unsafeDontRecover = x))
   }
 
   // Parse flags.
