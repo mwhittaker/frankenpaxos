@@ -23,7 +23,7 @@ object VertexIdPrefixSetBenchmark extends Bench.ForkedTime {
       } yield Params(numLeaders, numIdsPerLeader, numTrials)
 
     using(params) config (
-      exec.independentSamples -> 3,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 10,
     ) in { params =>
       val factory = VertexIdPrefixSet.factory(params.numLeaders)

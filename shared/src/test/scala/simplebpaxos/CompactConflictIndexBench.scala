@@ -37,7 +37,7 @@ object CompactConflictIndexBench extends Bench.ForkedTime {
       yield Params(numPut)
 
     using(params) config (
-      exec.independentSamples -> 5,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 1,
     ) in { params =>
       val conflictIndex =
@@ -55,7 +55,7 @@ object CompactConflictIndexBench extends Bench.ForkedTime {
       yield Params(numGc)
 
     using(params) config (
-      exec.independentSamples -> 5,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 1,
     ) in { params =>
       val conflictIndex =
@@ -73,7 +73,7 @@ object CompactConflictIndexBench extends Bench.ForkedTime {
       yield Params(numGet)
 
     using(params) config (
-      exec.independentSamples -> 5,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 10,
     ) in { params =>
       val conflictIndex =
@@ -97,7 +97,7 @@ object CompactConflictIndexBench extends Bench.ForkedTime {
       } yield Params(numPut, gcEvery)
 
     using(params) config (
-      exec.independentSamples -> 5,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 1,
     ) in { params =>
       val conflictIndex =
@@ -126,7 +126,7 @@ object CompactConflictIndexBench extends Bench.ForkedTime {
       } yield Params(numPut, gcEvery, numGet)
 
     using(params) config (
-      exec.independentSamples -> 2,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 1,
     ) in { params =>
       val conflictIndex =

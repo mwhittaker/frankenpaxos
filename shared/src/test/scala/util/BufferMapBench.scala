@@ -22,7 +22,7 @@ object BufferMapBench extends Bench.ForkedTime {
       } yield Params(n, growSize, numTrials)
 
     using(params) config (
-      exec.independentSamples -> 3,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 1,
     ) in { params =>
       for (_ <- 0 until params.numTrials) {
@@ -49,7 +49,7 @@ object BufferMapBench extends Bench.ForkedTime {
       } yield Params(n, growSize, numTrials)
 
     using(params) config (
-      exec.independentSamples -> 3,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 1,
     ) in { params =>
       for (_ <- 0 until params.numTrials) {
@@ -81,7 +81,7 @@ object BufferMapBench extends Bench.ForkedTime {
       } yield Params(n, gcEvery, growSize, numTrials)
 
     using(params) config (
-      exec.independentSamples -> 3,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 1,
     ) in { params =>
       for (_ <- 0 until params.numTrials) {

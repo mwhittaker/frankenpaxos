@@ -25,7 +25,7 @@ object BatchRemovalBenchmark extends Bench.ForkedTime {
     } yield Params(numInserted, numCollected, numTrials)
 
     using(params) config (
-      exec.independentSamples -> 3,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 1,
     ) in { params =>
       for (_ <- 0 until params.numTrials) {
@@ -52,7 +52,7 @@ object BatchRemovalBenchmark extends Bench.ForkedTime {
     } yield Params(numInserted, numCollected, numTrials)
 
     using(params) config (
-      exec.independentSamples -> 3,
+      exec.independentSamples -> 1,
       exec.benchRuns -> 1,
     ) in { params =>
       for (_ <- 0 until params.numTrials) {
