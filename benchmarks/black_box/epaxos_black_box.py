@@ -14,6 +14,7 @@ import json
 import shutil
 from skopt.space import Real, Integer
 from skopt import gp_minimize, dummy_minimize
+import datetime
 
 thrifty_dict = {'NotThrifty': 0, 'Closest': 1, 'Random': 2}
 user_param_to_index_dict = {'num_client_procs': 0, 'num_warmup_clients_per_proc': 1,
@@ -56,21 +57,21 @@ def parse_bb_input(param_list, user_param_list):
             profiled = user_param_list[user_param_to_index_dict['profiled']],
             monitored = user_param_list[user_param_to_index_dict['monitored']],
             prometheus_scrape_interval = datetime.timedelta(milliseconds=user_param_list[user_param_to_index_dict['prometheus_scrape_interval']]),
-            replica = ReplicaOptions()._replace(
+            replica_options = ReplicaOptions()._replace(
                 thrifty_system = thrifty_dict[param_list[protocol_param_to_index_dict['thrifty_system']]],
-                resend_pre_accepts_timer_period = datetime.timedelta(seconds=param_list[protocol_param_to_index_dict['resend_pre_accepts_timer_period']]),
-                default_to_slow_path_timer_period = datetime.timedelta(seconds=param_list[protocol_param_to_index_dict['default_to_slow_path_timer_period']]),
-                resend_accepts_timer_period = datetime.timedelta(seconds=param_list[protocol_param_to_index_dict['resend_prepares_timer_period']]),
-                resend_prepares_timer_period = datetime.timedelta(seconds=param_list[protocol_param_to_index_dict['resend_prepares_timer_period']]),
+                resend_pre_accepts_timer_period = datetime.timedelta(milliseconds=param_list[protocol_param_to_index_dict['resend_pre_accepts_timer_period']]),
+                default_to_slow_path_timer_period = datetime.timedelta(milliseconds=param_list[protocol_param_to_index_dict['default_to_slow_path_timer_period']]),
+                resend_accepts_timer_period = datetime.timedelta(milliseconds=param_list[protocol_param_to_index_dict['resend_prepares_timer_period']]),
+                resend_prepares_timer_period = datetime.timedelta(milliseconds=param_list[protocol_param_to_index_dict['resend_prepares_timer_period']]),
                 recover_instance_timer_min_period = datetime.timedelta(milliseconds=param_list[protocol_param_to_index_dict['recover_instance_timer_min_period']]),
                 recover_instance_timer_max_period = datetime.timedelta(milliseconds=param_list[protocol_param_to_index_dict['recover_instance_timer_max_period']]),
                 unsafe_skip_graph_execution = user_param_list[user_param_to_index_dict['unsafe_skip_graph_execution']],
                 execute_graph_batch_size = param_list[protocol_param_to_index_dict['execute_graph_batch_size']],
-                execute_graph_timer_period = datetime.timedelta(seconds=param_list[protocol_param_to_index_dict['execute_graph_timer_period']])),
+                execute_graph_timer_period = datetime.timedelta(milliseconds=param_list[protocol_param_to_index_dict['execute_graph_timer_period']])),
             replica_log_level = user_param_list[user_param_to_index_dict['replica_log_level']],
             replica_dependency_graph = dep_graph_dict[param_list[protocol_param_to_index_dict['replica_dependency_graph']]],
             client_options = ClientOptions()._replace(
-                repropose_period = param_list[protocol_param_to_index_dict['repropose_period']]),
+                repropose_period = datetime.timedelta(milliseconds=param_list[protocol_param_to_index_dict['repropose_period']])),
             client_log_level = user_param_list[user_param_to_index_dict['client_log_level']]
         )
     return [input_tuple] * num_runs
@@ -95,14 +96,14 @@ def get_lower_bounds(user_params):
 
 def get_upper_bounds(user_params):
     upper_bounds_dict = {'f': 5, 'thrifty_system': 2,
-            'resend_pre_accepts_timer_period': user_params[user_param_to_index_dict['duration']],
-            'default_to_slow_path_timer_period': user_params[user_param_to_index_dict['duration']],
-            'resend_accepts_timer_period': user_params[user_param_to_index_dict['duration']],
-            'resend_prepares_timer_period': user_params[user_param_to_index_dict['duration']],
-            'recover_instance_timer_min_period': user_params[user_param_to_index_dict['duration']],
-            'recover_instance_timer_max_period': user_params[user_param_to_index_dict['duration']],
+            'resend_pre_accepts_timer_period': user_params[user_param_to_index_dict['duration']]*1000,
+            'default_to_slow_path_timer_period': user_params[user_param_to_index_dict['duration']]*1000,
+            'resend_accepts_timer_period': user_params[user_param_to_index_dict['duration']]*1000,
+            'resend_prepares_timer_period': user_params[user_param_to_index_dict['duration']]*1000,
+            'recover_instance_timer_min_period': user_params[user_param_to_index_dict['duration']]*1000,
+            'recover_instance_timer_max_period': user_params[user_param_to_index_dict['duration']]*1000,
             'execute_graph_batch_size': 1000000,
-            'execute_graph_timer_period': user_params[user_param_to_index_dict['duration']],
+            'execute_graph_timer_period': user_params[user_param_to_index_dict['duration']]*1000,
             'repropose_period': user_params[user_param_to_index_dict['duration']],
             'replica_dependency_graph': 2
             }
@@ -115,7 +116,7 @@ class BBEPaxosSuite(EPaxosSuite):
     def __init__(self, user_params, param_list):
         self.user_params = user_params
         self.param_list = param_list
-        EPaxosSuite.__init__(self)
+        #EPaxosSuite.__init__(self)
 
     def args(self) -> Dict[Any, Any]:
         return vars(get_parser().parse_args())
