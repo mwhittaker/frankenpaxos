@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="sbt: io.prometheus:simpleclient_httpserver:0.6.0:jar">
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.ivy2/cache/io.prometheus/simpleclient_httpserver/bundles/simpleclient_httpserver-0.6.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.ivy2/cache/io.prometheus/simpleclient_httpserver/srcs/simpleclient_httpserver-0.6.0-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
