@@ -414,6 +414,16 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       resendPhase1as: Transport#Timer
   ) extends State
 
+  private val resendPhase1asTimer: Transport#Timer = timer(
+    "resendPhase1as",
+    options.resendPhase1asTimerPeriod,
+    () => {
+      sendPhase1as(thrifty = false)
+      resendPhase1asTimer.start()
+      metrics.resendPhase1asTotal.inc()
+    }
+  )
+
   // This leader has finished executing phase 1 and is now executing phase 2.
   @JSExportAll
   case class Phase2(
@@ -552,12 +562,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // client. For example, if command c1 sends command x with id 2 to a leader
   // and the leader later executes x yielding response y, then c1 maps to (2,
   // y) in the client table.
-  @JSExport
-  protected val clientTable =
-    new ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
-
-  @JSExport
-  protected val leaderStates = mutable.Map[Instance, LeaderState]()
+  //@JSExport
+  //protected val clientTable =
+  //  new ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
 
   // An index used to efficiently compute dependencies and sequence numbers.
   // Note that noops are not entered into the conflict index.
@@ -593,28 +600,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // If we already have a response to this request in the client table, we
     // simply return it.
     val clientIdentity = (src, request.uniqueId.clientPseudonym)
-    clientTable.executed(clientIdentity, request.uniqueId.clientId) match {
-      case ClientTable.NotExecuted =>
-      // Not executed yet, we'll have to get it chosen.
-
-      case ClientTable.Executed(None) =>
-        // Executed already but a stale command. We ignore this request.
-        return
-
-      case ClientTable.Executed(Some(output)) =>
-        // Executed already and is the most recent command. We relay the
-        // response to the client.
-        val client = chan[Client[Transport]](src, Client.serializer)
-        client.send(
-          ClientInbound()
-            .withClientReply(
-              ClientReply(clientPseudonym = request.uniqueId.clientPseudonym,
-                          clientId = request.uniqueId.clientId,
-                          result = ByteString.copyFrom(output))
-            )
-        )
-        return
-    }
 
     for (replica <- replicas) {
       replica.send(ReplicaInbound().withForward(Forward(request)))
@@ -674,20 +659,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // then we can reply to the client directly. Note that only the leader
     // replies to the client since ProposeReplies include the round of the
     // leader, and only the leader knows this.
-    clientTable.get((src, request.command.clientPseudonym)) match {
+    clientTable.get((src, request.uniqueId.clientPseudonym)) match {
       case Some((clientId, result)) =>
-        if (request.command.clientId == clientId && state != Inactive) {
+        if (request.uniqueId.clientId == clientId && state != Inactive) {
           leaderLogger.debug(
             s"The latest command for client $src pseudonym " +
-              s"${request.command.clientPseudonym} (i.e., command $clientId)" +
+              s"${request.uniqueId.clientPseudonym} (i.e., command $clientId)" +
               s"was found in the client table."
           )
           client.send(
-            ClientInbound().withProposeReply(
-              ProposeReply(round = round,
-                           clientPseudonym = request.command.clientPseudonym,
-                           clientId = clientId,
-                           result = ByteString.copyFrom(result))
+            ClientInbound().withClientReply(
+              ClientReply(clientId, request.uniqueId.clientPseudonym, result = ByteString.copyFrom(result))
             )
           )
           return
@@ -708,7 +690,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             s"Leader received a propose request from $src in round " +
               s"${request.round}, but is in round $round. Sending leader info."
           )
-          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
         } else {
           // We buffer all pending proposals in phase 1 and process them later
           // when we enter phase 2.
@@ -728,13 +709,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             s"Leader received a propose request from $src in round " +
               s"${request.round}, but is in round $round. Sending leader info."
           )
-          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
           return
         }
 
-            phase2aBuffer += Phase2a(slot = nextSlot, round = round)
-              .withCommand(request.uniqueId)
-            pendingEntries(nextSlot) = ECommand(request.command)
             phase2bs(nextSlot) = mutable.Map()
             nextSlot += 1
             if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
@@ -870,9 +847,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         // Replay the pending proposals.
         nextSlot = endSlot + 1
         for ((_, proposal) <- pendingProposals) {
-          phase2aBuffer += Phase2a(slot = nextSlot, round = round)
-            .withCommand(proposal.command)
-          pendingEntries(nextSlot) = ECommand(proposal.command)
           phase2bs(nextSlot) = mutable.Map()
           nextSlot += 1
         }
@@ -884,13 +858,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           pendingEntries(nextSlot) = ECommand(command)
           phase2bs(nextSlot) = mutable.Map()
           nextSlot += 1
-        }
-
-        // If this is a fast round, send a suffix of anys.
-        if (config.roundSystem.roundType(round) == FastRound) {
-          phase2aBuffer +=
-            Phase2a(slot = nextSlot, round = round)
-              .withAnySuffix(AnyValSuffix())
         }
 
         flushPhase2aBuffer(thrifty = true)
@@ -1255,4 +1222,51 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  def executeLog(): Unit = {
+    while (log.contains(chosenWatermark)) {
+      log(chosenWatermark) match {
+        case ECommand(
+            Command(clientAddressBytes, clientPseudonym, clientId, command)
+            ) =>
+          val clientAddress = transport.addressSerializer.fromBytes(
+            clientAddressBytes.toByteArray()
+          )
+
+          // True if this command has already been executed.
+          val executed =
+            clientTable.get((clientAddress, clientPseudonym)) match {
+              case Some((highestClientId, _)) => clientId <= highestClientId
+              case None                       => false
+            }
+
+          if (!executed) {
+            val output = stateMachine.run(command.toByteArray())
+            clientTable((clientAddress, clientPseudonym)) = (clientId, output)
+            metrics.executedCommandsTotal.inc()
+
+            // Note that only the leader replies to the client since
+            // ProposeReplies include the round of the leader, and only the
+            // leader knows this.
+            if (state != Inactive) {
+              val client =
+                chan[Client[Transport]](clientAddress, Client.serializer)
+              client.send(
+                ClientInbound().withClientReply(
+                  ClientReply(
+                    clientId = clientId,
+                    clientPseudonym = clientPseudonym,
+                    result = ByteString.copyFrom(output))
+                )
+              )
+            }
+          } else {
+            metrics.repeatedCommandsTotal.inc()
+          }
+        case ENoop =>
+          // Do nothing.
+          metrics.executedNoopsTotal.inc()
+      }
+      chosenWatermark += 1
+    }
+  }
 }

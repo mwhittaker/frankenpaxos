@@ -112,14 +112,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   protected var pendingCommands = mutable.Map[Pseudonym, PendingCommand]()
 
 // Leader and acceptor channels.
-  private val leaders: Map[Int, Chan[Leader[Transport]]] = {
-    for ((address, i) <- config.leaderAddresses.zipWithIndex)
-      yield i -> chan[Leader[Transport]](address, Leader.serializer)
+  private val replicas: Map[Int, Chan[Replica[Transport]]] = {
+    for ((address, i) <- config.replicaAddresses.zipWithIndex)
+      yield i -> chan[Replica[Transport]](address, Replica.serializer)
   }.toMap
-
-  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
-    for (address <- config.acceptorAddresses)
-      yield chan[Acceptor[Transport]](address, Acceptor.serializer)
 
   // Timers ////////////////////////////////////////////////////////////////////
   // A timer to resend a proposed value. If a client doesn't hear back quickly
@@ -130,23 +126,15 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
     inbound.request match {
-      case Request.LeaderInfo(r)   => handleLeaderInfo(src, r)
-      case Request.ProposeReply(r) => handleProposeReply(src, r)
+      case Request.ClientReply(r) => handleProposeReply(src, r)
       case Request.Empty =>
         logger.fatal("Empty ClientInbound encountered.")
     }
   }
 
-  private def handleLeaderInfo(
-      src: Transport#Address,
-      leaderInfo: LeaderInfo
-  ): Unit = {
-    processNewRound(leaderInfo.round)
-  }
-
   private def handleProposeReply(
       src: Transport#Address,
-      proposeReply: ProposeReply
+      proposeReply: ClientReply
   ): Unit = {
     pendingCommands.get(proposeReply.clientPseudonym) match {
       case Some(PendingCommand(pseudonym, id, command, promise)) =>
@@ -195,14 +183,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   private def toProposeRequest(
       pendingCommand: PendingCommand
-  ): ProposeRequest = {
+  ): ClientRequest = {
     val PendingCommand(pseudonym, id, command, _) = pendingCommand
-    ProposeRequest(
-      round = round,
-      Command(clientAddress = addressAsBytes,
+    ClientRequest(
+      UniqueId(clientAddress = addressAsBytes,
               clientPseudonym = pseudonym,
-              clientId = id,
-              command = ByteString.copyFrom(command))
+              clientId = id),
+              command = ByteString.copyFrom(command)
     )
   }
 
