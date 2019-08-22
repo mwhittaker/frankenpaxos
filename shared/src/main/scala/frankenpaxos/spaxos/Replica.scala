@@ -16,6 +16,8 @@ import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.thrifty.ThriftySystem
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
+import scala.collection.breakOut
+import scala.collection.immutable.SortedMap
 
 @JSExportAll
 object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
@@ -27,48 +29,29 @@ object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
 
 @JSExportAll
 case class ReplicaOptions(
-    thriftySystem: ThriftySystem,
-    resendPreAcceptsTimerPeriod: java.time.Duration,
-    defaultToSlowPathTimerPeriod: java.time.Duration,
-    resendAcceptsTimerPeriod: java.time.Duration,
-    resendPreparesTimerPeriod: java.time.Duration,
-    recoverInstanceTimerMinPeriod: java.time.Duration,
-    recoverInstanceTimerMaxPeriod: java.time.Duration,
-    // If `unsafeSkipGraphExecution` is true, replicas skip graph execution
-    // entirely. Instead, they execute commands as soon as they are committed.
-    //
-    // As the name suggests, this is not safe. It completely breaks the
-    // protocol. This flag should only be used to debug performance issues. For
-    // example, disabling graph execution makes it easier to see if graph
-    // execution is a bottleneck.
-    //
-    // Note that if unsafeSkipGraphExecution is true, then
-    // executeGraphBatchSize and executeGraphTimerPeriod are completely
-    // ignored.
-    unsafeSkipGraphExecution: Boolean,
-    // When a replica receives a committed command, it adds it to its
-    // dependency graph. When executeGraphBatchSize commands have been
-    // committed, the replica attempts to execute as many commands in the graph
-    // as possible. If executeGraphBatchSize commands have not been committed
-    // within executeGraphTimerPeriod since the last time the graph was
-    // executed, the graph is executed.
-    executeGraphBatchSize: Int,
-    executeGraphTimerPeriod: java.time.Duration
+                           thriftySystem: ThriftySystem,
+    resendPhase1asTimerPeriod: java.time.Duration,
+    resendPhase2asTimerPeriod: java.time.Duration,
+    // The leader buffers phase 2a messages. This buffer can grow to at most
+    // size `phase2aMaxBufferSize`. If the buffer does not fill up, then it is
+    // flushed after `phase2aBufferFlushPeriod`.
+    phase2aMaxBufferSize: Int,
+    phase2aBufferFlushPeriod: java.time.Duration,
+    // As with phase 2a messages, leaders buffer value chosen messages.
+    valueChosenMaxBufferSize: Int,
+    valueChosenBufferFlushPeriod: java.time.Duration,
 )
 
 @JSExportAll
 object ReplicaOptions {
   val default = ReplicaOptions(
     thriftySystem = ThriftySystem.NotThrifty,
-    resendPreAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
-    defaultToSlowPathTimerPeriod = java.time.Duration.ofSeconds(1),
-    resendAcceptsTimerPeriod = java.time.Duration.ofSeconds(1),
-    resendPreparesTimerPeriod = java.time.Duration.ofSeconds(1),
-    recoverInstanceTimerMinPeriod = java.time.Duration.ofMillis(500),
-    recoverInstanceTimerMaxPeriod = java.time.Duration.ofMillis(1500),
-    unsafeSkipGraphExecution = false,
-    executeGraphBatchSize = 1,
-    executeGraphTimerPeriod = java.time.Duration.ofSeconds(1)
+    resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(5),
+    resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
+    phase2aMaxBufferSize = 25,
+    phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
+    valueChosenMaxBufferSize = 100,
+    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5)
   )
 }
 
@@ -164,6 +147,77 @@ class ReplicaMetrics(collectors: Collectors) {
     .build()
     .name("epaxos_replica_dependencies")
     .help("The number of dependencies that a command has.")
+    .register()
+
+  val chosenCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_chosen_commands_total")
+    .labelNames("type") // "fast" or "classic".
+    .help(
+      "Total number of commands that were chosen (with potential duplicates)."
+    )
+    .register()
+
+  val leaderChangesTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_leader_changes_total")
+    .help("Total number of leader changes.")
+    .register()
+
+  val stuckTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_stuck_total")
+    .help("Total number of times the leader got stuck in phase 2.")
+    .register()
+
+  val chosenWatermark: Gauge = collectors.gauge
+    .build()
+    .name("fast_multipaxos_leader_chosen_watermark")
+    .help("The index at which all smaller log entries have been chosen.")
+    .register()
+
+  val nextSlot: Gauge = collectors.gauge
+    .build()
+    .name("fast_multipaxos_leader_next_slot")
+    .help("The next free slot in the log.")
+    .register()
+
+  val resendPhase1asTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_resend_phase1as_total")
+    .help("Total number of times the leader resent phase 1a messages.")
+    .register()
+
+  val resendPhase2asTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_resend_phase2as_total")
+    .help("Total number of times the leader resent phase 2a messages.")
+    .register()
+
+  val phase2aBufferFullTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_phase2a_buffer_full_total")
+    .help("Total number of times the phase 2a buffer filled up.")
+    .register()
+
+  val phase2aBufferFlushTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_phase2a_buffer_flush_total")
+    .help("Total number of times the phase 2a buffer was flushed by a timer.")
+    .register()
+
+  val valueChosenBufferFullTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_value_chosen_buffer_full_total")
+    .help("Total number of times the value chosen buffer filled up.")
+    .register()
+
+  val valueChosenBufferFlushTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_value_chosen_buffer_flush_total")
+    .help(
+      "Total number of times the value chosen buffer was flushed by a timer."
+    )
     .register()
 }
 
@@ -304,6 +358,42 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   type ClientPseudonym = Int
   type ClientId = Int
 
+  @JSExportAll
+  sealed trait Entry
+  case class ECommand(command: Command) extends Entry
+  object ENoop extends Entry
+
+  sealed trait LeaderState[Transport <: frankenpaxos.Transport[Transport]]
+
+  @JSExport
+  protected var round: Round = 0
+
+  // The log of chosen commands. Public for testing.
+  val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
+
+  // The client table records the response to the latest request from each
+  // client. For example, if command c1 sends command x with id 2 to a leader
+  // and the leader later executes x yielding response y, then c1 maps to (2,
+  // y) in the client table.
+  //
+  // TODO(mwhittaker): Extract out a client table abstraction?
+  @JSExport
+  protected var clientTable =
+    mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
+
+  // At any point in time, the leader knows that all slots less than
+  // chosenWatermark have been chosen. That is, for every `slot` <
+  // chosenWatermark, there is an Entry for `slot` in `log`.
+  @JSExport
+  protected var chosenWatermark: Slot = 0
+
+  // The next slot in which to propose a command.
+  //
+  // TODO(mwhittaker): Add a buffer to prevent the leader from running too far
+  // ahead.
+  @JSExport
+  protected var nextSlot: Slot = 0
+
   // The state of the leader.
   @JSExportAll
   sealed trait State
@@ -352,6 +442,72 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // Public for testing.
   val cmdLog: mutable.Map[Instance, CmdLogEntry] =
     mutable.Map[Instance, CmdLogEntry]()
+
+  private val resendPhase2asTimer: Transport#Timer = timer(
+    "resendPhase2as",
+    options.resendPhase2asTimerPeriod,
+    () => {
+      resendPhase2as()
+      resendPhase2asTimer.start()
+      metrics.resendPhase2asTotal.inc()
+    }
+  )
+
+  private val phase2aBufferFlushTimer: Transport#Timer = timer(
+    "phase2aBufferFlush",
+    options.phase2aBufferFlushPeriod,
+    () => {
+      flushPhase2aBuffer(thrifty = true)
+      metrics.phase2aBufferFlushTotal.inc()
+    }
+  )
+
+  private val valueChosenBufferFlushTimer: Transport#Timer = timer(
+    "valueChosenBufferFlush",
+    options.valueChosenBufferFlushPeriod,
+    () => {
+      flushValueChosenBuffer()
+      metrics.valueChosenBufferFlushTotal.inc()
+    }
+  )
+
+  @JSExport
+  protected var state: State =
+    if (round == 0) {
+      sendPhase1as(thrifty = true)
+      resendPhase1asTimer.start()
+      Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+    } else {
+      Inactive
+    }
+
+  // Custom logger.
+  val leaderLogger = new Logger(frankenpaxos.LogDebug) {
+    private def withInfo(s: String): String = {
+      val stateString = state match {
+        case Phase1(_, _, _)             => "Phase 1"
+        case Phase2(_, _, _, _, _, _, _) => "Phase 2"
+        case Inactive                    => "Inactive"
+      }
+      s"[$stateString, round=$round] " + s
+    }
+
+    override def fatalImpl(message: String): Nothing =
+      logger.fatal(withInfo(message))
+
+    override def errorImpl(message: String): Unit =
+      logger.error(withInfo(message))
+
+    override def warnImpl(message: String): Unit =
+      logger.warn(withInfo(message))
+
+    override def infoImpl(message: String): Unit =
+      logger.info(withInfo(message))
+
+    override def debugImpl(message: String): Unit =
+      logger.debug(withInfo(message))
+
+  }
 
   @JSExport
   protected val requests: mutable.Set[ClientRequest] = mutable.Set()
@@ -436,8 +592,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // If we already have a response to this request in the client table, we
     // simply return it.
-    val clientIdentity = (src, request.command.clientPseudonym)
-    clientTable.executed(clientIdentity, request.command.clientId) match {
+    val clientIdentity = (src, request.uniqueId.clientPseudonym)
+    clientTable.executed(clientIdentity, request.uniqueId.clientId) match {
       case ClientTable.NotExecuted =>
       // Not executed yet, we'll have to get it chosen.
 
@@ -452,8 +608,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         client.send(
           ClientInbound()
             .withClientReply(
-              ClientReply(clientPseudonym = request.command.clientPseudonym,
-                          clientId = request.command.clientId,
+              ClientReply(clientPseudonym = request.uniqueId.clientPseudonym,
+                          clientId = request.uniqueId.clientId,
                           result = ByteString.copyFrom(output))
             )
         )
@@ -498,7 +654,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       if (leaderIndex == index && !proposed.contains(acknowledge.uniqueId)) {
         proposed.add(acknowledge.uniqueId)
         for (replica <- replicas) {
-          replica.send(ReplicaInbound().withProposeRequest(0, acknowledge.uniqueId))
+          replica.send(ReplicaInbound().withProposeRequest(ProposeRequest(round = 0, uniqueId = acknowledge.uniqueId)))
         }
       }
     }
@@ -577,7 +733,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         }
 
             phase2aBuffer += Phase2a(slot = nextSlot, round = round)
-              .withCommand(request.command)
+              .withCommand(request.uniqueId)
             pendingEntries(nextSlot) = ECommand(request.command)
             phase2bs(nextSlot) = mutable.Map()
             nextSlot += 1
@@ -617,7 +773,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
         // Wait until we receive a quorum of phase 1bs.
         phase1bs(request.acceptorId) = request
-        if (phase1bs.size < config.classicQuorumSize) {
+        if (phase1bs.size < config.f + 1) {
           return
         }
 
@@ -760,7 +916,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
           // TODO(mwhittaker): Check that the nack is not out of date.
           // TODO(mwhittaker): Change to a round that we own!
-          leaderChange(address, nack.round)
         }
     }
   }
@@ -796,6 +951,308 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
     executeLog()
+  }
+
+  // Methods ///////////////////////////////////////////////////////////////////
+
+  // Send Phase 1a messages to the acceptors. If thrifty is true, we send with
+  // thriftiness. Otherwise, we send to every acceptor.
+  private def sendPhase1as(thrifty: Boolean): Unit = {
+    for (replica <- replicas) {
+      replica.send(
+        ReplicaInbound().withPhase1A(
+          Phase1a(round = round,
+                  chosenWatermark = chosenWatermark,
+                  chosenSlot = log.keysIteratorFrom(chosenWatermark).to[Seq])
+        )
+      )
+    }
+  }
+
+  // Given a quorum of phase1b votes, determine a safe value to propose in slot
+  // `slot` and a set of other commands that could have been proposed in the
+  // slot.
+  def chooseProposal(
+      votes: collection.Map[AcceptorId, SortedMap[Slot, Phase1bVote]],
+      slot: Slot
+  ): (Entry, Set[Command]) = {
+    def phase1bVoteValueToEntry(voteValue: Phase1bVote.Value): Entry = {
+      import Phase1bVote.Value
+      voteValue match {
+        case Value.Command(command) => ECommand(command)
+        case Value.Noop(_)          => ENoop
+        case Value.Empty =>
+          leaderLogger.fatal("Empty Phase1bVote.Value.")
+          ???
+      }
+    }
+
+    val votesInSlot = votes.keys.map(
+      (a) =>
+        votes(a).get(slot) match {
+          case Some(vote) => (vote.voteRound, Some(vote.value))
+          case None       => (-1, None)
+        }
+    )
+    val k = votesInSlot.map({ case (voteRound, _) => voteRound }).max
+    val V = votesInSlot
+      .filter({ case (voteRound, _) => voteRound == k })
+      .map({ case (_, voteValue) => voteValue })
+
+    // If no acceptor has voted yet, we're free to propose anything. Here, we
+    // propose noop.
+    if (k == -1) {
+      return (ENoop, Set())
+    }
+
+    // If V = {v} is a singleton set, then we must propose v.
+    if (V.to[Set].size == 1) {
+      return (phase1bVoteValueToEntry(V.head.get), Set())
+    }
+
+    // If there exists a v in V such that O4(v), then we must propose it.
+    val o4vs = frankenpaxos.Util.popularItems(V, config.f + 1)
+    if (o4vs.size > 0) {
+      leaderLogger.checkEq(o4vs.size, 1)
+      return (phase1bVoteValueToEntry(o4vs.head.get), Set())
+    }
+
+    // Otherwise, we can propose anything! Here, we propose one of the values
+    // in V, and return the rest in V as also potential proposals.
+    //
+    // TODO(mwhittaker): Think about whether it is smart to return all the
+    // commands seen and not just those in V. We may have to smartly track
+    // commands that have already been chosen or are already pending and not
+    // re-send them. If acceptors are lagging behind (e.g., because
+    // thriftiness), their votes may be very stale.
+    (phase1bVoteValueToEntry(V.head.get),
+     V.map({
+         case Some(Phase1bVote.Value.Command(command)) =>
+           command
+         case Some(Phase1bVote.Value.Noop(_)) =>
+           logger.fatal(s"Noop vote in round $k.")
+         case Some(Phase1bVote.Value.Empty) =>
+           logger.fatal(s"Empty vote in round $k.")
+         case None =>
+           logger.fatal(s"None vote in round $k.")
+       })
+       .to[Set])
+  }
+
+  private def processPhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
+    def toValueChosen(slot: Slot, entry: Entry): ValueChosen = {
+      entry match {
+        case ECommand(command) =>
+          ValueChosen(slot = slot).withCommand(command)
+        case ENoop => ValueChosen(slot = slot).withNoop(Noop())
+      }
+    }
+
+    state match {
+      case Inactive =>
+        leaderLogger.debug(
+          s"A leader received a phase 2b response in round ${phase2b.round} " +
+            s"from $src but is inactive."
+        )
+
+      case Phase1(_, _, _) =>
+        leaderLogger.debug(
+          s"A leader received a phase 2b response in round ${phase2b.round} " +
+            s"from $src but is in phase 1 of round $round."
+        )
+
+      case phase2 @ Phase2(pendingEntries,
+                           phase2bs,
+                           _,
+                           _,
+                           _,
+                           valueChosenBuffer,
+                           valueChosenBufferFlushTimer) =>
+        def choose(entry: Entry): Unit = {
+          log(phase2b.slot) = entry
+          pendingEntries -= phase2b.slot
+          phase2bs -= phase2b.slot
+          executeLog()
+
+          valueChosenBuffer += toValueChosen(phase2b.slot, entry)
+          if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
+            metrics.valueChosenBufferFullTotal.inc()
+            flushValueChosenBuffer()
+          }
+        }
+
+        // Ignore responses that are not in our current round.
+        if (phase2b.round != round) {
+          leaderLogger.debug(
+            s"A leader received a phase 2b response for round " +
+              s"${phase2b.round} from $src but is in round ${round}."
+          )
+          return
+        }
+
+        // Ignore responses for entries that have already been chosen.
+        if (log.contains(phase2b.slot)) {
+          // Without thriftiness, this is the normal case, so it prints a LOT.
+          // So, we comment it out.
+          //
+          // leaderLogger.debug(
+          //   s"A leader received a phase 2b response for slot " +
+          //     s"${phase2b.slot} from $src but a value has already been " +
+          //     s"chosen in this slot."
+          // )
+          return
+        }
+
+        // Wait for sufficiently many phase2b replies.
+        phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
+        phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
+        phase2bChosenInSlot(phase2, phase2b.slot) match {
+          case NothingReadyYet =>
+          // Don't do anything.
+
+          case ClassicReady(entry) =>
+            choose(entry)
+            metrics.chosenCommandsTotal.labels("classic").inc()
+
+          case FastReady(entry) =>
+            choose(entry)
+            metrics.chosenCommandsTotal.labels("fast").inc()
+
+          case FastStuck =>
+            // The fast round is stuck, so we start again in a higher round.
+            // TODO(mwhittaker): We might want to have all stuck things pending
+            // for the next round.
+            leaderLogger.debug(
+              s"Slot ${phase2b.slot} is stuck. Changing to a higher round."
+            )
+            metrics.stuckTotal.inc()
+        }
+    }
+  }
+
+  private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {
+    phase2bVote match {
+      case Phase2b.Vote.Command(command) => ECommand(command)
+      case Phase2b.Vote.Noop(_)          => ENoop
+      case Phase2b.Vote.Empty =>
+        leaderLogger.fatal("Empty Phase2b.Vote")
+        ???
+    }
+  }
+
+  sealed trait Phase2bVoteResult
+  case object NothingReadyYet extends Phase2bVoteResult
+  case class ClassicReady(entry: Entry) extends Phase2bVoteResult
+  case class FastReady(entry: Entry) extends Phase2bVoteResult
+  case object FastStuck extends Phase2bVoteResult
+
+  // TODO(mwhittaker): Document.
+  private def phase2bChosenInSlot(
+      phase2: Phase2,
+      slot: Slot
+  ): Phase2bVoteResult = {
+    val Phase2(pendingEntries, phase2bs, _, _, _, _, _) = phase2
+
+        if (phase2bs
+              .getOrElse(slot, mutable.Map())
+              .size >= config.f + 1) {
+          ClassicReady(pendingEntries(slot))
+        } else {
+          NothingReadyYet
+        }
+
+  }
+
+  def flushPhase2aBuffer(thrifty: Boolean): Unit = {
+    state match {
+      case Inactive =>
+        logger.fatal("Flushing phase2aBuffer while inactive.")
+
+      case Phase1(_, _, _) =>
+        logger.fatal("Flushing phase2aBuffer while in phase 1.")
+
+      case Phase2(_, _, _, phase2aBuffer, phase2aBufferFlushTimer, _, _) =>
+        if (phase2aBuffer.size > 0) {
+          val msg =
+            ReplicaInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
+            replicas.foreach(_.send(msg))
+          phase2aBuffer.clear()
+          phase2aBufferFlushTimer.reset()
+        } else {
+          phase2aBufferFlushTimer.reset()
+        }
+    }
+  }
+
+  def flushValueChosenBuffer(): Unit = {
+    state match {
+      case Inactive =>
+        logger.fatal("Flushing valueChosenBuffer while inactive.")
+
+      case Phase1(_, _, _) =>
+        logger.fatal("Flushing valueChosenBuffer while in phase 1.")
+
+      case Phase2(_, _, _, _, _, buffer, bufferFlushTimer) =>
+        if (buffer.size > 0) {
+          buffer.clear()
+          bufferFlushTimer.reset()
+        } else {
+          bufferFlushTimer.reset()
+        }
+    }
+  }
+
+  def resendPhase2as(): Unit = {
+    state match {
+      case Inactive | Phase1(_, _, _) =>
+        leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
+
+      case Phase2(pendingEntries, phase2bs, _, phase2aBuffer, _, _, _) =>
+        // It's important that no slot goes forever unchosen. This prevents
+        // later slots from executing. Thus, we try and and choose a complete
+        // prefix of the log.
+        val endSlot: Int = math.max(
+          phase2bs.keys.lastOption.getOrElse(-1),
+          log.keys.lastOption.getOrElse(-1)
+        )
+
+        for (slot <- chosenWatermark to endSlot) {
+          val entryToPhase2a: Entry => Phase2a = {
+            case ECommand(command) =>
+              Phase2a(slot = slot, round = round).withCommand(command)
+            case ENoop =>
+              Phase2a(slot = slot, round = round).withNoop(Noop())
+          }
+
+          (log.contains(slot), pendingEntries.get(slot), phase2bs.get(slot)) match {
+            case (true, _, _) =>
+            // If `slot` is chosen, we don't resend anything.
+
+            case (false, Some(entry), _) =>
+              // If we have some pending entry, then we propose that.
+              phase2aBuffer.append(entryToPhase2a(entry))
+
+            case (false, None, Some(phase2bsInSlot)) =>
+              // If there is no pending entry, then we propose the value with
+              // the most votes so far. If no value has been voted, then we
+              // just propose Noop.
+              val voteValues = phase2bsInSlot.values.map(_.vote)
+              val histogram = Util.histogram(voteValues)
+              if (voteValues.size == 0) {
+                phase2aBuffer += entryToPhase2a(ENoop)
+              } else {
+                val mostVoted = histogram.maxBy(_._2)._1
+                phase2aBuffer += entryToPhase2a(phase2bVoteToEntry(mostVoted))
+              }
+
+            case (false, None, None) =>
+              // If there is no pending entry and no votes, we propose Noop.
+              phase2aBuffer += entryToPhase2a(ENoop)
+          }
+        }
+
+        flushPhase2aBuffer(thrifty = false)
+    }
   }
 
 }

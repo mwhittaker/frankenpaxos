@@ -213,6 +213,15 @@ message ValueChosenBuffer {
   repeated ValueChosen value_chosen = 1;
 }
 
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 client_pseudonym = 1;
+  required int32 client_id = 2;
+  // The result of executing the command.
+  required bytes result = 3;
+}
 
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ReplicaInbound {
@@ -233,11 +242,11 @@ message ReplicaInbound {
   }
 }
 
-//message ClientInbound {
-//  option (scalapb.message).annotations =
-//    "@scala.scalajs.js.annotation.JSExportAll";
+message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
 
-//  oneof request {
-//    ClientReply client_reply = 1;
-//  }
-//}
+  oneof request {
+    ClientReply client_reply = 1;
+  }
+}
