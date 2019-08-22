@@ -1,8 +1,8 @@
 package frankenpaxos.depgraph
 
 import frankenpaxos.compact.FakeCompactSet
-import frankenpaxos.simplebpaxos.VertexId
-import frankenpaxos.simplebpaxos.VertexIdHelpers.vertexIdOrdering
+import frankenpaxos.simplegcbpaxos.VertexId
+import frankenpaxos.simplegcbpaxos.VertexIdHelpers.vertexIdOrdering
 import frankenpaxos.util
 import org.scalameter.api._
 import org.scalameter.picklers.Implicits._
