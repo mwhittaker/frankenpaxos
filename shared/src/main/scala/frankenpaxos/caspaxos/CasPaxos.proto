@@ -75,7 +75,7 @@ message Phase1b {
 
   required int32 round = 1;
   required int32 acceptor_index = 2;
-  optional int32 vote_round = 3;
+  required int32 vote_round = 3;
   optional IntSet vote_value = 4;
 }
 

@@ -30,6 +30,29 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = AcceptorInbound
   override def serializer = Acceptor.serializer
 
+  // Fields ////////////////////////////////////////////////////////////////////
+  // Sanity check the configuration and compute our index.
+  logger.check(config.acceptorAddresses.contains(address))
+  private val index = config.acceptorAddresses.indexOf(address)
+
+  // The largest round this acceptor has ever heard of.
+  @JSExport
+  protected var round: Int = -1
+
+  // The largest round this acceptor has voted in.
+  @JSExport
+  protected var voteRound: Int = -1
+
+  // The value voted for in voteRound. In this simple implementation of
+  // CASPaxos, the state is a set of integers.
+  @JSExport
+  protected var voteValue: Option[Set[Int]] = None
+
+  // Helpers ///////////////////////////////////////////////////////////////////
+  private def toIntSetProto(xs: Set[Int]): IntSet = IntSet(value = xs.toSeq)
+
+  private def fromIntSetProto(xs: IntSet): Set[Int] = xs.value.toSet
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
       src: Transport#Address,
@@ -49,15 +72,48 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1a: Phase1a
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
+
+    // Nack messages from earlier rounds.
+    if (phase1a.round < round) {
+      logger.debug(
+        s"Acceptor received a Phase1a in round ${phase1a.round} but is " +
+          s"already in round $round. The acceptor is sending back a nack."
+      )
+      leader.send(LeaderInbound().withNack(Nack(higherRound = round)))
+    }
+
+    round = phase1a.round
+    leader.send(
+      LeaderInbound().withPhase1B(
+        Phase1b(round = round,
+                acceptorIndex = index,
+                voteRound = voteRound,
+                voteValue = voteValue.map(toIntSetProto))
+      )
+    )
   }
 
   private def handlePhase2a(
       src: Transport#Address,
       phase2a: Phase2a
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
+
+    // Nack messages from earlier rounds.
+    if (phase2a.round < round) {
+      logger.debug(
+        s"Acceptor received a Phase2a in round ${phase2a.round} but is " +
+          s"already in round $round. The acceptor is sending back a nack."
+      )
+      leader.send(LeaderInbound().withNack(Nack(higherRound = round)))
+    }
+
+    round = round
+    voteRound = round
+    voteValue = Some(fromIntSetProto(phase2a.value))
+    leader.send(
+      LeaderInbound().withPhase2B(Phase2b(round = round, acceptorIndex = index))
+    )
   }
 }
