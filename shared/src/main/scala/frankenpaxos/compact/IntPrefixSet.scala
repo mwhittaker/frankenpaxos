@@ -121,6 +121,7 @@ class IntPrefixSet private (
   }
 
   override def diff(other: IntPrefixSet): IntPrefixSet = {
+    // TODO(mwhittaker): Check for empty sets to avoid filtering and whatnot.
     if (other.watermark == 0 && other.values.isEmpty) {
       new IntPrefixSet(watermark, values)
     } else if (other.watermark == 0) {
