@@ -1,0 +1,143 @@
+// A protocol cheatsheet, similar to [1].
+//
+// Normal case.
+//
+//   Client    Leader  Acceptor
+//      | -----> |        |        ClientRequest
+//      |        | -----> |        Phase1a
+//      |        | <----- |        Phase1b
+//      |        | -----> |        Phase2a
+//      |        | <----- |        Phase2b
+//      | <----- |        |        ClientReply
+//
+// Nacks.
+//
+//   Client    Leader  Acceptor
+//      |        | -----> |        Phase1a
+//      |        | <----- |        Nack
+//      |        | -----> |        Phase2a
+//      |        | <----- |        Nack
+//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+
+syntax = "proto2";
+
+package frankenpaxos.caspaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.caspaxos"
+  flat_package: true
+};
+
+// A set of integers.
+message IntSet {
+  repeated int32 value = 1;
+}
+
+// A client issued command.
+message Command {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The client's address.
+  required bytes client_address = 1;
+
+  // Clients annotate every command with a unique and monotonically increasing
+  // id. The pair of (client address, client id) uniquely identify a command.
+  required int32 client_id = 2;
+
+  // The actual command. In this simple implementation of CASPaxos, the state
+  // is a set of integers and commands are requests to add a set of integers to
+  // the set of integers.
+  required IntSet int_set = 3;
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Command command = 1;
+}
+
+message Phase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message Phase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required int32 acceptor_index = 2;
+  optional int32 vote_round = 3;
+  optional IntSet vote_value = 4;
+}
+
+message Phase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required IntSet value = 2;
+}
+
+message Phase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required int32 acceptor_index = 2;
+}
+
+message Nack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 higher_round = 1;
+}
+
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 client_id = 1;
+  required IntSet value = 2;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientReply client_reply = 1;
+  }
+}
+
+message LeaderInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientRequest client_request = 1;
+    Phase1b phase1b = 2;
+    Phase2b phase2b = 3;
+    Nack nack = 4;
+  }
+}
+
+message AcceptorInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Phase1a phase1a = 1;
+    Phase2a phase2a = 2;
+  }
+}
