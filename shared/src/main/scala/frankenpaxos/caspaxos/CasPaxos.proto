@@ -33,6 +33,9 @@ option (scalapb.options) = {
 
 // A set of integers.
 message IntSet {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   repeated int32 value = 1;
 }
 

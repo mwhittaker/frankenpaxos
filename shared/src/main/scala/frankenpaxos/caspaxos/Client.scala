@@ -82,12 +82,15 @@ object ClientInboundSerializer extends ProtoSerializer[ClientInbound] {
 object Client {
   val serializer = ClientInboundSerializer
 
+  @JSExportAll
   sealed trait State[Transport <: frankenpaxos.Transport[Transport]]
 
+  @JSExportAll
   case class Idle[Transport <: frankenpaxos.Transport[Transport]](
       id: Int
   ) extends State[Transport]
 
+  @JSExportAll
   case class Pending[Transport <: frankenpaxos.Transport[Transport]](
       id: Int,
       promise: Promise[Set[Int]],
@@ -118,8 +121,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   private val rand = new Random(seed)
 
   // Channels to leaders.
-  val leaders: Seq[Chan[Leader[Transport]]] =
-    for (adress <- config.leaderAddresses)
+  private val leaders: Seq[Chan[Leader[Transport]]] =
+    for (address <- config.leaderAddresses)
       yield chan[Leader[Transport]](address, Leader.serializer)
 
   @JSExport
@@ -256,4 +259,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     )
     promise.future
   }
+
+  // This function should only ever be called from Javascript.
+  def propose(values: String): Future[Set[Int]] =
+    propose(values.split(",").map(_.trim.toInt).toSet)
 }

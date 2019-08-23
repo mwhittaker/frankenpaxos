@@ -71,12 +71,15 @@ object Leader {
 
   type AcceptorIndex = Int
 
+  @JSExportAll
   sealed trait State[Transport <: frankenpaxos.Transport[Transport]]
 
+  @JSExportAll
   case class Idle[Transport <: frankenpaxos.Transport[Transport]](
       round: Int
   ) extends State[Transport]
 
+  @JSExportAll
   case class Phase1[Transport <: frankenpaxos.Transport[Transport]](
       clientRequests: mutable.Buffer[ClientRequest],
       round: Int,
@@ -84,6 +87,7 @@ object Leader {
       resendPhase1as: Transport#Timer
   ) extends State[Transport]
 
+  @JSExportAll
   case class Phase2[Transport <: frankenpaxos.Transport[Transport]](
       clientRequests: mutable.Buffer[ClientRequest],
       round: Int,
@@ -324,6 +328,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           round = phase1.round,
           value = toIntSetProto(newValue)
         )
+        acceptors.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
 
         // Update our state.
         phase1.resendPhase1as.stop()
