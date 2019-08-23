@@ -258,53 +258,6 @@ object Replica {
   type ClientPseudonym = Int
   type ClientId = Int
 
-  // The special null ballot. Replicas set their vote ballot to nullBallot to
-  // indicate that they have not yet voted.
-  val nullBallot = Ballot(-1, -1)
-
-  // A command (or noop) along with its sequence number and dependencies. In
-  // the EPaxos paper, these triples are denoted like this:
-  //
-  //                      (\gamma, seq_\gamma, deps_\gamma)
-  @JSExportAll
-  case class CommandTriple(
-      commandOrNoop: CommandOrNoop,
-      sequenceNumber: Int,
-      dependencies: Set[Instance]
-  )
-
-// The core data structure of every EPaxos replica, the cmd log, records
-// information about every instance that a replica knows about. In the EPaxos
-// paper, the cmd log is visualized as an infinite two-dimensional array that
-// looks like this:
-//
-//      ... ... ...
-//     |___|___|___|
-//   2 |   |   |   |
-//     |___|___|___|
-//   1 |   |   |   |
-//     |___|___|___|
-//   0 |   |   |   |
-//     |___|___|___|
-//       Q   R   S
-//
-// The array is indexed on the left by an instance number and on the bottom
-// by a replica id. Thus, every cell is indexed by an instance (e.g. Q.1),
-// and every cell contains the state of the instance that indexes it.
-// `CmdLogEntry` represents the data within a cell, and `cmdLog` represents
-// the cmd log.
-//
-// Note that EPaxos has a small bug in how it implements ballots. The EPaxos
-// TLA+ specification and Go implementation have a single ballot per command
-// log entry. As detailed in [1], this is a bug. We need two ballots, like
-// what is done in normal Paxos. Note that we haven't proven this two-ballot
-// implementation is correct, so it may also be wrong.
-//
-// [1]: https://drive.google.com/open?id=1dQ_cigMWJ7w9KAJeSYcH3cZoFpbraWxm
-  @JSExportAll
-  sealed trait CmdLogEntry
-
-
 }
 
 @JSExportAll
@@ -358,7 +311,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExportAll
   sealed trait Entry
-  case class ECommand(command: Command) extends Entry
+  case class ECommand(uniqueId: UniqueId) extends Entry
   object ENoop extends Entry
 
   sealed trait LeaderState[Transport <: frankenpaxos.Transport[Transport]]
@@ -408,7 +361,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       phase1bs: mutable.Map[AcceptorId, Phase1b],
       // Pending proposals. When a leader receives a proposal during phase 1,
       // it buffers the proposal and replays it once it enters phase 2.
-      pendingProposals: mutable.Buffer[(Transport#Address, ProposeRequest)],
+      pendingProposals: mutable.Buffer[UniqueId],
       // A timer to resend phase 1as.
       resendPhase1as: Transport#Timer
   ) extends State
@@ -449,8 +402,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
 
   // Public for testing.
-  val cmdLog: mutable.Map[Instance, CmdLogEntry] =
-    mutable.Map[Instance, CmdLogEntry]()
 
   private val resendPhase2asTimer: Transport#Timer = timer(
     "resendPhase2as",
@@ -533,49 +484,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val proposed: mutable.Set[UniqueId] = mutable.Set()
 
-  // Every replica maintains a local instance number i, initially 0. When a
-  // replica R receives a command, it assigns the command instance R.i and then
-  // increments i. Thus, every replica fills in the cmd log vertically within
-  // its column from bottom to top. `nextAvailableInstance` represents i.
-  @JSExport
-  protected var nextAvailableInstance: Int = 0
-
-  // The default fast path ballot used by this replica.
-  @JSExport
-  protected val defaultBallot: Ballot = Ballot(0, index)
-
-  // The largest ballot ever seen by this replica. largestBallot is used when a
-  // replica receives a nack and needs to choose a larger ballot.
-  @JSExport
-  protected var largestBallot: Ballot = Ballot(0, index)
-
-  // The number of committed commands that are in the graph that have not yet
-  // been processed. We process the graph every `options.executeGraphBatchSize`
-  // committed commands and every `options.executeGraphTimerPeriod` seconds. If
-  // the timer expires, we clear this number.
-  @JSExport
-  protected var numPendingCommittedCommands: Int = 0
-
-
-  // The client table records the response to the latest request from each
-  // client. For example, if command c1 sends command x with id 2 to a leader
-  // and the leader later executes x yielding response y, then c1 maps to (2,
-  // y) in the client table.
-  //@JSExport
-  //protected val clientTable =
-  //  new ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
-
-  // An index used to efficiently compute dependencies and sequence numbers.
-  // Note that noops are not entered into the conflict index.
-  @JSExport
-  protected val conflictIndex = stateMachine.conflictIndex[Instance]()
-
-  // If a replica commits a command in instance I with a dependency on
-  // uncommitted instance J, then the replica sets a timer to recover instance
-  // J. This prevents an instance from being forever stalled.
-  @JSExport
-  protected val recoverInstanceTimers = mutable.Map[Instance, Transport#Timer]()
-
   def handleDecide(src: Transport#Address, r: Decide): Unit = ???
 
   def handlePhase1a(src: Transport#Address, r: Phase1a): Unit = ???
@@ -597,7 +505,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Phase1BNack(r) => handlePhase1bNack(src, r)
       case Request.Phase2ABuffer(r) => handlePhase2aBuffer(src, r)
       case Request.Phase2BBuffer(r) => handlePhase2bBuffer(src, r)
-      case Request.ProposeRequest(r) => handleProposeRequest(src, r)
       case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
@@ -609,61 +516,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       request: ClientRequest
   ): Unit = {
-    metrics.requestsTotal.labels("ClientRequest").inc()
-
-    // If we already have a response to this request in the client table, we
-    // simply return it.
-    val clientIdentity = (src, request.uniqueId.clientPseudonym)
-
-    for (replica <- replicas) {
-      replica.send(ReplicaInbound().withForward(Forward(request)))
-    }
-  }
-
-  private def handleForward(
-      src: Transport#Address,
-      forward: Forward
-  ): Unit = {
-    metrics.requestsTotal.labels("Forward").inc()
-
-    // Make sure we should be processing this message at all. For example,
-    // sometimes we nack it, sometimes we ignore it, sometimes we re-send
-    // replies that we previously sent because of it.
-    val replica = chan[Replica[Transport]](src, Replica.serializer)
-    requests.add(forward.clientRequest)
-    replica.send(ReplicaInbound().withAcknowledge(Acknowledge(forward.clientRequest.uniqueId)))
-  }
-
-  private def handleAcknowledge(
-      src: Transport#Address,
-      acknowledge: Acknowledge
-  ): Unit = {
-    metrics.requestsTotal.labels("Acknowledge").inc()
-
-    // Make sure we should be processing this message at all. For example,
-    // sometimes we nack it, sometimes we ignore it, sometimes we re-send
-    // replies that we previously sent because of it.
-    val replica = chan[Replica[Transport]](src, Replica.serializer)
-    acks.put(acknowledge.uniqueId, acks.getOrElse(acknowledge.uniqueId, 0) + 1)
-
-    val f: Int = 1
-    if (acks.getOrElse(acknowledge.uniqueId, 0) >= f + 1) {
-      stableIds.add(acknowledge.uniqueId)
-      // This replica is the leader
-      if (leaderIndex == index && !proposed.contains(acknowledge.uniqueId)) {
-        proposed.add(acknowledge.uniqueId)
-        for (replica <- replicas) {
-          replica.send(ReplicaInbound().withProposeRequest(ProposeRequest(round = 0, uniqueId = acknowledge.uniqueId)))
-        }
-      }
-    }
-  }
-
-  private def handleProposeRequest(
-      src: Transport#Address,
-      request: ProposeRequest
-  ): Unit = {
-    metrics.requestsTotal.labels("ProposeRequest").inc()
     val client = chan[Client[Transport]](src, Client.serializer)
 
     // TODO(mwhittaker): Ignore requests that are older than the current id
@@ -683,7 +535,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
           client.send(
             ClientInbound().withClientReply(
-              ClientReply(clientId, request.uniqueId.clientPseudonym, result = ByteString.copyFrom(result))
+              ClientReply(clientPseudonym = request.uniqueId.clientPseudonym,
+                           clientId = clientId,
+                           result = ByteString.copyFrom(result))
             )
           )
           return
@@ -691,24 +545,33 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
     }
 
+    for (replica <- replicas) {
+      replica.send(ReplicaInbound().withForward(Forward(request)))
+    }
+  }
+
+  private def handleForward(
+      src: Transport#Address,
+      forward: Forward
+  ): Unit = {
+    metrics.requestsTotal.labels("Forward").inc()
+
+    val replica = chan[Replica[Transport]](src, Replica.serializer)
+    requests.add(forward.clientRequest)
+    replica.send(ReplicaInbound().withAcknowledge(Acknowledge(forward.clientRequest.uniqueId)))
+  }
+
+  def handleProposal(uniqueId: UniqueId) = {
     state match {
       case Inactive =>
         leaderLogger.debug(
-          s"Leader received propose request from $src but is inactive."
+          s"Leader received propose request but is inactive."
         )
 
       case Phase1(_, pendingProposals, _) =>
-        if (request.round != round) {
-          // We don't want to process requests from out of date clients.
-          leaderLogger.debug(
-            s"Leader received a propose request from $src in round " +
-              s"${request.round}, but is in round $round. Sending leader info."
-          )
-        } else {
           // We buffer all pending proposals in phase 1 and process them later
           // when we enter phase 2.
-          pendingProposals += ((src, request))
-        }
+          pendingProposals += uniqueId
 
       case Phase2(pendingEntries,
                   phase2bs,
@@ -717,22 +580,34 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                   phase2aBufferFlushTimer,
                   _,
                   _) =>
-        if (request.round != round) {
-          // We don't want to process requests from out of date clients.
-          leaderLogger.debug(
-            s"Leader received a propose request from $src in round " +
-              s"${request.round}, but is in round $round. Sending leader info."
-          )
-          return
+
+        phase2aBuffer += Phase2a(slot = nextSlot, round = round).withUniqueId(uniqueId)
+        pendingEntries(nextSlot) = ECommand(uniqueId)
+        phase2bs(nextSlot) = mutable.Map()
+        nextSlot += 1
+        if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
+          metrics.phase2aBufferFullTotal.inc()
+          flushPhase2aBuffer(thrifty = true)
         }
+    }
+  }
 
-            phase2bs(nextSlot) = mutable.Map()
-            nextSlot += 1
-            if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
-              metrics.phase2aBufferFullTotal.inc()
-              flushPhase2aBuffer(thrifty = true)
-            }
+  private def handleAcknowledge(
+      src: Transport#Address,
+      acknowledge: Acknowledge
+  ): Unit = {
+    metrics.requestsTotal.labels("Acknowledge").inc()
 
+    acks.put(acknowledge.uniqueId, acks.getOrElse(acknowledge.uniqueId, 0) + 1)
+
+    val f: Int = 1
+    if (acks.getOrElse(acknowledge.uniqueId, 0) >= f + 1) {
+      stableIds.add(acknowledge.uniqueId)
+      // This replica is the leader
+      if (leaderIndex == index && !proposed.contains(acknowledge.uniqueId)) {
+        proposed.add(acknowledge.uniqueId)
+        handleProposal(acknowledge.uniqueId)
+      }
     }
   }
 
@@ -763,7 +638,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Wait until we receive a quorum of phase 1bs.
-        phase1bs(request.acceptorId) = request
+        phase1bs(request.replicaId) = request
         if (phase1bs.size < config.f + 1) {
           return
         }
@@ -829,8 +704,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         // For every unchosen slot between the chosenWatermark and endSlot,
         // choose a value to propose and propose it. We also collect a set of
         // other commands to propose and propose them later.
-        val proposedCommands = mutable.Set[Command]()
-        val yetToProposeCommands = mutable.Set[Command]()
+        val proposedCommands = mutable.Set[UniqueId]()
+        val yetToProposeCommands = mutable.Set[UniqueId]()
         for (slot <- chosenWatermark to endSlot) {
           val (proposal, commands) = chooseProposal(votes, slot)
           yetToProposeCommands ++= commands
@@ -838,7 +713,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           val phase2a = proposal match {
             case ECommand(command) =>
               proposedCommands += command
-              Phase2a(slot = slot, round = round).withCommand(command)
+              Phase2a(slot = slot, round = round).withUniqueId(command)
             case ENoop =>
               Phase2a(slot = slot, round = round).withNoop(Noop())
           }
@@ -860,7 +735,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
         // Replay the pending proposals.
         nextSlot = endSlot + 1
-        for ((_, proposal) <- pendingProposals) {
+        for (proposal <- pendingProposals) {
+          phase2aBuffer += Phase2a(slot = nextSlot, round = round)
+            .withUniqueId(proposal)
           phase2bs(nextSlot) = mutable.Map()
           nextSlot += 1
         }
@@ -868,7 +745,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         // Replay the safe to propose values that we haven't just proposed.
         for (command <- yetToProposeCommands.diff(proposedCommands)) {
           phase2aBuffer += Phase2a(slot = nextSlot, round = round)
-            .withCommand(command)
+            .withUniqueId(command)
           pendingEntries(nextSlot) = ECommand(command)
           phase2bs(nextSlot) = mutable.Map()
           nextSlot += 1
@@ -918,7 +795,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     metrics.requestsTotal.labels("ValueChosenBuffer").inc()
     for (valueChosen <- valueChosenBuffer.valueChosen) {
       val entry = valueChosen.value match {
-        case ValueChosen.Value.Command(command) => ECommand(command)
+        case ValueChosen.Value.UniqueId(command) => ECommand(command)
         case ValueChosen.Value.Noop(_)          => ENoop
         case ValueChosen.Value.Empty =>
           leaderLogger.fatal("Empty ValueChosen.Vote")
@@ -956,11 +833,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   def chooseProposal(
       votes: collection.Map[AcceptorId, SortedMap[Slot, Phase1bVote]],
       slot: Slot
-  ): (Entry, Set[Command]) = {
+  ): (Entry, Set[UniqueId]) = {
     def phase1bVoteValueToEntry(voteValue: Phase1bVote.Value): Entry = {
       import Phase1bVote.Value
       voteValue match {
-        case Value.Command(command) => ECommand(command)
+        case Value.UniqueId(command) => ECommand(command)
         case Value.Noop(_)          => ENoop
         case Value.Empty =>
           leaderLogger.fatal("Empty Phase1bVote.Value.")
@@ -1008,7 +885,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // thriftiness), their votes may be very stale.
     (phase1bVoteValueToEntry(V.head.get),
      V.map({
-         case Some(Phase1bVote.Value.Command(command)) =>
+         case Some(Phase1bVote.Value.UniqueId(command)) =>
            command
          case Some(Phase1bVote.Value.Noop(_)) =>
            logger.fatal(s"Noop vote in round $k.")
@@ -1024,7 +901,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     def toValueChosen(slot: Slot, entry: Entry): ValueChosen = {
       entry match {
         case ECommand(command) =>
-          ValueChosen(slot = slot).withCommand(command)
+          ValueChosen(slot = slot).withUniqueId(command)
         case ENoop => ValueChosen(slot = slot).withNoop(Noop())
       }
     }
@@ -1086,7 +963,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
         // Wait for sufficiently many phase2b replies.
         phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
-        phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
+        phase2bs(phase2b.slot).put(phase2b.replicaId, phase2b)
         phase2bChosenInSlot(phase2, phase2b.slot) match {
           case NothingReadyYet =>
           // Don't do anything.
@@ -1113,7 +990,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {
     phase2bVote match {
-      case Phase2b.Vote.Command(command) => ECommand(command)
+      case Phase2b.Vote.UniqueId(command) => ECommand(command)
       case Phase2b.Vote.Noop(_)          => ENoop
       case Phase2b.Vote.Empty =>
         leaderLogger.fatal("Empty Phase2b.Vote")
@@ -1200,7 +1077,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         for (slot <- chosenWatermark to endSlot) {
           val entryToPhase2a: Entry => Phase2a = {
             case ECommand(command) =>
-              Phase2a(slot = slot, round = round).withCommand(command)
+              Phase2a(slot = slot, round = round).withUniqueId(command)
             case ENoop =>
               Phase2a(slot = slot, round = round).withNoop(Noop())
           }
@@ -1240,7 +1117,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
         case ECommand(
-            Command(clientAddressBytes, clientPseudonym, clientId, command)
+            UniqueId(clientAddressBytes, clientPseudonym, clientId)
             ) =>
           val clientAddress = transport.addressSerializer.fromBytes(
             clientAddressBytes.toByteArray()
@@ -1254,7 +1131,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             }
 
           if (!executed) {
-            val output = stateMachine.run(command.toByteArray())
+            val output = stateMachine.run(clientAddressBytes.toByteArray())
             clientTable((clientAddress, clientPseudonym)) = (clientId, output)
             metrics.executedCommandsTotal.inc()
 

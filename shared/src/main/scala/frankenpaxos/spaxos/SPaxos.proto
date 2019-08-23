@@ -123,13 +123,6 @@ message Decide {
   required UniqueId unique_id = 2;
 }
 
-message ProposeRequest {
-  // When a client proposes a command, it includes the round that it thinks the
-  // leader is currently in.
-  required int32 round = 1;
-  required UniqueId unique_id = 2;
-}
-
 // The designated "any" value.
 message AnyVal {}
 
@@ -155,19 +148,19 @@ message Phase1bVote {
   required int32 slot = 1;
   required int32 voteRound = 2;
   oneof value {
-     Command command = 3;
+     UniqueId unique_id = 3;
      Noop noop = 4;
   }
 }
 
 message Phase1b {
-  required int32 acceptor_id = 1;
+  required int32 replica_id = 1;
   required int32 round = 2;
   repeated Phase1bVote vote = 3;
 }
 
 message Phase1bNack {
-  required int32 acceptor_id = 1;
+  required int32 replica_id = 1;
   required int32 round = 2;
 }
 
@@ -175,11 +168,8 @@ message Phase2a {
   required int32 slot = 1;
   required int32 round = 2;
   oneof value {
-     Command command = 3;
+     UniqueId unique_id = 3;
      Noop noop = 4;
-     AnyVal any = 5;
-     // In this case, slot above is the start of the suffix.
-     AnyValSuffix any_suffix = 6;
   }
 }
 
@@ -188,11 +178,11 @@ message Phase2aBuffer {
 }
 
 message Phase2b {
-  required int32 acceptor_id = 1;
+  required int32 replica_id = 1;
   required int32 slot = 2;
   required int32 round = 3;
   oneof vote {
-    Command command = 4;
+    UniqueId unique_id = 4;
     Noop noop = 5;
   }
 }
@@ -204,7 +194,7 @@ message Phase2bBuffer {
 message ValueChosen {
   required int32 slot = 1;
   oneof value {
-    Command command = 2;
+    UniqueId unique_id = 2;
     Noop noop = 3;
   }
 }
@@ -233,7 +223,6 @@ message ReplicaInbound {
     Forward forward = 2;
     Acknowledge acknowledge = 3;
     Decide decide = 4;
-    ProposeRequest propose_request = 5;
     Phase1a phase1a = 6;
     Phase2aBuffer phase2a_buffer = 7;
     Phase1bNack phase1b_nack = 8;
