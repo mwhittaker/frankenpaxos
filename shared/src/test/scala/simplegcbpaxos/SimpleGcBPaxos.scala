@@ -42,7 +42,11 @@ class SimpleGcBPaxos(val f: Int, seed: Long) {
     replicaAddresses = for (i <- 1 to numReplicas)
       yield FakeTransportAddress(s"Replica $i"),
     garbageCollectorAddresses = for (i <- 1 to numReplicas)
-      yield FakeTransportAddress(s"Garbage Collector $i")
+      yield FakeTransportAddress(s"Garbage Collector $i"),
+    casLeaderAddresses = for (i <- 1 to numReplicas)
+      yield FakeTransportAddress(s"Cas Leader $i"),
+    casAcceptorAddresses = for (i <- 1 to numReplicas)
+      yield FakeTransportAddress(s"Cas Acceptor $i")
   )
 
   // Clients.

@@ -49,6 +49,16 @@ class SimpleGcBPaxos {
     garbageCollectorAddresses = Seq(
       JsTransportAddress("Garbage Collector 1"),
       JsTransportAddress("Garbage Collector 2")
+    ),
+    casLeaderAddresses = Seq(
+      JsTransportAddress("Cas Leader 1"),
+      JsTransportAddress("Cas Leader 2"),
+      JsTransportAddress("Cas Leader 3")
+    ),
+    casAcceptorAddresses = Seq(
+      JsTransportAddress("Cas Acceptor 1"),
+      JsTransportAddress("Cas Acceptor 2"),
+      JsTransportAddress("Cas Acceptor 3")
     )
   )
 

@@ -1,6 +1,7 @@
 // A protocol cheatsheet, similar to [1].
 //
 // Normal case.
+//
 //                     Dependency
 //                      Service
 //   Client    Leader    Node   Proposer Acceptor Replica
@@ -14,6 +15,7 @@
 //      | <------^--------^--------^--------^------- |     ClientReply
 //
 // Recovery via proposer.
+//
 //                     Dependency
 //                      Service
 //   Client    Leader    Node   Proposer Acceptor Replica
@@ -26,6 +28,7 @@
 //      | <------^--------^--------^--------^------- |     ClientReply
 //
 // Recovery via replica.
+//
 //                     Dependency
 //                      Service
 //   Client    Leader    Node   Proposer Acceptor Replica
@@ -34,6 +37,17 @@
 //      |        |        |        |        |   .--- |     Commit
 //      |        |        |        |        |   '--> |
 //      | <------^--------^--------^--------^------- |     ClientReply
+//
+// Replica Garbage Collection
+//
+//   Replica CasLeader CasAcceptor
+//      | -----> |        | CasClientRequest
+//      |        | -----> | CasPhase1a
+//      |        | <----- | CasPhase1b
+//      |        | -----> | CasPhase2a
+//      |        | <----- | CasPhase2b
+//      |        | <----- | CasNack
+//      | <----- |        | CasClientReply
 //
 // Misc.
 //                     Dependency
@@ -229,6 +243,69 @@ message GarbageCollect {
   repeated int32 frontier = 3;
 }
 
+message CasClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The client's address.
+  required bytes client_address = 1;
+
+  // Clients annotate every command with a unique and monotonically increasing
+  // id. The pair of (client address, client id) uniquely identify a command.
+  required int32 client_id = 2;
+
+  // The garbage collection watermark.
+  required VertexIdPrefixSetProto watermark = 3;
+}
+
+message CasPhase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message CasPhase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required int32 acceptor_index = 2;
+  required int32 vote_round = 3;
+  optional VertexIdPrefixSetProto vote_value = 4;
+}
+
+message CasPhase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required VertexIdPrefixSetProto watermark = 2;
+}
+
+message CasPhase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required int32 acceptor_index = 2;
+}
+
+message CasNack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 higher_round = 1;
+}
+
+message CasClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 client_id = 1;
+  required VertexIdPrefixSetProto watermark = 2;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
 message LeaderInbound {
   option (scalapb.message).annotations =
@@ -290,6 +367,37 @@ message GarbageCollectorInbound {
 
   oneof request {
     GarbageCollect garbage_collect = 1;
+  }
+}
+
+message CasClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    CasClientReply cas_client_reply = 1;
+  }
+}
+
+message CasLeaderInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    CasClientRequest cas_client_request = 1;
+    CasPhase1b cas_phase1b = 2;
+    CasPhase2b cas_phase2b = 3;
+    CasNack cas_nack = 4;
+  }
+}
+
+message CasAcceptorInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    CasPhase1a cas_phase1a = 1;
+    CasPhase2a cas_phase2a = 2;
   }
 }
 
