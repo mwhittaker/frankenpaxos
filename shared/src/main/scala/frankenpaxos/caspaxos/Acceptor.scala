@@ -144,6 +144,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
           s"already in round $round. The acceptor is sending back a nack."
       )
       leader.send(LeaderInbound().withNack(Nack(higherRound = round)))
+      return
     }
 
     round = phase1a.round
@@ -170,6 +171,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
           s"already in round $round. The acceptor is sending back a nack."
       )
       leader.send(LeaderInbound().withNack(Nack(higherRound = round)))
+      return
     }
 
     round = round

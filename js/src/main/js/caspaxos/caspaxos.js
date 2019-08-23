@@ -123,7 +123,7 @@ let leader_info = {
       </div>
 
       <div v-if="node.actor.state.constructor.name.endsWith('Phase1')">
-        Idle
+        Phase1
         <fp-object>
           <fp-field :name="'clientRequests'">
             <frankenpaxos-seq :seq="node.actor.state.clientRequests"
@@ -145,7 +145,7 @@ let leader_info = {
       </div>
 
       <div v-if="node.actor.state.constructor.name.endsWith('Phase2')">
-        Idle
+        Phase2
         <fp-object>
           <fp-field :name="'clientRequests'">
             <frankenpaxos-seq :seq="node.actor.state.clientRequests"
@@ -165,6 +165,22 @@ let leader_info = {
           </fp-field>
           <fp-field :name="'resendPhase2as'"
                     :value="node.actor.state.resendPhase2as"></fp-field>
+        </fp-object>
+      </div>
+
+      <div v-if="node.actor.state.constructor.name.endsWith('WaitingToRecover')">
+        WaitingToRecover
+        <fp-object>
+          <fp-field :name="'clientRequests'">
+            <frankenpaxos-seq :seq="node.actor.state.clientRequests"
+                              v-slot="{value: value}">
+              <client-request :value="value"></client-request>
+            </frankenpaxos-seq>
+          </fp-field>
+          <fp-field :name="'round'"
+                    :value="node.actor.state.round"></fp-field>
+          <fp-field :name="'recoverTimer'"
+                    :value="node.actor.state.recoverTimer"></fp-field>
         </fp-object>
       </div>
     </div>

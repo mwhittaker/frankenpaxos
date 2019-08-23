@@ -53,7 +53,9 @@ class CasPaxos {
       config = config,
       options = LeaderOptions.default.copy(
         resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(3),
-        resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(3)
+        resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(3),
+        minNackSleepPeriod = java.time.Duration.ofSeconds(1),
+        maxNackSleepPeriod = java.time.Duration.ofSeconds(5)
       ),
       metrics = new LeaderMetrics(FakeCollectors)
     )

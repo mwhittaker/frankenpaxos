@@ -16,6 +16,8 @@ import scala.scalajs.js.annotation._
 case class LeaderOptions(
     resendPhase1asTimerPeriod: java.time.Duration,
     resendPhase2asTimerPeriod: java.time.Duration,
+    minNackSleepPeriod: java.time.Duration,
+    maxNackSleepPeriod: java.time.Duration,
     measureLatencies: Boolean
 )
 
@@ -24,6 +26,8 @@ object LeaderOptions {
   val default = LeaderOptions(
     resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(1),
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(1),
+    minNackSleepPeriod = java.time.Duration.ofMillis(100),
+    maxNackSleepPeriod = java.time.Duration.ofMillis(1000),
     measureLatencies = true
   )
 }
@@ -95,6 +99,13 @@ object Leader {
       phase2bs: mutable.Map[AcceptorIndex, Phase2b],
       resendPhase2as: Transport#Timer
   ) extends State[Transport]
+
+  @JSExportAll
+  case class WaitingToRecover[Transport <: frankenpaxos.Transport[Transport]](
+      clientRequests: mutable.Buffer[ClientRequest],
+      round: Int,
+      recoverTimer: Transport#Timer
+  ) extends State[Transport]
 }
 
 @JSExportAll
@@ -130,7 +141,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // The leader's state.
   @JSExport
   protected var state: State[Transport] = Idle(
-    round = roundSystem.nextClassicRound(index, round = 0)
+    round = roundSystem.nextClassicRound(index, round = -1)
   )
 
   // Note that we don't have a client table unlike a regular Paxos leader. This
@@ -167,17 +178,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   private def getRound(state: State[Transport]): Int = {
     state match {
-      case idle: Idle[Transport]     => idle.round
-      case phase1: Phase1[Transport] => phase1.round
-      case phase2: Phase2[Transport] => phase2.round
+      case idle: Idle[Transport]                => idle.round
+      case phase1: Phase1[Transport]            => phase1.round
+      case phase2: Phase2[Transport]            => phase2.round
+      case waiting: WaitingToRecover[Transport] => waiting.round
     }
   }
 
   private def stopTimers(state: State[Transport]): Unit = {
     state match {
-      case idle: Idle[Transport]     =>
-      case phase1: Phase1[Transport] => phase1.resendPhase1as.stop()
-      case phase2: Phase2[Transport] => phase2.resendPhase2as.stop()
+      case idle: Idle[Transport]                =>
+      case phase1: Phase1[Transport]            => phase1.resendPhase1as.stop()
+      case phase2: Phase2[Transport]            => phase2.resendPhase2as.stop()
+      case waiting: WaitingToRecover[Transport] => waiting.recoverTimer.stop()
     }
   }
 
@@ -232,6 +245,20 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     t
   }
 
+  private def makeRecoverTimer(
+      round: Int,
+      clientRequests: mutable.Buffer[ClientRequest]
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"recover",
+      frankenpaxos.Util.randomDuration(options.minNackSleepPeriod,
+                                       options.maxNackSleepPeriod),
+      () => transitionToPhase1(round, clientRequests)
+    )
+    t.start()
+    t
+  }
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
       src: Transport#Address,
@@ -277,6 +304,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case phase2: Phase2[Transport] =>
         // Buffer the client request for later.
         phase2.clientRequests += clientRequest
+      case waiting: WaitingToRecover[Transport] =>
+        // Buffer the client request for later.
+        waiting.clientRequests += clientRequest
     }
   }
 
@@ -289,6 +319,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         logger.debug(s"Leader received Phase1b while idle.")
       case phase2: Phase2[Transport] =>
         logger.debug(s"Leader received Phase1b while in phase 2.")
+      case waiting: WaitingToRecover[Transport] =>
+        logger.debug(s"Leader received Phase1b while waiting to recover.")
       case phase1: Phase1[Transport] =>
         if (phase1b.round != phase1.round) {
           logger.debug(
@@ -297,6 +329,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           )
           // If phase1b.round were larger, then we'd have received a Nack
           // instead of a Phase1b.
+          if (phase1b.round >= phase1.round) {
+            println(s"phase1b.round = ${phase1b.round}")
+            println(s"phase1.round = ${phase1.round}")
+          }
           logger.checkLt(phase1b.round, phase1.round)
           return
         }
@@ -351,6 +387,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         logger.debug("Leader received Phase2b while idle.")
       case phase1: Phase1[Transport] =>
         logger.debug("Leader received Phase2b while in phase 1.")
+      case waiting: WaitingToRecover[Transport] =>
+        logger.debug(s"Leader received Phase2b while waiting to recover.")
       case phase2: Phase2[Transport] =>
         if (phase2b.round != phase2.round) {
           logger.debug(
@@ -359,6 +397,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           )
           // If phase2b.round were larger, then we'd have received a Nack
           // instead of a Phase2b.
+          if (phase2b.round >= phase2.round) {
+            println(s"phase2b.round = ${phase2b.round}")
+            println(s"phase2.round = ${phase2.round}")
+          }
           logger.checkLt(phase2b.round, phase2.round)
           return
         }
@@ -410,13 +452,30 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     val newRound = roundSystem.nextClassicRound(index, nack.higherRound)
+    stopTimers(state)
     state match {
+      // If we're idle, then we ignore nacks.
       case idle: Idle[Transport] =>
         state = Idle(round = newRound)
+      // In all other cases, we wait to recover to avoid dueling leaders.
       case phase1: Phase1[Transport] =>
-        transitionToPhase1(newRound, phase1.clientRequests)
+        state = WaitingToRecover(
+          clientRequests = phase1.clientRequests,
+          round = newRound,
+          recoverTimer = makeRecoverTimer(newRound, phase1.clientRequests)
+        )
       case phase2: Phase2[Transport] =>
-        transitionToPhase1(newRound, phase2.clientRequests)
+        state = WaitingToRecover(
+          clientRequests = phase2.clientRequests,
+          round = newRound,
+          recoverTimer = makeRecoverTimer(newRound, phase2.clientRequests)
+        )
+      case waiting: WaitingToRecover[Transport] =>
+        state = WaitingToRecover(
+          clientRequests = waiting.clientRequests,
+          round = newRound,
+          recoverTimer = makeRecoverTimer(newRound, waiting.clientRequests)
+        )
     }
   }
 }
