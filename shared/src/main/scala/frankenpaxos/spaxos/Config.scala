@@ -9,6 +9,6 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
   def quorumSize = f + 1
 
   def valid(): Boolean = {
-    return replicaAddresses.size == f + 1
+    return true//replicaAddresses.size == f + 1
   }
 }

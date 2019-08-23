@@ -7,13 +7,10 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
-import frankenpaxos.monitoring.Collectors
-import frankenpaxos.monitoring.Counter
-import frankenpaxos.monitoring.Gauge
-import frankenpaxos.monitoring.PrometheusCollectors
-import frankenpaxos.monitoring.Summary
-import frankenpaxos.statemachine.StateMachine
+import frankenpaxos.monitoring._
+import frankenpaxos.statemachine.{AppendLog, StateMachine}
 import frankenpaxos.thrifty.ThriftySystem
+
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 import scala.collection.breakOut
@@ -317,7 +314,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     logger: Logger,
     config: Config[Transport],
     // Public for the JS visualizations.
-    val stateMachine: StateMachine,
+    stateMachine: StateMachine,
     options: ReplicaOptions = ReplicaOptions.default,
     metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
@@ -326,6 +323,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = ReplicaInbound
   override def serializer = Replica.serializer
+
 
   // Fields ////////////////////////////////////////////////////////////////////
   logger.check(config.valid())

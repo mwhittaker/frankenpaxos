@@ -3,7 +3,8 @@ import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
 import frankenpaxos.monitoring.FakeCollectors
-import frankenpaxos.statemachine.AppendLog
+import frankenpaxos.statemachine.{AppendLog, StateMachine}
+
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -46,13 +47,14 @@ class SPaxos {
     phase2aBufferFlushPeriod = java.time.Duration.ofSeconds(5),
   )
   val replicas = for (i <- 1 to 5) yield {
-    val replica = new Replica[JsTransport](JsTransportAddress(s"Replica $i"),
+    val logger = new JsLogger()
+    val address = JsTransportAddress(s"Replica $i")
+    val replica = new Replica[JsTransport](address,
                                          transport,
-                                         new JsLogger(),
+                                         logger,
                                          config,
-                                         new AppendLog(),
-                                          replicaOptions,
-                                         new ReplicaMetrics(FakeCollectors))
+      new AppendLog(),
+                                        ReplicaOptions.default, new ReplicaMetrics(FakeCollectors))
     (logger, replica)
   }
   val (replica1logger, replica1) = replicas(0)
@@ -65,5 +67,5 @@ class SPaxos {
 @JSExportAll
 @JSExportTopLevel("frankenpaxos.spaxos.TweenedSPaxos")
 object TweenedSPaxos {
-  val SPaxos = new SPaxos();
+  val SPaxos = new SPaxos()
 }
