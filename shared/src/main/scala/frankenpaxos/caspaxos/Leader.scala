@@ -329,10 +329,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           )
           // If phase1b.round were larger, then we'd have received a Nack
           // instead of a Phase1b.
-          if (phase1b.round >= phase1.round) {
-            println(s"phase1b.round = ${phase1b.round}")
-            println(s"phase1.round = ${phase1.round}")
-          }
           logger.checkLt(phase1b.round, phase1.round)
           return
         }
@@ -397,10 +393,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           )
           // If phase2b.round were larger, then we'd have received a Nack
           // instead of a Phase2b.
-          if (phase2b.round >= phase2.round) {
-            println(s"phase2b.round = ${phase2b.round}")
-            println(s"phase2.round = ${phase2.round}")
-          }
           logger.checkLt(phase2b.round, phase2.round)
           return
         }
