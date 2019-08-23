@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>S-Paxos</title>
+  <meta name=viewport content="width=device-width, initial-scale=1">
+  <link href="../frankenpaxos.css" rel="stylesheet">
+  <link href="../style.css" rel="stylesheet">
+  <style type="text/css">
+    .animation {
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+      max-width: 400px;
+      max-height: 400px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1>S-Paxos</h1>
+
+    <svg id="animation" class="animation" viewBox="0 0 400 400"></svg>
+
+    <frankenpaxos-tweened-app
+      id="app"
+      :transport="transport"
+      :send_message="send_message"
+      :settings="settings"
+      v-slot="{timer_tweens: timer_tweens}">
+      <frankenpaxos-settings
+        :transport="transport"
+        v-model="settings">
+      </frankenpaxos-settings>
+
+      <frankenpaxos-actor
+        :transport="transport"
+        :node="node"
+        :timer_tweens="timer_tweens"
+        v-on:partition="partition"
+        v-on:unpartition="unpartition">
+      </frankenpaxos-actor>
+
+      <frankenpaxos-unittest :transport="transport"></frankenpaxos-unittest>
+    </frankenpaxos-tweened-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.5.1/snap.svg.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.1.2/TweenMax.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.1.2/TimelineMax.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.0.2/plugins/AttrPlugin.min.js"></script>
+  <script type="text/javascript" src="../../../../target/scala-2.12/frankenpaxos-fastopt.js"></script>
+  <script type="text/javascript" src="../frankenpaxos.js"></script>
+  <script type="text/javascript" src="./spaxos.js"></script>
+</body>
+</html>

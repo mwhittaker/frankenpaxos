@@ -369,6 +369,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   protected var round: Round = 0
 
   // The log of chosen commands. Public for testing.
+  @JSExportAll
   val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
 
   // The client table records the response to the latest request from each
