@@ -577,6 +577,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val recoverInstanceTimers = mutable.Map[Instance, Transport#Timer]()
 
+  def handleDecide(src: Transport#Address, r: Decide): Unit = ???
+
+  def handlePhase1a(src: Transport#Address, r: Phase1a): Unit = ???
+
+  def handlePhase2aBuffer(src: Transport#Address, r: Phase2aBuffer): Unit = ???
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
       src: Transport#Address,
@@ -585,6 +591,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     import ReplicaInbound.Request
     inbound.request match {
       case Request.ClientRequest(r) => handleClientRequest(src, r)
+      case Request.Acknowledge(r) => handleAcknowledge(src, r)
+      case Request.Decide(r) => handleDecide(src, r)
+      case Request.Forward(r) => handleForward(src, r)
+      case Request.Phase1A(r) => handlePhase1a(src, r)
+      case Request.Phase1BNack(r) => handlePhase1bNack(src, r)
+      case Request.Phase2ABuffer(r) => handlePhase2aBuffer(src, r)
+      case Request.Phase2BBuffer(r) => handlePhase2bBuffer(src, r)
+      case Request.ProposeRequest(r) => handleProposeRequest(src, r)
+      case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
       }

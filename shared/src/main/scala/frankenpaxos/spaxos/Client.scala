@@ -160,7 +160,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         metrics.unpendingResponsesTotal.inc()
     }
 
-    processNewRound(proposeReply.round)
   }
 
   // Methods ///////////////////////////////////////////////////////////////////
@@ -195,13 +194,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
     val request = toProposeRequest(pendingCommand)
-    config.roundSystem.roundType(round) match {
-      case ClassicRound =>
-        val leader = leaders(config.roundSystem.leader(round))
-        leader.send(LeaderInbound().withProposeRequest(request))
-      case FastRound =>
-        acceptors.foreach(_.send(AcceptorInbound().withProposeRequest(request)))
-    }
+    val leader = replicas(0)
+    leader.send(ReplicaInbound().withClientRequest(request))
   }
 
   private def reproposeTimer(pseudonym: Pseudonym): Transport#Timer = {
@@ -219,8 +213,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
           case Some(pendingCommand) =>
             val request = toProposeRequest(pendingCommand)
-            for ((_, leader) <- leaders) {
-              leader.send(LeaderInbound().withProposeRequest(request))
+            for ((_, leader) <- replicas) {
+              leader.send(ReplicaInbound().withClientRequest(request))
             }
         }
         t.start()
