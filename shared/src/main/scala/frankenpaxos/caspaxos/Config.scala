@@ -5,6 +5,7 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     leaderAddresses: Seq[Transport#Address],
     acceptorAddresses: Seq[Transport#Address]
 ) {
+  val quorumSize: Int = f + 1
   val n: Int = (2 * f) + 1
 
   def valid(): Boolean =

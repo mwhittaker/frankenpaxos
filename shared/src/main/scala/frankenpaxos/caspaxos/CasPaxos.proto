@@ -36,8 +36,8 @@ message IntSet {
   repeated int32 value = 1;
 }
 
-// A client issued command.
-message Command {
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
@@ -52,14 +52,6 @@ message Command {
   // is a set of integers and commands are requests to add a set of integers to
   // the set of integers.
   required IntSet int_set = 3;
-}
-
-// Protocol messages. //////////////////////////////////////////////////////////
-message ClientRequest {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required Command command = 1;
 }
 
 message Phase1a {
