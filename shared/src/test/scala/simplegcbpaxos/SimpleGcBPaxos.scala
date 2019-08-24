@@ -27,6 +27,7 @@ class SimpleGcBPaxos(val f: Int, seed: Long) {
   val numDepServiceNodes = 2 * f + 1
   val numAcceptors = 2 * f + 1
   val numReplicas = f + 1
+  val numCasAcceptors = 2 * f + 1
 
   // Configuration.
   val config = Config[FakeTransport](
@@ -45,7 +46,7 @@ class SimpleGcBPaxos(val f: Int, seed: Long) {
       yield FakeTransportAddress(s"Garbage Collector $i"),
     casLeaderAddresses = for (i <- 1 to numReplicas)
       yield FakeTransportAddress(s"Cas Leader $i"),
-    casAcceptorAddresses = for (i <- 1 to numReplicas)
+    casAcceptorAddresses = for (i <- 1 to numCasAcceptors)
       yield FakeTransportAddress(s"Cas Acceptor $i")
   )
 
