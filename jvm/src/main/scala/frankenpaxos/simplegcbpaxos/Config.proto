@@ -22,4 +22,6 @@ message NettyConfigProto {
   repeated HostPortProto acceptorAddress = 5;
   repeated HostPortProto replicaAddress = 6;
   repeated HostPortProto garbageCollectorAddress = 7;
+  repeated HostPortProto casLeaderAddress = 8;
+  repeated HostPortProto casAcceptorAddress = 9;
 }

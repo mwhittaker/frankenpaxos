@@ -3,6 +3,8 @@ import sbtcrossproject.CrossPlugin.autoImport.crossProject
 
 name := "frankenpaxos"
 
+lazy val Benchmark = config("bench") extend Test
+
 lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
   .in(file("."))
   .settings(
@@ -36,7 +38,7 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
       "org.scala-js" %% "scalajs-stubs" % scalaJSVersion % "provided",
       "org.scalacheck" %% "scalacheck" % "1.14.0",
       "org.scalactic" %% "scalactic" % "3.0.5",
-      "org.scalatest" %% "scalatest" % "3.0.5",
+      "org.scalatest" %% "scalatest" % "3.0.5"
     ),
     PB.targets in Compile := Seq(
       scalapb.gen() -> (sourceManaged in Compile).value
@@ -45,10 +47,22 @@ lazy val frankenpaxos = crossProject(JSPlatform, JVMPlatform)
       file("shared/src/main/scala"),
       file("jvm/src/main/scala")
     ),
+    // These settings enable scalameter. See [1].
+    //
+    // [1]: https://github.com/scalameter/scalameter-examples/blob/master/basic-with-separate-config/build.sbt
     testFrameworks += new TestFramework("org.scalameter.ScalaMeterFramework"),
+    parallelExecution in Benchmark := false,
+    logBuffered in Benchmark := false
   )
   .jsSettings(
     libraryDependencies += "org.scala-js" %%% "scalajs-java-time" % "0.2.5"
+  )
+  // These settings enable scalameter. See [1].
+  //
+  // [1]: https://github.com/scalameter/scalameter-examples/blob/master/basic-with-separate-config/build.sbt
+  .configs(Benchmark)
+  .settings(
+    inConfig(Benchmark)(Defaults.testSettings): _*
   )
 
 lazy val frankenpaxosJVM = frankenpaxos.jvm
