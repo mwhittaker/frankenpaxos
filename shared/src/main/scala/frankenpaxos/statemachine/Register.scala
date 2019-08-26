@@ -14,6 +14,12 @@ class Register extends StateMachine {
     input
   }
 
+  override def toBytes(): Array[Byte] = x.getBytes()
+
+  override def fromBytes(snapshot: Array[Byte]): Unit = {
+    x = new String(snapshot)
+  }
+
   // We say every pair of commands conflict. Technically, if two strings are
   // the same, they don't conflict, but to keep things simple, we say
   // everything conflicts.

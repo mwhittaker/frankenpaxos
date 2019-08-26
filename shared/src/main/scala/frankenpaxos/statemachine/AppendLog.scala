@@ -9,6 +9,8 @@ class AppendLog extends StateMachine {
 
   override def toString(): String = xs.toString()
 
+  def get(): Seq[String] = xs.toSeq
+
   override def run(input: Array[Byte]): Array[Byte] = {
     xs += new String(input)
     (xs.size - 1).toString().getBytes()
@@ -18,6 +20,13 @@ class AppendLog extends StateMachine {
       firstCommand: Array[Byte],
       secondCommand: Array[Byte]
   ): Boolean = true
+
+  override def toBytes(): Array[Byte] =
+    AppendLogProto(x = xs).toByteArray
+
+  override def fromBytes(snapshot: Array[Byte]): Unit = {
+    xs = AppendLogProto.parseFrom(snapshot).x.to[mutable.Buffer]
+  }
 
   override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
     new ConflictIndex[Key, Array[Byte]] {

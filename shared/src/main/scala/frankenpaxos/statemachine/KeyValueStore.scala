@@ -40,6 +40,8 @@ class KeyValueStore
   override val inputSerializer = KeyValueStoreInputSerializer
   override val outputSerializer = KeyValueStoreOutputSerializer
 
+  def get(): Map[String, String] = kvs.toMap
+
   override def typedRun(input: KeyValueStoreInput): KeyValueStoreOutput = {
     import KeyValueStoreInput.Request
     input.request match {
@@ -87,6 +89,20 @@ class KeyValueStore
 
       case (Request.Empty, _) | (_, Request.Empty) =>
         throw new IllegalStateException()
+    }
+  }
+
+  override def toBytes(): Array[Byte] =
+    KeyValueStoreProto(
+      kvs.iterator
+        .map({ case (k, v) => SetKeyValuePair(key = k, value = v) })
+        .toSeq
+    ).toByteArray
+
+  override def fromBytes(snapshot: Array[Byte]): Unit = {
+    kvs.clear()
+    for (kv <- KeyValueStoreProto.parseFrom(snapshot).kv) {
+      kvs(kv.key) = kv.value
     }
   }
 

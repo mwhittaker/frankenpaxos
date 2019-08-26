@@ -1,0 +1,14 @@
+syntax = "proto2";
+
+package frankenpaxos.statemachine;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.statemachine"
+  flat_package: true
+};
+
+message AppendLogProto {
+  repeated string x = 1;
+}

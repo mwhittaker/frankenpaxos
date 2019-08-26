@@ -14,6 +14,12 @@ class Noop extends StateMachine {
       secondCommand: Array[Byte]
   ): Boolean = false
 
+  override def toBytes(): Array[Byte] = Array[Byte]()
+
+  override def fromBytes(snapshot: Array[Byte]): Unit = {
+    // Do nothing.
+  }
+
   override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] = {
     new ConflictIndex[Key, Array[Byte]] {
       private val commands = mutable.Map[Key, Array[Byte]]()

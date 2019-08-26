@@ -33,6 +33,10 @@ message GetReply {
   repeated GetKeyValuePair key_value = 1;
 }
 
+message KeyValueStoreProto {
+  repeated SetKeyValuePair kv = 1;
+}
+
 message KeyValueStoreInput {
   oneof request {
     GetRequest get_request = 1;

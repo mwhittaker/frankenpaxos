@@ -50,7 +50,9 @@ case class ReplicaOptions(
     // If `unsafeDontRecover` is true, replicas don't make any attempt to
     // recover vertices. This is not live and should only be used for
     // performance debugging.
-    unsafeDontRecover: Boolean
+    unsafeDontRecover: Boolean,
+    // TODO(mwhittaker): Double check.
+    graphGarbageCollectionPeriod: java.time.Duration
 )
 
 @JSExportAll
@@ -63,7 +65,9 @@ object ReplicaOptions {
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
     garbageCollectEveryNCommands = 10000,
     measureLatencies = true,
-    unsafeDontRecover = false
+    unsafeDontRecover = false,
+    // TODO(mwhittaker): Double check.
+    graphGarbageCollectionPeriod = java.time.Duration.ofSeconds(4)
   )
 }
 
@@ -290,6 +294,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       t.start()
       Some(t)
     }
+
+  // TODO(mwhittaker): Set an offset timer to start the periodic GC timer.
+  // TODO(mwhittaker): Set a GC timer that every time it goes off, it takes
+  // snapshots, contacts the CAS leader to get its watermark chosen. When the
+  // future is fulfilled, if the watermark is the same, throw away old stuff.
+  // TODO(mwhittaker): Switch states to buffer map.
+  // TODO(mwhittaker): Change handle recover to return a snapshot if the needed
+  // thing is old.
+  // TODO(mwhittaker): Add handle snapshot function to swap out a snapshot.
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
