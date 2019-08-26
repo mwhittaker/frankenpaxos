@@ -5,14 +5,14 @@ import org.scalatest.Matchers
 
 class ClientTableSpec extends FlatSpec with Matchers {
   "A client table" should "execute one command successfully" in {
-    val clientTable = new ClientTable[String, String]()
+    val clientTable = ClientTable[String, String]()
     clientTable.executed("a", 0) shouldBe ClientTable.NotExecuted
     clientTable.execute("a", 0, "foo")
     clientTable.executed("a", 0) shouldBe ClientTable.Executed(Some("foo"))
   }
 
   it should "execute ascending commands successfully" in {
-    val clientTable = new ClientTable[String, String]()
+    val clientTable = ClientTable[String, String]()
     clientTable.execute("a", 0, "foo")
 
     clientTable.executed("a", 1) shouldBe ClientTable.NotExecuted
@@ -28,7 +28,7 @@ class ClientTableSpec extends FlatSpec with Matchers {
   }
 
   it should "execute commands in random order successfully" in {
-    val clientTable = new ClientTable[String, String]()
+    val clientTable = ClientTable[String, String]()
     clientTable.execute("a", 1, "a1")
     clientTable.execute("a", 0, "a0")
     clientTable.execute("b", 4, "b4")

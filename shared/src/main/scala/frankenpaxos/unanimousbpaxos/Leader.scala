@@ -5,6 +5,7 @@ import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import frankenpaxos.Serializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
 import frankenpaxos.compact.FakeCompactSet
@@ -275,9 +276,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   val states = mutable.Map[VertexId, State[Transport]]()
 
   // The client table, which records the latest commands for each client.
+  implicit private val addressSerializer = transport.addressSerializer
   @JSExport
   protected val clientTable =
-    new ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
+    ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
 
   // If a leader commits a command in vertex A with a dependency on uncommitted
   // vertex B, then the leader sets a timer to recover vertex B. This prevents

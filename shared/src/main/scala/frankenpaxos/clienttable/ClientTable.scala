@@ -1,5 +1,7 @@
 package frankenpaxos.clienttable
 
+import com.google.protobuf.ByteString
+import frankenpaxos.Serializer
 import frankenpaxos.compact.IntPrefixSet
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
@@ -83,25 +85,64 @@ import scala.scalajs.js.annotation._
 // [2]: https://scholar.google.com/scholar?cluster=15141061938475263862
 @JSExportAll
 object ClientTable {
-  sealed trait ExecutedResult[+Output]
-  object NotExecuted extends ExecutedResult[Nothing]
-  case class Executed[Output](output: Option[Output])
-      extends ExecutedResult[Output]
-}
-
-@JSExportAll
-class ClientTable[ClientAddress, Output] {
   type ClientId = Int
 
   @JSExportAll
-  case class ClientState(
+  sealed trait ExecutedResult[+Output]
+  @JSExportAll
+  object NotExecuted extends ExecutedResult[Nothing]
+  @JSExportAll
+  case class Executed[Output](output: Option[Output])
+      extends ExecutedResult[Output]
+
+  @JSExportAll
+  case class ClientState[Output](
       largestId: ClientId,
       largestOutput: Output,
       executedIds: IntPrefixSet
   )
 
-  @JSExport
-  protected val table = mutable.Map[ClientAddress, ClientState]()
+  @JSExport("apply")
+  def apply[ClientAddress, Output]()(
+      implicit addressSerializer: Serializer[ClientAddress],
+      outputSerializer: Serializer[Output]
+  ): ClientTable[ClientAddress, Output] = {
+    new ClientTable(mutable.Map[ClientAddress, ClientState[Output]]())
+  }
+
+  def fromProto[ClientAddress, Output](
+      proto: ClientTableProto
+  )(
+      implicit addressSerializer: Serializer[ClientAddress],
+      outputSerializer: Serializer[Output]
+  ): ClientTable[ClientAddress, Output] = {
+    val table = mutable.Map[ClientAddress, ClientTable.ClientState[Output]]()
+    for (kv <- proto.kv) {
+      table(addressSerializer.fromBytes(kv.clientAddress.toByteArray)) =
+        ClientState(
+          largestId = kv.clientState.largestId,
+          largestOutput = outputSerializer.fromBytes(
+            kv.clientState.largestOutput.toByteArray
+          ),
+          executedIds = IntPrefixSet.fromProto(kv.clientState.executedIds)
+        )
+    }
+    new ClientTable(table)
+  }
+}
+
+@JSExportAll
+class ClientTable[ClientAddress, Output] private (
+    @JSExport
+    protected val table: mutable.Map[
+      ClientAddress,
+      ClientTable.ClientState[Output]
+    ]
+)(
+    implicit addressSerializer: Serializer[ClientAddress],
+    outputSerializer: Serializer[Output]
+) {
+  import ClientTable._
 
   def executed(
       clientAddress: ClientAddress,
@@ -149,5 +190,29 @@ class ClientTable[ClientAddress, Output] {
           )
         }
     }
+  }
+
+  def toProto(): ClientTableProto = {
+    def stateToProto(state: ClientState[Output]): ClientStateProto =
+      ClientStateProto(
+        largestId = state.largestId,
+        largestOutput =
+          ByteString.copyFrom(outputSerializer.toBytes(state.largestOutput)),
+        executedIds = state.executedIds.toProto()
+      )
+
+    ClientTableProto(
+      table.iterator
+        .map({
+          case (address, state) => {
+            ClientTableProto.KeyValue(
+              clientAddress =
+                ByteString.copyFrom(addressSerializer.toBytes(address)),
+              clientState = stateToProto(state)
+            )
+          }
+        })
+        .toSeq
+    )
   }
 }

@@ -8,6 +8,7 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import frankenpaxos.Serializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
 import frankenpaxos.compact.FakeCompactSet
@@ -456,9 +457,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // client. For example, if command c1 sends command x with id 2 to a leader
   // and the leader later executes x yielding response y, then c1 maps to (2,
   // y) in the client table.
+  implicit private val addressSerializer = transport.addressSerializer
   @JSExport
   protected val clientTable =
-    new ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
+    ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
 
   @JSExport
   protected val leaderStates = mutable.Map[Instance, LeaderState]()

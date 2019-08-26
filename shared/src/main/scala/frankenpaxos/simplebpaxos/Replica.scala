@@ -5,6 +5,7 @@ import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import frankenpaxos.Serializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
 import frankenpaxos.depgraph.DependencyGraph
@@ -181,9 +182,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   val commands = mutable.Map[VertexId, Committed]()
 
   // The client table, which records the latest commands for each client.
+  implicit val addressSerializer = transport.addressSerializer
   @JSExport
   protected val clientTable =
-    new ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
+    ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
 
   // If a replica commits a command in vertex A with a dependency on uncommitted
   // vertex B, then the replica sets a timer to recover vertex B. This prevents

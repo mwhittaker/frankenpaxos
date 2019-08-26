@@ -1,0 +1,32 @@
+syntax = "proto2";
+
+package frankenpaxos.clienttable;
+
+import "frankenpaxos/compact/IntPrefixSet.proto";
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.clienttable"
+  flat_package: true
+};
+
+message ClientStateProto {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 largest_id = 1;
+  required bytes largest_output = 2;
+  required frankenpaxos.compact.IntPrefixSetProto executed_ids = 3;
+}
+
+message ClientTableProto {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  message KeyValue {
+    required bytes client_address = 1;
+    required ClientStateProto client_state = 2;
+  }
+
+  repeated KeyValue kv = 1;
+}
