@@ -49,4 +49,29 @@ class ClientTableSpec extends FlatSpec with Matchers {
     clientTable.executed("b", 3) shouldBe ClientTable.NotExecuted
     clientTable.executed("b", 4) shouldBe ClientTable.Executed(Some("b4"))
   }
+
+  it should "serialize successfully" in {
+    val clientTable = ClientTable[String, String]()
+    clientTable.execute("a", 1, "a1")
+    clientTable.execute("a", 0, "a0")
+    clientTable.execute("b", 4, "b4")
+    clientTable.execute("a", 2, "a2")
+    clientTable.execute("b", 2, "b2")
+    clientTable.execute("b", 0, "b0")
+    clientTable.execute("b", 1, "b1")
+    clientTable.execute("a", 4, "a4")
+
+    val newClientTable =
+      ClientTable.fromProto[String, String](clientTable.toProto())
+    newClientTable.executed("a", 0) shouldBe ClientTable.Executed(None)
+    newClientTable.executed("a", 1) shouldBe ClientTable.Executed(None)
+    newClientTable.executed("a", 2) shouldBe ClientTable.Executed(None)
+    newClientTable.executed("a", 3) shouldBe ClientTable.NotExecuted
+    newClientTable.executed("a", 4) shouldBe ClientTable.Executed(Some("a4"))
+    newClientTable.executed("b", 0) shouldBe ClientTable.Executed(None)
+    newClientTable.executed("b", 1) shouldBe ClientTable.Executed(None)
+    newClientTable.executed("b", 2) shouldBe ClientTable.Executed(None)
+    newClientTable.executed("b", 3) shouldBe ClientTable.NotExecuted
+    newClientTable.executed("b", 4) shouldBe ClientTable.Executed(Some("b4"))
+  }
 }
