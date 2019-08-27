@@ -11,7 +11,7 @@ import scala.scalajs.js.annotation._
 
 @JSExportAll
 object DisseminatorInboundSerializer extends ProtoSerializer[DisseminatorInbound] {
-  type A = ProposerInbound
+  type A = DisseminatorInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)

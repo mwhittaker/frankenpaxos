@@ -48,97 +48,6 @@ object LeaderOptions {
 
 @JSExportAll
 class LeaderMetrics(collectors: Collectors) {
-  val requestsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_requests_total")
-    .labelNames("type")
-    .help("Total number of processed requests.")
-    .register()
-
-  val executeGraphTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_execute_graph_total")
-    .help("Total number of times the replica executed the dependency graph.")
-    .register()
-
-  val executeGraphTimerTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_execute_graph_timer_total")
-    .help(
-      "Total number of times the replica executed the dependency graph from " +
-        "a timer."
-    )
-    .register()
-
-  val executedCommandsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_executed_commands_total")
-    .help("Total number of executed state machine commands.")
-    .register()
-
-  val executedNoopsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_executed_noops_total")
-    .help("Total number of \"executed\" noops.")
-    .register()
-
-  val repeatedCommandsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_repeated_commands_total")
-    .help("Total number of commands that were redundantly chosen.")
-    .register()
-
-  val committedCommandsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_committed_commands_total")
-    .help(
-      "Total number of commands that were committed (with potential " +
-        "duplicates)."
-    )
-    .register()
-
-  val preparePhasesStartedTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_prepare_phases_started_total")
-    .labelNames("type") // "fast" or "classic".
-    .help("Total number of prepare phases started.")
-    .register()
-
-  val resendPreAcceptsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_resend_pre_accepts_total")
-    .help("Total number of times the leader resent PreAccept messages.")
-    .register()
-
-  val resendAcceptsTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_resend_accepts_total")
-    .help("Total number of times the leader resent Accept messages.")
-    .register()
-
-  val resendPreparesTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_resend_prepares_total")
-    .help("Total number of times the leader resent Prepare messages.")
-    .register()
-
-  val defaultToSlowPathTotal: Counter = collectors.counter
-    .build()
-    .name("epaxos_replica_default_to_slow_path_total")
-    .help("Total number of times the leader defaulted to the slow path.")
-    .register()
-
-  val dependencyGraphNumVertices: Gauge = collectors.gauge
-    .build()
-    .name("epaxos_replica_dependency_graph_num_vertices")
-    .help("The number of vertices in the dependency graph.")
-    .register()
-
-  val dependencies: Summary = collectors.summary
-    .build()
-    .name("epaxos_replica_dependencies")
-    .help("The number of dependencies that a command has.")
-    .register()
 
   val chosenCommandsTotal: Counter = collectors.counter
     .build()
@@ -268,8 +177,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   import Replica._
 
   // Types /////////////////////////////////////////////////////////////////////
-  override type InboundMessage = ReplicaInbound
-  override def serializer = Replica.serializer
+  override type InboundMessage = LeaderInbound
+  override def serializer = Leader.serializer
 
 
   // Fields ////////////////////////////////////////////////////////////////////

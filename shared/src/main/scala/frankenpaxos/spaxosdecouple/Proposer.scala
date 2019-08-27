@@ -67,7 +67,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   // The acknowledge messages received from Dissemination Service
   @JSExport
-  protected var acks: mutable.SortedMap[UniqueId, mutable.Map[DisseminatorId, Acknowledge]]
+  protected var acks: mutable.SortedMap[UniqueId, mutable.Map[DisseminatorId, Acknowledge]] = mutable.SortedMap()
 
   // Stable ids
   @JSExport
