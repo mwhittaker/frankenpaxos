@@ -1,23 +1,17 @@
-package frankenpaxos.spaxos
+package frankenpaxos.spaxosdecouple
 
 import com.google.protobuf.ByteString
-import frankenpaxos.Actor
-import frankenpaxos.Chan
-import frankenpaxos.Logger
-import frankenpaxos.ProtoSerializer
-import frankenpaxos.Util
-import frankenpaxos.clienttable.ClientTable
+import frankenpaxos.{Actor, Logger, ProtoSerializer, Util}
 import frankenpaxos.monitoring._
-import frankenpaxos.statemachine.{AppendLog, StateMachine}
+import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.thrifty.ThriftySystem
 
-import scala.collection.mutable
-import scala.scalajs.js.annotation._
-import scala.collection.breakOut
 import scala.collection.immutable.SortedMap
+import scala.collection.{breakOut, mutable}
+import scala.scalajs.js.annotation._
 
 @JSExportAll
-object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
+object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
   type A = ReplicaInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
@@ -25,23 +19,23 @@ object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
 }
 
 @JSExportAll
-case class ReplicaOptions(
+case class LeaderOptions(
                            thriftySystem: ThriftySystem,
-    resendPhase1asTimerPeriod: java.time.Duration,
-    resendPhase2asTimerPeriod: java.time.Duration,
-    // The leader buffers phase 2a messages. This buffer can grow to at most
-    // size `phase2aMaxBufferSize`. If the buffer does not fill up, then it is
-    // flushed after `phase2aBufferFlushPeriod`.
-    phase2aMaxBufferSize: Int,
-    phase2aBufferFlushPeriod: java.time.Duration,
-    // As with phase 2a messages, leaders buffer value chosen messages.
-    valueChosenMaxBufferSize: Int,
-    valueChosenBufferFlushPeriod: java.time.Duration,
-)
+                           resendPhase1asTimerPeriod: java.time.Duration,
+                           resendPhase2asTimerPeriod: java.time.Duration,
+                           // The leader buffers phase 2a messages. This buffer can grow to at most
+                           // size `phase2aMaxBufferSize`. If the buffer does not fill up, then it is
+                           // flushed after `phase2aBufferFlushPeriod`.
+                           phase2aMaxBufferSize: Int,
+                           phase2aBufferFlushPeriod: java.time.Duration,
+                           // As with phase 2a messages, leaders buffer value chosen messages.
+                           valueChosenMaxBufferSize: Int,
+                           valueChosenBufferFlushPeriod: java.time.Duration,
+                         )
 
 @JSExportAll
-object ReplicaOptions {
-  val default = ReplicaOptions(
+object LeaderOptions {
+  val default = LeaderOptions(
     thriftySystem = ThriftySystem.NotThrifty,
     resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(1e7.toLong),
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(1e7.toLong),
@@ -53,7 +47,7 @@ object ReplicaOptions {
 }
 
 @JSExportAll
-class ReplicaMetrics(collectors: Collectors) {
+class LeaderMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
     .name("epaxos_replica_requests_total")
@@ -151,8 +145,8 @@ class ReplicaMetrics(collectors: Collectors) {
     .name("fast_multipaxos_leader_chosen_commands_total")
     .labelNames("type") // "fast" or "classic".
     .help(
-      "Total number of commands that were chosen (with potential duplicates)."
-    )
+    "Total number of commands that were chosen (with potential duplicates)."
+  )
     .register()
 
   val leaderChangesTotal: Counter = collectors.counter
@@ -251,8 +245,8 @@ class ReplicaMetrics(collectors: Collectors) {
 // within Replica, which prevents Vue from crashing. It's annoying and very
 // subtle, but it's the best we can do for now.
 @JSExportAll
-object Replica {
-  val serializer = ReplicaInboundSerializer
+object Leader {
+  val serializer = LeaderInboundSerializer
 
   type ReplicaIndex = Int
   type ClientPseudonym = Int
@@ -261,16 +255,16 @@ object Replica {
 }
 
 @JSExportAll
-class Replica[Transport <: frankenpaxos.Transport[Transport]](
-    address: Transport#Address,
-    transport: Transport,
-    logger: Logger,
-    config: Config[Transport],
-    // Public for the JS visualizations.
-    stateMachine: StateMachine,
-    options: ReplicaOptions = ReplicaOptions.default,
-    metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
-) extends Actor(address, transport, logger) {
+class Leader[Transport <: frankenpaxos.Transport[Transport]](
+                                                               address: Transport#Address,
+                                                               transport: Transport,
+                                                               logger: Logger,
+                                                               config: Config[Transport],
+                                                               // Public for the JS visualizations.
+                                                               stateMachine: StateMachine,
+                                                               options: LeaderOptions = LeaderOptions.default,
+                                                               metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
+                                                             ) extends Actor(address, transport, logger) {
   import Replica._
 
   // Types /////////////////////////////////////////////////////////////////////
@@ -298,7 +292,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       yield chan[Replica[Transport]](a, Replica.serializer)
 
   private val otherReplicasByAddress
-    : Map[Transport#Address, Chan[Replica[Transport]]] = {
+  : Map[Transport#Address, Chan[Replica[Transport]]] = {
     for (a <- otherReplicaAddresses)
       yield a -> chan[Replica[Transport]](a, Replica.serializer)
   }.toMap
@@ -331,7 +325,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // TODO(mwhittaker): Extract out a client table abstraction?
   @JSExport
   protected var clientTable =
-    mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
+  mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
 
   // At any point in time, the leader knows that all slots less than
   // chosenWatermark have been chosen. That is, for every `slot` <
@@ -357,14 +351,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // This leader is executing phase 1.
   @JSExportAll
   case class Phase1(
-      // Phase 1b responses.
-      phase1bs: mutable.Map[AcceptorId, Phase1b],
-      // Pending proposals. When a leader receives a proposal during phase 1,
-      // it buffers the proposal and replays it once it enters phase 2.
-      pendingProposals: mutable.Buffer[UniqueId],
-      // A timer to resend phase 1as.
-      resendPhase1as: Transport#Timer
-  ) extends State
+                     // Phase 1b responses.
+                     phase1bs: mutable.Map[AcceptorId, Phase1b],
+                     // Pending proposals. When a leader receives a proposal during phase 1,
+                     // it buffers the proposal and replays it once it enters phase 2.
+                     pendingProposals: mutable.Buffer[UniqueId],
+                     // A timer to resend phase 1as.
+                     resendPhase1as: Transport#Timer
+                   ) extends State
 
   private val resendPhase1asTimer: Transport#Timer = timer(
     "resendPhase1as",
@@ -379,26 +373,26 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // This leader has finished executing phase 1 and is now executing phase 2.
   @JSExportAll
   case class Phase2(
-      // In a classic round, leaders receive commands from clients and relay
-      // them on to acceptors. pendingEntries stores these commands that are
-      // pending votes. Note that during a fast round, a leader may not have a
-      // pending command for a slot, even though it does have phase 2bs for it.
-      pendingEntries: mutable.SortedMap[Slot, Entry],
-      // For each slot, the set of phase 2b messages for that slot. In a
-      // classic round, all the phase 2b messages will be for the same command.
-      // In a fast round, they do not necessarily have to be.
-      phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]],
-      // A timer to resend all pending phase 2a messages.
-      resendPhase2as: Transport#Timer,
-      // A set of buffered phase 2a messages.
-      phase2aBuffer: mutable.Buffer[Phase2a],
-      // A timer to flush the buffer of phase 2a messages.
-      phase2aBufferFlushTimer: Transport#Timer,
-      // A set of buffered value chosen messages.
-      valueChosenBuffer: mutable.Buffer[ValueChosen],
-      // A timer to flush the buffer of value chosen messages.
-      valueChosenBufferFlushTimer: Transport#Timer
-  ) extends State
+                     // In a classic round, leaders receive commands from clients and relay
+                     // them on to acceptors. pendingEntries stores these commands that are
+                     // pending votes. Note that during a fast round, a leader may not have a
+                     // pending command for a slot, even though it does have phase 2bs for it.
+                     pendingEntries: mutable.SortedMap[Slot, Entry],
+                     // For each slot, the set of phase 2b messages for that slot. In a
+                     // classic round, all the phase 2b messages will be for the same command.
+                     // In a fast round, they do not necessarily have to be.
+                     phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]],
+                     // A timer to resend all pending phase 2a messages.
+                     resendPhase2as: Transport#Timer,
+                     // A set of buffered phase 2a messages.
+                     phase2aBuffer: mutable.Buffer[Phase2a],
+                     // A timer to flush the buffer of phase 2a messages.
+                     phase2aBufferFlushTimer: Transport#Timer,
+                     // A set of buffered value chosen messages.
+                     valueChosenBuffer: mutable.Buffer[ValueChosen],
+                     // A timer to flush the buffer of value chosen messages.
+                     valueChosenBufferFlushTimer: Transport#Timer
+                   ) extends State
 
 
   // Public for testing.
@@ -492,10 +486,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
-      src: Transport#Address,
-      inbound: ReplicaInbound
-  ): Unit = {
-    import ReplicaInbound.Request
+                        src: Transport#Address,
+                        inbound: ReplicaInbound
+                      ): Unit = {
     inbound.request match {
       case Request.ClientRequest(r) => handleClientRequest(src, r)
       case Request.Acknowledge(r) => handleAcknowledge(src, r)
@@ -506,6 +499,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Phase2ABuffer(r) => handlePhase2aBuffer(src, r)
       case Request.Phase2BBuffer(r) => handlePhase2bBuffer(src, r)
       case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
+      case Request.Proposal(r)          => handleProposal(src, r)
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -513,9 +507,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleClientRequest(
-      src: Transport#Address,
-      request: ClientRequest
-  ): Unit = {
+                                   src: Transport#Address,
+                                   request: ClientRequest
+                                 ): Unit = {
     val client = chan[Client[Transport]](src, Client.serializer)
 
     // TODO(mwhittaker): Ignore requests that are older than the current id
@@ -536,8 +530,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           client.send(
             ClientInbound().withClientReply(
               ClientReply(clientPseudonym = request.uniqueId.clientPseudonym,
-                           clientId = clientId,
-                           result = ByteString.copyFrom(result))
+                clientId = clientId,
+                result = ByteString.copyFrom(result))
             )
           )
           return
@@ -551,9 +545,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleForward(
-      src: Transport#Address,
-      forward: Forward
-  ): Unit = {
+                             src: Transport#Address,
+                             forward: Forward
+                           ): Unit = {
     metrics.requestsTotal.labels("Forward").inc()
 
     val replica = chan[Replica[Transport]](src, Replica.serializer)
@@ -561,7 +555,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     replica.send(ReplicaInbound().withAcknowledge(Acknowledge(forward.clientRequest.uniqueId)))
   }
 
-  def handleProposal(uniqueId: UniqueId) = {
+  def handleProposal(src: Transport#Address, proposal: Proposal) = {
     state match {
       case Inactive =>
         leaderLogger.debug(
@@ -569,17 +563,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case Phase1(_, pendingProposals, _) =>
-          // We buffer all pending proposals in phase 1 and process them later
-          // when we enter phase 2.
-          pendingProposals += uniqueId
+        // We buffer all pending proposals in phase 1 and process them later
+        // when we enter phase 2.
+        pendingProposals += uniqueId
 
       case Phase2(pendingEntries,
-                  phase2bs,
-                  _,
-                  phase2aBuffer,
-                  phase2aBufferFlushTimer,
-                  _,
-                  _) =>
+      phase2bs,
+      _,
+      phase2aBuffer,
+      phase2aBufferFlushTimer,
+      _,
+      _) =>
 
         phase2aBuffer += Phase2a(slot = nextSlot, round = round).withUniqueId(uniqueId)
         pendingEntries(nextSlot) = ECommand(uniqueId)
@@ -593,9 +587,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleAcknowledge(
-      src: Transport#Address,
-      acknowledge: Acknowledge
-  ): Unit = {
+                                 src: Transport#Address,
+                                 acknowledge: Acknowledge
+                               ): Unit = {
     metrics.requestsTotal.labels("Acknowledge").inc()
 
     acks.put(acknowledge.uniqueId, acks.getOrElse(acknowledge.uniqueId, 0) + 1)
@@ -623,10 +617,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExportAll
   case class Entry(
-      voteRound: Int,
-      voteValue: VoteValue,
-      anyRound: Option[Int]
-  )
+                    voteRound: Int,
+                    voteValue: VoteValue,
+                    anyRound: Option[Int]
+                  )
 
   // The log of votes.
   @JSExport
@@ -683,9 +677,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
 
   private def handlePhase1b(
-      src: Transport#Address,
-      request: Phase1b
-  ): Unit = {
+                             src: Transport#Address,
+                             request: Phase1b
+                           ): Unit = {
     metrics.requestsTotal.labels("Phase1b").inc()
     state match {
       case Inactive =>
@@ -794,12 +788,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         state = Phase2(pendingEntries,
-                       phase2bs,
-                       resendPhase2asTimer,
-                       phase2aBuffer,
-                       phase2aBufferFlushTimer,
-                       mutable.Buffer[ValueChosen](),
-                       valueChosenBufferFlushTimer)
+          phase2bs,
+          resendPhase2asTimer,
+          phase2aBuffer,
+          phase2aBufferFlushTimer,
+          mutable.Buffer[ValueChosen](),
+          valueChosenBufferFlushTimer)
         resendPhase2asTimer.start()
         phase2aBufferFlushTimer.start()
         valueChosenBufferFlushTimer.start()
@@ -827,9 +821,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase1bNack(
-      src: Transport#Address,
-      nack: Phase1bNack
-  ): Unit = {
+                                 src: Transport#Address,
+                                 nack: Phase1bNack
+                               ): Unit = {
     metrics.requestsTotal.labels("Phase1bNack").inc()
     state match {
       case Inactive | Phase2(_, _, _, _, _, _, _) =>
@@ -850,9 +844,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase2bBuffer(
-      src: Transport#Address,
-      phase2bBuffer: Phase2bBuffer
-  ): Unit = {
+                                   src: Transport#Address,
+                                   phase2bBuffer: Phase2bBuffer
+                                 ): Unit = {
     metrics.requestsTotal.labels("Phase2bBuffer").inc()
     for (phase2b <- phase2bBuffer.phase2B) {
       processPhase2b(src, phase2b)
@@ -860,9 +854,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleValueChosenBuffer(
-      src: Transport#Address,
-      valueChosenBuffer: ValueChosenBuffer
-  ): Unit = {
+                                       src: Transport#Address,
+                                       valueChosenBuffer: ValueChosenBuffer
+                                     ): Unit = {
     metrics.requestsTotal.labels("ValueChosenBuffer").inc()
     for (valueChosen <- valueChosenBuffer.valueChosen) {
       val entry = valueChosen.value match {
@@ -891,8 +885,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       replica.send(
         ReplicaInbound().withPhase1A(
           Phase1a(round = round,
-                  chosenWatermark = chosenWatermark,
-                  chosenSlot = log.keysIteratorFrom(chosenWatermark).to[Seq])
+            chosenWatermark = chosenWatermark,
+            chosenSlot = log.keysIteratorFrom(chosenWatermark).to[Seq])
         )
       )
     }
@@ -902,11 +896,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // `slot` and a set of other commands that could have been proposed in the
   // slot.
   def chooseProposal(
-      votes: collection.Map[AcceptorId, SortedMap[Slot, Phase1bVote]],
-      slot: Slot
-  ): (Entry, Set[UniqueId]) = {
+                      votes: collection.Map[AcceptorId, SortedMap[Slot, Phase1bVote]],
+                      slot: Slot
+                    ): (Entry, Set[UniqueId]) = {
     def phase1bVoteValueToEntry(voteValue: Phase1bVote.Value): Entry = {
-      import Phase1bVote.Value
       voteValue match {
         case Value.UniqueId(command) => ECommand(command)
         case Value.Noop(_)          => ENoop
@@ -955,17 +948,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // re-send them. If acceptors are lagging behind (e.g., because
     // thriftiness), their votes may be very stale.
     (phase1bVoteValueToEntry(V.head.get),
-     V.map({
-         case Some(Phase1bVote.Value.UniqueId(command)) =>
-           command
-         case Some(Phase1bVote.Value.Noop(_)) =>
-           logger.fatal(s"Noop vote in round $k.")
-         case Some(Phase1bVote.Value.Empty) =>
-           logger.fatal(s"Empty vote in round $k.")
-         case None =>
-           logger.fatal(s"None vote in round $k.")
-       })
-       .to[Set])
+      V.map({
+        case Some(Phase1bVote.Value.UniqueId(command)) =>
+          command
+        case Some(Phase1bVote.Value.Noop(_)) =>
+          logger.fatal(s"Noop vote in round $k.")
+        case Some(Phase1bVote.Value.Empty) =>
+          logger.fatal(s"Empty vote in round $k.")
+        case None =>
+          logger.fatal(s"None vote in round $k.")
+      })
+        .to[Set])
   }
 
   private def processPhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
@@ -991,12 +984,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case phase2 @ Phase2(pendingEntries,
-                           phase2bs,
-                           _,
-                           _,
-                           _,
-                           valueChosenBuffer,
-                           valueChosenBufferFlushTimer) =>
+      phase2bs,
+      _,
+      _,
+      _,
+      valueChosenBuffer,
+      valueChosenBufferFlushTimer) =>
         def choose(entry: Entry): Unit = {
           log(phase2b.slot) = entry
           pendingEntries -= phase2b.slot
@@ -1063,18 +1056,18 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // TODO(mwhittaker): Document.
   private def phase2bChosenInSlot(
-      phase2: Phase2,
-      slot: Slot
-  ): Phase2bVoteResult = {
+                                   phase2: Phase2,
+                                   slot: Slot
+                                 ): Phase2bVoteResult = {
     val Phase2(pendingEntries, phase2bs, _, _, _, _, _) = phase2
 
-        if (phase2bs
-              .getOrElse(slot, mutable.Map())
-              .size >= config.f + 1) {
-          ClassicReady(pendingEntries(slot))
-        } else {
-          NothingReadyYet
-        }
+    if (phase2bs
+      .getOrElse(slot, mutable.Map())
+      .size >= config.f + 1) {
+      ClassicReady(pendingEntries(slot))
+    } else {
+      NothingReadyYet
+    }
 
   }
 
@@ -1090,7 +1083,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         if (phase2aBuffer.size > 0) {
           val msg =
             ReplicaInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
-            replicas.foreach(_.send(msg))
+          replicas.foreach(_.send(msg))
           phase2aBuffer.clear()
           phase2aBufferFlushTimer.reset()
         } else {
@@ -1174,8 +1167,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
         case ECommand(
-            UniqueId(clientAddressBytes, clientPseudonym, clientId)
-            ) =>
+        UniqueId(clientAddressBytes, clientPseudonym, clientId)
+        ) =>
           val clientAddress = transport.addressSerializer.fromBytes(
             clientAddressBytes.toByteArray()
           )

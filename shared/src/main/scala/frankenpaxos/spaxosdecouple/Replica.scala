@@ -1,20 +1,14 @@
-package frankenpaxos.spaxos
+package frankenpaxos.spaxosdecouple
 
 import com.google.protobuf.ByteString
-import frankenpaxos.Actor
-import frankenpaxos.Chan
-import frankenpaxos.Logger
-import frankenpaxos.ProtoSerializer
-import frankenpaxos.Util
-import frankenpaxos.clienttable.ClientTable
+import frankenpaxos.{Actor, Logger, ProtoSerializer, Util}
 import frankenpaxos.monitoring._
-import frankenpaxos.statemachine.{AppendLog, StateMachine}
+import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.thrifty.ThriftySystem
 
-import scala.collection.mutable
-import scala.scalajs.js.annotation._
-import scala.collection.breakOut
 import scala.collection.immutable.SortedMap
+import scala.collection.{breakOut, mutable}
+import scala.scalajs.js.annotation._
 
 @JSExportAll
 object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
@@ -495,7 +489,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       inbound: ReplicaInbound
   ): Unit = {
-    import ReplicaInbound.Request
     inbound.request match {
       case Request.ClientRequest(r) => handleClientRequest(src, r)
       case Request.Acknowledge(r) => handleAcknowledge(src, r)
@@ -906,7 +899,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       slot: Slot
   ): (Entry, Set[UniqueId]) = {
     def phase1bVoteValueToEntry(voteValue: Phase1bVote.Value): Entry = {
-      import Phase1bVote.Value
       voteValue match {
         case Value.UniqueId(command) => ECommand(command)
         case Value.Noop(_)          => ENoop

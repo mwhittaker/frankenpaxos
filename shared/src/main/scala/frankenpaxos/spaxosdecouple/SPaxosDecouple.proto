@@ -1,11 +1,11 @@
 syntax = "proto2";
 
-package frankenpaxos.spaxos;
+package frankenpaxos.spaxosdecouple;
 
 import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
-  package_name: "frankenpaxos.spaxos"
+  package_name: "frankenpaxos.spaxosdecouple"
   flat_package: true
 };
 
@@ -213,7 +213,41 @@ message ClientReply {
   required bytes result = 3;
 }
 
+message Proposal {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required UniqueId unique_id = 1;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
+message ProposerInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientRequest client_request = 1;
+    Acknowledge acknowledge = 2;
+  }
+}
+
+message DisseminatorInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Forward forward = 1;
+  }
+}
+
+message LeaderInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Proposal proposal = 1;
+  }
+}
 message ReplicaInbound {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";

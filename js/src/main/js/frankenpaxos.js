@@ -379,7 +379,7 @@ Vue.component('frankenpaxos-timer', {
       </div>
       <span>
         ({{timer.data.time_elapsed.toFixed(2)}}s /
-         {{timer.duration().toFixed(2)}}s)
+         {{timer.duration().toFixed(2) + 1000000}}s)
       </span>
     </div>
   `
