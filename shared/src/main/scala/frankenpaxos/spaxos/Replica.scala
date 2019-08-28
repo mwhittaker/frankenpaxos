@@ -501,6 +501,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Decide(r) => handleDecide(src, r)
       case Request.Forward(r) => handleForward(src, r)
       case Request.Phase1A(r) => handlePhase1a(src, r)
+      case Request.Phase1B(r) => handlePhase1b(src, r)
       case Request.Phase1BNack(r) => handlePhase1bNack(src, r)
       case Request.Phase2ABuffer(r) => handlePhase2aBuffer(src, r)
       case Request.Phase2BBuffer(r) => handlePhase2bBuffer(src, r)

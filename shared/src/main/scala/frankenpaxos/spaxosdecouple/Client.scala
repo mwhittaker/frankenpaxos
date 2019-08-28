@@ -115,6 +115,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
+    import ClientInbound.Request
     inbound.request match {
       case Request.ClientReply(r) => handleProposeReply(src, r)
       case Request.Empty =>
