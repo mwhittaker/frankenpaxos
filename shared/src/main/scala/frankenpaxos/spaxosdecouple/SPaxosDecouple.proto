@@ -154,13 +154,13 @@ message Phase1bVote {
 }
 
 message Phase1b {
-  required int32 replica_id = 1;
+  required int32 acceptor_id = 1;
   required int32 round = 2;
   repeated Phase1bVote vote = 3;
 }
 
 message Phase1bNack {
-  required int32 replica_id = 1;
+  required int32 acceptor_id = 1;
   required int32 round = 2;
 }
 
@@ -178,7 +178,7 @@ message Phase2aBuffer {
 }
 
 message Phase2b {
-  required int32 replica_id = 1;
+  required int32 acceptor_id = 1;
   required int32 slot = 2;
   required int32 round = 3;
   oneof vote {
@@ -246,23 +246,18 @@ message LeaderInbound {
 
   oneof request {
     Proposal proposal = 1;
+    Phase1b phase1b = 2;
+    Phase1bNack phase1b_nack = 3;
+    Phase2bBuffer phase2b_buffer = 4;
+    ValueChosenBuffer value_chosen_buffer = 5;
   }
 }
-message ReplicaInbound {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
 
+message AcceptorInbound {
   oneof request {
-    ClientRequest client_request = 1;
-    Forward forward = 2;
-    Acknowledge acknowledge = 3;
-    Decide decide = 4;
-    Phase1a phase1a = 6;
-    Phase2aBuffer phase2a_buffer = 7;
-    Phase1bNack phase1b_nack = 8;
-    Phase2bBuffer phase2b_buffer = 9;
-    ValueChosenBuffer value_chosen_buffer = 10;
-    Phase1b phase1b = 11;
+    Proposal propose_request = 1;
+    Phase1a phase1a = 2;
+    Phase2aBuffer phase2a_buffer = 3;
   }
 }
 

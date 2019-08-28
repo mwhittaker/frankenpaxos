@@ -1,11 +1,17 @@
 package frankenpaxos.spaxosdecouple
+import frankenpaxos.roundsystem.RoundSystem
 
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     replicaAddresses: Seq[Transport#Address],
     proposerAddresses: Seq[Transport#Address],
     disseminatorAddresses: Seq[Transport#Address],
-    leaderAddresses: Seq[Transport#Address]
+    leaderAddresses: Seq[Transport#Address],
+    acceptorAddresses: Seq[Transport#Address],
+    acceptorHeartbeatAddresses: Seq[Transport#Address],
+    leaderHeartbeatAddresses: Seq[Transport#Address],
+    leaderElectionAddresses: Seq[Transport#Address],
+    roundSystem: RoundSystem
 ) {
   def n: Int = (2 * f) + 1
 

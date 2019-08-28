@@ -1,18 +1,30 @@
 package frankenpaxos.spaxosdecouple
 
+import collection.immutable.SortedMap
+import collection.mutable
 import com.google.protobuf.ByteString
-import frankenpaxos.{Actor, Logger, ProtoSerializer, Util}
-import frankenpaxos.monitoring._
+import frankenpaxos.Actor
+import frankenpaxos.Chan
+import frankenpaxos.Logger
+import frankenpaxos.ProtoSerializer
+import frankenpaxos.Util
+import frankenpaxos.election.LeaderElectionOptions
+import frankenpaxos.heartbeat.HeartbeatOptions
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.Gauge
+import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.roundsystem.ClassicRound
+import frankenpaxos.roundsystem.FastRound
+import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.thrifty.ThriftySystem
-
-import scala.collection.immutable.SortedMap
-import scala.collection.{breakOut, mutable}
+import scala.collection.breakOut
 import scala.scalajs.js.annotation._
 
 @JSExportAll
 object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
-  type A = ReplicaInbound
+  type A = LeaderInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
@@ -20,34 +32,62 @@ object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
 
 @JSExportAll
 case class LeaderOptions(
-                           thriftySystem: ThriftySystem,
-                           resendPhase1asTimerPeriod: java.time.Duration,
-                           resendPhase2asTimerPeriod: java.time.Duration,
-                           // The leader buffers phase 2a messages. This buffer can grow to at most
-                           // size `phase2aMaxBufferSize`. If the buffer does not fill up, then it is
-                           // flushed after `phase2aBufferFlushPeriod`.
-                           phase2aMaxBufferSize: Int,
-                           phase2aBufferFlushPeriod: java.time.Duration,
-                           // As with phase 2a messages, leaders buffer value chosen messages.
-                           valueChosenMaxBufferSize: Int,
-                           valueChosenBufferFlushPeriod: java.time.Duration,
-                         )
+                          thriftySystem: ThriftySystem,
+                          resendPhase1asTimerPeriod: java.time.Duration,
+                          resendPhase2asTimerPeriod: java.time.Duration,
+                          // The leader buffers phase 2a messages. This buffer can grow to at most
+                          // size `phase2aMaxBufferSize`. If the buffer does not fill up, then it is
+                          // flushed after `phase2aBufferFlushPeriod`.
+                          phase2aMaxBufferSize: Int,
+                          phase2aBufferFlushPeriod: java.time.Duration,
+                          // As with phase 2a messages, leaders buffer value chosen messages.
+                          valueChosenMaxBufferSize: Int,
+                          valueChosenBufferFlushPeriod: java.time.Duration,
+                          leaderElectionOptions: LeaderElectionOptions,
+                          heartbeatOptions: HeartbeatOptions
+                        )
 
 @JSExportAll
 object LeaderOptions {
   val default = LeaderOptions(
-    thriftySystem = ThriftySystem.NotThrifty,
-    resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(1e7.toLong),
-    resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(1e7.toLong),
+    thriftySystem = ThriftySystem.Closest,
+    resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(5),
+    resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
     phase2aMaxBufferSize = 25,
     phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
     valueChosenMaxBufferSize = 100,
-    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5)
+    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5),
+    leaderElectionOptions = LeaderElectionOptions.default,
+    heartbeatOptions = HeartbeatOptions.default
   )
 }
 
 @JSExportAll
 class LeaderMetrics(collectors: Collectors) {
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val executedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_executed_commands_total")
+    .help("Total number of executed state machine commands.")
+    .register()
+
+  val executedNoopsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_executed_noops_total")
+    .help("Total number of \"executed\" noops.")
+    .register()
+
+  val repeatedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_repeated_commands_total")
+    .help("Total number of commands that were redundantly chosen.")
+    .register()
 
   val chosenCommandsTotal: Counter = collectors.counter
     .build()
@@ -121,90 +161,31 @@ class LeaderMetrics(collectors: Collectors) {
     .register()
 }
 
-// Note that there are a couple of types (e.g., CmdLogEntry, LeaderState) that
-// you might expect to be in the Replica class instead of the Replica
-// companion. Unfortunately, there is a technical reason related to scala.js
-// that prevents us from doing so.
-//
-// If we place CmdLogEntry or LeaderState within the Replica class, then it
-// becomes an inner class. When scala.js compiles an instance of an inner
-// class, it includes a pointer to the enclosing object. For example, an
-// instance of NoCommandEntry would end up looking something like this:
-//
-//   NoCommandEntry(
-//       replica = ...,        // Something of type Replica.
-//       ballot = Ballot(...),
-//   )
-//
-// I don't know why scala.js does this. I don't even understand how it does
-// this. Shouldn't you be able to instantiate a NoCommandEntry without an
-// enclosing replica? Who knows.
-//
-// Anyway, when an object like this is put within a map within a Replica
-// instance, and that map is displayed using <frankenpaxos-map>, then Vue does
-// a deep watch on the map. The deep watch on the map watches the objects
-// within the map, and since those objects have pointers to a Replica, Vue ends
-// up watching every field inside Replica. This is especially bad because a
-// Replica object includes a dependency graph which is cyclic. When Vue
-// encounters cyclic data structures, it can overflow the stack and crash.
-//
-// To avoid these issues, we pull types out of the Replica class and put them
-// into the companion Replica object. This prevents scala.js from embedding a
-// parent pointer to a Replica, which prevents Vue from watching all fields
-// within Replica, which prevents Vue from crashing. It's annoying and very
-// subtle, but it's the best we can do for now.
 @JSExportAll
 object Leader {
   val serializer = LeaderInboundSerializer
 
-  type ReplicaIndex = Int
-  type ClientPseudonym = Int
-  type ClientId = Int
-
+  sealed trait Entry
+  case class ECommand(uniqueId: UniqueId) extends Entry
+  object ENoop extends Entry
 }
 
 @JSExportAll
 class Leader[Transport <: frankenpaxos.Transport[Transport]](
-                                                               address: Transport#Address,
-                                                               transport: Transport,
-                                                               logger: Logger,
-                                                               config: Config[Transport],
-                                                               // Public for the JS visualizations.
-                                                               stateMachine: StateMachine,
-                                                               options: LeaderOptions = LeaderOptions.default,
-                                                               metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
-                                                             ) extends Actor(address, transport, logger) {
-  import Replica._
+                                                              address: Transport#Address,
+                                                              transport: Transport,
+                                                              logger: Logger,
+                                                              config: Config[Transport],
+                                                              // Public for Javascript.
+                                                              val stateMachine: StateMachine,
+                                                              options: LeaderOptions = LeaderOptions.default,
+                                                              metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
+                                                            ) extends Actor(address, transport, logger) {
+  import Leader._
 
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = LeaderInbound
-  override def serializer = Leader.serializer
-
-
-  // Fields ////////////////////////////////////////////////////////////////////
-  logger.check(config.valid())
-  logger.check(config.replicaAddresses.contains(address))
-  private val index: ReplicaIndex = config.replicaAddresses.indexOf(address)
-
-  private val me: Chan[Replica[Transport]] =
-    chan[Replica[Transport]](address, Replica.serializer)
-
-  private val replicas: Seq[Chan[Replica[Transport]]] =
-    for (replicaAddress <- config.replicaAddresses)
-      yield chan[Replica[Transport]](replicaAddress, Replica.serializer)
-
-  private val otherReplicaAddresses: Seq[Transport#Address] =
-    config.replicaAddresses.filter(_ != address)
-
-  private val otherReplicas: Seq[Chan[Replica[Transport]]] =
-    for (a <- otherReplicaAddresses)
-      yield chan[Replica[Transport]](a, Replica.serializer)
-
-  private val otherReplicasByAddress
-  : Map[Transport#Address, Chan[Replica[Transport]]] = {
-    for (a <- otherReplicaAddresses)
-      yield a -> chan[Replica[Transport]](a, Replica.serializer)
-  }.toMap
+  override val serializer = LeaderInboundSerializer
 
   type AcceptorId = Int
   type Round = Int
@@ -212,18 +193,33 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   type ClientPseudonym = Int
   type ClientId = Int
 
-  @JSExportAll
-  sealed trait Entry
-  case class ECommand(uniqueId: UniqueId) extends Entry
-  object ENoop extends Entry
+  // Fields ////////////////////////////////////////////////////////////////////
+  // Sanity check the Paxos configuration and compute the leader's id.
+  logger.check(config.leaderAddresses.contains(address))
+  private val leaderId = config.leaderAddresses.indexOf(address)
 
-  sealed trait LeaderState[Transport <: frankenpaxos.Transport[Transport]]
+  // Channels to all other leaders.
+  private val otherLeaders: Seq[Chan[Leader[Transport]]] =
+    for (a <- config.leaderAddresses if a != address)
+      yield chan[Leader[Transport]](a, Leader.serializer)
 
+  // Channels to all the acceptors.
+  private val acceptorsByAddress
+  : Map[Transport#Address, Chan[Acceptor[Transport]]] = {
+    for (address <- config.acceptorAddresses)
+      yield (address -> chan[Acceptor[Transport]](address, Acceptor.serializer))
+  }.toMap
+
+  private val acceptors: Seq[Chan[Acceptor[Transport]]] =
+    acceptorsByAddress.values.toSeq
+
+  // The current round. Initially, the leader that owns round 0 is the active
+  // leader, and all other leaders are inactive.
   @JSExport
-  protected var round: Round = 0
+  protected var round: Round =
+  if (config.roundSystem.leader(0) == leaderId) 0 else -1
 
   // The log of chosen commands. Public for testing.
-  @JSExportAll
   val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
 
   // The client table records the response to the latest request from each
@@ -241,6 +237,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // chosenWatermark, there is an Entry for `slot` in `log`.
   @JSExport
   protected var chosenWatermark: Slot = 0
+  metrics.chosenWatermark.set(chosenWatermark)
 
   // The next slot in which to propose a command.
   //
@@ -248,6 +245,50 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // ahead.
   @JSExport
   protected var nextSlot: Slot = 0
+  metrics.nextSlot.set(nextSlot)
+
+  // Leaders participate in a leader election protocol to maintain a
+  // (hopefully) stable leader.
+  @JSExport
+  protected val electionAddress: Transport#Address =
+  config.leaderElectionAddresses(leaderId)
+  @JSExport
+  protected val election: frankenpaxos.election.Participant[Transport] =
+    new frankenpaxos.election.Participant[Transport](
+      electionAddress,
+      transport,
+      logger,
+      config.leaderElectionAddresses.to[Set],
+      leader = Some(
+        config.leaderElectionAddresses(config.roundSystem.leader(0))
+      ),
+      options.leaderElectionOptions
+    )
+
+  // TODO(mwhittaker): Is this thread safe? It's possible that the election
+  // participant invokes the callback before this leader has finished
+  // initializing?
+  election.register((address) => {
+    // The address returned by the election participant is the address of the
+    // election participant, not of the leader.
+    val leaderAddress =
+    config.leaderAddresses(config.leaderElectionAddresses.indexOf(address))
+    leaderChange(leaderAddress, round)
+  })
+
+  // Leaders monitor acceptors to make sure they are still alive.
+  @JSExport
+  protected val heartbeatAddress: Transport#Address =
+  config.leaderHeartbeatAddresses(leaderId)
+  @JSExport
+  protected val heartbeat: frankenpaxos.heartbeat.Participant[Transport] =
+    new frankenpaxos.heartbeat.Participant[Transport](
+      address = heartbeatAddress,
+      transport = transport,
+      logger = logger,
+      addresses = config.acceptorHeartbeatAddresses,
+      options = options.heartbeatOptions
+    )
 
   // The state of the leader.
   @JSExportAll
@@ -264,7 +305,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                      phase1bs: mutable.Map[AcceptorId, Phase1b],
                      // Pending proposals. When a leader receives a proposal during phase 1,
                      // it buffers the proposal and replays it once it enters phase 2.
-                     pendingProposals: mutable.Buffer[UniqueId],
+                     pendingProposals: mutable.Buffer[(Transport#Address, Proposal)],
                      // A timer to resend phase 1as.
                      resendPhase1as: Transport#Timer
                    ) extends State
@@ -302,9 +343,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                      // A timer to flush the buffer of value chosen messages.
                      valueChosenBufferFlushTimer: Transport#Timer
                    ) extends State
-
-
-  // Public for testing.
 
   private val resendPhase2asTimer: Transport#Timer = timer(
     "resendPhase2as",
@@ -372,53 +410,28 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   }
 
-  @JSExport
-  protected val requests: mutable.Set[ClientRequest] = mutable.Set()
-
-  @JSExport
-  protected val acks: mutable.Map[UniqueId, Int] = mutable.Map()
-
-  @JSExport
-  protected val stableIds: mutable.Set[UniqueId] = mutable.Set()
-
-  @JSExport
-  protected val leaderIndex: Int = 0
-
-  @JSExport
-  protected val proposed: mutable.Set[UniqueId] = mutable.Set()
-
-  def handleDecide(src: Transport#Address, r: Decide): Unit = ???
-
-  def handlePhase1a(src: Transport#Address, r: Phase1a): Unit = ???
-
-  def handlePhase2aBuffer(src: Transport#Address, r: Phase2aBuffer): Unit = ???
-
   // Handlers //////////////////////////////////////////////////////////////////
-  override def receive(
-                        src: Transport#Address,
-                        inbound: ReplicaInbound
-                      ): Unit = {
+  override def receive(src: Transport#Address, inbound: InboundMessage) = {
+    import LeaderInbound.Request
     inbound.request match {
-      case Request.ClientRequest(r) => handleClientRequest(src, r)
-      case Request.Acknowledge(r) => handleAcknowledge(src, r)
-      case Request.Decide(r) => handleDecide(src, r)
-      case Request.Forward(r) => handleForward(src, r)
-      case Request.Phase1A(r) => handlePhase1a(src, r)
-      case Request.Phase1BNack(r) => handlePhase1bNack(src, r)
-      case Request.Phase2ABuffer(r) => handlePhase2aBuffer(src, r)
-      case Request.Phase2BBuffer(r) => handlePhase2bBuffer(src, r)
+      case Request.Proposal(r)    => handleProposal(src, r)
+      case Request.Phase1B(r)           => handlePhase1b(src, r)
+      case Request.Phase1BNack(r)       => handlePhase1bNack(src, r)
+      case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
       case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
-      case Request.Proposal(r)          => handleProposal(src, r)
-      case Request.Empty => {
-        logger.fatal("Empty ReplicaInbound encountered.")
-      }
+      case Request.Empty =>
+        leaderLogger.fatal("Empty LeaderInbound encountered.")
     }
+
+    metrics.chosenWatermark.set(chosenWatermark)
+    metrics.nextSlot.set(nextSlot)
   }
 
-  private def handleClientRequest(
-                                   src: Transport#Address,
-                                   request: ClientRequest
-                                 ): Unit = {
+  private def handleProposal(
+                                    src: Transport#Address,
+                                    proposal: Proposal
+                                  ): Unit = {
+    metrics.requestsTotal.labels("ProposeRequest").inc()
     val client = chan[Client[Transport]](src, Client.serializer)
 
     // TODO(mwhittaker): Ignore requests that are older than the current id
@@ -428,17 +441,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // then we can reply to the client directly. Note that only the leader
     // replies to the client since ProposeReplies include the round of the
     // leader, and only the leader knows this.
-    clientTable.get((src, request.uniqueId.clientPseudonym)) match {
+    clientTable.get((src, proposal.uniqueId.clientPseudonym)) match {
       case Some((clientId, result)) =>
-        if (request.uniqueId.clientId == clientId && state != Inactive) {
+        if (proposal.uniqueId.clientId == clientId && state != Inactive) {
           leaderLogger.debug(
             s"The latest command for client $src pseudonym " +
-              s"${request.uniqueId.clientPseudonym} (i.e., command $clientId)" +
+              s"${proposal.uniqueId.clientPseudonym} (i.e., command $clientId)" +
               s"was found in the client table."
           )
           client.send(
             ClientInbound().withClientReply(
-              ClientReply(clientPseudonym = request.uniqueId.clientPseudonym,
+              ClientReply(
+                clientPseudonym = proposal.uniqueId.clientPseudonym,
                 clientId = clientId,
                 result = ByteString.copyFrom(result))
             )
@@ -448,33 +462,25 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
     }
 
-    for (replica <- replicas) {
-      replica.send(ReplicaInbound().withForward(Forward(request)))
-    }
-  }
-
-  private def handleForward(
-                             src: Transport#Address,
-                             forward: Forward
-                           ): Unit = {
-    metrics.requestsTotal.labels("Forward").inc()
-
-    val replica = chan[Replica[Transport]](src, Replica.serializer)
-    requests.add(forward.clientRequest)
-    replica.send(ReplicaInbound().withAcknowledge(Acknowledge(forward.clientRequest.uniqueId)))
-  }
-
-  def handleProposal(src: Transport#Address, proposal: Proposal) = {
     state match {
       case Inactive =>
         leaderLogger.debug(
-          s"Leader received propose request but is inactive."
+          s"Leader received propose request from $src but is inactive."
         )
 
       case Phase1(_, pendingProposals, _) =>
-        // We buffer all pending proposals in phase 1 and process them later
-        // when we enter phase 2.
-        pendingProposals += uniqueId
+        if (request.round != round) {
+          // We don't want to process requests from out of date clients.
+          leaderLogger.debug(
+            s"Leader received a propose request from $src in round " +
+              s"${request.round}, but is in round $round. Sending leader info."
+          )
+          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
+        } else {
+          // We buffer all pending proposals in phase 1 and process them later
+          // when we enter phase 2.
+          pendingProposals += ((src, proposal))
+        }
 
       case Phase2(pendingEntries,
       phase2bs,
@@ -483,107 +489,41 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase2aBufferFlushTimer,
       _,
       _) =>
+        if (request.round != round) {
+          // We don't want to process requests from out of date clients.
+          leaderLogger.debug(
+            s"Leader received a propose request from $src in round " +
+              s"${request.round}, but is in round $round. Sending leader info."
+          )
+          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
+          return
+        }
 
-        phase2aBuffer += Phase2a(slot = nextSlot, round = round).withUniqueId(uniqueId)
-        pendingEntries(nextSlot) = ECommand(uniqueId)
-        phase2bs(nextSlot) = mutable.Map()
-        nextSlot += 1
-        if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
-          metrics.phase2aBufferFullTotal.inc()
-          flushPhase2aBuffer(thrifty = true)
+        config.roundSystem.roundType(round) match {
+          case ClassicRound =>
+            phase2aBuffer += Phase2a(slot = nextSlot, round = round)
+              .withUniqueId(proposal.uniqueId)
+            pendingEntries(nextSlot) = ECommand(proposal.uniqueId)
+            phase2bs(nextSlot) = mutable.Map()
+            nextSlot += 1
+            if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
+              metrics.phase2aBufferFullTotal.inc()
+              flushPhase2aBuffer(thrifty = true)
+            }
+
+          case FastRound =>
+            // If we're in a fast round, and the client knows we're in a fast
+            // round (because request.round == round), then the client should
+            // not be sending the leader any requests. It only does so if there
+            // was a failure. In this case, we change to a higher round.
+            leaderLogger.debug(
+              s"Leader received a client request from $src during a fast " +
+                s"round. We are increasing our round."
+            )
+            leaderChange(address, round)
         }
     }
   }
-
-  private def handleAcknowledge(
-                                 src: Transport#Address,
-                                 acknowledge: Acknowledge
-                               ): Unit = {
-    metrics.requestsTotal.labels("Acknowledge").inc()
-
-    acks.put(acknowledge.uniqueId, acks.getOrElse(acknowledge.uniqueId, 0) + 1)
-
-    val f: Int = 1
-    if (acks.getOrElse(acknowledge.uniqueId, 0) >= f + 1) {
-      stableIds.add(acknowledge.uniqueId)
-      // This replica is the leader
-      if (leaderIndex == index && !proposed.contains(acknowledge.uniqueId)) {
-        proposed.add(acknowledge.uniqueId)
-        handleProposal(acknowledge.uniqueId)
-      }
-    }
-  }
-
-  // In Fast Paxos, every acceptor has a single vote round and vote value. With
-  // Fast MultiPaxos, we have one pair of vote round and vote value per slot.
-  // We call such a pair a vote. The vote also includes the highest round in
-  // which an acceptor has received a distinguished "any" value.
-  @JSExportAll
-  sealed trait VoteValue
-  case class VVCommand(command: Command) extends VoteValue
-  case object VVNoop extends VoteValue
-  case object VVNothing extends VoteValue
-
-  @JSExportAll
-  case class Entry(
-                    voteRound: Int,
-                    voteValue: VoteValue,
-                    anyRound: Option[Int]
-                  )
-
-  // The log of votes.
-  @JSExport
-  protected val log: Log[Entry] = new Log()
-
-  // If this acceptor receives a propose request from a client, it attempts to
-  // choose the command in `nextSlot`.
-  @JSExport
-  protected var nextSlot = 0;
-
-
-  private def handlePhase1a(src: Transport#Address, phase1a: Phase1a): Unit = {
-    metrics.requestsTotal.labels("Phase1a").inc()
-
-    // Ignore messages from previous rounds.
-    if (phase1a.round <= round) {
-      logger.info(
-        s"An acceptor received a phase 1a message for round " +
-          s"${phase1a.round} but is in round $round."
-      )
-      val leader = chan[Replica[Transport]](src, Replica.serializer)
-      leader.send(
-        ReplicaInbound().withPhase1BNack(
-          Phase1bNack(replicaId = config.replicaAddresses.indexOf(me), round = round)
-        )
-      )
-      return
-    }
-
-    // Bump our round and send the leader all of our votes. Note that we
-    // exclude votes below the chosen watermark and votes for slots that the
-    // leader knows are chosen. We also make sure not to return votes for slots
-    // that we haven't actually voted in.
-    round = phase1a.round
-    val votes = log
-      .prefix()
-      .iteratorFrom(phase1a.chosenWatermark)
-      .filter({ case (slot, _) => !phase1a.chosenSlot.contains(slot) })
-      .flatMap({
-        case (s, Entry(vr, VVCommand(command), _)) =>
-          Some(Phase1bVote(slot = s, voteRound = vr).withUniqueId(UniqueId(command.clientAddress, command.clientPseudonym, command.clientId)))
-        case (s, Entry(vr, VVNoop, _)) =>
-          Some(Phase1bVote(slot = s, voteRound = vr).withNoop(Noop()))
-        case (_, Entry(_, VVNothing, _)) =>
-          None
-      })
-    val leader = replicas(leaderIndex)
-    leader.send(
-      ReplicaInbound().withPhase1B(
-        Phase1b(replicaId = config.replicaAddresses.indexOf(me), round = round, vote = votes.to[Seq])
-      )
-    )
-  }
-
 
   private def handlePhase1b(
                              src: Transport#Address,
@@ -612,8 +552,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Wait until we receive a quorum of phase 1bs.
-        phase1bs(request.replicaId) = request
-        if (phase1bs.size < config.f + 1) {
+        phase1bs(request.acceptorId) = request
+        if (phase1bs.size < config.quorumSize) {
           return
         }
 
@@ -709,9 +649,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Replay the pending proposals.
         nextSlot = endSlot + 1
-        for (proposal <- pendingProposals) {
+        for ((_, proposal) <- pendingProposals) {
           phase2aBuffer += Phase2a(slot = nextSlot, round = round)
-            .withUniqueId(proposal)
+            .withUniqueId(proposal.uniqueId)
+          pendingEntries(nextSlot) = ECommand(proposal.uniqueId)
           phase2bs(nextSlot) = mutable.Map()
           nextSlot += 1
         }
@@ -748,6 +689,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           )
           // TODO(mwhittaker): Check that the nack is not out of date.
           // TODO(mwhittaker): Change to a round that we own!
+          leaderChange(address, nack.round)
         }
     }
   }
@@ -786,13 +728,38 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Methods ///////////////////////////////////////////////////////////////////
+  def quorumSize(round: Round): Int = {
+    /*config.roundSystem.roundType(round) match {
+      case FastRound    => config.fastQuorumSize
+      case ClassicRound => config.classicQuorumSize
+    }*/
+    config.quorumSize
+  }
+
+  // thriftyAcceptors(min) uses `options.thriftySystem` to thriftily select at
+  // least `min` acceptors.
+  def thriftyAcceptors(min: Int): Set[Chan[Acceptor[Transport]]] = {
+    // The addresses returned by the heartbeat node are heartbeat addresses.
+    // We have to transform them into acceptor addresses.
+    options.thriftySystem
+      .choose(heartbeat.unsafeNetworkDelay, min)
+      .map(config.acceptorHeartbeatAddresses.indexOf(_))
+      .map(config.acceptorAddresses(_))
+      .map(acceptorsByAddress(_))
+  }
 
   // Send Phase 1a messages to the acceptors. If thrifty is true, we send with
   // thriftiness. Otherwise, we send to every acceptor.
   private def sendPhase1as(thrifty: Boolean): Unit = {
-    for (replica <- replicas) {
-      replica.send(
-        ReplicaInbound().withPhase1A(
+    val acceptors = if (thrifty) {
+      thriftyAcceptors(config.quorumSize)
+    } else {
+      this.acceptors
+    }
+
+    for (acceptor <- acceptors) {
+      acceptor.send(
+        AcceptorInbound().withPhase1A(
           Phase1a(round = round,
             chosenWatermark = chosenWatermark,
             chosenSlot = log.keysIteratorFrom(chosenWatermark).to[Seq])
@@ -809,6 +776,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                       slot: Slot
                     ): (Entry, Set[UniqueId]) = {
     def phase1bVoteValueToEntry(voteValue: Phase1bVote.Value): Entry = {
+      import Phase1bVote.Value
       voteValue match {
         case Value.UniqueId(command) => ECommand(command)
         case Value.Noop(_)          => ENoop
@@ -842,7 +810,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // If there exists a v in V such that O4(v), then we must propose it.
-    val o4vs = frankenpaxos.Util.popularItems(V, config.f + 1)
+    val o4vs = frankenpaxos.Util.popularItems(V, config.quorumSize)
     if (o4vs.size > 0) {
       leaderLogger.checkEq(o4vs.size, 1)
       return (phase1bVoteValueToEntry(o4vs.head.get), Set())
@@ -936,7 +904,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Wait for sufficiently many phase2b replies.
         phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
-        phase2bs(phase2b.slot).put(phase2b.replicaId, phase2b)
+        phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
         phase2bChosenInSlot(phase2, phase2b.slot) match {
           case NothingReadyYet =>
           // Don't do anything.
@@ -945,6 +913,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             choose(entry)
             metrics.chosenCommandsTotal.labels("classic").inc()
 
+          case FastReady(entry) =>
+            choose(entry)
+            metrics.chosenCommandsTotal.labels("fast").inc()
+
+          case FastStuck =>
+            // The fast round is stuck, so we start again in a higher round.
+            // TODO(mwhittaker): We might want to have all stuck things pending
+            // for the next round.
+            leaderLogger.debug(
+              s"Slot ${phase2b.slot} is stuck. Changing to a higher round."
+            )
+            leaderChange(address, round)
+            metrics.stuckTotal.inc()
         }
     }
   }
@@ -962,6 +943,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   sealed trait Phase2bVoteResult
   case object NothingReadyYet extends Phase2bVoteResult
   case class ClassicReady(entry: Entry) extends Phase2bVoteResult
+  case class FastReady(entry: Entry) extends Phase2bVoteResult
+  case object FastStuck extends Phase2bVoteResult
 
   // TODO(mwhittaker): Document.
   private def phase2bChosenInSlot(
@@ -970,14 +953,47 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                                  ): Phase2bVoteResult = {
     val Phase2(pendingEntries, phase2bs, _, _, _, _, _) = phase2
 
-    if (phase2bs
-      .getOrElse(slot, mutable.Map())
-      .size >= config.f + 1) {
-      ClassicReady(pendingEntries(slot))
-    } else {
-      NothingReadyYet
-    }
+    config.roundSystem.roundType(round) match {
+      case ClassicRound =>
+        if (phase2bs
+          .getOrElse(slot, mutable.Map())
+          .size >= config.quorumSize) {
+          ClassicReady(pendingEntries(slot))
+        } else {
+          NothingReadyYet
+        }
 
+      case FastRound =>
+        phase2bs.getOrElseUpdate(slot, mutable.Map())
+        if (phase2bs(slot).size < config.quorumSize) {
+          return NothingReadyYet
+        }
+
+        val voteValueCounts = Util.histogram(phase2bs(slot).values.map(_.vote))
+
+        // We've heard from `phase2bs(slot).size` acceptors. This means there
+        // are `votesLeft = config.n - phase2bs(slot).size` acceptors left. In
+        // order for a value to be choosable, it must be able to reach a fast
+        // quorum of votes if all the `votesLeft` acceptors vote for it. If no
+        // such value exists, no value can be chosen.
+        val votesLeft = config.n - phase2bs(slot).size
+        if (!voteValueCounts.exists({
+          case (_, count) => count + votesLeft >= config.quorumSize
+        })) {
+          leaderLogger.debug(
+            s"Slot $slot stuck with following histogram: $voteValueCounts."
+          )
+          return FastStuck
+        }
+
+        for ((voteValue, count) <- voteValueCounts) {
+          if (count >= config.quorumSize) {
+            return FastReady(phase2bVoteToEntry(voteValue))
+          }
+        }
+
+        NothingReadyYet
+    }
   }
 
   def flushPhase2aBuffer(thrifty: Boolean): Unit = {
@@ -991,8 +1007,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Phase2(_, _, _, phase2aBuffer, phase2aBufferFlushTimer, _, _) =>
         if (phase2aBuffer.size > 0) {
           val msg =
-            ReplicaInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
-          replicas.foreach(_.send(msg))
+            AcceptorInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
+          if (thrifty) {
+            thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
+          } else {
+            acceptors.foreach(_.send(msg))
+          }
           phase2aBuffer.clear()
           phase2aBufferFlushTimer.reset()
         } else {
@@ -1011,6 +1031,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case Phase2(_, _, _, _, _, buffer, bufferFlushTimer) =>
         if (buffer.size > 0) {
+          otherLeaders.foreach(
+            _.send(
+              LeaderInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))
+            )
+          )
           buffer.clear()
           bufferFlushTimer.reset()
         } else {
@@ -1072,11 +1097,94 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  // Switch over to a new leader. If the new leader is ourselves, then we
+  // increase our round and enter a new round larger than `higherThanRound`.
+  def leaderChange(leader: Transport#Address, higherThanRound: Int): Unit = {
+    leaderLogger.checkGe(higherThanRound, round)
+    metrics.leaderChangesTotal.inc()
+
+    // Try to go to a fast round if we think that a fast quorum of acceptors
+    // are alive. If we think fewer than a fast quorum of acceptors are alive,
+    // then proceed to a classic round.
+    val nextRound = if (heartbeat.unsafeAlive().size >= config.quorumSize) {
+      config.roundSystem
+        .nextFastRound(leaderId, higherThanRound)
+        .getOrElse(
+          config.roundSystem.nextClassicRound(leaderId, higherThanRound)
+        )
+    } else {
+      config.roundSystem.nextClassicRound(leaderId, higherThanRound)
+    }
+
+    (state, leader == address) match {
+      case (Inactive, true) =>
+        // We are the new leader!
+        leaderLogger.debug(
+          s"Leader $address was inactive, but is now the leader."
+        )
+        round = nextRound
+        sendPhase1as(true)
+        resendPhase1asTimer.start()
+        state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+
+      case (Inactive, false) =>
+        // Don't do anything. We're still not the leader.
+        leaderLogger.debug(s"Leader $address was inactive and still is.")
+
+      case (Phase1(_, _, resendPhase1asTimer), true) =>
+        // We were and still are the leader, but in a higher round.
+        leaderLogger.debug(s"Leader $address was the leader and still is.")
+        round = nextRound
+        sendPhase1as(true)
+        resendPhase1asTimer.reset()
+        state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+
+      case (Phase1(_, _, resendPhase1asTimer), false) =>
+        // We are no longer the leader!
+        leaderLogger.debug(s"Leader $address was the leader, but no longer is.")
+        resendPhase1asTimer.stop()
+        state = Inactive
+
+      case (Phase2(_,
+      _,
+      resendPhase2asTimer,
+      _,
+      phase2aBufferFlushTimer,
+      _,
+      valueChosenBufferFlushTimer),
+      true) =>
+        // We were and still are the leader, but in a higher round.
+        leaderLogger.debug(s"Leader $address was the leader and still is.")
+        resendPhase2asTimer.stop()
+        phase2aBufferFlushTimer.stop()
+        valueChosenBufferFlushTimer.stop()
+        round = nextRound
+        sendPhase1as(true)
+        resendPhase1asTimer.start()
+        state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+
+      case (Phase2(_,
+      _,
+      resendPhase2asTimer,
+      _,
+      phase2aBufferFlushTimer,
+      _,
+      valueChosenBufferFlushTimer),
+      false) =>
+        // We are no longer the leader!
+        leaderLogger.debug(s"Leader $address was the leader, but no longer is.")
+        resendPhase2asTimer.stop()
+        phase2aBufferFlushTimer.stop()
+        valueChosenBufferFlushTimer.stop()
+        state = Inactive
+    }
+  }
+
   def executeLog(): Unit = {
     while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
         case ECommand(
-        UniqueId(clientAddressBytes, clientPseudonym, clientId)
+        Command(clientAddressBytes, clientPseudonym, clientId, command)
         ) =>
           val clientAddress = transport.addressSerializer.fromBytes(
             clientAddressBytes.toByteArray()
@@ -1090,7 +1198,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             }
 
           if (!executed) {
-            val output = stateMachine.run(clientAddressBytes.toByteArray())
+            val output = stateMachine.run(command.toByteArray())
             clientTable((clientAddress, clientPseudonym)) = (clientId, output)
             metrics.executedCommandsTotal.inc()
 
@@ -1103,8 +1211,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               client.send(
                 ClientInbound().withClientReply(
                   ClientReply(
-                    clientId = clientId,
                     clientPseudonym = clientPseudonym,
+                    clientId = clientId,
                     result = ByteString.copyFrom(output))
                 )
               )
