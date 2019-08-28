@@ -103,9 +103,9 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   protected var pendingCommands = mutable.Map[Pseudonym, PendingCommand]()
 
 // Leader and acceptor channels.
-  private val replicas: Map[Int, Chan[Replica[Transport]]] = {
-    for ((address, i) <- config.replicaAddresses.zipWithIndex)
-      yield i -> chan[Replica[Transport]](address, Replica.serializer)
+  private val proposers: Map[Int, Chan[Proposer[Transport]]] = {
+    for ((address, i) <- config.proposerAddresses.zipWithIndex)
+      yield i -> chan[Proposer[Transport]](address, Proposer.serializer)
   }.toMap
 
   // Timers ////////////////////////////////////////////////////////////////////
@@ -184,8 +184,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
     val request = toProposeRequest(pendingCommand)
-    val leader = replicas(0)
-    leader.send(ReplicaInbound().withClientRequest(request))
+    val r = scala.util.Random
+    val index = r.nextInt(config.proposerAddresses.size)
+    val leader = proposers(index)
+    leader.send(ProposerInbound().withClientRequest(request))
   }
 
   private def reproposeTimer(pseudonym: Pseudonym): Transport#Timer = {
@@ -203,8 +205,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
           case Some(pendingCommand) =>
             val request = toProposeRequest(pendingCommand)
-            for ((_, leader) <- replicas) {
-              leader.send(ReplicaInbound().withClientRequest(request))
+            for ((_, leader) <- proposers) {
+              leader.send(ProposerInbound().withClientRequest(request))
             }
         }
         t.start()

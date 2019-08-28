@@ -242,7 +242,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       .filter({ case (slot, _) => !phase1a.chosenSlot.contains(slot) })
       .flatMap({
         case (s, Entry(vr, VVCommand(command), _)) =>
-          Some(Phase1bVote(slot = s, voteRound = vr).withUniqueId())
+          Some(Phase1bVote(slot = s, voteRound = vr).withUniqueId(command))
         case (s, Entry(vr, VVNoop, _)) =>
           Some(Phase1bVote(slot = s, voteRound = vr).withNoop(Noop()))
         case (_, Entry(_, VVNothing, _)) =>
@@ -364,7 +364,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         }
         Some(
           Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = round)
-            .withCommand(uniqueId)
+            .withUniqueId(uniqueId)
         )
 
       case Phase2a.Value.Noop(_) =>
@@ -376,28 +376,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
           Phase2b(acceptorId = acceptorId, slot = phase2a.slot, round = round)
             .withNoop(Noop())
         )
-
-      case Phase2a.Value.Any(_) =>
-        log.put(phase2a.slot, Entry(voteRound, voteValue, Some(round)))
-        None
-
-      case Phase2a.Value.AnySuffix(_) =>
-        if (log.prefix.size == 0) {
-          log.putTail(phase2a.slot, Entry(-1, VVNothing, Some(round)))
-        } else {
-          val updatedVotes =
-            log
-              .prefix()
-              .iteratorFrom(phase2a.slot)
-              .map({
-                case (s, Entry(vr, vv, _)) => (s, Entry(vr, vv, Some(round)))
-              })
-          for ((slot, entry) <- updatedVotes) {
-            log.put(slot, entry)
-          }
-          log.putTail(log.prefix.lastKey + 1, Entry(-1, VVNothing, Some(round)))
-        }
-        None
 
       case Phase2a.Value.Empty =>
         logger.fatal("Empty Phase2a value.")

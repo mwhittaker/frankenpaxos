@@ -486,7 +486,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   def handleDecide(src: Transport#Address, r: Decide): Unit = ???
 
-  def handlePhase1a(src: Transport#Address, r: Phase1a): Unit = ???
 
   def handlePhase2aBuffer(src: Transport#Address, r: Phase2aBuffer): Unit = ???
 
@@ -622,7 +621,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   case object VVNothing extends VoteValue
 
   @JSExportAll
-  case class Entry(
+  case class EntryAcceptor(
       voteRound: Int,
       voteValue: VoteValue,
       anyRound: Option[Int]
@@ -630,12 +629,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // The log of votes.
   @JSExport
-  protected val log: Log[Entry] = new Log()
+  protected val logAcceptor: Log[EntryAcceptor] = new Log()
 
   // If this acceptor receives a propose request from a client, it attempts to
   // choose the command in `nextSlot`.
   @JSExport
-  protected var nextSlot = 0;
+  protected var nextSlotAcceptor = 0;
 
 
   private def handlePhase1a(src: Transport#Address, phase1a: Phase1a): Unit = {
@@ -661,16 +660,16 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // leader knows are chosen. We also make sure not to return votes for slots
     // that we haven't actually voted in.
     round = phase1a.round
-    val votes = log
+    val votes = logAcceptor
       .prefix()
       .iteratorFrom(phase1a.chosenWatermark)
       .filter({ case (slot, _) => !phase1a.chosenSlot.contains(slot) })
       .flatMap({
-        case (s, Entry(vr, VVCommand(command), _)) =>
+        case (s, EntryAcceptor(vr, VVCommand(command), _)) =>
           Some(Phase1bVote(slot = s, voteRound = vr).withUniqueId(UniqueId(command.clientAddress, command.clientPseudonym, command.clientId)))
-        case (s, Entry(vr, VVNoop, _)) =>
+        case (s, EntryAcceptor(vr, VVNoop, _)) =>
           Some(Phase1bVote(slot = s, voteRound = vr).withNoop(Noop()))
-        case (_, Entry(_, VVNothing, _)) =>
+        case (_, EntryAcceptor(_, VVNothing, _)) =>
           None
       })
     val leader = replicas(leaderIndex)
@@ -763,8 +762,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         val endSlot: Int = math.max(
           votes
             .map({ case (a, vs) => if (vs.size == 0) -1 else vs.lastKey })
-            .max,
-          if (log.size == 0) -1 else log.lastKey
+            .max, -1
+          //if (log.size == 0) -1 else log.lastKey
         )
 
         val pendingEntries = mutable.SortedMap[Slot, Entry]()
@@ -887,7 +886,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // Send Phase 1a messages to the acceptors. If thrifty is true, we send with
   // thriftiness. Otherwise, we send to every acceptor.
   private def sendPhase1as(thrifty: Boolean): Unit = {
-    for (replica <- replicas) {
+    /*for (replica <- replicas) {
       replica.send(
         ReplicaInbound().withPhase1A(
           Phase1a(round = round,
@@ -895,7 +894,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                   chosenSlot = log.keysIteratorFrom(chosenWatermark).to[Seq])
         )
       )
-    }
+    }*/
   }
 
   // Given a quorum of phase1b votes, determine a safe value to propose in slot
@@ -969,7 +968,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def processPhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
-    def toValueChosen(slot: Slot, entry: Entry): ValueChosen = {
+    /*def toValueChosen(slot: Slot, entry: Entry): ValueChosen = {
       entry match {
         case ECommand(command) =>
           ValueChosen(slot = slot).withUniqueId(command)
@@ -1044,7 +1043,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             metrics.chosenCommandsTotal.labels("classic").inc()
 
         }
-    }
+    }*/
   }
 
   private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {
@@ -1118,7 +1117,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   def resendPhase2as(): Unit = {
-    state match {
+    /*state match {
       case Inactive | Phase1(_, _, _) =>
         leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
 
@@ -1167,11 +1166,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         flushPhase2aBuffer(thrifty = false)
-    }
+    }*/
   }
 
   def executeLog(): Unit = {
-    while (log.contains(chosenWatermark)) {
+    /*while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
         case ECommand(
             UniqueId(clientAddressBytes, clientPseudonym, clientId)
@@ -1215,6 +1214,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           metrics.executedNoopsTotal.inc()
       }
       chosenWatermark += 1
-    }
+    }*/
   }
 }

@@ -469,13 +469,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case Phase1(_, pendingProposals, _) =>
-        if (request.round != round) {
+        if (round != 0) {
+        //if (request.round != round) {
           // We don't want to process requests from out of date clients.
-          leaderLogger.debug(
+          /*leaderLogger.debug(
             s"Leader received a propose request from $src in round " +
               s"${request.round}, but is in round $round. Sending leader info."
-          )
-          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
+          )*/
+          //client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
         } else {
           // We buffer all pending proposals in phase 1 and process them later
           // when we enter phase 2.
@@ -489,7 +490,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase2aBufferFlushTimer,
       _,
       _) =>
-        if (request.round != round) {
+        /*if (request.round != round) {
           // We don't want to process requests from out of date clients.
           leaderLogger.debug(
             s"Leader received a propose request from $src in round " +
@@ -497,7 +498,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           )
           client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
           return
-        }
+        }*/
 
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
@@ -1184,7 +1185,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
         case ECommand(
-        Command(clientAddressBytes, clientPseudonym, clientId, command)
+          UniqueId(clientAddressBytes, clientPseudonym, clientId)
         ) =>
           val clientAddress = transport.addressSerializer.fromBytes(
             clientAddressBytes.toByteArray()
@@ -1198,7 +1199,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             }
 
           if (!executed) {
-            val output = stateMachine.run(command.toByteArray())
+            //val output = stateMachine.run(command.toByteArray())
+            val output = clientAddressBytes.toByteArray
             clientTable((clientAddress, clientPseudonym)) = (clientId, output)
             metrics.executedCommandsTotal.inc()
 
