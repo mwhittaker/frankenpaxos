@@ -191,7 +191,7 @@ class SimulatedSimpleGcBPaxos(val f: Int) extends SimulatedSystem {
       .map(replica => Map() ++ replica.commands)
       .map(commands => {
         commands.mapValues(
-          c => Set(Acceptor.VoteValue(c.commandOrNoop, c.dependencies))
+          c => Set(Acceptor.VoteValue(c.proposal, c.dependencies))
         )
       })
       .foldLeft(Map[VertexId, Set[Acceptor.VoteValue]]())(merge(_, _))
@@ -254,11 +254,11 @@ class SimulatedSimpleGcBPaxos(val f: Int) extends SimulatedSystem {
     val chosens = state.filter({ case (_, chosen) => chosen.size > 1 })
     for ((vertexA, chosenA) <- chosens) {
       for ((vertexB, chosenB) <- chosens if vertexA != vertexB) {
-        val Acceptor.VoteValue(commandOrNoopA, depsA) = chosenA.head
-        val Acceptor.VoteValue(commandOrNoopB, depsB) = chosenB.head
+        val Acceptor.VoteValue(proposalA, depsA) = chosenA.head
+        val Acceptor.VoteValue(proposalB, depsB) = chosenB.head
 
-        import CommandOrNoop.Value._
-        (commandOrNoopA.value, commandOrNoopB.value) match {
+        import Proposal.Value._
+        (proposalA.value, proposalB.value) match {
           case (Command(commandA), Command(commandB)) =>
             val bytesA = commandA.command.toByteArray
             val bytesB = commandB.command.toByteArray
@@ -273,7 +273,7 @@ class SimulatedSimpleGcBPaxos(val f: Int) extends SimulatedSystem {
 
           case (Empty, _) | (_, Empty) =>
             return SimulatedSystem.InvariantViolated(
-              s"Empty CommandOrNoop found."
+              s"Empty Proposal found."
             )
 
           case (Noop(_), _) | (_, Noop(_)) =>

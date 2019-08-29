@@ -166,7 +166,7 @@ object Replica {
 
   @JSExportAll
   case class Committed(
-      commandOrNoop: CommandOrNoop,
+      proposal: Proposal,
       dependencies: VertexIdPrefixSet
   )
 }
@@ -338,7 +338,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
     for (v <- executable) {
-      import CommandOrNoop.Value
+      import Proposal.Value
       commands.get(v) match {
         case None =>
           logger.fatal(
@@ -347,20 +347,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
 
         case Some(committed: Committed) =>
-          executeCommand(v, committed.commandOrNoop)
+          executeCommand(v, committed.proposal)
       }
     }
   }
 
   private def executeCommand(
       vertexId: VertexId,
-      commandOrNoop: CommandOrNoop
+      proposal: Proposal
   ): Unit = {
-    import CommandOrNoop.Value
+    import Proposal.Value
 
-    commandOrNoop.value match {
+    proposal.value match {
       case Value.Empty =>
-        logger.fatal("Empty CommandOrNoop.")
+        logger.fatal("Empty Proposal.")
 
       case Value.Noop(Noop()) =>
         metrics.executedNoopsTotal.inc()
@@ -499,7 +499,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
     timed("Commit/recordCommitted") {
       recordCommitted(commit.vertexId,
-                      Committed(commit.commandOrNoop, dependencies))
+                      Committed(commit.proposal, dependencies))
     }
     metrics.dependencies.observe(dependencies.size)
     metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
@@ -536,7 +536,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // have sufficiently many commands pending execution.
     if (options.unsafeSkipGraphExecution) {
       timed("Commit/unsafeExecuteCommand") {
-        executeCommand(commit.vertexId, commit.commandOrNoop)
+        executeCommand(commit.vertexId, commit.proposal)
       }
     } else {
       timed("Commit/dependencyGraphCommit") {
@@ -578,7 +578,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         replica.send(
           ReplicaInbound().withCommit(
             Commit(vertexId = recover.vertexId,
-                   commandOrNoop = committed.commandOrNoop,
+                   proposal = committed.proposal,
                    dependencies = committed.dependencies.toProto)
           )
         )

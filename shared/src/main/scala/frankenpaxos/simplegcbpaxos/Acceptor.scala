@@ -61,17 +61,17 @@ object Acceptor {
 
   @JSExportAll
   case class VoteValue(
-      commandOrNoop: CommandOrNoop,
+      proposal: Proposal,
       dependencies: VertexIdPrefixSet
   )
 
   def toProto(voteValue: VoteValue): VoteValueProto = {
-    VoteValueProto(commandOrNoop = voteValue.commandOrNoop,
+    VoteValueProto(proposal = voteValue.proposal,
                    dependencies = voteValue.dependencies.toProto)
   }
 
   def fromProto(voteValueProto: VoteValueProto): VoteValue = {
-    VoteValue(commandOrNoop = voteValueProto.commandOrNoop,
+    VoteValue(proposal = voteValueProto.proposal,
               dependencies =
                 VertexIdPrefixSet.fromProto(voteValueProto.dependencies))
   }

@@ -38,17 +38,6 @@
 //      |        |        |        |        |   '--> |
 //      | <------^--------^--------^--------^------- |     ClientReply
 //
-// Replica Garbage Collection
-//
-//   Replica CasLeader CasAcceptor
-//      | -----> |        | CasClientRequest
-//      |        | -----> | CasPhase1a
-//      |        | <----- | CasPhase1b
-//      |        | -----> | CasPhase2a
-//      |        | <----- | CasPhase2b
-//      |        | <----- | CasNack
-//      | <----- |        | CasClientReply
-//
 // Misc.
 //                     Dependency
 //                      Service
@@ -86,6 +75,14 @@ message Noop {
     "@scala.scalajs.js.annotation.JSExportAll";
 }
 
+// A special snapshot command that does not affect the state machine. When a
+// replica encounters a snapshot command, it takes a snapshot of the state
+// machine.
+message Snapshot {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
 // A client issued command.
 message Command {
   option (scalapb.message).annotations =
@@ -106,7 +103,7 @@ message Command {
   required bytes command = 4;
 }
 
-message CommandOrNoop {
+message Proposal {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
@@ -122,7 +119,7 @@ message VertexIdPrefixSetProto {
 }
 
 message VoteValueProto {
-  required CommandOrNoop commandOrNoop = 1;
+  required Proposal proposal = 1;
   required VertexIdPrefixSetProto dependencies = 2;
 }
 
@@ -210,7 +207,7 @@ message Commit {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required VertexId vertex_id = 1;
-  required CommandOrNoop command_or_noop = 2;
+  required Proposal proposal = 2;
   required VertexIdPrefixSetProto dependencies = 3;
 }
 
@@ -241,69 +238,6 @@ message GarbageCollect {
 
   // The committed frontier. See Replica.committedFrontier for documentation.
   repeated int32 frontier = 3;
-}
-
-message CasClientRequest {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  // The client's address.
-  required bytes client_address = 1;
-
-  // Clients annotate every command with a unique and monotonically increasing
-  // id. The pair of (client address, client id) uniquely identify a command.
-  required int32 client_id = 2;
-
-  // The garbage collection watermark.
-  required VertexIdPrefixSetProto watermark = 3;
-}
-
-message CasPhase1a {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 round = 1;
-}
-
-message CasPhase1b {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 round = 1;
-  required int32 acceptor_index = 2;
-  required int32 vote_round = 3;
-  optional VertexIdPrefixSetProto vote_value = 4;
-}
-
-message CasPhase2a {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 round = 1;
-  required VertexIdPrefixSetProto watermark = 2;
-}
-
-message CasPhase2b {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 round = 1;
-  required int32 acceptor_index = 2;
-}
-
-message CasNack {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 higher_round = 1;
-}
-
-message CasClientReply {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 client_id = 1;
-  required VertexIdPrefixSetProto watermark = 2;
 }
 
 // Inbound messages. ///////////////////////////////////////////////////////////
@@ -367,37 +301,6 @@ message GarbageCollectorInbound {
 
   oneof request {
     GarbageCollect garbage_collect = 1;
-  }
-}
-
-message CasClientInbound {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  oneof request {
-    CasClientReply cas_client_reply = 1;
-  }
-}
-
-message CasLeaderInbound {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  oneof request {
-    CasClientRequest cas_client_request = 1;
-    CasPhase1b cas_phase1b = 2;
-    CasPhase2b cas_phase2b = 3;
-    CasNack cas_nack = 4;
-  }
-}
-
-message CasAcceptorInbound {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  oneof request {
-    CasPhase1a cas_phase1a = 1;
-    CasPhase2a cas_phase2a = 2;
   }
 }
 

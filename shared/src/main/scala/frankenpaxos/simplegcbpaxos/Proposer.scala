@@ -110,7 +110,7 @@ object Proposer {
   case class Chosen[Transport <: frankenpaxos.Transport[Transport]](
       // We need to remember the chosen values for recovery. See handleRecover
       // for details.
-      commandOrNoop: CommandOrNoop,
+      proposal: Proposal,
       dependencies: VertexIdPrefixSet
   ) extends State[Transport]
 }
@@ -185,7 +185,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   private def proposeImpl(
       vertexId: VertexId,
-      commandOrNoop: CommandOrNoop,
+      proposal: Proposal,
       dependencies: VertexIdPrefixSet
   ): Unit = {
     states.get(vertexId) match {
@@ -197,7 +197,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case None =>
-        val value = Acceptor.VoteValue(commandOrNoop = commandOrNoop,
+        val value = Acceptor.VoteValue(proposal = proposal,
                                        dependencies = dependencies)
         val round = roundSystem(vertexId).nextClassicRound(index, -1)
 
@@ -323,7 +323,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     proposeImpl(propose.vertexId,
-                CommandOrNoop().withCommand(propose.command),
+                Proposal().withCommand(propose.command),
                 VertexIdPrefixSet.fromProto(propose.dependencies))
   }
 
@@ -448,7 +448,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // existing timers and update our state.
         phase2.resendPhase2as.stop()
         states(phase2b.vertexId) = Chosen[Transport](
-          commandOrNoop = phase2.value.commandOrNoop,
+          proposal = phase2.value.proposal,
           dependencies = phase2.value.dependencies
         )
         metrics.chosenCommandsTotal.inc()
@@ -458,7 +458,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           replica.send(
             ReplicaInbound().withCommit(
               Commit(vertexId = phase2b.vertexId,
-                     commandOrNoop = phase2.value.commandOrNoop,
+                     proposal = phase2.value.proposal,
                      dependencies = phase2.value.dependencies.toProto)
             )
           )
@@ -568,7 +568,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // Propose a noop.
         proposeImpl(
           recover.vertexId,
-          CommandOrNoop().withNoop(Noop()),
+          Proposal().withNoop(Noop()),
           VertexIdPrefixSet(config.leaderAddresses.size)
         )
 
@@ -583,7 +583,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         replica.send(
           ReplicaInbound().withCommit(
             Commit(vertexId = recover.vertexId,
-                   commandOrNoop = chosen.commandOrNoop,
+                   proposal = chosen.proposal,
                    dependencies = chosen.dependencies.toProto)
           )
         )
