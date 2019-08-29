@@ -65,7 +65,7 @@ class ReplicaOptions(NamedTuple):
     execute_graph_batch_size: int = 1
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
-    garbage_collect_every_n_commands: int = 10000
+    send_watermark_every_n_commands: int = 10000
     measure_latencies: bool = True
     unsafe_dont_recover: bool = False
 
@@ -554,9 +554,9 @@ class SimpleGcBPaxosSuite(benchmark.Suite[Input, Output]):
                         '{}s'.format(input.replica_options
                                      .execute_graph_timer_period
                                      .total_seconds()),
-                    '--options.garbageCollectEveryNCommands',
+                    '--options.sendWatermarkEveryNCommands',
                         str(input.replica_options
-                                .garbage_collect_every_n_commands),
+                                 .send_watermark_every_n_commands),
                     '--options.measureLatencies',
                         str(input.replica_options.measure_latencies),
                     '--options.unsafeDontRecover',

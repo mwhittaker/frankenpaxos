@@ -38,22 +38,20 @@ case class ReplicaOptions(
     // recoverVertexTimerMaxPeriod.
     recoverVertexTimerMinPeriod: java.time.Duration,
     recoverVertexTimerMaxPeriod: java.time.Duration,
-    // See frankenpaxos.epaxos.Replica for information on the following options.
-    unsafeSkipGraphExecution: Boolean,
-    executeGraphBatchSize: Int,
-    executeGraphTimerPeriod: java.time.Duration,
-    // A replica sends a GarbageCollect message to the proposers and acceptors
-    // every `garbageCollectEveryNCommands` commands that it receives.
-    garbageCollectEveryNCommands: Int,
-    // If true, the replica records how long various things take to do and
-    // reports them using the `simple_bpaxos_replica_requests_latency` metric.
-    measureLatencies: Boolean,
     // If `unsafeDontRecover` is true, replicas don't make any attempt to
     // recover vertices. This is not live and should only be used for
     // performance debugging.
     unsafeDontRecover: Boolean,
-    // TODO(mwhittaker): Double check.
-    graphGarbageCollectionPeriod: java.time.Duration
+    // See frankenpaxos.epaxos.Replica for information on the following options.
+    executeGraphBatchSize: Int,
+    executeGraphTimerPeriod: java.time.Duration,
+    unsafeSkipGraphExecution: Boolean,
+    // A replica sends a GarbageCollect message to the proposers and acceptors
+    // every `sendWatermarkEveryNCommands` commands that it receives.
+    sendWatermarkEveryNCommands: Int,
+    // If true, the replica records how long various things take to do and
+    // reports them using the `simple_bpaxos_replica_requests_latency` metric.
+    measureLatencies: Boolean
 )
 
 @JSExportAll
@@ -61,14 +59,12 @@ object ReplicaOptions {
   val default = ReplicaOptions(
     recoverVertexTimerMinPeriod = java.time.Duration.ofMillis(500),
     recoverVertexTimerMaxPeriod = java.time.Duration.ofMillis(1500),
-    unsafeSkipGraphExecution = false,
+    unsafeDontRecover = false,
     executeGraphBatchSize = 1,
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
-    garbageCollectEveryNCommands = 10000,
-    measureLatencies = true,
-    unsafeDontRecover = false,
-    // TODO(mwhittaker): Double check.
-    graphGarbageCollectionPeriod = java.time.Duration.ofSeconds(4)
+    unsafeSkipGraphExecution = false,
+    sendWatermarkEveryNCommands = 10000,
+    measureLatencies = true
   )
 }
 
@@ -223,10 +219,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // The number of committed commands that the replica has received since the
   // last time it sent a GarbageCollect message to the garbage collectors.
-  // Every `options.garbageCollectEveryNCommands` commands, this value is reset
+  // Every `options.sendWatermarkEveryNCommands` commands, this value is reset
   // and GarbageCollect messages are sent.
   @JSExport
-  protected var numCommandsPendingGc: Int = 0
+  protected var numCommandsPendingWatermark: Int = 0
 
   // The number of committed commands that are in the graph that have not yet
   // been processed. We process the graph every `options.executeGraphBatchSize`
@@ -561,8 +557,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Send GarbageCollect messages if needed.
-    numCommandsPendingGc += 1
-    if (numCommandsPendingGc % options.garbageCollectEveryNCommands == 0) {
+    numCommandsPendingWatermark += 1
+    if (numCommandsPendingWatermark % options.sendWatermarkEveryNCommands == 0) {
       timed("Commit/sendGarbageCollect") {
         garbageCollector.send(
           GarbageCollectorInbound().withGarbageCollect(
@@ -571,7 +567,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
       }
-      numCommandsPendingGc = 0
+      numCommandsPendingWatermark = 0
     }
   }
 
