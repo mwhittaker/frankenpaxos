@@ -142,7 +142,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
           )))
     } else {
       for ((_, disseminator) <- disseminators) {
-        disseminator.send(DisseminatorInbound().withGetRequest(valueChosen.getUniqueId))
+        disseminator.send(DisseminatorInbound().withGetRequest(GetRequest(valueChosen.getUniqueId)))
       }
     }
   }
