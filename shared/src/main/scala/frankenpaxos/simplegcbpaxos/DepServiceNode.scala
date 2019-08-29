@@ -83,6 +83,32 @@ class DepServiceNodeMetrics(collectors: Collectors) {
     )
     .register()
 
+  val snapshotsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_dep_service_node_snapshots_total")
+    .help("Total number of snapshot requests received.")
+    .register()
+
+  val snapshotDependencies: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_dep_service_node_snapshot_dependencies")
+    .help(
+      "The number of dependencies that a dependency service node computes " +
+        "for a snapshot. Note that the number of dependencies might be very " +
+        "large, but in reality is represented compactly as a smaller set."
+    )
+    .register()
+
+  val uncompactedSnapshotDependencies: Summary = collectors.summary
+    .build()
+    .name("simple_bpaxos_dep_service_node_uncompacted_snapshot_dependencies")
+    .help(
+      "The number of uncompacted dependencies that a dependency service node " +
+        "computes for a snapshot. This is the number of dependencies that " +
+        "cannot be represented compactly."
+    )
+    .register()
+
   val garbageCollectionTotal: Counter = collectors.counter
     .build()
     .name("simple_bpaxos_dep_service_node_garbage_collection_total")
@@ -179,8 +205,11 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       dependencyRequest: DependencyRequest
   ): Unit = {
+    // If options.unsafeReturnNoDependencies is true, we return no dependencies
+    // and return immediately. This makes the protocol unsafe, but is useful
+    // for performance debugging.
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
     if (options.unsafeReturnNoDependencies) {
-      val leader = chan[Leader[Transport]](src, Leader.serializer)
       leader.send(
         LeaderInbound().withDependencyReply(
           DependencyReply(
@@ -194,19 +223,38 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    val vertexId = dependencyRequest.vertexId
-    val command = dependencyRequest.command.command.toByteArray
-    var dependencies = timed("DependencyRequest/computeDependencies") {
-      val dependencies = conflictIndex.getConflicts(command)
-      dependencies.subtractOne(vertexId)
-      dependencies
+    import CommandOrSnapshot.Value
+    val dependencies = dependencyRequest.commandOrSnapshot.value match {
+      case Value.Snapshot(_) =>
+        val dependencies = timed("DependencyRequest/snapshotDependencies") {
+          val dependencies = conflictIndex.highWatermark()
+          dependencies.subtractOne(dependencyRequest.vertexId)
+          dependencies
+        }
+        conflictIndex.putSnapshot(dependencyRequest.vertexId)
+        metrics.snapshotDependencies.observe(dependencies.size)
+        metrics.uncompactedSnapshotDependencies.observe(
+          dependencies.uncompactedSize
+        )
+        dependencies
+
+      case Value.Command(command) =>
+        val bytes = command.command.toByteArray
+        var dependencies = timed("DependencyRequest/computeDependencies") {
+          val dependencies = conflictIndex.getConflicts(bytes)
+          dependencies.subtractOne(dependencyRequest.vertexId)
+          dependencies
+        }
+        conflictIndex.put(dependencyRequest.vertexId, bytes)
+        metrics.dependencies.observe(dependencies.size)
+        metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
+        dependencies
+
+      case Value.Empty =>
+        logger.fatal("DepServiceNode received empty CommandOrSnapshot.")
     }
-    conflictIndex.put(vertexId, command)
-    metrics.dependencies.observe(dependencies.size)
-    metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
 
     timed("DependencyRequest/send") {
-      val leader = chan[Leader[Transport]](src, Leader.serializer)
       leader.send(
         LeaderInbound().withDependencyReply(
           DependencyReply(vertexId = dependencyRequest.vertexId,

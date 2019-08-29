@@ -38,6 +38,13 @@
 //      |        |        |        |        |   '--> |
 //      | <------^--------^--------^--------^------- |     ClientReply
 //
+// Snapshotting.
+//
+//                     Dependency
+//                      Service
+//   Client    Leader    Node   Proposer Acceptor Replica
+//      |        | <------^--------^--------^------- |     SnapshotRequest
+//
 // Misc.
 //                     Dependency
 //                      Service
@@ -103,6 +110,16 @@ message Command {
   required bytes command = 4;
 }
 
+message CommandOrSnapshot {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    Command command = 1;
+    Snapshot snapshot = 2;
+  }
+}
+
 message Proposal {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -110,6 +127,7 @@ message Proposal {
   oneof value {
     Command command = 1;
     Noop noop = 2;
+    Snapshot snapshot = 3;
   }
 }
 
@@ -131,12 +149,17 @@ message ClientRequest {
   required Command command = 1;
 }
 
+message SnapshotRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
 message DependencyRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required VertexId vertex_id = 1;
-  required Command command = 2;
+  required CommandOrSnapshot command_or_snapshot = 2;
 }
 
 message DependencyReply {
@@ -153,7 +176,7 @@ message Propose {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required VertexId vertex_id = 1;
-  required Command command = 2;
+  required CommandOrSnapshot command_or_snapshot = 2;
   required VertexIdPrefixSetProto dependencies = 3;
 }
 
@@ -247,7 +270,8 @@ message LeaderInbound {
 
   oneof request {
     ClientRequest client_request = 1;
-    DependencyReply dependency_reply = 2;
+    SnapshotRequest snapshot_request = 2;
+    DependencyReply dependency_reply = 3;
   }
 }
 

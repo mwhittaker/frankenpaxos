@@ -74,7 +74,7 @@ object Leader {
 
   @JSExportAll
   case class State[Transport <: frankenpaxos.Transport[Transport]](
-      command: Command,
+      commandOrSnapshot: CommandOrSnapshot,
       dependencyReplies: mutable.Map[DepServiceNodeIndex, DependencyReply],
       resendDependencyRequestsTimer: Transport#Timer
   )
@@ -168,6 +168,37 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     options.thriftySystem.choose(delays, n).map(depServiceNodesByAddress(_))
   }
 
+  private def handleRequest(
+      src: Transport#Address,
+      commandOrSnapshot: CommandOrSnapshot
+  ): Unit = {
+    // TODO(mwhittaker): Think harder about repeated client commands. The
+    // leader isn't a replica, so it doesn't cache a response to an already
+    // executed command. Moreover, we don't want leaders broadcasting which
+    // commands are chosen to the other leaders. We could just have the command
+    // chosen again. Assuming repeated commands are rare, this shouldn't be a
+    // problem.
+
+    // Create a new vertex id for this command.
+    val vertexId = getAndIncrementNextVertexId()
+
+    // Send a request to the dependency service.
+    val dependencyRequest =
+      DependencyRequest(vertexId = vertexId,
+                        commandOrSnapshot = commandOrSnapshot)
+    thriftyDepServiceNodes(config.quorumSize).foreach(
+      _.send(DepServiceNodeInbound().withDependencyRequest(dependencyRequest))
+    )
+
+    // Update our state.
+    states(vertexId) = State(
+      commandOrSnapshot = commandOrSnapshot,
+      dependencyReplies = mutable.Map[DepServiceNodeIndex, DependencyReply](),
+      resendDependencyRequestsTimer =
+        makeResendDependencyRequestsTimer(dependencyRequest)
+    )
+  }
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(
       src: Transport#Address,
@@ -180,6 +211,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Request.ClientRequest(r) =>
         handleClientRequest(src, r)
         "ClientRequest"
+      case Request.SnapshotRequest(r) =>
+        handleSnapshotRequest(src, r)
+        "SnapshotRequest"
       case Request.DependencyReply(r) =>
         handleDependencyReply(src, r)
         "DependencyReply"
@@ -198,30 +232,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       clientRequest: ClientRequest
   ): Unit = {
-    // TODO(mwhittaker): Think harder about repeated client commands. The
-    // leader isn't a replica, so it doesn't cache a response to an already
-    // executed command. Moreover, we don't want leaders broadcasting which
-    // commands are chosen to the other leaders. We could just have the command
-    // chosen again. Assuming repeated commands are rare, this shouldn't be a
-    // problem.
+    handleRequest(src, CommandOrSnapshot().withCommand(clientRequest.command))
+  }
 
-    // Create a new vertex id for this command.
-    val vertexId = getAndIncrementNextVertexId()
-
-    // Send a request to the dependency service.
-    val dependencyRequest =
-      DependencyRequest(vertexId = vertexId, command = clientRequest.command)
-    thriftyDepServiceNodes(config.quorumSize).foreach(
-      _.send(DepServiceNodeInbound().withDependencyRequest(dependencyRequest))
-    )
-
-    // Update our state.
-    states(vertexId) = State(
-      command = clientRequest.command,
-      dependencyReplies = mutable.Map[DepServiceNodeIndex, DependencyReply](),
-      resendDependencyRequestsTimer =
-        makeResendDependencyRequestsTimer(dependencyRequest)
-    )
+  private def handleSnapshotRequest(
+      src: Transport#Address,
+      snapshotRequest: SnapshotRequest
+  ): Unit = {
+    handleRequest(src, CommandOrSnapshot().withSnapshot(Snapshot()))
   }
 
   private def handleDependencyReply(
@@ -265,7 +283,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         proposer.send(
           ProposerInbound().withPropose(
             Propose(vertexId = dependencyReply.vertexId,
-                    command = state.command,
+                    commandOrSnapshot = state.commandOrSnapshot,
                     dependencies = dependencies.toProto)
           )
         )

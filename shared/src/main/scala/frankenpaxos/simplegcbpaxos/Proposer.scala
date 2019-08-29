@@ -197,8 +197,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case None =>
-        val value = Acceptor.VoteValue(proposal = proposal,
-                                       dependencies = dependencies)
+        val value =
+          Acceptor.VoteValue(proposal = proposal, dependencies = dependencies)
         val round = roundSystem(vertexId).nextClassicRound(index, -1)
 
         // If we're the leader of round 0, then we can skip phase 1 and proceed
@@ -322,8 +322,15 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
+    import CommandOrSnapshot.Value
+    val proposal = propose.commandOrSnapshot.value match {
+      case Value.Command(c)  => Proposal().withCommand(c)
+      case Value.Snapshot(s) => Proposal().withSnapshot(s)
+      case Value.Empty =>
+        logger.fatal("Proposer received empty CommandOrSnapshot.")
+    }
     proposeImpl(propose.vertexId,
-                Proposal().withCommand(propose.command),
+                proposal,
                 VertexIdPrefixSet.fromProto(propose.dependencies))
   }
 

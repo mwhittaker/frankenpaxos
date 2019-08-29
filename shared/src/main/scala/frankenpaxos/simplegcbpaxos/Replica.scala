@@ -115,6 +115,12 @@ class ReplicaMetrics(collectors: Collectors) {
     .help("Total number of \"executed\" noops.")
     .register()
 
+  val executedSnapshotsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_replica_executed_snapshots_total")
+    .help("Total number of \"executed\" snapshots.")
+    .register()
+
   val repeatedCommandsTotal: Counter = collectors.counter
     .build()
     .name("simple_bpaxos_replica_repeated_commands_total")
@@ -347,12 +353,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
 
         case Some(committed: Committed) =>
-          executeCommand(v, committed.proposal)
+          executeProposal(v, committed.proposal)
       }
     }
   }
 
-  private def executeCommand(
+  private def executeProposal(
       vertexId: VertexId,
       proposal: Proposal
   ): Unit = {
@@ -364,6 +370,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
       case Value.Noop(Noop()) =>
         metrics.executedNoopsTotal.inc()
+
+      case Value.Snapshot(_) =>
+        metrics.executedSnapshotsTotal.inc()
+        // TODO(mwhittaker): Implement.
+        ???
 
       case Value.Command(command) =>
         val clientAddress = transport.addressSerializer.fromBytes(
@@ -498,8 +509,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       VertexIdPrefixSet.fromProto(commit.dependencies)
     }
     timed("Commit/recordCommitted") {
-      recordCommitted(commit.vertexId,
-                      Committed(commit.proposal, dependencies))
+      recordCommitted(commit.vertexId, Committed(commit.proposal, dependencies))
     }
     metrics.dependencies.observe(dependencies.size)
     metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
@@ -536,7 +546,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // have sufficiently many commands pending execution.
     if (options.unsafeSkipGraphExecution) {
       timed("Commit/unsafeExecuteCommand") {
-        executeCommand(commit.vertexId, commit.proposal)
+        executeProposal(commit.vertexId, commit.proposal)
       }
     } else {
       timed("Commit/dependencyGraphCommit") {

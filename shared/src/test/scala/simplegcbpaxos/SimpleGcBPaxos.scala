@@ -271,6 +271,16 @@ class SimulatedSimpleGcBPaxos(val f: Int) extends SimulatedSystem {
               )
             }
 
+          case (Snapshot(_), Command(_)) | (Command(_), Snapshot(_)) |
+              (Snapshot(_), Snapshot(_)) =>
+            if (!depsA.contains(vertexB) && !depsB.contains(vertexA)) {
+              return SimulatedSystem.InvariantViolated(
+                s"Vertices $vertexA and $vertexB conflict (one is a " +
+                  s"snapshot) but do not depend on each other (dependencies " +
+                  s"$depsA and $depsB)."
+              )
+            }
+
           case (Empty, _) | (_, Empty) =>
             return SimulatedSystem.InvariantViolated(
               s"Empty Proposal found."
