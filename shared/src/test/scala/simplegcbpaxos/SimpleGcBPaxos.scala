@@ -132,7 +132,9 @@ class SimpleGcBPaxos(val f: Int, seed: Long) {
       ),
       options = ReplicaOptions.default.copy(
         recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
-        recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(20)
+        recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(20),
+        sendWatermarkEveryNCommands = 2,
+        sendSnapshotEveryNCommands = 2
       ),
       metrics = new ReplicaMetrics(FakeCollectors),
       seed = seed

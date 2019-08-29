@@ -49,6 +49,11 @@ case class ReplicaOptions(
     // A replica sends a GarbageCollect message to the proposers and acceptors
     // every `sendWatermarkEveryNCommands` commands that it receives.
     sendWatermarkEveryNCommands: Int,
+    // We want replicas to send a snapshot command every
+    // `sendWatermarkEveryNCommands` commands. Replicas take turn sending the
+    // commands, so if there are r replicas, then they send every `r *
+    // sendSnapshotEveryNCommands` commands with offsets.
+    sendSnapshotEveryNCommands: Int,
     // If true, the replica records how long various things take to do and
     // reports them using the `simple_bpaxos_replica_requests_latency` metric.
     measureLatencies: Boolean
@@ -64,6 +69,7 @@ object ReplicaOptions {
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
     unsafeSkipGraphExecution = false,
     sendWatermarkEveryNCommands = 10000,
+    sendSnapshotEveryNCommands = 10000,
     measureLatencies = true
   )
 }
@@ -207,6 +213,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     chan[GarbageCollector[Transport]](config.garbageCollectorAddresses(index),
                                       GarbageCollector.serializer)
 
+  // Channels to the leaders.
+  private val leaders: Seq[Chan[Leader[Transport]]] =
+    for (a <- config.leaderAddresses)
+      yield chan[Leader[Transport]](a, Leader.serializer)
+
   // Channels to the proposers.
   private val proposers: Seq[Chan[Proposer[Transport]]] =
     for (a <- config.proposerAddresses)
@@ -223,6 +234,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // and GarbageCollect messages are sent.
   @JSExport
   protected var numCommandsPendingWatermark: Int = 0
+
+  // The number of committed commands that the replica has received since the
+  // last time it sent a SnapshotRequest to a leader. Every `r *
+  // options.sendSnapshotEveryNCommands` commands, this value is reset and a
+  // SnapshotRequest is sent.
+  @JSExport
+  protected var numCommandsPendingSendSnapshot
+    : Int = options.sendSnapshotEveryNCommands * index
 
   // The number of committed commands that are in the graph that have not yet
   // been processed. We process the graph every `options.executeGraphBatchSize`
@@ -417,6 +436,31 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  // Send GarbageCollect messages if needed.
+  private def sendWatermarkIfNeeded(): Unit = {
+    numCommandsPendingWatermark += 1
+    if (numCommandsPendingWatermark % options.sendWatermarkEveryNCommands == 0) {
+      garbageCollector.send(
+        GarbageCollectorInbound().withGarbageCollect(
+          GarbageCollect(replicaIndex = index,
+                         frontier = committedVertices.getWatermark())
+        )
+      )
+      numCommandsPendingWatermark = 0
+    }
+  }
+
+  // Send SnapshotRequest if needed.
+  private def sendSnapshotIfNeeded(): Unit = {
+    numCommandsPendingSendSnapshot += 1
+    val n = options.sendSnapshotEveryNCommands * config.replicaAddresses.size
+    if (numCommandsPendingSendSnapshot % n == 0) {
+      val leader = leaders(rand.nextInt(leaders.size))
+      leader.send(LeaderInbound().withSnapshotRequest(SnapshotRequest()))
+      numCommandsPendingSendSnapshot = 0
+    }
+  }
+
   // Timers ////////////////////////////////////////////////////////////////////
   private def makeRecoverVertexTimer(vertexId: VertexId): Transport#Timer = {
     lazy val t: Transport#Timer = timer(
@@ -556,19 +600,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
 
-    // Send GarbageCollect messages if needed.
-    numCommandsPendingWatermark += 1
-    if (numCommandsPendingWatermark % options.sendWatermarkEveryNCommands == 0) {
-      timed("Commit/sendGarbageCollect") {
-        garbageCollector.send(
-          GarbageCollectorInbound().withGarbageCollect(
-            GarbageCollect(replicaIndex = index,
-                           frontier = committedVertices.getWatermark())
-          )
-        )
-      }
-      numCommandsPendingWatermark = 0
-    }
+    sendWatermarkIfNeeded()
+    sendSnapshotIfNeeded()
   }
 
   private def handleRecover(

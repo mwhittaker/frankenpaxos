@@ -486,8 +486,12 @@ let replica_info = {
     <div>
       <div>stateMachine = {{node.actor.stateMachine}}</div>
       <div>
-        numCommandsPendingGc =
-        {{node.actor.numCommandsPendingGc}}
+        numCommandsPendingWatermark =
+        {{node.actor.numCommandsPendingWatermark}}
+      </div>
+      <div>
+        numCommandsPendingSendSnapshot =
+        {{node.actor.numCommandsPendingSendSnapshot}}
       </div>
       <div>
         numCommandsPendingExecution =

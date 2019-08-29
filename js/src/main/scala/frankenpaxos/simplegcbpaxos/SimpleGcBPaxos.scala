@@ -170,7 +170,8 @@ class SimpleGcBPaxos {
         recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(15),
         executeGraphBatchSize = 1,
         executeGraphTimerPeriod = java.time.Duration.ofSeconds(10),
-        sendWatermarkEveryNCommands = 2
+        sendWatermarkEveryNCommands = 2,
+        sendSnapshotEveryNCommands = 2
       ),
       metrics = new ReplicaMetrics(FakeCollectors)
     )
