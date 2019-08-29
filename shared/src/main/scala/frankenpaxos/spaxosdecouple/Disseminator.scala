@@ -1,12 +1,15 @@
 
 package frankenpaxos.spaxosdecouple
 
+import com.google.protobuf.ByteString
+
 import collection.mutable
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.PrometheusCollectors
+
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -66,11 +69,15 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var requestsDisseminated: mutable.Set[ClientRequest] = mutable.Set()
 
-  // Handlers //////////////////////////////////////////////////////////////////
+  @JSExport
+  protected var idRequestMap: mutable.Map[UniqueId, ByteString] = mutable.Map()
+
+// Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import DisseminatorInbound.Request
     inbound.request match {
       case Request.Forward(r)        => handleForwardRequest(src, r)
+      case Request.GetRequest(r)     => handleGetRequest(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -79,10 +86,18 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
 
   def handleForwardRequest(src: Transport#Address, forward: Forward) = {
     requestsDisseminated.add(forward.clientRequest)
+    idRequestMap.put(forward.clientRequest.uniqueId, forward.clientRequest.command)
 
     // Broadcast acknowledgement to all proposers, tunable setting to only send to replica that sent the Forward message
     for (proposer <- proposers) {
       proposer.send(ProposerInbound().withAcknowledge(Acknowledge(uniqueId = forward.clientRequest.uniqueId)))
+    }
+  }
+
+  def handleGetRequest(src: Transport#Address, getRequest: GetRequest): Unit = {
+    if (idRequestMap.contains(getRequest.uniqueId)) {
+      val executor = chan[Executor[Transport]](src, Executor.serializer)
+      executor.send(ExecutorInbound().withSendRequest(SendRequest(getRequest.uniqueId, idRequestMap.get(getRequest.uniqueId).get)))
     }
   }
 }

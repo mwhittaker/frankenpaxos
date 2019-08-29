@@ -227,6 +227,21 @@ message Proposal {
   required UniqueId unique_id = 1;
 }
 
+message GetRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required UniqueId unique_id = 1;
+}
+
+message SendRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required UniqueId unique_id = 1;
+  required bytes command = 2;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ProposerInbound {
   option (scalapb.message).annotations =
@@ -244,6 +259,7 @@ message DisseminatorInbound {
 
   oneof request {
     Forward forward = 1;
+    GetRequest get_request = 2;
   }
 }
 
@@ -272,6 +288,7 @@ message ExecutorInbound {
   oneof request {
     IdToRequest id_to_request = 1;
     ValueChosen value_chosen = 2;
+    SendRequest send_request = 3;
   }
 }
 

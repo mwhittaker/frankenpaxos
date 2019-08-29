@@ -6,6 +6,7 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.PrometheusCollectors
+
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -77,8 +78,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var disseminatorQuorumSize: Int = config.f + 1
 
-
-  // Handlers //////////////////////////////////////////////////////////////////
+// Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ProposerInbound.Request
     inbound.request match {

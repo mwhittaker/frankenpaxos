@@ -95,9 +95,17 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
   logger.check(config.executorAddresses.contains(address))
   private val executorId = config.executorAddresses.indexOf(address)
 
+  // Channels to the disseminators.
+  private val disseminators: Map[Int, Chan[Disseminator[Transport]]] = {
+    for ((disseminatorAddress, i) <- config.disseminatorAddresses.zipWithIndex)
+      yield i -> chan[Disseminator[Transport]](disseminatorAddress, Disseminator.serializer)
+  }.toMap
+
   @JSExport
   protected var idToRequest: mutable.Map[UniqueId, ClientRequest] =
     mutable.Map[UniqueId, ClientRequest]()
+
+
 
 // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
@@ -105,6 +113,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
     inbound.request match {
       case Request.IdToRequest(r) => handleIdToRequest(src, r)
       case Request.ValueChosen(r) => handleValueChosen(src, r)
+      case Request.SendRequest(r) => handleSendRequest(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -131,7 +140,25 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
             clientId = request.uniqueId.clientId,
             result = request.command
           )))
+    } else {
+      for ((_, disseminator) <- disseminators) {
+        disseminator.send(DisseminatorInbound().withGetRequest(valueChosen.getUniqueId))
+      }
     }
+  }
+
+  def handleSendRequest(src: Transport#Address, sendRequest: SendRequest): Unit = {
+    val clientAddress = transport.addressSerializer.fromBytes(
+      sendRequest.uniqueId.clientAddress.toByteArray()
+    )
+    val client = chan[Client[Transport]](clientAddress, Client.serializer)
+    client.send(
+      ClientInbound().withClientReply(
+        ClientReply(
+          clientPseudonym = sendRequest.uniqueId.clientPseudonym,
+          clientId = sendRequest.uniqueId.clientId,
+          result = sendRequest.command
+        )))
   }
 }
 
