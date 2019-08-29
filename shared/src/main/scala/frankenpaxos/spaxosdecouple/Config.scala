@@ -11,6 +11,7 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     acceptorHeartbeatAddresses: Seq[Transport#Address],
     leaderHeartbeatAddresses: Seq[Transport#Address],
     leaderElectionAddresses: Seq[Transport#Address],
+    executorAddresses: Seq[Transport#Address],
     roundSystem: RoundSystem
 ) {
   def n: Int = (2 * f) + 1

@@ -102,6 +102,13 @@ message ClientRequest {
   required bytes command = 2;
 }
 
+message IdToRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required ClientRequest client_request = 1;
+}
+
 message Forward {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -258,6 +265,13 @@ message AcceptorInbound {
     Proposal propose_request = 1;
     Phase1a phase1a = 2;
     Phase2aBuffer phase2a_buffer = 3;
+  }
+}
+
+message ExecutorInbound {
+  oneof request {
+    IdToRequest id_to_request = 1;
+    ValueChosen value_chosen = 2;
   }
 }
 
