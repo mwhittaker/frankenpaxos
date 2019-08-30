@@ -11,6 +11,9 @@ import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.roundsystem.RoundSystem
+import frankenpaxos.spaxosdecouple.Leader.{ECommand, ENoop, Entry}
+import frankenpaxos.statemachine.StateMachine
+
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -84,6 +87,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
+    val stateMachine: StateMachine,
     options: ExecutorOptions = ExecutorOptions.default,
     metrics: ExecutorMetrics = new ExecutorMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
@@ -101,11 +105,22 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
       yield i -> chan[Disseminator[Transport]](disseminatorAddress, Disseminator.serializer)
   }.toMap
 
+  type Slot = Int
+  type ClientPseudonym = Int
+  type ClientId = Int
+
   @JSExport
   protected var idToRequest: mutable.Map[UniqueId, ClientRequest] =
     mutable.Map[UniqueId, ClientRequest]()
 
+  val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
 
+  @JSExport
+  protected var chosenWatermark: Slot = 0
+
+  @JSExport
+  protected var clientTable =
+    mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
 
 // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
@@ -114,6 +129,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
       case Request.IdToRequest(r) => handleIdToRequest(src, r)
       case Request.ValueChosen(r) => handleValueChosen(src, r)
       case Request.SendRequest(r) => handleSendRequest(src, r)
+      case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -146,6 +162,72 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
   }
+
+  private def handleValueChosenBuffer(
+                                       src: Transport#Address,
+                                       valueChosenBuffer: ValueChosenBuffer
+                                     ): Unit = {
+    metrics.requestsTotal.labels("ValueChosenBuffer").inc()
+    for (valueChosen <- valueChosenBuffer.valueChosen) {
+      val entry = valueChosen.value match {
+        case ValueChosen.Value.UniqueId(command) => ECommand(command)
+        case ValueChosen.Value.Noop(_)          => ENoop
+        case ValueChosen.Value.Empty => null
+      }
+
+      log.get(valueChosen.slot) match {
+        case Some(existingEntry) => null
+        case None =>
+          log(valueChosen.slot) = entry
+      }
+    }
+    executeLog()
+  }
+
+  def executeLog(): Unit = {
+    while (log.contains(chosenWatermark)) {
+      log(chosenWatermark) match {
+        case ECommand(
+        UniqueId(clientAddressBytes, clientPseudonym, clientId)
+        ) =>
+          val clientAddress = transport.addressSerializer.fromBytes(
+            clientAddressBytes.toByteArray()
+          )
+
+          // True if this command has already been executed.
+          val executed =
+            clientTable.get((clientAddress, clientPseudonym)) match {
+              case Some((highestClientId, _)) => clientId <= highestClientId
+              case None                       => false
+            }
+
+          if (!executed) {
+            val command = idToRequest.getOrElse(UniqueId(clientAddressBytes, clientPseudonym, clientId), null).command
+            val output = stateMachine.run(command.toByteArray())
+            clientTable((clientAddress, clientPseudonym)) = (clientId, output)
+
+            // Note that only the leader replies to the client since
+            // ProposeReplies include the round of the leader, and only the
+            // leader knows this.
+              val client =
+                chan[Client[Transport]](clientAddress, Client.serializer)
+              client.send(
+                ClientInbound().withClientReply(
+                  ClientReply(
+                    clientPseudonym = clientPseudonym,
+                    clientId = clientId,
+                    result = ByteString.copyFrom(output))
+                )
+              )
+            }
+        case ENoop =>
+          // Do nothing.
+
+      }
+      chosenWatermark += 1
+    }
+  }
+
 
   def handleSendRequest(src: Transport#Address, sendRequest: SendRequest): Unit = {
     val clientAddress = transport.addressSerializer.fromBytes(
