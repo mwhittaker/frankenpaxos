@@ -51,4 +51,16 @@ class BufferMap[V](val growSize: Int = 5000) {
     buffer.remove(0, Math.min(watermark - this.watermark, buffer.size))
     this.watermark = watermark
   }
+
+  // Converts this BufferMap into a normal map. All garbage collected entries
+  // are not returned in the map. This should really only be used for testing.
+  // It's not designed to be efficient.
+  def toMap(): Map[Int, V] = {
+    buffer.zipWithIndex
+      .flatMap({
+        case (Some(v), i) => Some(i + watermark, v)
+        case (None, i)    => None
+      })
+      .toMap
+  }
 }

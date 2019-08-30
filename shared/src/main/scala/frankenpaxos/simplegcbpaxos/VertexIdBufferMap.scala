@@ -22,4 +22,18 @@ class VertexIdBufferMap[V](val numLeaders: Int, val growSize: Int = 5000) {
       .zip(watermark)
       .foreach({ case (map, watermark) => map.garbageCollect(watermark) })
   }
+
+  // Converts this VertexIdBufferMap into a standard map. Garbage collected
+  // entries are not included. This method should only be used for testing.
+  // It's not designed to be efficient.
+  def toMap(): Map[VertexId, V] = {
+    val map = mutable.Map[VertexId, V]()
+    for {
+      (bufferMap, leaderIndex) <- bufferMaps.zipWithIndex
+      (id, v) <- bufferMap.toMap()
+    } {
+      map(new VertexId(leaderIndex, id)) = v
+    }
+    map.toMap
+  }
 }

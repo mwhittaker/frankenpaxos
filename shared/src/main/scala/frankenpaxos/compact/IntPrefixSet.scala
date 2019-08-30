@@ -95,6 +95,9 @@ class IntPrefixSet private (
     }
   }
 
+  override def clone(): IntPrefixSet =
+    new IntPrefixSet(watermark, values.clone())
+
   override def add(x: Int): Boolean = {
     require(x >= 0)
 

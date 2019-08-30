@@ -19,6 +19,12 @@ trait StateMachine {
 
   // `toBytes` returns a snapshot of the state machine that can be read in
   // using `fromBytes`. toBytes does not change the state of the state machine.
+  //
+  // TODO(mwhittaker): If toBytes is too slow, then we can add a clone() method
+  // that could be implemented faster (e.g., with functional data structures).
+  // This way, toBytes only has to be called when a snapshot is needed to be
+  // sent over the network (which is much less often than when a snapshot is
+  // taken).
   def toBytes(): Array[Byte]
 
   // `fromBytes(snapshot)` reads in a snapshot produced by `toBytes`. The state

@@ -108,6 +108,9 @@ class VertexIdPrefixSet private (
   override def toString(): String =
     s"VertexIdPrefixSet(${intPrefixSets.mkString(", ")})"
 
+  override def clone(): VertexIdPrefixSet =
+    new VertexIdPrefixSet(numLeaders, intPrefixSets.map(_.clone()))
+
   override def add(vertexId: VertexId): Boolean =
     intPrefixSets(vertexId.leaderIndex).add(vertexId.id)
 

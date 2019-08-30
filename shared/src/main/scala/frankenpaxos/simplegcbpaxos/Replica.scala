@@ -8,6 +8,7 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.Serializer
 import frankenpaxos.Util
 import frankenpaxos.clienttable.ClientTable
+import frankenpaxos.clienttable.ClientTableProto
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.JgraphtDependencyGraph
 import frankenpaxos.monitoring.Collectors
@@ -31,6 +32,8 @@ object ReplicaInboundSerializer extends ProtoSerializer[ReplicaInbound] {
 
 @JSExportAll
 case class ReplicaOptions(
+    // `commands` BufferMap grow size.
+    commandsGrowSize: Int,
     // If a replica commits a vertex v that depends on uncommitted vertex u,
     // the replica will eventually recover u to ensure that v will eventually
     // be executed. The time that the replica waits before recovering u is
@@ -62,6 +65,7 @@ case class ReplicaOptions(
 @JSExportAll
 object ReplicaOptions {
   val default = ReplicaOptions(
+    commandsGrowSize = 5000,
     recoverVertexTimerMinPeriod = java.time.Duration.ofMillis(500),
     recoverVertexTimerMaxPeriod = java.time.Duration.ofMillis(1500),
     unsafeDontRecover = false,
@@ -177,6 +181,13 @@ object Replica {
       proposal: Proposal,
       dependencies: VertexIdPrefixSet
   )
+
+  @JSExportAll
+  case class Snapshot(
+      watermark: VertexIdPrefixSet,
+      stateMachine: Array[Byte],
+      clientTable: ClientTableProto
+  )
 }
 
 @JSExportAll
@@ -270,11 +281,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   //
   // We represent this log as a map, where commands[VertexId(leaderIndex, id)]
   // stores entry found in row id and column leaderIndex in the array.
-  //
-  // TODO(mwhittaker): Garbage collect commands. This is challenging. It will
-  // likely involve checkpointing prefixes of the dependency graph. The tricky
-  // bit is that a prefix of the graph is not a prefix of the array.
-  val commands = mutable.Map[VertexId, Committed]()
+  val commands = new VertexIdBufferMap[Committed](
+    numLeaders = config.leaderAddresses.size,
+    growSize = options.commandsGrowSize
+  )
 
   // `committedVertices` stores the set of vertex ids that appear in
   // `commands`. It should be identical to commands.keys except that it is
@@ -283,6 +293,35 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   protected val committedVertices = VertexIdPrefixSet(
     config.leaderAddresses.size
   )
+
+  // `executedVertices` stores the set of vertex ids that have been executed.
+  //
+  // TODO(mwhittaker): Actually use in the code.
+  @JSExport
+  protected val executedVertices = VertexIdPrefixSet(
+    config.leaderAddresses.size
+  )
+
+  // The most recent snapshot.
+  @JSExport
+  protected var snapshot: Option[Snapshot] = None
+
+  // `history` stores the set of vertex ids that have been executed since the
+  // last garbage collection, in the order in which they were executed. For
+  // example, imagine a replica executes the following graph:
+  //
+  //   a <-- b
+  //   ^     ^
+  //   |     |
+  //   c <-- d
+  //
+  // in the order a, b, c, d. Then history would store the vertex ids of a, b,
+  // c, and d in that order. If the replica then garbage collected, it would
+  // empty out its history.
+  //
+  // TODO(mwhittaker): Actually use in the code.
+  @JSExport
+  protected val history = mutable.Buffer[VertexId]()
 
   // The client table, which records the latest commands for each client.
   implicit val addressSerializer = transport.addressSerializer
@@ -349,7 +388,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       vertexId: VertexId,
       committed: Committed
   ): Unit = {
-    commands(vertexId) = committed
+    commands.put(vertexId, committed)
     committedVertices.add(vertexId)
   }
 
@@ -387,9 +426,22 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         metrics.executedNoopsTotal.inc()
 
       case Value.Snapshot(_) =>
+        // Record the snapshot.
+        snapshot = Some(
+          Snapshot(watermark = executedVertices.clone(),
+                   stateMachine = stateMachine.toBytes(),
+                   clientTable = clientTable.toProto())
+        )
         metrics.executedSnapshotsTotal.inc()
-        // TODO(mwhittaker): Implement.
-        ???
+
+        // We clear our history of executed commands when we execute a
+        // snapshot. Only unsnapshotted commands are stored in history.
+        history.clear()
+
+        // Garbage commands that are below the snapshot's watermark. Some
+        // executed commands might remain, but that's ok. They'll get garbage
+        // collected eventually.
+        commands.garbageCollect(executedVertices.getWatermark())
 
       case Value.Command(command) =>
         val clientAddress = transport.addressSerializer.fromBytes(
@@ -418,6 +470,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           case ClientTable.NotExecuted =>
             val output = stateMachine.run(command.command.toByteArray)
             clientTable.execute(clientIdentity, command.clientId, output)
+            history += vertexId
             metrics.executedCommandsTotal.inc()
 
             // TODO(mwhittaker): Think harder about if this is live.
@@ -540,7 +593,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     // If we've already recorded this command as committed, don't record it as
     // committed again.
-    if (commands.contains(commit.vertexId)) {
+    if (committedVertices.contains(commit.vertexId)) {
       return
     }
 
@@ -608,6 +661,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       recover: Recover
   ): Unit = {
+    // TODO(mwhittaker): Implement the case when the vertex has been garbage
+    // collected.
+    //
+    // if vertex has been garbage collected, send (state machine, client table,
+    // and watermark).
+    // else same
+    // add new proto for this, like commitsnapshot or something
+
     commands.get(recover.vertexId) match {
       case None =>
       // If we don't have the vertex, we simply ignore the message.
@@ -623,4 +684,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         )
     }
   }
+
+  // private def handleCommitSnapshot
+  //
+  // if watermark is less than or equal to my watermark :
+  //   ignore
+  // if watermark is strict superset of my watermark:
+  //   replace my watermark
+  //   replace my state machine
+  //   replate my client table
+  //   throw away stuff below smallest watermark
+  // else:
+  //   replace my watermark
+  //   replace my state machine
+  //   replate my client table
+  //   re-execute the commands in my log of commands that are not in the
+  //   watermark of the snapshot
 }

@@ -233,4 +233,27 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
       IntPrefixSet.fromProto(prefixSet.toProto()) shouldBe prefixSet
     }
   }
+
+  "An IntPrefixSet" should "clone correctly" in {
+    val prefixSet = IntPrefixSet()
+    prefixSet.add(0)
+    prefixSet.add(1)
+    prefixSet.add(2)
+    prefixSet.add(3)
+
+    val clone = prefixSet.clone()
+    clone.subtractOne(0)
+    clone.subtractOne(1)
+    clone.subtractOne(2)
+    clone.subtractOne(3)
+
+    prefixSet.contains(0) shouldBe true
+    prefixSet.contains(1) shouldBe true
+    prefixSet.contains(2) shouldBe true
+    prefixSet.contains(3) shouldBe true
+    clone.contains(0) shouldBe false
+    clone.contains(1) shouldBe false
+    clone.contains(2) shouldBe false
+    clone.contains(3) shouldBe false
+  }
 }

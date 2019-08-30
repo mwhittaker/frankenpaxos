@@ -131,6 +131,7 @@ class SimpleGcBPaxos(val f: Int, seed: Long) {
         VertexIdPrefixSet(config.leaderAddresses.size)
       ),
       options = ReplicaOptions.default.copy(
+        commandsGrowSize = 10,
         recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
         recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(20),
         sendWatermarkEveryNCommands = 2,
@@ -190,7 +191,7 @@ class SimulatedSimpleGcBPaxos(val f: Int) extends SimulatedSystem {
 
     // We look at the commands recorded chosen by the replicas.
     val chosen = bpaxos.replicas
-      .map(replica => Map() ++ replica.commands)
+      .map(replica => replica.commands.toMap())
       .map(commands => {
         commands.mapValues(
           c => Set(Acceptor.VoteValue(c.proposal, c.dependencies))
