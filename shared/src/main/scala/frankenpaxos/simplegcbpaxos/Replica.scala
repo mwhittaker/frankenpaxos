@@ -2,6 +2,7 @@ package frankenpaxos.simplegcbpaxos
 
 import VertexIdHelpers.vertexIdOrdering
 import com.google.protobuf.ByteString
+import com.google.protobuf.ByteString
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
@@ -168,6 +169,15 @@ class ReplicaMetrics(collectors: Collectors) {
     .name("simple_bpaxos_replica_timer_dependencies")
     .help("The number of timer dependencies that a command has.")
     .register()
+
+  val ignoredCommitSnapshotsTotal: Counter = collectors.counter
+    .build()
+    .name("simple_bpaxos_replica_ignored_commit_snapshots_total")
+    .help(
+      "Total number of times the replica ignored a CommitSnapshot request " +
+        "because it had a more recent snapshot."
+    )
+    .register()
 }
 
 @JSExportAll
@@ -182,8 +192,13 @@ object Replica {
       dependencies: VertexIdPrefixSet
   )
 
+// TODO(mwhittaker): Some things here are clones (watermark) and some are
+// already serialized (stateMachine and clientTable). Figure out which is
+// best for each field. It should depend on the cost of serialization vs
+// cloning.
   @JSExportAll
   case class Snapshot(
+      id: Int,
       watermark: VertexIdPrefixSet,
       stateMachine: Array[Byte],
       clientTable: ClientTableProto
@@ -321,12 +336,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   //
   // TODO(mwhittaker): Actually use in the code.
   @JSExport
-  protected val history = mutable.Buffer[VertexId]()
+  protected var history = mutable.Buffer[VertexId]()
 
   // The client table, which records the latest commands for each client.
   implicit val addressSerializer = transport.addressSerializer
   @JSExport
-  protected val clientTable =
+  protected var clientTable =
     ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
 
   // If a replica commits a command in vertex A with a dependency on uncommitted
@@ -428,7 +443,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Value.Snapshot(_) =>
         // Record the snapshot.
         snapshot = Some(
-          Snapshot(watermark = executedVertices.clone(),
+          Snapshot(id = snapshot.map(_.id + 1).getOrElse(0),
+                   watermark = executedVertices.clone(),
                    stateMachine = stateMachine.toBytes(),
                    clientTable = clientTable.toProto())
         )
@@ -568,8 +584,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     import ReplicaInbound.Request
 
     val label = inbound.request match {
-      case Request.Commit(_)  => "Commit"
-      case Request.Recover(_) => "Recover"
+      case Request.Commit(_)         => "Commit"
+      case Request.Recover(_)        => "Recover"
+      case Request.CommitSnapshot(_) => "CommitSnapshot"
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -578,8 +595,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.Commit(r)  => handleCommit(src, r)
-        case Request.Recover(r) => handleRecover(src, r)
+        case Request.Commit(r)         => handleCommit(src, r)
+        case Request.Recover(r)        => handleRecover(src, r)
+        case Request.CommitSnapshot(r) => handleCommitSnapshot(src, r)
         case Request.Empty => {
           logger.fatal("Empty ReplicaInbound encountered.")
         }
@@ -661,20 +679,37 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       recover: Recover
   ): Unit = {
-    // TODO(mwhittaker): Implement the case when the vertex has been garbage
-    // collected.
-    //
-    // if vertex has been garbage collected, send (state machine, client table,
-    // and watermark).
-    // else same
-    // add new proto for this, like commitsnapshot or something
+    // If the vertex being recovered has already been garbage collected, then
+    // we send back our snapshot. The snapshot contains the vertex.
+    val replica = chan[Replica[Transport]](src, Replica.serializer)
+    snapshot match {
+      case None =>
+      // Nothing to do.
 
+      case Some(snapshot) =>
+        if (snapshot.watermark.contains(recover.vertexId)) {
+          replica.send(
+            ReplicaInbound().withCommitSnapshot(
+              CommitSnapshot(
+                id = snapshot.id,
+                watermark = snapshot.watermark.toProto(),
+                stateMachine = ByteString.copyFrom(snapshot.stateMachine),
+                clientTable = snapshot.clientTable
+              )
+            )
+          )
+          return
+        }
+    }
+
+    // If the command has not been garbage collected, then we either have it or
+    // dont'.
     commands.get(recover.vertexId) match {
       case None =>
       // If we don't have the vertex, we simply ignore the message.
 
       case Some(committed: Committed) =>
-        val replica = chan[Replica[Transport]](src, Replica.serializer)
+        // If we do have the vertex, then we return it.
         replica.send(
           ReplicaInbound().withCommit(
             Commit(vertexId = recover.vertexId,
@@ -685,19 +720,69 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // private def handleCommitSnapshot
-  //
-  // if watermark is less than or equal to my watermark :
-  //   ignore
-  // if watermark is strict superset of my watermark:
-  //   replace my watermark
-  //   replace my state machine
-  //   replate my client table
-  //   throw away stuff below smallest watermark
-  // else:
-  //   replace my watermark
-  //   replace my state machine
-  //   replate my client table
-  //   re-execute the commands in my log of commands that are not in the
-  //   watermark of the snapshot
+  private def handleCommitSnapshot(
+      src: Transport#Address,
+      commitSnapshot: CommitSnapshot
+  ): Unit = {
+    // Whether to replace our snapshot. We have to be careful not to replace an
+    // older snapshot with a previous snapshot.
+    val replaceSnapshot = snapshot match {
+      // If we don't have a snapshot yet, then we are safe to replace it.
+      case None           => true
+      case Some(snapshot) => commitSnapshot.id > snapshot.id
+    }
+
+    if (!replaceSnapshot) {
+      metrics.ignoredCommitSnapshotsTotal.inc()
+      return
+    }
+
+    // Update our state.
+    stateMachine.fromBytes(commitSnapshot.stateMachine.toByteArray)
+    clientTable = ClientTable.fromProto(commitSnapshot.clientTable)
+    val watermark = VertexIdPrefixSet.fromProto(commitSnapshot.watermark)
+    commands.garbageCollect(watermark.getWatermark())
+
+    // Update our snapshot.
+    snapshot = Some(
+      Snapshot(id = commitSnapshot.id,
+               watermark = watermark,
+               stateMachine = commitSnapshot.stateMachine.toByteArray,
+               clientTable = commitSnapshot.clientTable)
+    )
+
+    // Re-execute commands we had executed that were not part of the snapshot.
+    // For example, imagine we had executed the following graph:
+    //
+    //     a <-- b
+    //     ^     ^
+    //     |     |
+    //     c <-- d <-- e
+    //           ^
+    //           |
+    //           f
+    //
+    // and we receive a snapshot with commands a, b, c, and d. We replace our
+    // state with the snapshot, but we don't want to lose the effects of
+    // executing e and f, so we re-execute them.
+    val newHistory = mutable.Buffer[VertexId]()
+    for (vertexId <- history) {
+      if (watermark.contains(vertexId)) {
+        // Do _not_ execute commands that are part of the snapshot.
+      } else {
+        // Do execute commands that are _not_ part of the snapshot. If we've
+        // executed a command and we haven't snapshotted it, then we know it's
+        // in `commands`.
+        val committed = commands.get(vertexId)
+        logger.check(committed.isDefined)
+        executeProposal(vertexId, committed.get.proposal)
+        newHistory += vertexId
+      }
+    }
+    history = newHistory
+
+    // TODO(mwhittaker): Update the dependency graph with information on the
+    // now already executed commands. Then, try to execute the graph.
+    ???
+  }
 }
