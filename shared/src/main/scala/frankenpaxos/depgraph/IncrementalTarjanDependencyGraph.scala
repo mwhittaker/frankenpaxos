@@ -107,6 +107,13 @@ class IncrementalTarjanDependencyGraph[
     vertices(key) = Vertex(key, sequenceNumber, committed ++ uncommitted)
   }
 
+  override def updateExecuted(keys: KeySet): Unit = {
+    // TODO(mwhittaker): Implement. This method is hard to implement for
+    // IncrementalTarjan. If we're in the middle of executing Tarjan's
+    // algorithm, we can't just walk through and prune out everything I think.
+    ???
+  }
+
   override def executeByComponent(): Seq[Seq[Key]] = {
     if (!callstack.isEmpty) {
       strongConnect() match {

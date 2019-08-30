@@ -79,6 +79,7 @@ class TarjanDependencyGraph[
     SequenceNumber,
     KeySet <: CompactSet[KeySet] { type T = Key }
 ](
+    // TODO(mwhittaker): Take in a factory instead.
     emptyKeySet: KeySet
 )(
     implicit override val keyOrdering: Ordering[Key],
@@ -112,6 +113,11 @@ class TarjanDependencyGraph[
 
     vertices(key) =
       Vertex(key, sequenceNumber, dependencies.diff(executed).materialize())
+  }
+
+  override def updateExecuted(keys: KeySet): Unit = {
+    executed.addAll(keys)
+    vertices.retain({ case (key, _) => !executed.contains(key) })
   }
 
   override def executeByComponent(): Seq[Seq[Key]] = {

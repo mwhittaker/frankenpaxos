@@ -155,6 +155,17 @@ abstract class DependencyGraph[
     } yield key
   }
 
+  // Typically, we only execute a command in a dependency graph if it is
+  // returned by `execute`. Sometimes, however, we can figure out when to
+  // execute the command without having to go through the dependency graph. For
+  // example, if a replica `commit`s a command, but then receives a snapshot
+  // with the command already executed, then it should just inform the
+  // dependency graph that it already executed the command.
+  //
+  // This is what `updateExecuted` is for. It informs the dependency graph that
+  // some commands were already executed.
+  def updateExecuted(keys: KeySet): Unit
+
   // executeByComponent is the same as execute, except that strongly connected
   // components are returned in their own Seq. This is mostly useful for
   // testing.

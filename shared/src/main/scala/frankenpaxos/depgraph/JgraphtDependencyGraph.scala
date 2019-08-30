@@ -77,6 +77,20 @@ class JgraphtDependencyGraph[
     }
   }
 
+  override def updateExecuted(keys: KeySet): Unit = {
+    executed.addAll(keys)
+    committed.retain(!executed.contains(_))
+    sequenceNumbers.retain({ case (key, _) => !executed.contains(key) })
+
+    val verticesToRemove = mutable.Set[Key]()
+    for (key <- graph.vertexSet().asScala) {
+      if (executed.contains(key)) {
+        verticesToRemove += key
+      }
+    }
+    graph.removeAllVertices(verticesToRemove.asJava)
+  }
+
   // Returns whether an key is eligible. An key is eligible if all commands
   // reachable from the key (including itself) are committed.
   //

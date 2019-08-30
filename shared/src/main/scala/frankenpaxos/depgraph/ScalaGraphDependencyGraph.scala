@@ -58,6 +58,22 @@ class ScalaGraphDependencyGraph[
     }
   }
 
+  override def updateExecuted(keys: KeySet): Unit = {
+    executed.addAll(keys)
+    committed.retain(!executed.contains(_))
+    sequenceNumbers.retain({ case (key, _) => !executed.contains(key) })
+
+    val verticesToRemove = mutable.Set[Key]()
+    for (key <- graph.nodes) {
+      if (executed.contains(key)) {
+        verticesToRemove += key
+      }
+    }
+    for (key <- verticesToRemove) {
+      graph -= key
+    }
+  }
+
   private def isEligible(key: Key): Boolean = {
     committed.contains(key) &&
     graph.outerNodeTraverser(graph.get(key)).forall(committed.contains(_))
