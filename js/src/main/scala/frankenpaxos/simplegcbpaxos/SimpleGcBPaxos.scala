@@ -166,12 +166,13 @@ class SimpleGcBPaxos {
         VertexIdPrefixSet(config.leaderAddresses.size)
       ),
       options = ReplicaOptions.default.copy(
+        commandsGrowSize = 3,
         recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
         recoverVertexTimerMaxPeriod = java.time.Duration.ofSeconds(15),
         executeGraphBatchSize = 1,
         executeGraphTimerPeriod = java.time.Duration.ofSeconds(10),
         sendWatermarkEveryNCommands = 2,
-        sendSnapshotEveryNCommands = 2
+        sendSnapshotEveryNCommands = 3
       ),
       metrics = new ReplicaMetrics(FakeCollectors)
     )

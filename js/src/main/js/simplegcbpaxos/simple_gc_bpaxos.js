@@ -26,6 +26,33 @@ const command_component = {
   `,
 };
 
+const snapshot_component = {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <fp-object>
+      <fp-field
+        :name="'id'"
+        :value="value.id">
+      </fp-field>
+      <fp-field
+        :name="'watermark'"
+        :value="value.watermark">
+      </fp-field>
+      <fp-field
+        :name="'stateMachine'"
+        :value="value.stateMachine">
+      </fp-field>
+      <fp-field
+        :name="'clientTable'"
+        :value="value.clientTable">
+      </fp-field>
+    </fp-object>
+  `,
+};
+
 const dependency_reply_component = {
   props: {
     value: Object,
@@ -48,7 +75,7 @@ const dependency_reply_component = {
   `,
 };
 
-const command_or_noop_component = {
+const command_or_snapshot = {
   props: {
     value: Object,
   },
@@ -66,20 +93,46 @@ const command_or_noop_component = {
   `,
 };
 
+const proposal_component = {
+  props: {
+    value: Object,
+  },
+
+  components: {
+    'command': command_component,
+    'snapshot': snapshot_component,
+  },
+
+  // TODO(mwhittaker): Try and format this nicely. It's not easy to do since
+  // value.value is of a type that is not JSExported.
+  template: `
+    <div>
+      <div v-if="value.value.constructor.name.endsWith('Command')">
+        <command :value="value.getCommand"></command>
+      </div>
+      <div v-if="value.value.constructor.name.endsWith('Noop')">
+        Noop
+      </div>
+      <div v-if="value.value.constructor.name.endsWith('Snapshot')">
+        <snapshot :value="value.getSnapshot"></snapshot>
+      </div>
+    </div>
+  `,
+};
+
 const vote_value_component = {
   props: {
     value: Object,
   },
 
   components: {
-    'command-or-noop': command_or_noop_component,
+    'proposal': proposal_component,
   },
 
   template: `
     <fp-object>
-      <fp-field :name="'commandOrNoop'">
-        <command-or-noop :value="value.commandOrNoop">
-        </command-or-noop>
+      <fp-field :name="'proposal'">
+        <proposal :value="value.proposal"></proposal>
       </fp-field>
       <fp-field :name="'dependencies'" :value="value.dependencies">
       </fp-field>
@@ -93,14 +146,13 @@ const vote_value_proto_component = {
   },
 
   components: {
-    'command-or-noop': command_or_noop_component,
+    'proposal': proposal_component,
   },
 
   template: `
     <fp-object>
-      <fp-field :name="'commandOrNoop'">
-        <command-or-noop :value="value.commandOrNoop">
-        </command-or-noop>
+      <fp-field :name="'proposal'">
+        <proposal :value="value.proposal"></proposal>
       </fp-field>
       <fp-field :name="'dependency'">
         <frankenpaxos-seq :seq="value.dependency">
@@ -144,21 +196,6 @@ const phase2b_component = {
       <fp-field :name="'acceptorId'" :value="'value.acceptorId'"></fp-field>
       <fp-field :name="'round'" :value="'value.round'"></fp-field>
     </fp-object>
-  `,
-};
-
-const buffer_map_component = {
-  props: {
-    value: Object,
-  },
-
-  template: `
-    <div>
-      watermark = {{value.watermark}}
-      <frankenpaxos-horizontal-seq :seq="value.buffer" v-slot="{value: value}">
-        <slot :value="value"></slot>
-      </frankenpaxos-horizontal-seq>
-    </div>
   `,
 };
 
@@ -217,6 +254,7 @@ let leader_info = {
 
   components: {
     'command': command_component,
+    'command-or-snapshot': command_or_snapshot,
     'dependency-reply': dependency_reply_component,
   },
 
@@ -237,29 +275,23 @@ let leader_info = {
       <div>
         states =
         <frankenpaxos-map :map="node.actor.states" v-slot="{value: state}">
-          <div v-if="state.constructor.name.endsWith('WaitingForDeps')">
-            WaitingForDeps
-            <fp-object>
-              <fp-field :name="'command'">
-                <command :value="state.command"></command>
-              </fp-field>
-              <fp-field :name="'dependencyReplies'">
-                <frankenpaxos-map
-                  :map="state.dependencyReplies"
-                  v-slot="{value: reply}">
-                  <dependency-reply :value="reply"></dependency-reply>
-                </frankenpaxos-map>
-              </fp-field>
-              <fp-field
-                :name="'resendDependencyRequestsTimer'"
-                :value="state.resendDependencyRequestsTimer">
-              </fp-field>
-            </fp-object>
-          </div>
-
-          <div v-if="state.constructor.name.endsWith('Proposed')">
-            Proposed
-          </div>
+          <fp-object>
+            <fp-field :name="'commandOrSnapshot'">
+              <command-or-snapshot :value="state.commandOrSnapshot">
+              </command-or-snapshot>
+            </fp-field>
+            <fp-field :name="'dependencyReplies'">
+              <frankenpaxos-map
+                :map="state.dependencyReplies"
+                v-slot="{value: reply}">
+                <dependency-reply :value="reply"></dependency-reply>
+              </frankenpaxos-map>
+            </fp-field>
+            <fp-field
+              :name="'resendDependencyRequestsTimer'"
+              :value="state.resendDependencyRequestsTimer">
+            </fp-field>
+          </fp-object>
         </frankenpaxos-map>
       </div>
     </div>
@@ -272,7 +304,7 @@ const proposer_info = {
   },
 
   components: {
-    'command-or-noop': command_or_noop_component,
+    'proposal': proposal_component,
     'vote-value': vote_value_component,
     'phase1b': phase1b_component,
     'phase2b': phase2b_component,
@@ -326,8 +358,8 @@ const proposer_info = {
           <div v-if="state.constructor.name.endsWith('Chosen')">
             Chosen
             <fp-object>
-              <fp-field :name="'commandOrNoop'">
-                <command-or-noop :set="state.commandOrNoop"></command-or-noop>
+              <fp-field :name="'proposal'">
+                <proposal :value="state.proposal"></proposal>
               </fp-field>
               <fp-field :name="'dependencies'" :value="state.dependencies">
               </fp-field>
@@ -392,7 +424,6 @@ let acceptor_info = {
 
   components: {
     'vote-value': vote_value_component,
-    'buffer-map': buffer_map_component,
   },
 
   template: `
@@ -401,7 +432,7 @@ let acceptor_info = {
         states =
         <frankenpaxos-seq :seq="node.actor.states.bufferMaps"
                           v-slot="{value: value}">
-          <buffer-map :value="value" v-slot="{value: state}">
+          <frankenpaxos-buffer-map :value="value" v-slot="{value: state}">
             <fp-object v-if="JsUtils.optionToJs(state) !== undefined">
               <fp-field
                 :name="'round'"
@@ -420,7 +451,7 @@ let acceptor_info = {
               </fp-field>
             </fp-object>
             <div v-else>None</div>
-          </buffer-map>
+          </frankenpaxos-buffer-map>
         </frankenpaxos-seq>
       </div>
 
@@ -441,7 +472,7 @@ let replica_info = {
   },
 
   components: {
-    'command-or-noop': command_or_noop_component,
+    'proposal': proposal_component,
   },
 
   data: function() {
@@ -506,19 +537,47 @@ let replica_info = {
 
       <div>
         commands =
-        <frankenpaxos-map :map="node.actor.commands" v-slot="{value: cmd}">
-          <fp-object>
-            <fp-field :name="'commandOrNoop'">
-              <command-or-noop :value="cmd.commandOrNoop"></command-or-noop>
-            </fp-field>
-            <fp-field :name="'dependencies'" :value="cmd.dependencies">
-            </fp-field>
-          </fp-object>
-        </frankenpaxos-map>
+        <frankenpaxos-foreach
+            :value="node.actor.commands.bufferMaps"
+            v-slot="{value: value, index: index}">
+          Leader {{index}}:
+          <frankenpaxos-buffer-map :value="value" v-slot="{value: committed}">
+            <frankenpaxos-option :value="committed">
+              <template v-slot:if="{value: committed}">
+                <fp-object>
+                  <fp-field :name="'proposal'">
+                    <proposal :value="committed.proposal"></proposal>
+                  </fp-field>
+                  <fp-field :name="'dependencies'">
+                    {{committed.dependencies}}
+                  </fp-field>
+                </fp-object>
+              </template v-slot:if="{value: value}">
+
+              <template v-slot:else="_">
+                None
+              </template>
+            </frankenpaxos-option>
+          </frankenpaxos-buffer-map>
+        </frankenpaxos-foreach>
       </div>
 
       <div>
         committedVertices = {{node.actor.committedVertices}}
+      </div>
+
+      <div>
+        executedVertices = {{node.actor.executedVertices}}
+      </div>
+
+      <div>
+        snapshot = {{node.actor.snapshot}}
+      </div>
+
+      <div>
+        history =
+        <frankenpaxos-horizontal-seq :seq="node.actor.history">
+        </frankenpaxos-horizontal-seq>
       </div>
 
       <div>

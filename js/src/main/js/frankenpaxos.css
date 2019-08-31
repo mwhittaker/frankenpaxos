@@ -76,7 +76,18 @@
   border-collapse: collapse;
 }
 
-.fp-object td {
+.fp-field-key {
+  color: #8e44ad; /* purple */
+  text-align: right;
+  padding-right: 4pt;
+}
+
+.fp-field-key::after {
+  content: ": ";
+  color: black;
+}
+
+.fp-field-value {
   border: 1pt solid black;
   padding: 4pt;
 }
@@ -86,7 +97,12 @@
   border-collapse: collapse;
 }
 
-.frankenpaxos-map td {
+.frankenpaxos-map-key {
+  border: 1pt solid black;
+  padding: 4pt;
+}
+
+.frankenpaxos-map-value {
   border: 1pt solid black;
   padding: 4pt;
 }
@@ -96,9 +112,15 @@
   border-collapse: collapse;
 }
 
-.frankenpaxos-seq td {
+.frankenpaxos-seq-data {
   border: 1pt solid black;
   padding: 4pt;
+}
+
+.frankenpaxos-seq-index {
+  border: none;
+  text-align: center;
+  color: gray;
 }
 
 /* Unit test ******************************************************************/

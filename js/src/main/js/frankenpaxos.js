@@ -643,6 +643,56 @@ Vue.component('frankenpaxos-actor', {
 });
 
 // Data structure visualizations. //////////////////////////////////////////////
+Vue.component('frankenpaxos-option', {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <div>
+      <div v-if="JsUtils.optionToJs(value) !== undefined">
+        <slot name="if" :value="JsUtils.optionToJs(value)"></slot>
+      </div>
+      <div v-else>
+        <slot name="else"></slot>
+      </div>
+    </div>
+  `,
+});
+
+Vue.component('frankenpaxos-foreach', {
+  props: {
+    value: Object,
+  },
+
+  data: function() {
+    return {
+      js_iterable: typeof this.value !== 'undefined' ?
+                     frankenpaxos.JsUtils.iterableToJs(this.value):
+                     {},
+    };
+  },
+
+  watch: {
+    value: {
+      handler: function(iterable) {
+        this.js_iterable = typeof iterable !== 'undefined' ?
+                             frankenpaxos.JsUtils.iterableToJs(iterable) :
+                             {};
+      },
+      deep: true,
+    }
+  },
+
+  template: `
+    <div>
+      <div v-for="(x, index) in js_iterable">
+        <slot :value="x" :index="index"></slot>
+      </div>
+    </div>
+  `
+});
+
 Vue.component('fp-toggle', {
   props: {
     value: {
@@ -713,8 +763,8 @@ Vue.component('frankenpaxos-map', {
   template: `
     <table class="frankenpaxos-map">
       <tr v-for="kv in js_map">
-        <td>{{kv[0]}}</td>
-        <td>
+        <td class="frankenpaxos-map-key">{{kv[0]}}</td>
+        <td class="frankenpaxos-map-value">
           <fp-toggle :value="kv[1]" :show_at_start="show_values_at_start">
             <slot :value="kv[1]">{{kv[1]}}</slot>
           </fp-toggle>
@@ -758,7 +808,13 @@ Vue.component('frankenpaxos-seq', {
 });
 
 Vue.component('frankenpaxos-horizontal-seq', {
-  props: ['seq'],
+  props: {
+    seq: Object,
+    offset: {
+      type: Number,
+      default: 0,
+    },
+  },
 
   data: function() {
     return {
@@ -780,10 +836,15 @@ Vue.component('frankenpaxos-horizontal-seq', {
   },
 
   template: `
-    <div style="overflow-x: scroll;">
+    <div style="overflow-x: scroll; padding: 1pt;">
       <table class="frankenpaxos-seq">
         <tr>
-          <td v-for="x in js_seq">
+          <td v-for="(x, index) in js_seq" class="frankenpaxos-seq-index">
+            {{index + offset}}
+          </td>
+        </tr>
+        <tr>
+          <td v-for="x in js_seq" class="frankenpaxos-seq-data">
             <slot :value="x">{{x}}</slot>
           </td>
         </tr>
@@ -881,8 +942,8 @@ Vue.component('fp-field', {
 
   template: `
     <tr>
-      <td>{{name}}</td>
-      <td>
+      <td class="fp-field-key">{{name}}</td>
+      <td class="fp-field-value">
         <fp-toggle :value="value" :show_at_start="show_at_start">
           <slot :let="value">{{value}}</slot>
         </fp-toggle>
@@ -909,6 +970,21 @@ Vue.component('frankenpaxos-client-table', {
       </fp-object>
     </frankenpaxos-map>
   `
+});
+
+// BufferMap.
+Vue.component('frankenpaxos-buffer-map', {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <frankenpaxos-horizontal-seq :seq="value.buffer"
+                                 :offset="value.watermark"
+                                 v-slot="{value: value}">
+      <slot :value="value"></slot>
+    </frankenpaxos-horizontal-seq>
+  `,
 });
 
 // This is taken directly from https://github.com/alexcode/vue2vis.

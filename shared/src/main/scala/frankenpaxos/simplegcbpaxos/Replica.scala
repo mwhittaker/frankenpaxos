@@ -192,10 +192,10 @@ object Replica {
       dependencies: VertexIdPrefixSet
   )
 
-// TODO(mwhittaker): Some things here are clones (watermark) and some are
-// already serialized (stateMachine and clientTable). Figure out which is
-// best for each field. It should depend on the cost of serialization vs
-// cloning.
+  // TODO(mwhittaker): Some things here are clones (watermark) and some are
+  // already serialized (stateMachine and clientTable). Figure out which is
+  // best for each field. It should depend on the cost of serialization vs
+  // cloning.
   @JSExportAll
   case class Snapshot(
       id: Int,
@@ -301,17 +301,51 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     growSize = options.commandsGrowSize
   )
 
-  // `committedVertices` stores the set of vertex ids that appear in
-  // `commands`. It should be identical to commands.keys except that it is
-  // compact.
+  // `committedVertices` stores the set of vertex ids that
+  //
+  //   (1) appear in `commands`,
+  //   (2) were garbage collected from `commands`, or
+  //   (3) were executed as part of the snapshot in `snapshot`.
+  //
+  // This includes _all_ commands, including noops and snapshots. For example,
+  // imagine we have the following `commands`:
+  //
+  //          +---+---+---+
+  //        3 |   |   |   |
+  //          +---+---+---+
+  //        2 |   |   | c |
+  //     i    +---+---+---+
+  //     d  1 | a | # |   |
+  //          +---+---+---+
+  //        0 | # | # | b |
+  //          +---+---+---+
+  //            0   1   2
+  //          leader index
+  //
+  // and a snapshot that includes commands (0, 0), (1, 0), (1, 1), and (2, 1).
+  // Then
+  //
+  //   - (0, 1), (2, 0), and (2, 2) appear in `committedVertices` because they
+  //     appear in `commands`
+  //   - (0, 0), (1, 0), and (1, 1) appear in `committedVertices` because they
+  //     were garbage collected.
+  //   - (0, 0), (1, 0), and (1, 1), and (2, 1) appear in `committedVertices`
+  //     because they are in the most recent snapshot.
+  //
+  // Note that (2, 1) is a hole in `commands`. This is okay. There is no hole
+  // in `committedVertices`, and as long as `committedVertices` doesn't have
+  // holes, `commands` will continue getting garbage collected.
   @JSExport
   protected val committedVertices = VertexIdPrefixSet(
     config.leaderAddresses.size
   )
 
-  // `executedVertices` stores the set of vertex ids that have been executed.
-  //
-  // TODO(mwhittaker): Actually use in the code.
+  // `executedVertices` stores the set of vertex ids that have been executed by
+  // this replica or have been executed as part of this replica's snapshot. For
+  // example, if this replica executes commands a, b, and c and then receives a
+  // snapshot with commands a, b, and d, then `executedVertices` would contain
+  // vertices of commands a, b, c, and d. Note that this includes _all_
+  // commands, including noops and snapshots.
   @JSExport
   protected val executedVertices = VertexIdPrefixSet(
     config.leaderAddresses.size
@@ -321,20 +355,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var snapshot: Option[Snapshot] = None
 
-  // `history` stores the set of vertex ids that have been executed since the
-  // last garbage collection, in the order in which they were executed. For
-  // example, imagine a replica executes the following graph:
+  // `history` stores the set of vertex ids that have been executed on this
+  // replica since the last snapshot was taken (either independently or from
+  // another replica). Note that commands here include only commands, not noops
+  // and snapshots. Those do not have to be repeated.
   //
-  //   a <-- b
-  //   ^     ^
-  //   |     |
-  //   c <-- d
-  //
-  // in the order a, b, c, d. Then history would store the vertex ids of a, b,
-  // c, and d in that order. If the replica then garbage collected, it would
-  // empty out its history.
-  //
-  // TODO(mwhittaker): Actually use in the code.
+  // Whenever a replica executes a command, it adds it to history. If it takes
+  // a snapshot, then it clears history. If it receives a snapshot, then it
+  // removes from history all commands in the snapshot.
   @JSExport
   protected var history = mutable.Buffer[VertexId]()
 
@@ -371,15 +399,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       t.start()
       Some(t)
     }
-
-  // TODO(mwhittaker): Set an offset timer to start the periodic GC timer.
-  // TODO(mwhittaker): Set a GC timer that every time it goes off, it takes
-  // snapshots, contacts the CAS leader to get its watermark chosen. When the
-  // future is fulfilled, if the watermark is the same, throw away old stuff.
-  // TODO(mwhittaker): Switch states to buffer map.
-  // TODO(mwhittaker): Change handle recover to return a snapshot if the needed
-  // thing is old.
-  // TODO(mwhittaker): Add handle snapshot function to swap out a snapshot.
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -431,8 +450,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       vertexId: VertexId,
       proposal: Proposal
   ): Unit = {
-    import Proposal.Value
+    executedVertices.add(vertexId)
 
+    import Proposal.Value
     proposal.value match {
       case Value.Empty =>
         logger.fatal("Empty Proposal.")
@@ -610,8 +630,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       commit: Commit
   ): Unit = {
     // If we've already recorded this command as committed, don't record it as
-    // committed again.
+    // committed again. Note that because of snapshots, the command may
+    // actually be missing from `commands`, but still marked as committed.
     if (committedVertices.contains(commit.vertexId)) {
+      logger.debug(
+        s"Replica received command ${commit.vertexId} but has already " +
+          s"committed the vertex. It is ignoring the commit."
+      )
       return
     }
 
@@ -742,6 +767,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     clientTable = ClientTable.fromProto(commitSnapshot.clientTable)
     val watermark = VertexIdPrefixSet.fromProto(commitSnapshot.watermark)
     commands.garbageCollect(watermark.getWatermark())
+    committedVertices.addAll(watermark)
+    executedVertices.addAll(watermark)
 
     // Update our snapshot.
     snapshot = Some(
@@ -765,24 +792,38 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // and we receive a snapshot with commands a, b, c, and d. We replace our
     // state with the snapshot, but we don't want to lose the effects of
     // executing e and f, so we re-execute them.
-    val newHistory = mutable.Buffer[VertexId]()
-    for (vertexId <- history) {
-      if (watermark.contains(vertexId)) {
-        // Do _not_ execute commands that are part of the snapshot.
-      } else {
-        // Do execute commands that are _not_ part of the snapshot. If we've
-        // executed a command and we haven't snapshotted it, then we know it's
-        // in `commands`.
-        val committed = commands.get(vertexId)
-        logger.check(committed.isDefined)
-        executeProposal(vertexId, committed.get.proposal)
-        newHistory += vertexId
+    timed("Commit/reexecuteHistory") {
+      val newHistory = mutable.Buffer[VertexId]()
+      for (vertexId <- history) {
+        if (watermark.contains(vertexId)) {
+          // Do _not_ execute commands that are part of the snapshot.
+        } else {
+          // Do execute commands that are _not_ part of the snapshot. If we've
+          // executed a command and we haven't snapshotted it, then we know it's
+          // in `commands`.
+          val committed = commands.get(vertexId)
+          logger.check(committed.isDefined)
+          executeProposal(vertexId, committed.get.proposal)
+          newHistory += vertexId
+        }
       }
+      history = newHistory
     }
-    history = newHistory
 
-    // TODO(mwhittaker): Update the dependency graph with information on the
-    // now already executed commands. Then, try to execute the graph.
-    ???
+    // Update the dependency graph with the newly executed commands. Check to
+    // see if any commands are now eligible for execution. We don't bother
+    // mucking with numCommandsPendingExecution or anything like that since
+    // recovering from snapshots happens rarely.
+    timed("CommitSnapshot/updateExecuted") {
+      dependencyGraph.updateExecuted(watermark)
+    }
+    timed("CommitSnapshot/execute") {
+      execute()
+    }
+
+    // TODO(mwhittaker): Stop recovery timers for any vertices that we received
+    // as part of the snapshot. We need to rethink the timer mechanism anyway
+    // to prevent setting a lot of recovery timers in the common case, so we'll
+    // defer this for later.
   }
 }
