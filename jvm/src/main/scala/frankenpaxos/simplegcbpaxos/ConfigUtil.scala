@@ -16,9 +16,7 @@ object ConfigUtil {
       depServiceNodeAddresses = proto.depServiceNodeAddress.map(addr),
       acceptorAddresses = proto.acceptorAddress.map(addr),
       replicaAddresses = proto.replicaAddress.map(addr),
-      garbageCollectorAddresses = proto.garbageCollectorAddress.map(addr),
-      casLeaderAddresses = proto.casLeaderAddress.map(addr),
-      casAcceptorAddresses = proto.casAcceptorAddress.map(addr)
+      garbageCollectorAddresses = proto.garbageCollectorAddress.map(addr)
     )
   }
 

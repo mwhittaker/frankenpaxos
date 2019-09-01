@@ -40,27 +40,27 @@ object LeaderOptions {
 class LeaderMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_leader_requests_total")
+    .name("simple_gc_bpaxos_leader_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_leader_requests_latency")
+    .name("simple_gc_bpaxos_leader_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
 
   val proposalsSentTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_leader_proposals_sent_total")
+    .name("simple_gc_bpaxos_leader_proposals_sent_total")
     .help("Total number of proposals sent to a proposer.")
     .register()
 
   val resendDependencyRequestsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_leader_resend_dependency_requests_total")
+    .name("simple_gc_bpaxos_leader_resend_dependency_requests_total")
     .help("Total number of times the leader resent DependencyRequest messages.")
     .register()
 }

@@ -7,9 +7,7 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     depServiceNodeAddresses: Seq[Transport#Address],
     acceptorAddresses: Seq[Transport#Address],
     replicaAddresses: Seq[Transport#Address],
-    garbageCollectorAddresses: Seq[Transport#Address],
-    casLeaderAddresses: Seq[Transport#Address],
-    casAcceptorAddresses: Seq[Transport#Address]
+    garbageCollectorAddresses: Seq[Transport#Address]
 ) {
   def n: Int = (2 * f) + 1
 
@@ -21,8 +19,6 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
       (depServiceNodeAddresses.size == n) &&
       (acceptorAddresses.size == n) &&
       (replicaAddresses.size == f + 1) &&
-      (garbageCollectorAddresses.size == replicaAddresses.size) &&
-      (casLeaderAddresses.size >= f + 1) &&
-      (casAcceptorAddresses.size == n)
+      (garbageCollectorAddresses.size == replicaAddresses.size)
   }
 }

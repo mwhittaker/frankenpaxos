@@ -41,33 +41,33 @@ object ProposerOptions {
 class ProposerMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_proposer_requests_total")
+    .name("simple_gc_bpaxos_proposer_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_proposer_requests_latency")
+    .name("simple_gc_bpaxos_proposer_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
 
   val chosenCommandsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_proposer_chosen_commands_total")
+    .name("simple_gc_bpaxos_proposer_chosen_commands_total")
     .help("Total number of chosen state machine commands.")
     .register()
 
   val resendPhase1asTotalTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_proposer_resend_phase1a_total")
+    .name("simple_gc_bpaxos_proposer_resend_phase1a_total")
     .help("Total number of times the leader resent Phase1a messages.")
     .register()
 
   val resendPhase2asTotalTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_proposer_resend_phase2a_total")
+    .name("simple_gc_bpaxos_proposer_resend_phase2a_total")
     .help("Total number of times the leader resent Phase2a messages.")
     .register()
 }

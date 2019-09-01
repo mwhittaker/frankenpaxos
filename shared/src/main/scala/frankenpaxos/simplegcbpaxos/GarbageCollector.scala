@@ -34,14 +34,14 @@ object GarbageCollectorOptions {
 class GarbageCollectorMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_garbage_collector_requests_total")
+    .name("simple_gc_bpaxos_garbage_collector_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_garbage_collector_requests_latency")
+    .name("simple_gc_bpaxos_garbage_collector_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()

@@ -37,25 +37,25 @@ object ClientOptions {
 class ClientMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_client_requests_total")
+    .name("simple_gc_bpaxos_client_requests_total")
     .help("Total number of client requests sent to consensus.")
     .register()
 
   val responsesTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_client_responses_total")
+    .name("simple_gc_bpaxos_client_responses_total")
     .help("Total number of successful client responses.")
     .register()
 
   val unpendingResponsesTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_client_unpending_responses_total")
+    .name("simple_gc_bpaxos_client_unpending_responses_total")
     .help("Total number of unpending client responses.")
     .register()
 
   val reproposeTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_client_repropose_total")
+    .name("simple_gc_bpaxos_client_repropose_total")
     .help("Total number of times a client reproposes a value..")
     .register()
 }

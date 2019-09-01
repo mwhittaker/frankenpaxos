@@ -59,7 +59,7 @@ case class ReplicaOptions(
     // sendSnapshotEveryNCommands` commands with offsets.
     sendSnapshotEveryNCommands: Int,
     // If true, the replica records how long various things take to do and
-    // reports them using the `simple_bpaxos_replica_requests_latency` metric.
+    // reports them using the `simple_gc_bpaxos_replica_requests_latency` metric.
     measureLatencies: Boolean
 )
 
@@ -83,27 +83,27 @@ object ReplicaOptions {
 class ReplicaMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_replica_requests_total")
+    .name("simple_gc_bpaxos_replica_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_replica_requests_latency")
+    .name("simple_gc_bpaxos_replica_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
 
   val executeGraphTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_replica_execute_graph_total")
+    .name("simple_gc_bpaxos_replica_execute_graph_total")
     .help("Total number of times the replica executed the dependency graph.")
     .register()
 
   val executeGraphTimerTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_replica_execute_graph_timer_total")
+    .name("simple_gc_bpaxos_replica_execute_graph_timer_total")
     .help(
       "Total number of times the replica executed the dependency graph from " +
         "a timer."
@@ -112,67 +112,67 @@ class ReplicaMetrics(collectors: Collectors) {
 
   val executedCommandsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_replica_executed_commands_total")
+    .name("simple_gc_bpaxos_replica_executed_commands_total")
     .help("Total number of executed state machine commands.")
     .register()
 
   val executedNoopsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_replica_executed_noops_total")
+    .name("simple_gc_bpaxos_replica_executed_noops_total")
     .help("Total number of \"executed\" noops.")
     .register()
 
   val executedSnapshotsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_replica_executed_snapshots_total")
+    .name("simple_gc_bpaxos_replica_executed_snapshots_total")
     .help("Total number of \"executed\" snapshots.")
     .register()
 
   val repeatedCommandsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_replica_repeated_commands_total")
+    .name("simple_gc_bpaxos_replica_repeated_commands_total")
     .help("Total number of commands that were redundantly chosen.")
     .register()
 
   val recoverVertexTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_replica_recover_vertex_total")
+    .name("simple_gc_bpaxos_replica_recover_vertex_total")
     .help("Total number of times the replica recovered an instance.")
     .register()
 
   val dependencyGraphNumVertices: Gauge = collectors.gauge
     .build()
-    .name("simple_bpaxos_replica_dependency_graph_num_vertices")
+    .name("simple_gc_bpaxos_replica_dependency_graph_num_vertices")
     .help("The number of vertices in the dependency graph.")
     .register()
 
   val dependencies: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_replica_dependencies")
+    .name("simple_gc_bpaxos_replica_dependencies")
     .help("The number of dependencies that a command has.")
     .register()
 
   val uncompactedDependencies: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_replica_uncompacted_dependencies")
+    .name("simple_gc_bpaxos_replica_uncompacted_dependencies")
     .help("The number of uncompacted dependencies that a command has.")
     .register()
 
   val uncommittedDependencies: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_replica_uncommitted_dependencies")
+    .name("simple_gc_bpaxos_replica_uncommitted_dependencies")
     .help("The number of uncommitted dependencies that a command has.")
     .register()
 
   val timerDependencies: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_replica_timer_dependencies")
+    .name("simple_gc_bpaxos_replica_timer_dependencies")
     .help("The number of timer dependencies that a command has.")
     .register()
 
   val ignoredCommitSnapshotsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_replica_ignored_commit_snapshots_total")
+    .name("simple_gc_bpaxos_replica_ignored_commit_snapshots_total")
     .help(
       "Total number of times the replica ignored a CommitSnapshot request " +
         "because it had a more recent snapshot."
@@ -462,12 +462,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
       case Value.Snapshot(_) =>
         // Record the snapshot.
-        snapshot = Some(
-          Snapshot(id = snapshot.map(_.id + 1).getOrElse(0),
-                   watermark = executedVertices.clone(),
-                   stateMachine = stateMachine.toBytes(),
-                   clientTable = clientTable.toProto())
-        )
+        snapshot = timed("Proposal/takeSnapshot") {
+          Some(
+            Snapshot(id = snapshot.map(_.id + 1).getOrElse(0),
+                     watermark = executedVertices.clone(),
+                     stateMachine = stateMachine.toBytes(),
+                     clientTable = clientTable.toProto())
+          )
+        }
         metrics.executedSnapshotsTotal.inc()
 
         // We clear our history of executed commands when we execute a
@@ -477,7 +479,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         // Garbage commands that are below the snapshot's watermark. Some
         // executed commands might remain, but that's ok. They'll get garbage
         // collected eventually.
-        commands.garbageCollect(executedVertices.getWatermark())
+        timed("Proposal/garbageCollectCommands") {
+          commands.garbageCollect(executedVertices.getWatermark())
+        }
 
       case Value.Command(command) =>
         val clientAddress = transport.addressSerializer.fromBytes(

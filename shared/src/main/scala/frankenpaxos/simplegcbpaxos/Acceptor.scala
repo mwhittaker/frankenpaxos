@@ -24,7 +24,7 @@ case class AcceptorOptions(
     // The `growSize` of the Acceptors' underlying BufferMaps.
     statesGrowSize: Int,
     // If true, the acceptor records how long various things take to do and
-    // reports them using the `simple_bpaxos_acceptor_requests_latency` metric.
+    // reports them using the `simple_gc_bpaxos_acceptor_requests_latency` metric.
     measureLatencies: Boolean
 )
 
@@ -40,14 +40,14 @@ object AcceptorOptions {
 class AcceptorMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_acceptor_requests_total")
+    .name("simple_gc_bpaxos_acceptor_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_acceptor_requests_latency")
+    .name("simple_gc_bpaxos_acceptor_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()

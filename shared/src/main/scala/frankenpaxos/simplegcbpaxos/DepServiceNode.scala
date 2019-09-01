@@ -29,7 +29,7 @@ case class DepServiceNodeOptions(
     garbageCollectEveryNCommands: Int,
     // If true, the dependency service node records how long various things
     // take to do and reports them using the
-    // `simple_bpaxos_dep_service_node_requests_latency` metric.
+    // `simple_gc_bpaxos_dep_service_node_requests_latency` metric.
     measureLatencies: Boolean,
     // If `unsafeReturnNoDependencies` is true, dependency service nodes return
     // no dependencies for every command. As the name suggests, this is unsafe
@@ -51,21 +51,21 @@ object DepServiceNodeOptions {
 class DepServiceNodeMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_dep_service_node_requests_total")
+    .name("simple_gc_bpaxos_dep_service_node_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_dep_service_node_requests_latency")
+    .name("simple_gc_bpaxos_dep_service_node_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
 
   val dependencies: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_dep_service_node_dependencies")
+    .name("simple_gc_bpaxos_dep_service_node_dependencies")
     .help(
       "The number of dependencies that a dependency service node computes " +
         "for a command. Note that the number of dependencies might be very " +
@@ -75,7 +75,7 @@ class DepServiceNodeMetrics(collectors: Collectors) {
 
   val uncompactedDependencies: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_dep_service_node_uncompacted_dependencies")
+    .name("simple_gc_bpaxos_dep_service_node_uncompacted_dependencies")
     .help(
       "The number of uncompacted dependencies that a dependency service node " +
         "computes for a command. This is the number of dependencies that " +
@@ -85,13 +85,13 @@ class DepServiceNodeMetrics(collectors: Collectors) {
 
   val snapshotsTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_dep_service_node_snapshots_total")
+    .name("simple_gc_bpaxos_dep_service_node_snapshots_total")
     .help("Total number of snapshot requests received.")
     .register()
 
   val snapshotDependencies: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_dep_service_node_snapshot_dependencies")
+    .name("simple_gc_bpaxos_dep_service_node_snapshot_dependencies")
     .help(
       "The number of dependencies that a dependency service node computes " +
         "for a snapshot. Note that the number of dependencies might be very " +
@@ -101,7 +101,7 @@ class DepServiceNodeMetrics(collectors: Collectors) {
 
   val uncompactedSnapshotDependencies: Summary = collectors.summary
     .build()
-    .name("simple_bpaxos_dep_service_node_uncompacted_snapshot_dependencies")
+    .name("simple_gc_bpaxos_dep_service_node_uncompacted_snapshot_dependencies")
     .help(
       "The number of uncompacted dependencies that a dependency service node " +
         "computes for a snapshot. This is the number of dependencies that " +
@@ -111,7 +111,7 @@ class DepServiceNodeMetrics(collectors: Collectors) {
 
   val garbageCollectionTotal: Counter = collectors.counter
     .build()
-    .name("simple_bpaxos_dep_service_node_garbage_collection_total")
+    .name("simple_gc_bpaxos_dep_service_node_garbage_collection_total")
     .help("Total number of garbage collections performed.")
     .register()
 }
@@ -226,6 +226,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
     import CommandOrSnapshot.Value
     val dependencies = dependencyRequest.commandOrSnapshot.value match {
       case Value.Snapshot(_) =>
+        metrics.snapshotsTotal.inc()
         val dependencies = timed("DependencyRequest/snapshotDependencies") {
           val dependencies = conflictIndex.highWatermark()
           dependencies.subtractOne(dependencyRequest.vertexId)
