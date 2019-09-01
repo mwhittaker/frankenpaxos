@@ -119,6 +119,9 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var requestsDisseminated: mutable.Set[ClientRequest] = mutable.Set()
 
+  @JSExport
+  protected var chosenIds: mutable.Set[UniqueId] = mutable.Set()
+
   private val proposers: Seq[Chan[Proposer[Transport]]] = {
     for (proposerAddress <- config.proposerAddresses)
       yield chan[Proposer[Transport]](proposerAddress, Proposer.serializer)
@@ -139,7 +142,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
 
   def handleValueChosen(src: Transport#Address,
                         valueChosen: ValueChosen): Unit = {
-    if (idRequestMap.get(valueChosen.getUniqueId).nonEmpty) {
+    if (idRequestMap.get(valueChosen.getUniqueId).nonEmpty && !chosenIds.contains(valueChosen.getUniqueId)) {
       val clientAddress = transport.addressSerializer.fromBytes(
         valueChosen.getUniqueId.clientAddress.toByteArray()
       )
@@ -151,6 +154,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
             clientId = valueChosen.getUniqueId.clientId,
             result = idRequestMap.get(valueChosen.getUniqueId).get
           )))
+      chosenIds.add(valueChosen.getUniqueId)
     }
   }
 
@@ -200,17 +204,19 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
             // Note that only the leader replies to the client since
             // ProposeReplies include the round of the leader, and only the
             // leader knows this.
+            if (!chosenIds.contains(UniqueId(clientAddressBytes, clientPseudonym, clientId))) {
               val client =
-                chan[Client[Transport]](clientAddress, Client.serializer)
+    chan[Client[Transport]](clientAddress, Client.serializer)
               client.send(
-                ClientInbound().withClientReply(
-                  ClientReply(
-                    clientPseudonym = clientPseudonym,
-                    clientId = clientId,
-                    result = ByteString.copyFrom(output))
-                )
-              )
+    ClientInbound().withClientReply(
+      ClientReply(clientPseudonym = clientPseudonym,
+                  clientId = clientId,
+                  result = ByteString.copyFrom(output))
+    )
+  )
+              chosenIds.add(UniqueId(clientAddressBytes, clientPseudonym, clientId))
             }
+          }
         case ENoop =>
           // Do nothing.
 

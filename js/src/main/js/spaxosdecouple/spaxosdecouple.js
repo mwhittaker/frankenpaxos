@@ -343,7 +343,7 @@ function make_nodes(SPaxosDecouple, snap) {
   }
 
   // Executors.
-  let executors_x = 750;
+  let executors_x = 250;
   nodes[SPaxosDecouple.executor1.address] = {
     actor: SPaxosDecouple.executor1,
     svgs: [
@@ -396,7 +396,7 @@ function main() {
       transport: SPaxosDecouple.transport,
       settings: {
         time_scale: 1,
-        auto_deliver_messages: false,
+        auto_deliver_messages: true,
         auto_start_timers: true,
       },
     },

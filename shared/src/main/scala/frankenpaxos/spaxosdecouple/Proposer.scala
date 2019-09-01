@@ -78,12 +78,15 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var disseminatorQuorumSize: Int = config.f + 1
 
+  protected var round: Int = 0
+
 // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ProposerInbound.Request
     inbound.request match {
       case Request.ClientRequest(r)  => handleClientRequest(src, r)
       case Request.Acknowledge(r)    => handleAcknowledge(src, r)
+      case Request.LeaderInfo(r)     => handleLeaderInfo(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -102,12 +105,16 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
     acks.put(acknowledge.uniqueId, executorMap)
 
-    if (acks.getOrElse(acknowledge.uniqueId, mutable.Map()).size >= disseminatorQuorumSize) {
+    if (acks.getOrElse(acknowledge.uniqueId, mutable.Map()).size >= disseminatorQuorumSize && !stableIds.contains(acknowledge.uniqueId)) {
       stableIds.append(acknowledge.uniqueId)
 
       for ((_, leader) <- leaders) {
-        leader.send(LeaderInbound().withProposal(Proposal(acknowledge.uniqueId)))
+        leader.send(LeaderInbound().withProposal(Proposal(acknowledge.uniqueId, round)))
       }
     }
+  }
+
+  def handleLeaderInfo(src: Transport#Address, leaderInfo: LeaderInfo): Unit = {
+    round = leaderInfo.round
   }
 }

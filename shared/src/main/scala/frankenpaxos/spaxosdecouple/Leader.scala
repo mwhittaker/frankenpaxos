@@ -474,14 +474,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case Phase1(_, pendingProposals, _) =>
-        if (round != 0) {
-        //if (request.round != round) {
-          // We don't want to process requests from out of date clients.
-          /*leaderLogger.debug(
+        if (proposal.round != round) {
+            // We don't want to process requests from out of date clients.
+          leaderLogger.debug(
             s"Leader received a propose request from $src in round " +
-              s"${request.round}, but is in round $round. Sending leader info."
-          )*/
-          //client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
+              s"${proposal.round}, but is in round $round. Sending leader info."
+          )
+          val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
+          proposer.send(ProposerInbound().withLeaderInfo(LeaderInfo(round)))
         } else {
           // We buffer all pending proposals in phase 1 and process them later
           // when we enter phase 2.
@@ -495,15 +495,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase2aBufferFlushTimer,
       _,
       _) =>
-        /*if (request.round != round) {
-          // We don't want to process requests from out of date clients.
+        if (proposal.round != round) {
+          // We don't want to process requests from out of date proposers.
           leaderLogger.debug(
             s"Leader received a propose request from $src in round " +
-              s"${request.round}, but is in round $round. Sending leader info."
+              s"${proposal.round}, but is in round $round. Sending leader info."
           )
-          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
+          val proposer =
+            chan[Proposer[Transport]](src, Proposer.serializer)
+          proposer.send(ProposerInbound().withLeaderInfo(LeaderInfo(round)))
           return
-        }*/
+        }
+
 
         config.roundSystem.roundType(round) match {
           case ClassicRound =>

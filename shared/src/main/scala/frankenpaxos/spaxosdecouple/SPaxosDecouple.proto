@@ -218,6 +218,11 @@ message Proposal {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required UniqueId unique_id = 1;
+  required int32 round = 2;
+}
+
+message LeaderInfo {
+  required int32 round = 1;
 }
 
 // Inbound messages. ///////////////////////////////////////////////////////////
@@ -228,6 +233,7 @@ message ProposerInbound {
   oneof request {
     ClientRequest client_request = 1;
     Acknowledge acknowledge = 2;
+    LeaderInfo leader_info = 3;
   }
 }
 
