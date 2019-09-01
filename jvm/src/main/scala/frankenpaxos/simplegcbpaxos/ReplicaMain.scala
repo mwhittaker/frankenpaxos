@@ -73,6 +73,8 @@ object ReplicaMain extends App {
       .text(s"-1 to disable")
 
     // Options.
+    opt[Int]("options.commandsGrowSize")
+      .optionAction((x, o) => o.copy(commandsGrowSize = x))
     opt[java.time.Duration]("options.recoverVertexTimerMinPeriod")
       .optionAction((x, o) => o.copy(recoverVertexTimerMinPeriod = x))
     opt[java.time.Duration]("options.recoverVertexTimerMaxPeriod")
@@ -87,6 +89,8 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(unsafeSkipGraphExecution = x))
     opt[Int]("options.sendWatermarkEveryNCommands")
       .optionAction((x, o) => o.copy(sendWatermarkEveryNCommands = x))
+    opt[Int]("options.sendSnapshotEveryNCommands")
+      .optionAction((x, o) => o.copy(sendSnapshotEveryNCommands = x))
     opt[Boolean]("options.measureLatencies")
       .optionAction((x, o) => o.copy(measureLatencies = x))
   }

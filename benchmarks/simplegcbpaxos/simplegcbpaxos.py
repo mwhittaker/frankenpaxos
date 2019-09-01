@@ -57,6 +57,7 @@ class AcceptorOptions(NamedTuple):
 
 
 class ReplicaOptions(NamedTuple):
+    commands_grow_size: int = 10000
     recover_vertex_timer_min_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
     recover_vertex_timer_max_period: datetime.timedelta = \
@@ -66,6 +67,7 @@ class ReplicaOptions(NamedTuple):
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
     send_watermark_every_n_commands: int = 10000
+    send_snapshot_every_n_commands: int = 10000
     measure_latencies: bool = True
     unsafe_dont_recover: bool = False
 
@@ -536,6 +538,8 @@ class SimpleGcBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', replica.host.ip(),
                     '--prometheus_port',
                         str(replica.port + 1) if input.monitored else '-1',
+                    '--options.commandsGrowSize',
+                        str(input.replica_options.commands_grow_size),
                     '--options.recoverVertexTimerMinPeriod',
                         '{}s'.format(input.replica_options
                                      .recover_vertex_timer_min_period
@@ -557,6 +561,9 @@ class SimpleGcBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--options.sendWatermarkEveryNCommands',
                         str(input.replica_options
                                  .send_watermark_every_n_commands),
+                    '--options.sendSnapshotEveryNCommands',
+                        str(input.replica_options
+                                 .send_snapshot_every_n_commands),
                     '--options.measureLatencies',
                         str(input.replica_options.measure_latencies),
                     '--options.unsafeDontRecover',
