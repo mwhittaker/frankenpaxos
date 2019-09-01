@@ -878,7 +878,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           pendingEntries -= phase2b.slot
           phase2bs -= phase2b.slot
           //executeLog()
-          executors.foreach(_.send(ExecutorInbound().withValueChosen(toValueChosen(phase2b.slot, entry)))
+          executors.foreach(_.send(ExecutorInbound().withValueChosen(toValueChosen(phase2b.slot, entry))))
 
           valueChosenBuffer += toValueChosen(phase2b.slot, entry)
           if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
