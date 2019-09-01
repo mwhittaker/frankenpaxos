@@ -733,7 +733,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           log(valueChosen.slot) = entry
       }
     }
-    executeLog()
+    //executeLog()
+    while (log.contains(chosenWatermark)) {
+      chosenWatermark += 1
+    }
   }
 
   // Methods ///////////////////////////////////////////////////////////////////
@@ -881,6 +884,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           pendingEntries -= phase2b.slot
           phase2bs -= phase2b.slot
           //executeLog()
+          while (log.contains(chosenWatermark)) {
+            chosenWatermark += 1
+          }
           executors.foreach(_.send(ExecutorInbound().withValueChosen(toValueChosen(phase2b.slot, entry))))
 
           valueChosenBuffer += toValueChosen(phase2b.slot, entry)
@@ -1191,7 +1197,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  def executeLog(): Unit = {
+  /*def executeLog(): Unit = {
     while (log.contains(chosenWatermark)) {
       log(chosenWatermark) match {
         case ECommand(
@@ -1238,5 +1244,5 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       }
       chosenWatermark += 1
     }
-  }
+  }*/
 }

@@ -122,6 +122,9 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var chosenIds: mutable.Set[UniqueId] = mutable.Set()
 
+  @JSExport
+  protected var index: Int = config.executorAddresses.indexOf(address)
+
   private val proposers: Seq[Chan[Proposer[Transport]]] = {
     for (proposerAddress <- config.proposerAddresses)
       yield chan[Proposer[Transport]](proposerAddress, Proposer.serializer)
@@ -142,7 +145,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
 
   def handleValueChosen(src: Transport#Address,
                         valueChosen: ValueChosen): Unit = {
-    if (idRequestMap.get(valueChosen.getUniqueId).nonEmpty && !chosenIds.contains(valueChosen.getUniqueId)) {
+    /*if (idRequestMap.get(valueChosen.getUniqueId).nonEmpty && !chosenIds.contains(valueChosen.getUniqueId)) {
       val clientAddress = transport.addressSerializer.fromBytes(
         valueChosen.getUniqueId.clientAddress.toByteArray()
       )
@@ -155,7 +158,20 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
             result = idRequestMap.get(valueChosen.getUniqueId).get
           )))
       chosenIds.add(valueChosen.getUniqueId)
+    }*/
+    val entry = valueChosen.value match {
+      case ValueChosen.Value.UniqueId(command) => ECommand(command)
+      case ValueChosen.Value.Noop(_)          => ENoop
+      case ValueChosen.Value.Empty => null
     }
+
+    log.get(valueChosen.slot) match {
+      case Some(existingEntry) => null
+      case None =>
+        log(valueChosen.slot) = entry
+    }
+
+    executeLog()
   }
 
   private def handleValueChosenBuffer(
@@ -205,15 +221,18 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
             // ProposeReplies include the round of the leader, and only the
             // leader knows this.
             if (!chosenIds.contains(UniqueId(clientAddressBytes, clientPseudonym, clientId))) {
-              val client =
-    chan[Client[Transport]](clientAddress, Client.serializer)
-              client.send(
-    ClientInbound().withClientReply(
-      ClientReply(clientPseudonym = clientPseudonym,
-                  clientId = clientId,
-                  result = ByteString.copyFrom(output))
-    )
-  )
+              // Only one executor responds to the client
+              if (clientId % config.executorAddresses.size == index) {
+                val client =
+                  chan[Client[Transport]](clientAddress, Client.serializer)
+                client.send(
+                  ClientInbound().withClientReply(
+                    ClientReply(clientPseudonym = clientPseudonym,
+                      clientId = clientId,
+                      result = ByteString.copyFrom(output))
+                  )
+                )
+              }
               chosenIds.add(UniqueId(clientAddressBytes, clientPseudonym, clientId))
             }
           }

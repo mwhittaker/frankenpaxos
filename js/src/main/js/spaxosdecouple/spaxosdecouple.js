@@ -68,6 +68,7 @@ let proposer_info = {
   template: `
     <div>
       <div><strong>id</strong>: {{node.actor.id}}</div>
+      <div><strong>id</strong>: {{node.actor.id}}</div>
     </div>
   `,
 };
@@ -76,9 +77,15 @@ let executor_info = {
   props: ['node'],
 
   template: `
-    <div>
-      <div><strong>id</strong>: {{node.actor.id}}</div>
-    </div>
+    //<div>
+    //  <div><strong>id</strong>: {{node.actor.id}}</div>
+    //  <div><strong>stateMachine</strong>: {{node.actor.stateMachine}}</div>
+    //  <div>
+    //    <strong>log</strong>:
+    //    <frankenpaxos-map :map=node.actor.log></frankenpaxos-map>
+    //  </div>
+    //    <div><strong>index</strong>: {{node.actor.index}}</div>
+    //</div>
   `,
 };
 
