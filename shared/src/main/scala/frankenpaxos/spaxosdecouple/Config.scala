@@ -4,7 +4,6 @@ import frankenpaxos.roundsystem.RoundSystem
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     proposerAddresses: Seq[Transport#Address],
-    disseminatorAddresses: Seq[Transport#Address],
     leaderAddresses: Seq[Transport#Address],
     acceptorAddresses: Seq[Transport#Address],
     acceptorHeartbeatAddresses: Seq[Transport#Address],

@@ -99,19 +99,9 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
   logger.check(config.executorAddresses.contains(address))
   private val executorId = config.executorAddresses.indexOf(address)
 
-  // Channels to the disseminators.
-  private val disseminators: Map[Int, Chan[Disseminator[Transport]]] = {
-    for ((disseminatorAddress, i) <- config.disseminatorAddresses.zipWithIndex)
-      yield i -> chan[Disseminator[Transport]](disseminatorAddress, Disseminator.serializer)
-  }.toMap
-
   type Slot = Int
   type ClientPseudonym = Int
   type ClientId = Int
-
-  @JSExport
-  protected var idToRequest: mutable.Map[UniqueId, ClientRequest] =
-    mutable.Map[UniqueId, ClientRequest]()
 
   val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
 
@@ -122,29 +112,34 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
   protected var clientTable =
     mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
 
+  @JSExport
+  protected var idRequestMap: mutable.Map[UniqueId, ByteString] = mutable.Map()
+
+  // Requests received from proposers to be disseminated
+  @JSExport
+  protected var requestsDisseminated: mutable.Set[ClientRequest] = mutable.Set()
+
+  private val proposers: Seq[Chan[Proposer[Transport]]] = {
+    for (proposerAddress <- config.proposerAddresses)
+      yield chan[Proposer[Transport]](proposerAddress, Proposer.serializer)
+  }
+
 // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ExecutorInbound.Request
     inbound.request match {
-      case Request.IdToRequest(r) => handleIdToRequest(src, r)
       case Request.ValueChosen(r) => handleValueChosen(src, r)
-      case Request.SendRequest(r) => handleSendRequest(src, r)
       case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
+      case Request.Forward(r) => handleForwardRequest(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
     }
   }
 
-  def handleIdToRequest(src: Transport#Address, request: IdToRequest): Unit = {
-    idToRequest.put(request.clientRequest.uniqueId, request.clientRequest)
-  }
-
   def handleValueChosen(src: Transport#Address,
                         valueChosen: ValueChosen): Unit = {
-    if (idToRequest.get(valueChosen.getUniqueId).nonEmpty) {
-      val request: ClientRequest = idToRequest.get(valueChosen.getUniqueId).get
-
+    if (idRequestMap.get(valueChosen.getUniqueId).nonEmpty) {
       val clientAddress = transport.addressSerializer.fromBytes(
         valueChosen.getUniqueId.clientAddress.toByteArray()
       )
@@ -152,14 +147,10 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
       client.send(
         ClientInbound().withClientReply(
           ClientReply(
-            clientPseudonym = request.uniqueId.clientPseudonym,
-            clientId = request.uniqueId.clientId,
-            result = request.command
+            clientPseudonym = valueChosen.getUniqueId.clientPseudonym,
+            clientId = valueChosen.getUniqueId.clientId,
+            result = idRequestMap.get(valueChosen.getUniqueId).get
           )))
-    } else {
-      for ((_, disseminator) <- disseminators) {
-        disseminator.send(DisseminatorInbound().withGetRequest(GetRequest(valueChosen.getUniqueId)))
-      }
     }
   }
 
@@ -202,7 +193,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
             }
 
           if (!executed) {
-            val command = idToRequest.getOrElse(UniqueId(clientAddressBytes, clientPseudonym, clientId), null).command
+            val command = idRequestMap.getOrElse(UniqueId(clientAddressBytes, clientPseudonym, clientId), null)
             val output = stateMachine.run(command.toByteArray())
             clientTable((clientAddress, clientPseudonym)) = (clientId, output)
 
@@ -229,18 +220,13 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
   }
 
 
-  def handleSendRequest(src: Transport#Address, sendRequest: SendRequest): Unit = {
-    val clientAddress = transport.addressSerializer.fromBytes(
-      sendRequest.uniqueId.clientAddress.toByteArray()
-    )
-    val client = chan[Client[Transport]](clientAddress, Client.serializer)
-    client.send(
-      ClientInbound().withClientReply(
-        ClientReply(
-          clientPseudonym = sendRequest.uniqueId.clientPseudonym,
-          clientId = sendRequest.uniqueId.clientId,
-          result = sendRequest.command
-        )))
+
+  def handleForwardRequest(src: Transport#Address, forward: Forward) = {
+    requestsDisseminated.add(forward.clientRequest)
+    idRequestMap.put(forward.clientRequest.uniqueId, forward.clientRequest.command)
+
+    val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
+    proposer.send(ProposerInbound().withAcknowledge(Acknowledge(uniqueId = forward.clientRequest.uniqueId)))
   }
 }
 

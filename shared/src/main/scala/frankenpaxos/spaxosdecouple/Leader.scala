@@ -203,6 +203,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     for (a <- config.leaderAddresses if a != address)
       yield chan[Leader[Transport]](a, Leader.serializer)
 
+  // Channels to executors
+  private val executors: Seq[Chan[Executor[Transport]]] =
+    for (a <- config.executorAddresses)
+      yield chan[Executor[Transport]](a, Executor.serializer)
+
   // Channels to all the acceptors.
   private val acceptorsByAddress
   : Map[Transport#Address, Chan[Acceptor[Transport]]] = {
@@ -305,7 +310,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                      phase1bs: mutable.Map[AcceptorId, Phase1b],
                      // Pending proposals. When a leader receives a proposal during phase 1,
                      // it buffers the proposal and replays it once it enters phase 2.
-                     pendingProposals: mutable.Buffer[(Transport#Address, Proposal)],
+                     pendingProposals: mutable.Set[(Transport#Address, Proposal)],
                      // A timer to resend phase 1as.
                      resendPhase1as: Transport#Timer
                    ) extends State
@@ -377,7 +382,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     if (round == 0) {
       sendPhase1as(thrifty = true)
       resendPhase1asTimer.start()
-      Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+      Phase1(mutable.Map(), mutable.Set(), resendPhase1asTimer)
     } else {
       Inactive
     }
@@ -872,7 +877,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           log(phase2b.slot) = entry
           pendingEntries -= phase2b.slot
           phase2bs -= phase2b.slot
-          executeLog()
+          //executeLog()
+          executors.foreach(_.send(ExecutorInbound().withValueChosen(toValueChosen(phase2b.slot, entry)))
 
           valueChosenBuffer += toValueChosen(phase2b.slot, entry)
           if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
@@ -1032,11 +1038,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case Phase2(_, _, _, _, _, buffer, bufferFlushTimer) =>
         if (buffer.size > 0) {
-          otherLeaders.foreach(
+          /*otherLeaders.foreach(
             _.send(
               LeaderInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))
             )
-          )
+          )*/
+          executors.foreach(_.send(ExecutorInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))))
           buffer.clear()
           bufferFlushTimer.reset()
         } else {
@@ -1126,7 +1133,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         round = nextRound
         sendPhase1as(true)
         resendPhase1asTimer.start()
-        state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+        state = Phase1(mutable.Map(), mutable.Set(), resendPhase1asTimer)
 
       case (Inactive, false) =>
         // Don't do anything. We're still not the leader.
@@ -1138,7 +1145,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         round = nextRound
         sendPhase1as(true)
         resendPhase1asTimer.reset()
-        state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+        state = Phase1(mutable.Map(), mutable.Set(), resendPhase1asTimer)
 
       case (Phase1(_, _, resendPhase1asTimer), false) =>
         // We are no longer the leader!
@@ -1162,7 +1169,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         round = nextRound
         sendPhase1as(true)
         resendPhase1asTimer.start()
-        state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+        state = Phase1(mutable.Map(), mutable.Set(), resendPhase1asTimer)
 
       case (Phase2(_,
       _,

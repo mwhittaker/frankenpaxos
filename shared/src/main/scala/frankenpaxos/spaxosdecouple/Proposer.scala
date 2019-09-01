@@ -58,17 +58,17 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       yield i -> chan[Leader[Transport]](leaderAddress, Leader.serializer)
   }.toMap
 
-  // Channels to the disseminators.
-  private val disseminators: Seq[Chan[Disseminator[Transport]]] = {
-    for (disseminatorAddress <- config.disseminatorAddresses)
-      yield chan[Disseminator[Transport]](disseminatorAddress, Disseminator.serializer)
+  // Executors
+  private val executors: Seq[Chan[Executor[Transport]]] = {
+    for (executorAddress <- config.executorAddresses)
+      yield chan[Executor[Transport]](executorAddress, Executor.serializer)
   }
 
-  type DisseminatorId = Int
+  type ExecutorId = Int
 
-  // The acknowledge messages received from Dissemination Service
+  // The acknowledge messages received from Execution Service
   @JSExport
-  protected val acks: mutable.Map[UniqueId, mutable.Map[DisseminatorId, Acknowledge]] = mutable.Map[UniqueId, mutable.Map[DisseminatorId, Acknowledge]]()
+  protected val acks: mutable.Map[UniqueId, mutable.Map[ExecutorId, Acknowledge]] = mutable.Map[UniqueId, mutable.Map[ExecutorId, Acknowledge]]()
 
   // Stable ids
   @JSExport
@@ -91,17 +91,16 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   def handleClientRequest(src: Transport#Address, clientRequest: ClientRequest) = {
-    // Broadcast client requests to all disseminator nodes
-    for (disseminator <- disseminators) {
-      disseminator.send(DisseminatorInbound().withForward(Forward(clientRequest = clientRequest)))
+    for (executor <- executors) {
+      executor.send(ExecutorInbound().withForward(Forward(clientRequest = clientRequest)))
     }
   }
 
   def handleAcknowledge(src: Transport#Address, acknowledge: Acknowledge) = {
-    val disseminatorMap: mutable.Map[DisseminatorId, Acknowledge] = acks.getOrElse(acknowledge.uniqueId, mutable.Map())
-    disseminatorMap.put(config.disseminatorAddresses.indexOf(src), acknowledge)
+    val executorMap: mutable.Map[ExecutorId, Acknowledge] = acks.getOrElse(acknowledge.uniqueId, mutable.Map())
+    executorMap.put(config.executorAddresses.indexOf(src), acknowledge)
 
-    acks.put(acknowledge.uniqueId, disseminatorMap)
+    acks.put(acknowledge.uniqueId, executorMap)
 
     if (acks.getOrElse(acknowledge.uniqueId, mutable.Map()).size >= disseminatorQuorumSize) {
       stableIds.append(acknowledge.uniqueId)

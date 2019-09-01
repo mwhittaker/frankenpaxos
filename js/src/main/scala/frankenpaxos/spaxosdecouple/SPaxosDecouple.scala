@@ -20,11 +20,6 @@ class SPaxosDecouple {
       JsTransportAddress("Proposer 2"),
       JsTransportAddress("Proposer 3")
     ),
-    disseminatorAddresses = List(
-      JsTransportAddress("Disseminator 1"),
-      JsTransportAddress("Disseminator 2"),
-      JsTransportAddress("Disseminator 3")
-    ),
     leaderAddresses = List(
       JsTransportAddress("Leader 1")
     ),
@@ -123,26 +118,6 @@ class SPaxosDecouple {
   val (proposer1logger, proposer1) = proposers(0)
   val (proposer2logger, proposer2) = proposers(1)
   val (proposer3logger, proposer3) = proposers(2)
-
-  // Disseminators.
-  val disseminatorOptions = DisseminatorOptions.default
-
-  val disseminators = for (i <- 1 to 3) yield {
-    val logger = new JsLogger()
-    val address = JsTransportAddress(s"Disseminator $i")
-    val disseminator = new Disseminator[JsTransport](
-      address,
-      transport,
-      logger,
-      config,
-      disseminatorOptions,
-      new DisseminatorMetrics(FakeCollectors)
-    )
-    (logger, disseminator)
-  }
-  val (disseminator1logger, disseminator1) = disseminators(0)
-  val (disseminator2logger, disseminator2) = disseminators(1)
-  val (disseminator3logger, disseminator3) = disseminators(2)
 
   // Executors.
   val executorOptions = ExecutorOptions.default

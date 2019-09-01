@@ -220,7 +220,7 @@ function make_nodes(SPaxosDecouple, snap) {
   }
 
   // Leaders.
-  let leaders_x = 250;
+  let leaders_x = 350;
   let leader1_y = 100;
   nodes[SPaxosDecouple.leader1.address] = {
     actor: SPaxosDecouple.leader1,
