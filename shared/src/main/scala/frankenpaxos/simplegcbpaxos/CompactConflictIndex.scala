@@ -113,11 +113,11 @@ class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
   def garbageCollect(): Unit = {
     for (i <- 0 until numLeaders) {
       updateWatermark(gcWatermark, i, oldWatermark(i))
+      oldWatermark(i) = newWatermark(i)
+      newWatermark(i) = 0
     }
     oldConflictIndex = newConflictIndex
-    oldWatermark = newWatermark
     newConflictIndex = stateMachine.conflictIndex[VertexId]()
-    newWatermark = mutable.Buffer.fill(numLeaders)(0)
   }
 
   // highWatermark returns a watermark that includes all received commands, and
