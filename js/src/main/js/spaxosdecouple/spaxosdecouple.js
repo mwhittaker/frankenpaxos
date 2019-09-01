@@ -1,3 +1,37 @@
+let election_info = {
+  props: ['node'],
+
+  template: `
+    <div>
+      <div><strong>round</strong>: {{node.actor.round}}</div>
+      <div><strong>state</strong>: {{node.actor.state}}</div>
+    </div>
+  `,
+};
+
+let heartbeat_info = {
+  props: ['node'],
+
+  template: `
+    <div>
+      <div>
+        <strong>numRetries</strong>:
+        <frankenpaxos-map :map="node.actor.numRetries"></frankenpaxos-map>
+      </div>
+
+      <div>
+        <strong>networkDelayNanos</strong>:
+        <frankenpaxos-map :map="node.actor.networkDelayNanos">
+        </frankenpaxos-map>
+      </div>
+
+      <div>
+        <strong>alive</strong>:
+        <frankenpaxos-set :set="node.actor.alive"></frankenpaxos-set>
+      </div>
+    </div>
+  `,
+};
 
 let client_info = {
   props: ['node'],
@@ -44,6 +78,30 @@ let executor_info = {
   template: `
     <div>
       <div><strong>id</strong>: {{node.actor.id}}</div>
+    </div>
+  `,
+};
+
+let acceptor_info = {
+  props: ['node'],
+
+  template: `
+    <div>
+      <div><strong>round</strong>: {{node.actor.round}}</div>
+      <div><strong>nextSlot</strong>: {{node.actor.nextSlot}}</div>
+      <div>
+        <strong>bufferedProposeRequests</strong>:
+        <frankenpaxos-seq :seq="node.actor.bufferedProposeRequests"
+                          v-slot="slotProps">
+          <frankenpaxos-tuple :tuple="slotProps.value">
+          </frankenpaxos-tuple>
+        </frankenpaxos-seq>
+      </div>
+      <div>
+        <strong>log prefix</strong>:
+        <frankenpaxos-map :map="node.actor.log.prefix()"></frankenpaxos-map>
+      </div>
+      <div><strong>log tail</strong>: {{node.actor.log.tail}}</div>
     </div>
   `,
 };
@@ -162,8 +220,8 @@ function make_nodes(SPaxosDecouple, snap) {
   }
 
   // Leaders.
-  let leaders_x = 150;
-  let leader1_y = 50;
+  let leaders_x = 250;
+  let leader1_y = 100;
   nodes[SPaxosDecouple.leader1.address] = {
     actor: SPaxosDecouple.leader1,
     svgs: [
@@ -174,14 +232,33 @@ function make_nodes(SPaxosDecouple, snap) {
     component: leader_info,
   }
 
+  nodes[SPaxosDecouple.leader1.electionAddress] = {
+    actor: SPaxosDecouple.leader1.election,
+    svgs: [
+      snap.circle(leaders_x + 50, leader1_y, 15).attr(colored(flat_blue)),
+      snap.text(leaders_x + 50, leader1_y, 'e').attr(small_number_style),
+    ],
+    color: flat_blue,
+    component: election_info,
+  }
+  nodes[SPaxosDecouple.leader1.heartbeatAddress] = {
+    actor: SPaxosDecouple.leader1.heartbeat,
+    svgs: [
+      snap.circle(leaders_x + 100, leader1_y, 15).attr(colored(flat_blue)),
+      snap.text(leaders_x + 100, leader1_y, 'h').attr(small_number_style),
+    ],
+    color: flat_blue,
+    component: heartbeat_info,
+  }
+
   // Proposers
-  let proposers_x = 350;
+  let proposers_x = 150;
 
   nodes[SPaxosDecouple.proposer1.address] = {
     actor: SPaxosDecouple.proposer1,
     svgs: [
       snap.circle(proposers_x, 100, 20).attr(colored(flat_blue)),
-      snap.text(proposers_x, 102, '2').attr(number_style),
+      snap.text(proposers_x, 102, '1').attr(number_style),
     ],
     color: flat_blue,
     component: proposer_info,
@@ -201,21 +278,21 @@ function make_nodes(SPaxosDecouple, snap) {
     actor: SPaxosDecouple.proposer3,
     svgs: [
       snap.circle(proposers_x, 300, 20).attr(colored(flat_blue)),
-      snap.text(proposers_x, 302, '2').attr(number_style),
+      snap.text(proposers_x, 302, '3').attr(number_style),
     ],
     color: flat_blue,
     component: proposer_info,
   }
 
   // Acceptors.
-  let acceptors_x = 350;
+  let acceptors_x = 550;
   nodes[SPaxosDecouple.acceptor1.address] = {
     actor: SPaxosDecouple.acceptor1,
     svgs: [
       snap.circle(acceptors_x, 100, 20).attr(colored(flat_green)),
       snap.text(acceptors_x, 102, '1').attr(number_style),
     ],
-    color: flat_green,
+    color: flat_red,
     component: acceptor_info,
   }
   nodes[SPaxosDecouple.acceptor2.address] = {
@@ -224,7 +301,7 @@ function make_nodes(SPaxosDecouple, snap) {
       snap.circle(acceptors_x, 200, 20).attr(colored(flat_green)),
       snap.text(acceptors_x, 202, '2').attr(number_style),
     ],
-    color: flat_green,
+    color: flat_red,
     component: acceptor_info,
   }
   nodes[SPaxosDecouple.acceptor3.address] = {
@@ -233,37 +310,65 @@ function make_nodes(SPaxosDecouple, snap) {
       snap.circle(acceptors_x, 300, 20).attr(colored(flat_green)),
       snap.text(acceptors_x, 302, '3').attr(number_style),
     ],
-    color: flat_green,
+    color: flat_red,
     component: acceptor_info,
   }
 
+  nodes[SPaxosDecouple.acceptor1.heartbeatAddress] = {
+    actor: SPaxosDecouple.acceptor1.heartbeat,
+    svgs: [
+      snap.circle(acceptors_x - 40, 100 - 40, 15).attr(colored(flat_green)),
+      snap.text(acceptors_x - 40, 100 - 40, 'h').attr(small_number_style),
+    ],
+    color: flat_green,
+    component: heartbeat_info,
+  }
+  nodes[SPaxosDecouple.acceptor2.heartbeatAddress] = {
+    actor: SPaxosDecouple.acceptor2.heartbeat,
+    svgs: [
+      snap.circle(acceptors_x - 40, 200 - 40, 15).attr(colored(flat_green)),
+      snap.text(acceptors_x - 40, 200 - 40, 'h').attr(small_number_style),
+    ],
+    color: flat_green,
+    component: heartbeat_info,
+  }
+  nodes[SPaxosDecouple.acceptor3.heartbeatAddress] = {
+    actor: SPaxosDecouple.acceptor3.heartbeat,
+    svgs: [
+      snap.circle(acceptors_x - 40, 300 - 40, 15).attr(colored(flat_green)),
+      snap.text(acceptors_x - 40, 300 - 40, 'h').attr(small_number_style),
+    ],
+    color: flat_green,
+    component: heartbeat_info,
+  }
+
   // Executors.
-  let executors_x = 450;
+  let executors_x = 750;
   nodes[SPaxosDecouple.executor1.address] = {
     actor: SPaxosDecouple.executor1,
     svgs: [
-      snap.circle(acceptors_x, 100, 20).attr(colored(flat_green)),
-      snap.text(acceptors_x, 102, '1').attr(number_style),
+      snap.circle(executors_x, 100, 20).attr(colored(flat_green)),
+      snap.text(executors_x, 102, '1').attr(number_style),
     ],
-    color: flat_green,
+    color: flat_red,
     component: executor_info,
   }
   nodes[SPaxosDecouple.executor2.address] = {
     actor: SPaxosDecouple.executor2,
     svgs: [
-      snap.circle(acceptors_x, 200, 20).attr(colored(flat_green)),
-      snap.text(acceptors_x, 202, '2').attr(number_style),
+      snap.circle(executors_x, 200, 20).attr(colored(flat_green)),
+      snap.text(executors_x, 202, '2').attr(number_style),
     ],
-    color: flat_green,
+    color: flat_red,
     component: executor_info,
   }
   nodes[SPaxosDecouple.executor3.address] = {
     actor: SPaxosDecouple.executor3,
     svgs: [
-      snap.circle(acceptors_x, 300, 20).attr(colored(flat_green)),
-      snap.text(acceptors_x, 302, '3').attr(number_style),
+      snap.circle(executors_x, 300, 20).attr(colored(flat_green)),
+      snap.text(executors_x, 302, '3').attr(number_style),
     ],
-    color: flat_green,
+    color: flat_red,
     component: executor_info,
   }
 
@@ -291,7 +396,7 @@ function main() {
       transport: SPaxosDecouple.transport,
       settings: {
         time_scale: 1,
-        auto_deliver_messages: true,
+        auto_deliver_messages: false,
         auto_start_timers: true,
       },
     },
@@ -312,7 +417,7 @@ function main() {
           attr: { cx: dst_x, cy: dst_y },
           ease: Linear.easeNone,
           onComplete: () => { svg_message.remove(); },
-        });
+      });
       },
 
       partition: function(address) {
