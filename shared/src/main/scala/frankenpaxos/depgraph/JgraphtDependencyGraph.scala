@@ -104,7 +104,10 @@ class JgraphtDependencyGraph[
     iterator.asScala.forall(committed.contains(_))
   }
 
-  override def executeByComponent(): Seq[Seq[Key]] = {
+  // Note that executeByComponent ignores numBlockers. It returns all blockers.
+  override def executeByComponent(
+      numBlockers: Option[Int]
+  ): (Seq[Seq[Key]], Set[Key]) = {
     // 1. Filter out all vertices that are not eligible.
     // 2. Condense the graph.
     // 3. Execute the graph in reverse topological order, sorting by sequence
@@ -132,7 +135,7 @@ class JgraphtDependencyGraph[
       executed.add(key)
     }
 
-    executable
+    (executable, graph.vertexSet().asScala.filter(!isEligible(_)).toSet)
   }
 
   override def numVertices: Int = graph.vertexSet().size

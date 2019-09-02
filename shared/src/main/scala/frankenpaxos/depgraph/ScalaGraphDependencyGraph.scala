@@ -79,7 +79,10 @@ class ScalaGraphDependencyGraph[
     graph.outerNodeTraverser(graph.get(key)).forall(committed.contains(_))
   }
 
-  override def executeByComponent(): Seq[Seq[Key]] = {
+  // Note that executeByComponent ignores numBlockers. It returns all blockers.
+  override def executeByComponent(
+      numBlockers: Option[Int]
+  ): (Seq[Seq[Key]], Set[Key]) = {
     // Filter out all vertices that are not eligible.
     val eligibleGraph = graph.filter(isEligible)
 
@@ -141,7 +144,7 @@ class ScalaGraphDependencyGraph[
       executed.add(key)
     }
 
-    executable
+    (executable, graph.nodes.filter(!isEligible(_)).map(_.toOuter).toSet)
   }
 
   // Returns the current set of nodes. This method is really only useful for

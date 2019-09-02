@@ -81,6 +81,7 @@ class IncrementalTarjanDependencyGraph[
   val metadatas = mutable.Map[Key, VertexMetadata]()
   val stack = mutable.Buffer[Key]()
   val executables = mutable.Buffer[Seq[Key]]()
+  var blocker: Option[Key] = None
 
   override def commit(
       key: Key,
@@ -114,10 +115,21 @@ class IncrementalTarjanDependencyGraph[
     ???
   }
 
-  override def executeByComponent(): Seq[Seq[Key]] = {
+  private def getAndClearBlocker(): Set[Key] = {
+    val b = blocker.map(Set(_)).getOrElse(Set())
+    blocker = None
+    b
+  }
+
+  // Note that executeByComponent can only return at most one blocker.
+  override def executeByComponent(
+      numBlockers: Option[Int]
+  ): (Seq[Seq[Key]], Set[Key]) = {
     if (!callstack.isEmpty) {
       strongConnect() match {
-        case Paused  => return collectExecutables()
+        case Paused =>
+          // TODO(mwhittaker): Implement.
+          return (collectExecutables(), getAndClearBlocker())
         case Success => // Keep going.
       }
     }
@@ -126,7 +138,9 @@ class IncrementalTarjanDependencyGraph[
       if (!metadatas.contains(key)) {
         callstack += key
         strongConnect() match {
-          case Paused  => return collectExecutables()
+          case Paused =>
+            // TODO(mwhittaker): Implement.
+            return (collectExecutables(), getAndClearBlocker())
           case Success => // Keep going.
         }
       }
@@ -137,7 +151,7 @@ class IncrementalTarjanDependencyGraph[
     assert(callstack.isEmpty)
     metadatas.clear()
     assert(stack.isEmpty)
-    collectExecutables()
+    (collectExecutables(), getAndClearBlocker())
   }
 
   // Return and prune the executable vertices.
@@ -182,7 +196,8 @@ class IncrementalTarjanDependencyGraph[
             // If w has already been executed, skip it.
           } else if (!vertices.contains(w)) {
             // If we depend on an uncommitted vertex, we have to pause until it
-            // is ready.
+            // is ready. Record the vertex as a blocker.
+            blocker = Some(w)
             return Paused
           } else if (!metadatas.contains(w)) {
             // If we haven't explored our dependency yet, we "recurse".

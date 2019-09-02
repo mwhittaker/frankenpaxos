@@ -19,11 +19,12 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   private def incremental =
     new IncrementalTarjanDependencyGraph[Int, Int, IntPrefixSet](IntPrefixSet())
 
+  // All dependency graphs /////////////////////////////////////////////////////
   "A dep graph" should "correctly commit a command with no dependencies" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(0, 0, IntPrefixSet(Set()))
-      graph.executeByComponent() shouldBe Seq(Seq(0))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(0))
+      graph.executeByComponent(None)._1 shouldBe Seq()
     }
     test(jgraph)
     test(scala)
@@ -34,11 +35,11 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "ignore repeated commands" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(0, 0, IntPrefixSet(Set()))
-      graph.executeByComponent() shouldBe Seq(Seq(0))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(0))
       graph.commit(0, 1, IntPrefixSet(Set()))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(0, 2, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
     }
     test(jgraph)
     test(scala)
@@ -49,14 +50,14 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a chain of commands" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(0, 0, IntPrefixSet(Set()))
-      graph.executeByComponent() shouldBe Seq(Seq(0))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(0))
       graph.commit(1, 0, IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq(Seq(1))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(1))
       graph.commit(2, 0, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq(Seq(2))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(2))
       graph.commit(3, 0, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq(Seq(3))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(3))
+      graph.executeByComponent(None)._1 shouldBe Seq()
     }
     test(jgraph)
     test(scala)
@@ -67,14 +68,17 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a reverse chain of commands" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(3, 0, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(2, 0, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(1, 0, IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(0, 0, IntPrefixSet(Set()))
-      graph.executeByComponent() shouldBe Seq(Seq(0), Seq(1), Seq(2), Seq(3))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(0),
+                                                     Seq(1),
+                                                     Seq(2),
+                                                     Seq(3))
+      graph.executeByComponent(None)._1 shouldBe Seq()
     }
     test(jgraph)
     test(scala)
@@ -85,14 +89,17 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a reverse chain with sequence numbers" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(3, 0, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(2, 1, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(1, 2, IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(0, 3, IntPrefixSet(Set()))
-      graph.executeByComponent() shouldBe Seq(Seq(0), Seq(1), Seq(2), Seq(3))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(0),
+                                                     Seq(1),
+                                                     Seq(2),
+                                                     Seq(3))
+      graph.executeByComponent(None)._1 shouldBe Seq()
     }
     test(jgraph)
     test(scala)
@@ -103,9 +110,9 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a two cycle" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(0, 0, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(1, 0, IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq(Seq(0, 1))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(0, 1))
     }
     test(jgraph)
     test(scala)
@@ -116,9 +123,9 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a two cycle with sequence numbers" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(0, 1, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(1, 0, IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq(Seq(1, 0))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(1, 0))
     }
     test(jgraph)
     test(scala)
@@ -129,11 +136,11 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a three cycle" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(0, 0, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(1, 0, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(2, 0, IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq(Seq(0, 1, 2))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(0, 1, 2))
     }
     test(jgraph)
     test(scala)
@@ -144,11 +151,11 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a three cycle with sequence numbers" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(0, 1, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(1, 0, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(2, 2, IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq(Seq(1, 0, 2))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(1, 0, 2))
     }
     test(jgraph)
     test(scala)
@@ -167,19 +174,19 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a complex graph in order" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(0, 0, IntPrefixSet(Set()))
-      graph.executeByComponent() shouldBe Seq(Seq(0))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(0))
       graph.commit(1, 0, IntPrefixSet(Set(0, 2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(2, 1, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq(Seq(1, 2))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(1, 2))
       graph.commit(3, 0, IntPrefixSet(Set(1, 2)))
-      graph.executeByComponent() shouldBe Seq(Seq(3))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(3))
       graph.commit(4, 0, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq(Seq(4))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(4))
       graph.commit(5, 0, IntPrefixSet(Set(3, 4, 6)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(6, 1, IntPrefixSet(Set(4, 5)))
-      graph.executeByComponent() shouldBe Seq(Seq(5, 6))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(5, 6))
     }
     test(jgraph)
     test(scala)
@@ -190,22 +197,22 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a complex graph in reverse order" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(6, 1, IntPrefixSet(Set(4, 5)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(5, 0, IntPrefixSet(Set(3, 4, 6)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(4, 0, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(3, 0, IntPrefixSet(Set(1, 2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(2, 1, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(1, 0, IntPrefixSet(Set(0, 2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(0, 0, IntPrefixSet(Set()))
       Set(
         Seq(Seq(0), Seq(1, 2), Seq(3), Seq(4), Seq(5, 6)),
         Seq(Seq(0), Seq(1, 2), Seq(4), Seq(3), Seq(5, 6))
-      ) should contain(graph.executeByComponent())
+      ) should contain(graph.executeByComponent(None)._1)
     }
     test(jgraph)
     test(scala)
@@ -216,19 +223,19 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "correctly commit a complex graph in random order" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(6, 1, IntPrefixSet(Set(4, 5)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(4, 0, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(0, 0, IntPrefixSet(Set()))
-      graph.executeByComponent() shouldBe Seq(Seq(0))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(0))
       graph.commit(2, 1, IntPrefixSet(Set(1)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(5, 0, IntPrefixSet(Set(3, 4, 6)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.commit(1, 0, IntPrefixSet(Set(0, 2)))
-      graph.executeByComponent() shouldBe Seq(Seq(1, 2), Seq(4))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(1, 2), Seq(4))
       graph.commit(3, 0, IntPrefixSet(Set(1, 2)))
-      graph.executeByComponent() shouldBe Seq(Seq(3), Seq(5, 6))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(3), Seq(5, 6))
     }
     test(jgraph)
     test(scala)
@@ -250,7 +257,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
         Seq(Seq(1, 2), Seq(6), Seq(5), Seq(3, 4, 7, 8), Seq(0)),
         Seq(Seq(6), Seq(1, 2), Seq(5), Seq(3, 4, 7, 8), Seq(0)),
         Seq(Seq(6), Seq(5), Seq(1, 2), Seq(3, 4, 7, 8), Seq(0))
-      ) should contain(graph.executeByComponent())
+      ) should contain(graph.executeByComponent(None)._1)
     }
     test(jgraph)
     test(scala)
@@ -261,9 +268,9 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   it should "handle a simple updateExecuted correctly" in {
     def test(graph: DependencyGraph[Int, Int, IntPrefixSet]): Unit = {
       graph.commit(1, 1, IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.updateExecuted(IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq(Seq(1))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(1))
     }
     test(jgraph)
     test(scala)
@@ -277,9 +284,9 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.commit(1, 1, IntPrefixSet(Set(0)))
       graph.commit(2, 2, IntPrefixSet(Set(1)))
       graph.commit(3, 3, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.updateExecuted(IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq(Seq(1), Seq(2), Seq(3))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(1), Seq(2), Seq(3))
     }
     test(jgraph)
     test(scala)
@@ -293,7 +300,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.commit(1, 1, IntPrefixSet(Set(0)))
       graph.commit(2, 2, IntPrefixSet(Set(0)))
       graph.commit(3, 3, IntPrefixSet(Set(0)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.updateExecuted(IntPrefixSet(Set(0)))
       Set(
         Seq(Seq(1), Seq(2), Seq(3)),
@@ -302,7 +309,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
         Seq(Seq(2), Seq(3), Seq(1)),
         Seq(Seq(3), Seq(1), Seq(2)),
         Seq(Seq(3), Seq(2), Seq(1))
-      ) should contain(graph.executeByComponent())
+      ) should contain(graph.executeByComponent(None)._1)
     }
     test(jgraph)
     test(scala)
@@ -316,9 +323,9 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.commit(1, 1, IntPrefixSet(Set(0)))
       graph.commit(2, 2, IntPrefixSet(Set(1)))
       graph.commit(3, 3, IntPrefixSet(Set(2)))
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.updateExecuted(IntPrefixSet(Set(0, 1)))
-      graph.executeByComponent() shouldBe Seq(Seq(2), Seq(3))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(2), Seq(3))
     }
     test(jgraph)
     test(scala)
@@ -334,9 +341,9 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       graph.commit(6, 6, IntPrefixSet(Set(7)))
       graph.commit(7, 7, IntPrefixSet(Set(3, 5, 6)))
 
-      graph.executeByComponent() shouldBe Seq()
+      graph.executeByComponent(None)._1 shouldBe Seq()
       graph.updateExecuted(IntPrefixSet(Set(0, 1, 2, 3, 4, 5)))
-      graph.executeByComponent() shouldBe Seq(Seq(6, 7))
+      graph.executeByComponent(None)._1 shouldBe Seq(Seq(6, 7))
     }
     test(jgraph)
     test(scala)
@@ -391,10 +398,10 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
         // Note that we check that the graphs have the same elements. It's
         // possible that they return elements in different orders, though, so
         // they may not be exactly equal.
-        val jgraphtOutput = jgrapht.executeByComponent()
-        val scalagraphOutput = scalagraph.executeByComponent()
-        val tarjanOutput = tarjan.executeByComponent()
-        val incrementalOutput = incremental.executeByComponent()
+        val jgraphtOutput = jgrapht.executeByComponent(None)._1
+        val scalagraphOutput = scalagraph.executeByComponent(None)._1
+        val tarjanOutput = tarjan.executeByComponent(None)._1
+        val incrementalOutput = incremental.executeByComponent(None)._1
         jgraphtOutput should contain theSameElementsAs scalagraphOutput
         jgraphtOutput should contain theSameElementsAs tarjanOutput
         if (numVertices == maxVertex) {
@@ -408,5 +415,115 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
     test(numVertices = 10, maxVertex = 10)
     test(numVertices = 100, maxVertex = 200)
     test(numVertices = 100, maxVertex = 100)
+  }
+
+  // TarjanDependencyGraph /////////////////////////////////////////////////////
+  "A TarjanDependencyGraph graph" should "report no blockers" in {
+    for (numBlockers <- Seq(None, Some(1), Some(10))) {
+      val graph = tarjan
+      graph.commit(0, 0, IntPrefixSet(Set()))
+      graph.commit(1, 1, IntPrefixSet(Set(0)))
+      graph.commit(2, 2, IntPrefixSet(Set(1)))
+      val (executables, blockers) = graph.executeByComponent(numBlockers)
+      executables shouldBe Seq(Seq(0), Seq(1), Seq(2))
+      blockers shouldBe Set()
+    }
+  }
+
+  it should "report all blockers" in {
+    val graph = tarjan
+    graph.commit(0, 0, IntPrefixSet(Set(10)))
+    graph.commit(1, 1, IntPrefixSet(Set(20)))
+    graph.commit(2, 2, IntPrefixSet(Set(30)))
+    val (executables, blockers) = graph.executeByComponent(None)
+    executables shouldBe Seq()
+    blockers shouldBe Set(10, 20, 30)
+  }
+
+  it should "report blockers chain" in {
+    val graph = tarjan
+    graph.commit(0, 0, IntPrefixSet(Set(1)))
+    graph.commit(1, 1, IntPrefixSet(Set(2)))
+    graph.commit(2, 2, IntPrefixSet(Set(3)))
+    val (executables, blockers) = graph.executeByComponent(None)
+    executables shouldBe Seq()
+    blockers shouldBe Set(3)
+  }
+
+  it should "report 1 blockers" in {
+    val graph = tarjan
+    graph.commit(0, 0, IntPrefixSet(Set(10)))
+    graph.commit(1, 1, IntPrefixSet(Set(20)))
+    graph.commit(2, 2, IntPrefixSet(Set(30)))
+    val (executables, blockers) = graph.executeByComponent(Some(1))
+    executables shouldBe Seq()
+    Set(Set(10), Set(20), Set(30)) should contain(blockers)
+  }
+
+  it should "report 2 blockers" in {
+    val graph = tarjan
+    graph.commit(0, 0, IntPrefixSet(Set(10)))
+    graph.commit(1, 1, IntPrefixSet(Set(20)))
+    graph.commit(2, 2, IntPrefixSet(Set(30)))
+    val (executables, blockers) = graph.executeByComponent(Some(2))
+    executables shouldBe Seq()
+    Set(Set(10, 20), Set(10, 30), Set(20, 30)) should contain(blockers)
+  }
+
+  it should "report 3 blockers" in {
+    for (numBlockers <- Seq(Some(3), Some(4), Some(100))) {
+      val graph = tarjan
+      graph.commit(0, 0, IntPrefixSet(Set(10)))
+      graph.commit(1, 1, IntPrefixSet(Set(20)))
+      graph.commit(2, 2, IntPrefixSet(Set(30)))
+      val (executables, blockers) = graph.executeByComponent(numBlockers)
+      executables shouldBe Seq()
+      blockers shouldBe Set(10, 20, 30)
+    }
+  }
+
+  it should "report 1 shared blocker" in {
+    val graph = tarjan
+    graph.commit(0, 0, IntPrefixSet(Set(10)))
+    graph.commit(1, 1, IntPrefixSet(Set(10)))
+    graph.commit(2, 2, IntPrefixSet(Set(10)))
+    val (executables, blockers) = graph.executeByComponent(None)
+    executables shouldBe Seq()
+    blockers shouldBe Set(10)
+  }
+
+  // IncrementalTarjanDependencyGraph //////////////////////////////////////////
+  "An IncrementalTarjanDependencyGraph graph" should "report no blockers" in {
+    for (numBlockers <- Seq(None, Some(1), Some(10))) {
+      val graph = incremental
+      graph.commit(0, 0, IntPrefixSet(Set()))
+      graph.commit(1, 1, IntPrefixSet(Set(0)))
+      graph.commit(2, 2, IntPrefixSet(Set(1)))
+      val (executables, blockers) = graph.executeByComponent(numBlockers)
+      executables shouldBe Seq(Seq(0), Seq(1), Seq(2))
+      blockers shouldBe Set()
+    }
+  }
+
+  it should "report blockers chain" in {
+    val graph = incremental
+    graph.commit(0, 0, IntPrefixSet(Set(1)))
+    graph.commit(1, 1, IntPrefixSet(Set(2)))
+    graph.commit(2, 2, IntPrefixSet(Set(3)))
+    val (executables, blockers) = graph.executeByComponent(None)
+    executables shouldBe Seq()
+    blockers shouldBe Set(3)
+  }
+
+  it should "report 1 blockers" in {
+    for (numBlockers <- Seq(None, Some(1), Some(2), Some(3), Some(4))) {
+      val graph = incremental
+      graph.commit(0, 0, IntPrefixSet(Set(10)))
+      graph.commit(1, 1, IntPrefixSet(Set(20)))
+      graph.commit(2, 2, IntPrefixSet(Set(30)))
+      val (executables, blockers) = graph.executeByComponent(Some(1))
+      executables shouldBe Seq()
+      Set(Set(10), Set(20), Set(30)) should contain(blockers)
+    }
   }
 }

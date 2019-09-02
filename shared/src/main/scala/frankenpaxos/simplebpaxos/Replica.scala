@@ -217,7 +217,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def execute(): Unit = {
-    val executable: Seq[VertexId] = dependencyGraph.execute()
+    // TODO(mwhittaker): Pass in numBlockers as an option.
+    // TODO(mwhittaker): Do something with blockers.
+    val (executable, blockers) = dependencyGraph.execute(numBlockers = None)
     metrics.executeGraphTotal.inc()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 

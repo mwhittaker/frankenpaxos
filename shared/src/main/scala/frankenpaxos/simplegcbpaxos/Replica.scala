@@ -50,6 +50,8 @@ case class ReplicaOptions(
     executeGraphBatchSize: Int,
     executeGraphTimerPeriod: java.time.Duration,
     unsafeSkipGraphExecution: Boolean,
+    // numBlockers argument to DependencyGraph#execute. -1 is None.
+    numBlockers: Int,
     // A replica sends a GarbageCollect message to the proposers and acceptors
     // every `sendWatermarkEveryNCommands` commands that it receives.
     sendWatermarkEveryNCommands: Int,
@@ -73,6 +75,7 @@ object ReplicaOptions {
     executeGraphBatchSize = 1,
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
     unsafeSkipGraphExecution = false,
+    numBlockers = -1,
     sendWatermarkEveryNCommands = 10000,
     sendSnapshotEveryNCommands = 10000,
     measureLatencies = true
@@ -192,10 +195,10 @@ object Replica {
       dependencies: VertexIdPrefixSet
   )
 
-  // TODO(mwhittaker): Some things here are clones (watermark) and some are
-  // already serialized (stateMachine and clientTable). Figure out which is
-  // best for each field. It should depend on the cost of serialization vs
-  // cloning.
+// TODO(mwhittaker): Some things here are clones (watermark) and some are
+// already serialized (stateMachine and clientTable). Figure out which is
+// best for each field. It should depend on the cost of serialization vs
+// cloning.
   @JSExportAll
   case class Snapshot(
       id: Int,
@@ -427,7 +430,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def execute(): Unit = {
-    val executable: Seq[VertexId] = dependencyGraph.execute()
+    // TODO(mwhittaker): Do something with blockers.
+    val (executable, blockers) = dependencyGraph.execute(
+      if (options.numBlockers == -1) None else Some(options.numBlockers)
+    )
     metrics.executeGraphTotal.inc()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 

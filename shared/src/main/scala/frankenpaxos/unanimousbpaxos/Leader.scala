@@ -403,7 +403,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     dependencyGraph.commit(vertexId,
                            (),
                            new FakeCompactSet[VertexId](dependencies))
-    val executable: Seq[VertexId] = dependencyGraph.execute()
+    // TODO(mwhittaker): Pass in numBlockers as an option.
+    // TODO(mwhittaker): Do something with blockers.
+    val (executable, blockers) = dependencyGraph.execute(numBlockers = None)
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
     for (v <- executable) {

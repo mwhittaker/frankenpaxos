@@ -63,6 +63,7 @@ class ReplicaOptions(NamedTuple):
     recover_vertex_timer_max_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
     unsafe_skip_graph_execution: bool = False
+    num_blockers: int = -1
     execute_graph_batch_size: int = 1
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
@@ -552,6 +553,8 @@ class SimpleGcBPaxosSuite(benchmark.Suite[Input, Output]):
                         "true"
                         if input.replica_options.unsafe_skip_graph_execution
                         else "false",
+                    '--options.numBlockers',
+                        str(input.replica_options.num_blockers),
                     '--options.executeGraphBatchSize',
                         str(input.replica_options.execute_graph_batch_size),
                     '--options.executeGraphTimerPeriod',

@@ -148,11 +148,10 @@ abstract class DependencyGraph[
   // It is the responsibility of the caller of execute to execute the commands
   // associated with the vertices. Once a dependency graph returns a command
   // from execute, it will never return it again.
-  def execute(): Seq[Key] = {
-    for {
-      component <- executeByComponent()
-      key <- component
-    } yield key
+  def execute(numBlockers: Option[Int]): (Seq[Key], Set[Key]) = {
+    val (components, blockers) = executeByComponent(numBlockers)
+    val executable = for (component <- components; key <- component) yield key
+    (executable, blockers)
   }
 
   // Typically, we only execute a command in a dependency graph if it is
@@ -169,7 +168,7 @@ abstract class DependencyGraph[
   // executeByComponent is the same as execute, except that strongly connected
   // components are returned in their own Seq. This is mostly useful for
   // testing.
-  def executeByComponent(): Seq[Seq[Key]]
+  def executeByComponent(numBlockers: Option[Int]): (Seq[Seq[Key]], Set[Key])
 
   // Returns the current number of vertices in the graph. This is used mainly
   // for monitoring. A dependency graph implementation may or may not prune

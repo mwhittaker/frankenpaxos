@@ -87,6 +87,8 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(executeGraphTimerPeriod = x))
     opt[Boolean]("options.unsafeSkipGraphExecution")
       .optionAction((x, o) => o.copy(unsafeSkipGraphExecution = x))
+    opt[Int]("options.numBlockers")
+      .optionAction((x, o) => o.copy(numBlockers = x))
     opt[Int]("options.sendWatermarkEveryNCommands")
       .optionAction((x, o) => o.copy(sendWatermarkEveryNCommands = x))
     opt[Int]("options.sendSnapshotEveryNCommands")

@@ -135,27 +135,7 @@ class TarjanDependencyGraph[
     vertices.retain({ case (key, _) => !executed.contains(key) })
   }
 
-  override def executeByComponent(): Seq[Seq[Key]] = {
-    val metadatas = mutable.Map[Key, VertexMetadata]()
-    val stack = mutable.Buffer[Key]()
-    val executables = mutable.Buffer[Seq[Key]]()
-
-    for ((key, vertex) <- vertices) {
-      if (!metadatas.contains(key)) {
-        strongConnect(metadatas, stack, executables, key)
-        // If we encounter an ineligible vertex, the call stack returns
-        // immediately, and all nodes along the way are marked ineligible.
-        // Here, we clear the stack.
-        //
-        // TODO(mwhittaker): We can also just straight return here to avoid
-        // checking a ton of ineligible vertices.
-        if (!metadatas(key).eligible) {
-          stack.clear()
-        }
-      }
-    }
-
-    // Remove the executed commands.
+  private def returnExecutables(executables: Seq[Seq[Key]]): Seq[Seq[Key]] = {
     for {
       component <- executables
       key <- component
@@ -163,14 +143,47 @@ class TarjanDependencyGraph[
       vertices -= key
       executed.add(key)
     }
+    executables
+  }
 
-    executables.toSeq
+  override def executeByComponent(
+      numBlockers: Option[Int]
+  ): (Seq[Seq[Key]], Set[Key]) = {
+    val metadatas = mutable.Map[Key, VertexMetadata]()
+    val stack = mutable.Buffer[Key]()
+    val executables = mutable.Buffer[Seq[Key]]()
+    val blockers = mutable.Set[Key]()
+
+    for ((key, vertex) <- vertices) {
+      if (!metadatas.contains(key)) {
+        strongConnect(metadatas, stack, executables, blockers, key)
+
+        // If we encounter an ineligible vertex, the call stack returns
+        // immediately, and all nodes along the way are marked ineligible, so
+        // we clear the stack.
+        if (!metadatas(key).eligible) {
+          stack.clear()
+        }
+
+        // We may have a lot of blockers, but may not want to find all of them.
+        // Once we have enough blockers, as specified by the blockers argument,
+        // we return.
+        numBlockers.foreach(n => {
+          if (blockers.size >= n) {
+            return (returnExecutables(executables.toSeq), blockers.toSet)
+          }
+        })
+      }
+    }
+
+    (returnExecutables(executables.toSeq), blockers.toSet)
   }
 
   def strongConnect(
       metadatas: mutable.Map[Key, VertexMetadata],
       stack: mutable.Buffer[Key],
       executables: mutable.Buffer[Seq[Key]],
+      blockers: mutable.Set[Key],
       v: Key
   ): Unit = {
     val number = metadatas.size
@@ -186,12 +199,14 @@ class TarjanDependencyGraph[
       if (!vertices.contains(w)) {
         // If we depend on an uncommitted vertex, we are ineligible.
         // Immediately return and mark all nodes on the stack ineligible. The
-        // stack will be cleared at the end of the unwinding.
+        // stack will be cleared at the end of the unwinding. We also make sure
+        // to record the fact that we are blocked on this vertex.
         metadatas(v) = metadatas(v).copy(eligible = false)
+        blockers += w
         return
       } else if (!metadatas.contains(w)) {
         // If we haven't explored our dependency yet, we recurse.
-        strongConnect(metadatas, stack, executables, w)
+        strongConnect(metadatas, stack, executables, blockers, w)
 
         // If our child is ineligible, we are ineligible. We return
         // immediately.
