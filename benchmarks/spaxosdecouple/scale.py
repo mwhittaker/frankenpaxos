@@ -15,7 +15,7 @@ def _main(args) -> None:
                     num_clients_per_proc = num_clients_per_proc,
                     round_system_type = RoundSystemType.CLASSIC_ROUND_ROBIN,
                     duration_seconds = 15,
-                    timeout_seconds = 30,
+                    timeout_seconds = 60,
                     client_lag_seconds = 5,
                     state_machine = 'Register',
                     workload = workload.StringWorkload(10, 0),

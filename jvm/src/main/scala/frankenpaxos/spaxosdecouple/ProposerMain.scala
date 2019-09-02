@@ -47,7 +47,7 @@ object ProposerMain extends App {
   val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger)
   val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
-  val address = config.acceptorAddresses(flags.index)
+  val address = config.proposerAddresses(flags.index)
   val proposer = new Proposer[NettyTcpTransport](address,
                                                  transport,
                                                  logger,

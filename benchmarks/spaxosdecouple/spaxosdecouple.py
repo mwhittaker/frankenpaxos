@@ -70,6 +70,7 @@ class ClientOptions(NamedTuple):
     repropose_period_ms: float = 10 * 1000
 
 class ProposerOptions(NamedTuple):
+    pass
 
 class ExecutorOptions(NamedTuple):
     wait_period_ms: float = 0
@@ -422,7 +423,7 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                 cmd = [
                     'java',
                     '-cp', os.path.abspath(args['jar']),
-                    'frankenpaxos.fastmultipaxos.AcceptorMain',
+                    'frankenpaxos.spaxosdecouple.AcceptorMain',
                     '--index', str(i),
                     '--config', config_filename,
                     '--prometheus_host', acceptor.host.ip(),
@@ -446,7 +447,7 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                 cmd = [
                     'java',
                     '-cp', os.path.abspath(args['jar']),
-                    'frankenpaxos.fastmultipaxos.LeaderMain',
+                    'frankenpaxos.spaxosdecouple.LeaderMain',
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.leader_log_level,
@@ -492,7 +493,7 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
         bench.log('Leaders started.')
 
         proposer_procs = []
-        for (i, acceptor) in enumerate(net.proposers()):
+        for (i, proposer) in enumerate(net.proposers()):
             proc = bench.popen(
                 host=proposer.host,
                 label=f'proposer_{i}',
@@ -521,6 +522,7 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.spaxosdecouple.ExecutorMain',
                     '--index', str(i),
+                    '--state_machine', input.state_machine,
                     '--config', config_filename,
                     '--prometheus_host', executor.host.ip(),
                     '--prometheus_port',
@@ -605,7 +607,7 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
         # Wait for clients to finish and then terminate everything.
         for proc in client_procs:
             proc.wait()
-        for proc in leader_procs + acceptor_procs:
+        for proc in leader_procs + acceptor_procs + proposer_procs + executor_procs:
             proc.kill()
         if input.monitored:
             prometheus_server.kill()

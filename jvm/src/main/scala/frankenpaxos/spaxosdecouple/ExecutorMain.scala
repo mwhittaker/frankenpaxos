@@ -70,7 +70,7 @@ object ExecutorMain extends App {
   val logger = new PrintLogger()
   val transport = new NettyTcpTransport(logger)
   val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
-  val address = config.acceptorAddresses(flags.index)
+  val address = config.executorAddresses(flags.index)
   val executor = new Executor[NettyTcpTransport](address,
                                                  transport,
                                                  logger,
