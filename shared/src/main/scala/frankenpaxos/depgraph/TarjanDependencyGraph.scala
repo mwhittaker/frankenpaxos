@@ -99,8 +99,6 @@ class TarjanDependencyGraph[
   // - collect set of uncommitted vertices that are casuing trouble. return
   //   these so that recovery timers can be set for them. To be efficient, this
   //   set has to be small, but in practice I think it should be.
-  //
-  // - Early return when we hit uncommitted vert?
 
   case class Vertex(
       key: Key,
@@ -111,7 +109,7 @@ class TarjanDependencyGraph[
   case class VertexMetadata(
       number: Int,
       lowLink: Int,
-      onStack: Boolean,
+      stackIndex: Int,
       eligible: Boolean
   )
 
@@ -179,7 +177,7 @@ class TarjanDependencyGraph[
     metadatas(v) = VertexMetadata(
       number = number,
       lowLink = number,
-      onStack = true,
+      stackIndex = stack.size,
       eligible = true
     )
     stack += v
@@ -212,7 +210,7 @@ class TarjanDependencyGraph[
         // stack will be cleared at the end of the unwinding.
         metadatas(v) = metadatas(v).copy(eligible = false)
         return
-      } else if (metadatas(w).onStack) {
+      } else if (metadatas(w).stackIndex != -1) {
         metadatas(v) = metadatas(v).copy(
           lowLink = Math.min(metadatas(v).lowLink, metadatas(w).number),
           eligible = metadatas(v).eligible && metadatas(w).eligible
@@ -229,34 +227,19 @@ class TarjanDependencyGraph[
       return
     }
 
-    // v is the root of its strongly connected component.
-    val component = mutable.Buffer[Key]()
+    // v is the root of its strongly connected component. The nodes in the
+    // component are v and all nodes after v in the stack. This is all the
+    // nodes in the range v.stackIndex to the end of the stack.
+    val component = stack.slice(metadatas(v).stackIndex, stack.size)
+    stack.remove(metadatas(v).stackIndex, stack.size - metadatas(v).stackIndex)
 
-    // Pop all other nodes in our component
-    while (stack.last != v) {
-      val w = stack.last
-      stack.remove(stack.size - 1)
-      component += w
-      metadatas(w) = metadatas(w).copy(onStack = false)
+    // Update metadata of nodes in component.
+    for (w <- component) {
+      metadatas(w) = metadatas(w).copy(stackIndex = -1)
     }
 
-    // Pop v.
-    // TODO(mwhittaker): We might be able to store the stack index in the
-    // VertexMetadata. Then, instead of continuously popping off the stack, we
-    // can just slice the stack. This might make things go faster.
-    component += stack.last
-    stack.remove(stack.size - 1)
-    metadatas(v) = metadatas(v).copy(onStack = false)
-
-    // Check to see if the component is eligible. If it is, sort and execute
-    // it. If not, mark all as ineligible.
-    val eligible = component.forall(metadatas(_).eligible)
-    if (!eligible) {
-      component.foreach(k => metadatas(k) = metadatas(k).copy(eligible = false))
-    } else {
-      // Sort the component and append to executables.
-      executables += component.sortBy(k => (vertices(k).sequenceNumber, k))
-    }
+    // Sort the component and append to executables.
+    executables += component.sortBy(k => (vertices(k).sequenceNumber, k))
   }
 
   override def numVertices: Int = vertices.size
