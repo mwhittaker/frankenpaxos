@@ -987,6 +987,32 @@ Vue.component('frankenpaxos-buffer-map', {
   `,
 });
 
+// TarjanDependencyGraph.
+Vue.component('frankenpaxos-tarjan', {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <fp-object>
+      <fp-field :name="'vertices'">
+        <frankenpaxos-map :map="value.vertices" v-slot="{value: v}">
+          <fp-object>
+            <fp-field :name="'key'" :value="v.key">
+            </fp-field>
+            <fp-field :name="'sequenceNumber'" :value="v.sequenceNumber">
+            </fp-field>
+            <fp-field :name="'dependencies'" :value="v.dependencies">
+            </fp-field>
+          </fp-object>
+        </frankenpaxos-map>
+      </fp-field>
+      <fp-field :name="'executed'" :value="value.executed">
+      </fp-field>
+    </fp-object>
+  `,
+});
+
 // This is taken directly from https://github.com/alexcode/vue2vis.
 const arrayDiff = (arr1, arr2) => arr1.filter(x => arr2.indexOf(x) === -1);
 

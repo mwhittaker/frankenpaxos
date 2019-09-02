@@ -135,11 +135,17 @@ message Proposal {
 }
 
 message VertexIdPrefixSetProto {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required int32 numLeaders = 1;
   repeated frankenpaxos.compact.IntPrefixSetProto int_prefix_set = 2;
 }
 
 message VoteValueProto {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required Proposal proposal = 1;
   required VertexIdPrefixSetProto dependencies = 2;
 }

@@ -2,6 +2,7 @@ package frankenpaxos.depgraph
 
 import frankenpaxos.compact.CompactSet
 import scala.collection.mutable
+import scala.scalajs.js.annotation.JSExport
 import scala.scalajs.js.annotation.JSExportAll
 
 // TarjanDependencyGraph implements a dependency graph using Tarjans's strongly
@@ -74,6 +75,7 @@ import scala.scalajs.js.annotation.JSExportAll
 // [2]: https://scholar.google.com/scholar?cluster=15533190727229683002
 // [3]: https://github.com/nvanbenschoten/epaxos/blob/master/epaxos/execute.go
 // [4]: https://github.com/efficient/epaxos/blob/master/src/epaxos/epaxos-exec.go
+@JSExportAll
 class TarjanDependencyGraph[
     Key,
     SequenceNumber,
@@ -100,12 +102,14 @@ class TarjanDependencyGraph[
   //   these so that recovery timers can be set for them. To be efficient, this
   //   set has to be small, but in practice I think it should be.
 
+  @JSExportAll
   case class Vertex(
       key: Key,
       sequenceNumber: SequenceNumber,
       dependencies: Set[Key]
   )
 
+  @JSExportAll
   case class VertexMetadata(
       number: Int,
       lowLink: Int,
@@ -113,8 +117,11 @@ class TarjanDependencyGraph[
       eligible: Boolean
   )
 
-  val vertices = mutable.Map[Key, Vertex]()
-  val executed: KeySet = emptyKeySet
+  @JSExport
+  protected val vertices = mutable.Map[Key, Vertex]()
+
+  @JSExport
+  protected val executed: KeySet = emptyKeySet
 
   override def commit(
       key: Key,

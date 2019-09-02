@@ -120,26 +120,6 @@ const proposal_component = {
   `,
 };
 
-const vote_value_component = {
-  props: {
-    value: Object,
-  },
-
-  components: {
-    'proposal': proposal_component,
-  },
-
-  template: `
-    <fp-object>
-      <fp-field :name="'proposal'">
-        <proposal :value="value.proposal"></proposal>
-      </fp-field>
-      <fp-field :name="'dependencies'" :value="value.dependencies">
-      </fp-field>
-    </fp-object>
-  `,
-};
-
 const vote_value_proto_component = {
   props: {
     value: Object,
@@ -154,9 +134,7 @@ const vote_value_proto_component = {
       <fp-field :name="'proposal'">
         <proposal :value="value.proposal"></proposal>
       </fp-field>
-      <fp-field :name="'dependency'">
-        <frankenpaxos-seq :seq="value.dependency">
-        </frankenpaxos-seq>
+      <fp-field :name="'dependency'" :value="value.dependencies">
       </fp-field>
     </fp-object>
   `,
@@ -305,7 +283,7 @@ const proposer_info = {
 
   components: {
     'proposal': proposal_component,
-    'vote-value': vote_value_component,
+    'vote-value-proto': vote_value_proto_component,
     'phase1b': phase1b_component,
     'phase2b': phase2b_component,
   },
@@ -320,7 +298,7 @@ const proposer_info = {
             <fp-object>
               <fp-field :name="'round'" :value="state.round"></fp-field>
               <fp-field :name="'value'">
-                <vote-value :value="state.value"></vote-value>
+                <vote-value-proto :value="state.value"></vote-value-proto>
               </fp-field>
               <fp-field :name="'phase1bs'">
                 <frankenpaxos-map :map="state.phase1bs"
@@ -340,7 +318,7 @@ const proposer_info = {
             <fp-object v-if="state.constructor.name.endsWith('Phase2')">
               <fp-field :name="'round'" :value="state.round"></fp-field>
               <fp-field :name="'value'">
-                <vote-value :value="state.value"></vote-value>
+                <vote-value-proto :value="state.value"></vote-value-proto>
               </fp-field>
               <fp-field :name="'phase2bs'">
                 <frankenpaxos-map :map="state.phase2bs"
@@ -423,44 +401,53 @@ let acceptor_info = {
   },
 
   components: {
-    'vote-value': vote_value_component,
+    'vote-value-proto': vote_value_proto_component,
   },
 
   template: `
     <div>
       <div>
-        states =
-        <frankenpaxos-seq :seq="node.actor.states.bufferMaps"
-                          v-slot="{value: value}">
+        <strong>states</strong> =
+
+        <frankenpaxos-foreach
+            :value="node.actor.states.bufferMaps"
+            v-slot="{value: value}">
           <frankenpaxos-buffer-map :value="value" v-slot="{value: state}">
-            <fp-object v-if="JsUtils.optionToJs(state) !== undefined">
-              <fp-field
-                :name="'round'"
-                :value="JsUtils.optionToJs(state).round">
-              </fp-field>
-              <fp-field
-                :name="'voteRound'"
-                :value="JsUtils.optionToJs(state).voteRound">
-              </fp-field>
-              <fp-field :name="'voteValue'">
-                <vote-value
-                  v-if="JsUtils.optionToJs(JsUtils.optionToJs(state).voteValue) !== undefined"
-                  :value="JsUtils.optionToJs(JsUtils.optionToJs(state).voteValue)">
-                </vote-value>
-                <div v-else>None</div>
-              </fp-field>
-            </fp-object>
-            <div v-else>None</div>
+            <frankenpaxos-option :value="state">
+              <template v-slot:if="{value: state}">
+                <fp-object>
+                  <fp-field :name="'round'" :value="state.round">
+                  </fp-field>
+                  <fp-field :name="'voteRound'" :value="state.voteRound">
+                  </fp-field>
+                  <fp-field :name="'voteValue'">
+                    <frankenpaxos-option :value="state.voteValue">
+                      <template v-slot:if="{value: voteValue}">
+                        <vote-value-proto :value="voteValue"></vote-value-proto>
+                      </template>
+                      <template v-slot:else>
+                        None
+                      </template>
+                    </frankenpaxos-option>
+                  </fp-field>
+                </fp-object>
+              </template>
+
+              <template v-slot:else>
+                None
+              </template>
+            </frankenpaxos-option>
           </frankenpaxos-buffer-map>
-        </frankenpaxos-seq>
+        </frankenpaxos-foreach>
       </div>
 
       <div>
-        gcQuorumWatermarkVector = {{node.actor.gcQuorumWatermarkVector}}
+        <strong>gcQuorumWatermarkVector</strong> =
+        {{node.actor.gcQuorumWatermarkVector}}
       </div>
 
       <div>
-        gcWatermark = {{node.actor.gcWatermark}}
+        <strong>gcWatermark</strong> = {{node.actor.gcWatermark}}
       </div>
     </div>
   `,
@@ -473,44 +460,6 @@ let replica_info = {
 
   components: {
     'proposal': proposal_component,
-  },
-
-  data: function() {
-    return {
-      options: {
-        edges: {
-          arrows: 'to',
-        },
-      },
-    };
-  },
-
-  methods: {
-    vertex_id_to_string: function(vertex_id) {
-      return vertex_id.leaderIndex + "." + vertex_id.id;
-    },
-
-    nodes: function() {
-      let ns = this.JsUtils.setToJs(this.node.actor.dependencyGraph.nodes);
-      return ns.map(vertex_id => {
-        return {
-          id: this.vertex_id_to_string(vertex_id),
-          label: this.vertex_id_to_string(vertex_id),
-        };
-      });
-    },
-
-    edges: function() {
-      let es = this.JsUtils.setToJs(this.node.actor.dependencyGraph.edges);
-      es = es.map(t => this.JsUtils.tupleToJs(t));
-      es = es.map(t => {
-        return {
-          from: this.vertex_id_to_string(t[0]),
-          to: this.vertex_id_to_string(t[1]),
-        };
-      });
-      return es;
-    },
   },
 
   template: `
@@ -582,12 +531,8 @@ let replica_info = {
 
       <div>
         dependencyGraph =
-        <frankenpaxos-graph
-          style="height: 200px; border: 1pt solid black;"
-          :nodes="nodes()"
-          :edges="edges()"
-          :options="options">
-        </frankenpaxos-graph>
+        <frankenpaxos-tarjan :value="node.actor.dependencyGraph">
+        </frankenpaxos-tarjan>
       </div>
     </div>
   `,

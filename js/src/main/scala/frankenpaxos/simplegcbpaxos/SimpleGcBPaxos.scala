@@ -4,7 +4,7 @@ import VertexIdHelpers.vertexIdOrdering
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
-import frankenpaxos.depgraph.ScalaGraphDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraph
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.AppendLog
 import scala.scalajs.js.annotation._
@@ -152,7 +152,7 @@ class SimpleGcBPaxos {
       logger = new JsLogger(),
       config = config,
       stateMachine = new AppendLog(),
-      dependencyGraph = new ScalaGraphDependencyGraph(
+      dependencyGraph = new TarjanDependencyGraph(
         VertexIdPrefixSet(config.leaderAddresses.size)
       ),
       options = ReplicaOptions.default.copy(
