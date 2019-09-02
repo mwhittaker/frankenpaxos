@@ -38,6 +38,11 @@ trait CompactSet[Self <: CompactSet[Self]] {
   // Compute the set difference of two compact sets.
   def diff(other: Self): Self
 
+  // Computes the set difference of two compact sets. Note that
+  // materializedDiff might return a lazy Iterable (e.g., View). It might also
+  // return an eager Iterable (e.g., Vector).
+  def materializedDiff(other: Self): Iterable[T]
+
   // Compute the set union of two compact sets.
   def addAll(other: Self): this.type
 

@@ -13,8 +13,8 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
   case class TwoParams(lhs: Set[Int], rhs: Set[Int])
 
   val oneGen = for {
-    watermark <- Gen.chooseNum(0, 100)
-    values <- Gen.containerOf[Set, Int](Gen.choose(0, 100))
+    watermark <- Gen.chooseNum(0, 10)
+    values <- Gen.containerOf[Set, Int](Gen.choose(0, 10))
   } yield OneParams((0 until watermark).toSet ++ values)
 
   val twoGen = for {
@@ -189,6 +189,16 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
       val rhsPrefixSet = IntPrefixSet(rhs)
       val diff = lhsPrefixSet.diff(rhsPrefixSet)
       diff.materialize() shouldBe lhs.diff(rhs)
+    }
+  }
+
+  it should "materializeDiff random sets correctly" in {
+    forAll(twoGen) { (params: TwoParams) =>
+      val TwoParams(lhs, rhs) = params
+      val lhsPrefixSet = IntPrefixSet(lhs)
+      val rhsPrefixSet = IntPrefixSet(rhs)
+      val diff = Set() ++ lhsPrefixSet.materializedDiff(rhsPrefixSet)
+      diff shouldBe lhs.diff(rhs)
     }
   }
 

@@ -46,6 +46,17 @@ class InstancePrefixSet private (
     )
   }
 
+  override def materializedDiff(
+      other: InstancePrefixSet
+  ): Iterable[Instance] = {
+    intPrefixSets.view
+      .zip(other.intPrefixSets)
+      .zipWithIndex
+      .flatMap({
+        case ((lhs, rhs), i) => lhs.materializedDiff(rhs).map(Instance(i, _))
+      })
+  }
+
   override def addAll(other: InstancePrefixSet): this.type = {
     for ((lhs, rhs) <- intPrefixSets.zip(other.intPrefixSets)) {
       lhs.addAll(rhs)

@@ -150,6 +150,32 @@ class IntPrefixSet private (
     }
   }
 
+  override def materializedDiff(other: IntPrefixSet): Iterable[Int] = {
+    if (watermark <= other.watermark) {
+      if (values.isEmpty) {
+        Seq()
+      } else if (other.values.isEmpty) {
+        values.view.filter(_ >= other.watermark)
+      } else {
+        values.view.filter(
+          x => x >= other.watermark && !other.values.contains(x)
+        )
+      }
+    } else {
+      if (other.values.isEmpty && values.isEmpty) {
+        (other.watermark until watermark).view
+      } else if (other.values.isEmpty) {
+        (other.watermark until watermark).view ++ values.view
+      } else if (values.isEmpty) {
+        (other.watermark until watermark).view
+          .filter(!other.values.contains(_))
+      } else {
+        ((other.watermark until watermark).view ++ values.view)
+          .filter(!other.values(_))
+      }
+    }
+  }
+
   override def addAll(other: IntPrefixSet): this.type = {
     // Through benchmarking, checking if various sets are empty actually speeds
     // things up. I know, it's suprising.

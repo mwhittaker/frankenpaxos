@@ -130,6 +130,17 @@ class VertexIdPrefixSet private (
     )
   }
 
+  override def materializedDiff(
+      other: VertexIdPrefixSet
+  ): Iterable[VertexId] = {
+    intPrefixSets.view
+      .zip(other.intPrefixSets)
+      .zipWithIndex
+      .flatMap({
+        case ((lhs, rhs), i) => lhs.materializedDiff(rhs).map(VertexId(i, _))
+      })
+  }
+
   override def addAll(other: VertexIdPrefixSet): this.type = {
     for ((lhs, rhs) <- intPrefixSets.zip(other.intPrefixSets)) {
       lhs.addAll(rhs)

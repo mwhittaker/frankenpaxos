@@ -104,7 +104,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
           yield VertexId(d, d)
         g.commit(VertexId(i + j, i + j), (), new FakeCompactSet(deps.toSet))
         if ((i + 1) % params.batchSize == 0) {
-          g.execute()
+          g.execute(numBlockers = None)
         }
       }
     }
@@ -138,7 +138,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
           yield VertexId(d, d)
         g.commit(VertexId(i, i), (), new FakeCompactSet(deps.toSet))
         if ((i + 1) % params.batchSize == 0) {
-          g.execute()
+          g.execute(numBlockers = None)
         }
       }
     }
