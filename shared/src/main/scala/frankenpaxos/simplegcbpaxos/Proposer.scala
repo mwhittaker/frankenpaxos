@@ -87,7 +87,7 @@ object Proposer {
       // The current round.
       round: Round,
       // The pending value that this proposer wants to get chosen.
-      value: Acceptor.VoteValue,
+      value: VoteValueProto,
       // Phase 1b responses.
       phase1bs: mutable.Map[AcceptorId, Phase1b],
       // A timer to resend phase 1as.
@@ -99,7 +99,7 @@ object Proposer {
       // The current round.
       round: Round,
       // The value that this proposer is proposing.
-      value: Acceptor.VoteValue,
+      value: VoteValueProto,
       // Phase 2b responses.
       phase2bs: mutable.Map[AcceptorId, Phase2b],
       // A timer to resend phase 2as.
@@ -111,7 +111,7 @@ object Proposer {
       // We need to remember the chosen values for recovery. See handleRecover
       // for details.
       proposal: Proposal,
-      dependencies: VertexIdPrefixSet
+      dependencies: VertexIdPrefixSetProto
   ) extends State[Transport]
 }
 
@@ -198,7 +198,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
       case None =>
         val value =
-          Acceptor.VoteValue(proposal = proposal, dependencies = dependencies)
+          VoteValueProto(proposal = proposal,
+                         dependencies = dependencies.toProto())
         val round = roundSystem(vertexId).nextClassicRound(index, -1)
 
         // If we're the leader of round 0, then we can skip phase 1 and proceed
@@ -206,9 +207,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // phase 2.
         if (round == 0) {
           // Send phase2a to all acceptors.
-          val phase2a = Phase2a(vertexId = vertexId,
-                                round = round,
-                                voteValue = Acceptor.toProto(value))
+          val phase2a =
+            Phase2a(vertexId = vertexId, round = round, voteValue = value)
           thriftyAcceptors(config.quorumSize)
             .foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
 
@@ -380,22 +380,21 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // some acceptor in the quorum has voted, then we must propose the
         // value with the highest vote round.
         val maxVoteRound = phase1.phase1bs.values.map(_.voteRound).max
-        val proposal: Acceptor.VoteValue = if (maxVoteRound == -1) {
+        val voteValue: VoteValueProto = if (maxVoteRound == -1) {
           phase1.value
         } else {
-          val proto = phase1.phase1bs.values
+          phase1.phase1bs.values
             .find(_.voteRound == maxVoteRound)
             .get
             .voteValue
             .get
-          Acceptor.fromProto(proto)
         }
 
         // Send phase2as to the acceptors.
         val phase2a = Phase2a(
           vertexId = phase1b.vertexId,
           round = phase1.round,
-          voteValue = Acceptor.toProto(proposal)
+          voteValue = voteValue
         )
         thriftyAcceptors(config.quorumSize)
           .foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
@@ -404,7 +403,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         phase1.resendPhase1as.stop()
         states(phase1b.vertexId) = Phase2(
           round = phase1.round,
-          value = proposal,
+          value = voteValue,
           phase2bs = mutable.Map[AcceptorId, Phase2b](),
           resendPhase2as = makeResendPhase2asTimer(phase2a)
         )
@@ -466,7 +465,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
             ReplicaInbound().withCommit(
               Commit(vertexId = phase2b.vertexId,
                      proposal = phase2.value.proposal,
-                     dependencies = phase2.value.dependencies.toProto)
+                     dependencies = phase2.value.dependencies)
             )
           )
         }
@@ -591,7 +590,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           ReplicaInbound().withCommit(
             Commit(vertexId = recover.vertexId,
                    proposal = chosen.proposal,
-                   dependencies = chosen.dependencies.toProto)
+                   dependencies = chosen.dependencies)
           )
         )
     }
