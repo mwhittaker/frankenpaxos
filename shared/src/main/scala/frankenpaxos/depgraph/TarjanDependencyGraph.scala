@@ -85,6 +85,23 @@ class TarjanDependencyGraph[
     implicit override val keyOrdering: Ordering[Key],
     implicit override val sequenceNumberOrdering: Ordering[SequenceNumber]
 ) extends DependencyGraph[Key, SequenceNumber, KeySet] {
+  // TODO(mwhittaker): Optimization opportunities for EPaxos/BPaxos-specific
+  // dependency graph.
+  //
+  // - Don't return Seqs of Seqs? Have a separate function for testing.
+  // - Move main metadata structures into fields and clear them instead of
+  //   allocating them every time?
+  // - Use VertexIdBufferMap for `vertices`. Makes garbage collection faster.
+  // - Don't materialize `dependencies.diff(executed)`. Just store the deps.
+  // - Attempt to execute vertices in increasing vertex id order.
+  // - Do a smarter iteration of deps. Iterate from executed watermark up
+  //   through the deps.
+  // - collect set of uncommitted vertices that are casuing trouble. return
+  //   these so that recovery timers can be set for them. To be efficient, this
+  //   set has to be small, but in practice I think it should be.
+  //
+  // - Early return when we hit uncommitted vert?
+
   case class Vertex(
       key: Key,
       sequenceNumber: SequenceNumber,
@@ -128,6 +145,15 @@ class TarjanDependencyGraph[
     for ((key, vertex) <- vertices) {
       if (!metadatas.contains(key)) {
         strongConnect(metadatas, stack, executables, key)
+        // If we encounter an ineligible vertex, the call stack returns
+        // immediately, and all nodes along the way are marked ineligible.
+        // Here, we clear the stack.
+        //
+        // TODO(mwhittaker): We can also just straight return here to avoid
+        // checking a ton of ineligible vertices.
+        if (!metadatas(key).eligible) {
+          stack.clear()
+        }
       }
     }
 
@@ -161,14 +187,31 @@ class TarjanDependencyGraph[
     for (w <- vertices(v).dependencies if !executed.contains(w)) {
       if (!vertices.contains(w)) {
         // If we depend on an uncommitted vertex, we are ineligible.
+        // Immediately return and mark all nodes on the stack ineligible. The
+        // stack will be cleared at the end of the unwinding.
         metadatas(v) = metadatas(v).copy(eligible = false)
+        return
       } else if (!metadatas.contains(w)) {
         // If we haven't explored our dependency yet, we recurse.
         strongConnect(metadatas, stack, executables, w)
+
+        // If our child is ineligible, we are ineligible. We return
+        // immediately.
+        if (!metadatas(w).eligible) {
+          metadatas(v) = metadatas(v).copy(eligible = false)
+          return
+        }
+
         metadatas(v) = metadatas(v).copy(
           lowLink = Math.min(metadatas(v).lowLink, metadatas(w).lowLink),
           eligible = metadatas(v).eligible && metadatas(w).eligible
         )
+      } else if (!metadatas(w).eligible) {
+        // If we depend on an ineligible vertex, we are ineligible.
+        // Immediately return and mark all nodes on the stack ineligible. The
+        // stack will be cleared at the end of the unwinding.
+        metadatas(v) = metadatas(v).copy(eligible = false)
+        return
       } else if (metadatas(w).onStack) {
         metadatas(v) = metadatas(v).copy(
           lowLink = Math.min(metadatas(v).lowLink, metadatas(w).number),

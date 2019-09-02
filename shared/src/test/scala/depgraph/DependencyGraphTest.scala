@@ -403,6 +403,7 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       }
     }
 
+    test(numVertices = 5, maxVertex = 5)
     test(numVertices = 10, maxVertex = 20)
     test(numVertices = 10, maxVertex = 10)
     test(numVertices = 100, maxVertex = 200)
