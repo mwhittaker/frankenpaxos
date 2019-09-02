@@ -1,0 +1,20 @@
+f: 1
+leaderAddress { host: "localhost" port: 9000 }
+leaderAddress { host: "localhost" port: 9100 }
+leaderElectionAddress { host: "localhost" port: 9001 }
+leaderElectionAddress { host: "localhost" port: 9101 }
+leaderHeartbeatAddress { host: "localhost" port: 9002 }
+leaderHeartbeatAddress { host: "localhost" port: 9102 }
+acceptorAddress { host: "localhost" port: 10000 }
+acceptorAddress { host: "localhost" port: 10100 }
+acceptorAddress { host: "localhost" port: 10200 }
+acceptorHeartbeatAddress { host: "localhost" port: 10001 }
+acceptorHeartbeatAddress { host: "localhost" port: 10101 }
+acceptorHeartbeatAddress { host: "localhost" port: 10201 }
+proposerAddress { host: "localhost" port: 13000}
+proposerAddress { host: "localhost" port: 13100}
+proposerAddress { host: "localhost" port: 13200}
+executorAddress { host: "localhost" port: 14000}
+executorAddress { host: "localhost" port: 14100}
+executorAddress { host: "localhost" port: 14200}
+roundSystemType: CLASSIC_ROUND_ROBIN
