@@ -13,6 +13,8 @@ class BufferMap[V](val growSize: Int = 5000) {
   @JSExport
   protected var watermark: Int = 0
 
+  override def toString(): String = buffer.toString()
+
   private def normalize(key: Int): Int = key - watermark
 
   private def pad(len: Int) {

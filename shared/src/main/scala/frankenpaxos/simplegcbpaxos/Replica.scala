@@ -195,10 +195,10 @@ object Replica {
       dependencies: VertexIdPrefixSet
   )
 
-// TODO(mwhittaker): Some things here are clones (watermark) and some are
-// already serialized (stateMachine and clientTable). Figure out which is
-// best for each field. It should depend on the cost of serialization vs
-// cloning.
+  // TODO(mwhittaker): Some things here are clones (watermark) and some are
+  // already serialized (stateMachine and clientTable). Figure out which is
+  // best for each field. It should depend on the cost of serialization vs
+  // cloning.
   @JSExportAll
   case class Snapshot(
       id: Int,
@@ -375,9 +375,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   protected var clientTable =
     ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
 
-  // If a replica commits a command in vertex A with a dependency on uncommitted
-  // vertex B, then the replica sets a timer to recover vertex B. This prevents
-  // a vertex from being forever stalled.
+  // Timers to recover vertices. There are a number of different policies that
+  // specify when we should try and recover a timer. For example, we may set a
+  // recovery timer for a vertex as soon as we know it exits but is not
+  // committed. Or, we may want to set timers for only a handful of vertices.
+  // There are a lot of options. Whatever option we choose, the timers are
+  // stored here.
   @JSExport
   protected val recoverVertexTimers = mutable.Map[VertexId, Transport#Timer]()
 
@@ -430,13 +433,25 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def execute(): Unit = {
-    // TODO(mwhittaker): Do something with blockers.
+    // Collect executable commands and blockers.
     val (executable, blockers) = dependencyGraph.execute(
       if (options.numBlockers == -1) None else Some(options.numBlockers)
     )
     metrics.executeGraphTotal.inc()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
+    // Register recover timers for the blockers.
+    if (options.unsafeDontRecover) {
+      // Don't fuss with timers.
+    } else {
+      for (v <- blockers) {
+        if (!recoverVertexTimers.contains(v)) {
+          recoverVertexTimers(v) = makeRecoverVertexTimer(v)
+        }
+      }
+    }
+
+    // Execute the executables.
     for (v <- executable) {
       import Proposal.Value
       commands.get(v) match {
@@ -574,7 +589,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           case Some(_) =>
             logger.fatal(
               s"Replica recovering vertex $vertexId, but that vertex is " +
-                s"already committed."
+                s"already committed.\ncommands = $commands\n" +
+                s"recoverVertexTimers = $recoverVertexTimers"
             )
           case None =>
         }
@@ -660,30 +676,16 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     metrics.dependencies.observe(dependencies.size)
     metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
 
+    // Stop any recovery timer for the current vertex.
     if (options.unsafeDontRecover) {
       // Don't fuss with timers.
     } else {
-      // Stop any recovery timer for the current vertex, and start recovery
-      // timers for any uncommitted vertices on which we depend.
-      recoverVertexTimers.get(commit.vertexId).foreach(_.stop())
-      recoverVertexTimers -= commit.vertexId
-
-      val uncommittedDependencies = timed("Commit/uncommittedDependencies") {
-        dependencies.diff(committedVertices)
-      }
-      val materialized = timed("Commit/materialize") {
-        uncommittedDependencies.materialize()
-      }
-      val timerDependencies = timed("Commit/timerDependencies") {
-        materialized.filter(!recoverVertexTimers.contains(_))
-      }
-      metrics.uncommittedDependencies.observe(materialized.size)
-      metrics.timerDependencies.observe(timerDependencies.size)
-
-      timed("Commit/startTimers") {
-        for (v <- timerDependencies) {
-          recoverVertexTimers(v) = makeRecoverVertexTimer(v)
-        }
+      recoverVertexTimers.get(commit.vertexId) match {
+        case Some(timer) =>
+          timer.stop()
+          recoverVertexTimers -= commit.vertexId
+        case None =>
+        // Do nothing.
       }
     }
 
@@ -763,7 +765,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // older snapshot with a previous snapshot.
     val replaceSnapshot = snapshot match {
       // If we don't have a snapshot yet, then we are safe to replace it.
-      case None           => true
+      case None => true
+      // Otherwise, we only replace our snapshot if the new snapshot has a
+      // higher snapshot id than ours.
       case Some(snapshot) => commitSnapshot.id > snapshot.id
     }
 
@@ -787,6 +791,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                stateMachine = commitSnapshot.stateMachine.toByteArray,
                clientTable = commitSnapshot.clientTable)
     )
+
+    // Stop and delete recovery timers for any vertices that we received as
+    // part of the snapshot.
+    recoverVertexTimers.retain({
+      case (v, timer) =>
+        val delete = watermark.contains(v)
+        if (delete) {
+          timer.stop()
+        }
+        delete
+    })
 
     // Re-execute commands we had executed that were not part of the snapshot.
     // For example, imagine we had executed the following graph:
@@ -830,10 +845,5 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     timed("CommitSnapshot/execute") {
       execute()
     }
-
-    // TODO(mwhittaker): Stop recovery timers for any vertices that we received
-    // as part of the snapshot. We need to rethink the timer mechanism anyway
-    // to prevent setting a lot of recovery timers in the common case, so we'll
-    // defer this for later.
   }
 }

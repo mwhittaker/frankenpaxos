@@ -10,6 +10,8 @@ class VertexIdBufferMap[V](val numLeaders: Int, val growSize: Int = 5000) {
   protected val bufferMaps: mutable.Buffer[BufferMap[V]] =
     mutable.Buffer.fill(numLeaders)(new BufferMap(growSize))
 
+  override def toString(): String = bufferMaps.mkString("\n")
+
   def get(vertexId: VertexId): Option[V] =
     bufferMaps(vertexId.leaderIndex).get(vertexId.id)
 
