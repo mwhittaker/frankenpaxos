@@ -144,7 +144,8 @@ class ScalaGraphDependencyGraph[
       executed.add(key)
     }
 
-    (executable, graph.nodes.filter(!isEligible(_)).map(_.toOuter).toSet)
+    (executable,
+     graph.nodes.filter(!committed.contains(_)).map(_.toOuter).toSet)
   }
 
   // Returns the current set of nodes. This method is really only useful for

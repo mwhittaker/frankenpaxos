@@ -135,7 +135,7 @@ class JgraphtDependencyGraph[
       executed.add(key)
     }
 
-    (executable, graph.vertexSet().asScala.filter(!isEligible(_)).toSet)
+    (executable, graph.vertexSet().asScala.filter(!committed.contains(_)).toSet)
   }
 
   override def numVertices: Int = graph.vertexSet().size
