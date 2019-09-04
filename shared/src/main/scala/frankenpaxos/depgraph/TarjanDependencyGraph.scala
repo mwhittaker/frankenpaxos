@@ -106,7 +106,7 @@ class TarjanDependencyGraph[
   case class Vertex(
       key: Key,
       sequenceNumber: SequenceNumber,
-      dependencies: Set[Key]
+      dependencies: KeySet
   )
 
   @JSExportAll
@@ -133,8 +133,7 @@ class TarjanDependencyGraph[
       return
     }
 
-    vertices(key) =
-      Vertex(key, sequenceNumber, dependencies.diff(executed).materialize())
+    vertices(key) = Vertex(key, sequenceNumber, dependencies)
   }
 
   override def updateExecuted(keys: KeySet): Unit = {
@@ -202,7 +201,7 @@ class TarjanDependencyGraph[
     )
     stack += v
 
-    for (w <- vertices(v).dependencies if !executed.contains(w)) {
+    for (w <- vertices(v).dependencies.materializedDiff(executed)) {
       if (!vertices.contains(w)) {
         // If we depend on an uncommitted vertex, we are ineligible.
         // Immediately return and mark all nodes on the stack ineligible. The
@@ -261,7 +260,11 @@ class TarjanDependencyGraph[
     }
 
     // Sort the component and append to executables.
-    executables += component.sortBy(k => (vertices(k).sequenceNumber, k))
+    if (component.size == 1) {
+      executables += component
+    } else {
+      executables += component.sortBy(k => (vertices(k).sequenceNumber, k))
+    }
   }
 
   override def numVertices: Int = vertices.size
