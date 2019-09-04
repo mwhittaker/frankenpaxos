@@ -173,6 +173,12 @@ class ReplicaMetrics(collectors: Collectors) {
     .help("The number of timer dependencies that a command has.")
     .register()
 
+  val recoverVertexTimers: Summary = collectors.summary
+    .build()
+    .name("simple_gc_bpaxos_recover_vertex_timers")
+    .help("The number of recover vertex timers that a replica has.")
+    .register()
+
   val ignoredCommitSnapshotsTotal: Counter = collectors.counter
     .build()
     .name("simple_gc_bpaxos_replica_ignored_commit_snapshots_total")
@@ -434,9 +440,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   private def execute(): Unit = {
     // Collect executable commands and blockers.
-    val (executable, blockers) = dependencyGraph.execute(
-      if (options.numBlockers == -1) None else Some(options.numBlockers)
-    )
+    val (executable, blockers) = timed("execute/dependencyGraph.execute") {
+      dependencyGraph.execute(
+        if (options.numBlockers == -1) None else Some(options.numBlockers)
+      )
+    }
     metrics.executeGraphTotal.inc()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
@@ -444,25 +452,30 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     if (options.unsafeDontRecover) {
       // Don't fuss with timers.
     } else {
-      for (v <- blockers) {
-        if (!recoverVertexTimers.contains(v)) {
-          recoverVertexTimers(v) = makeRecoverVertexTimer(v)
+      timed("execute/recoverVertexTimers") {
+        for (v <- blockers) {
+          if (!recoverVertexTimers.contains(v)) {
+            recoverVertexTimers(v) = makeRecoverVertexTimer(v)
+          }
         }
       }
+      metrics.recoverVertexTimers.observe(recoverVertexTimers.size)
     }
 
     // Execute the executables.
-    for (v <- executable) {
-      import Proposal.Value
-      commands.get(v) match {
-        case None =>
-          logger.fatal(
-            s"Vertex $v is ready for execution but the replica doesn't have " +
-              s"a Committed entry for it."
-          )
+    timed("execute/execute") {
+      for (v <- executable) {
+        import Proposal.Value
+        commands.get(v) match {
+          case None =>
+            logger.fatal(
+              s"Vertex $v is ready for execution but the replica doesn't have " +
+                s"a Committed entry for it."
+            )
 
-        case Some(committed: Committed) =>
-          executeProposal(v, committed.proposal)
+          case Some(committed: Committed) =>
+            executeProposal(v, committed.proposal)
+        }
       }
     }
   }
