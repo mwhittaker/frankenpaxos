@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1567377535312,
+  "iteration": 1567627302309,
   "links": [],
   "panels": [
     {
@@ -1247,6 +1247,13 @@
           "intervalFactor": 1,
           "legendFormat": "Execute Graph Timer ({{instance}})",
           "refId": "B"
+        },
+        {
+          "expr": "rate(simple_gc_bpaxos_replica_recover_vertex_total_sum[1s]) / rate(simple_gc_bpaxos_replica_recover_vertex_total_count[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Recover Vertex Timers ({{instance}})",
+          "refId": "C"
         }
       ],
       "thresholds": [],
@@ -1903,9 +1910,12 @@
       {
         "allValue": null,
         "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
+          "selected": false,
+          "tags": [],
+          "text": "bpaxos_replica",
+          "value": [
+            "bpaxos_replica"
+          ]
         },
         "datasource": "Prometheus",
         "definition": "label_values(job)",
@@ -1916,7 +1926,7 @@
         "name": "job",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": "All",
             "value": "$__all"
           },
@@ -1946,7 +1956,7 @@
             "value": "bpaxos_proposer"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "bpaxos_replica",
             "value": "bpaxos_replica"
           }
@@ -1993,8 +2003,8 @@
     ]
   },
   "time": {
-    "from": "2019-09-01T22:23:32.287Z",
-    "to": "2019-09-01T22:24:27.504Z"
+    "from": "2019-09-04T20:00:07.045Z",
+    "to": "2019-09-04T20:00:23.814Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -2024,5 +2034,5 @@
   "timezone": "",
   "title": "Simple GC BPaxos",
   "uid": "fz4gS_KWk",
-  "version": 3
+  "version": 4
 }
