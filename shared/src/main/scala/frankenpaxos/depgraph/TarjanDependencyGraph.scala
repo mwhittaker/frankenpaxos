@@ -123,6 +123,12 @@ class TarjanDependencyGraph[
   @JSExport
   protected val executed: KeySet = emptyKeySet
 
+  // strongConnect metadata.
+  private val metadatas = mutable.Map[Key, VertexMetadata]()
+  private val stack = mutable.Buffer[Key]()
+  private val executables = mutable.Buffer[Seq[Key]]()
+  private val blockers = mutable.Set[Key]()
+
   override def commit(
       key: Key,
       sequenceNumber: SequenceNumber,
@@ -155,14 +161,14 @@ class TarjanDependencyGraph[
   override def executeByComponent(
       numBlockers: Option[Int]
   ): (Seq[Seq[Key]], Set[Key]) = {
-    val metadatas = mutable.Map[Key, VertexMetadata]()
-    val stack = mutable.Buffer[Key]()
-    val executables = mutable.Buffer[Seq[Key]]()
-    val blockers = mutable.Set[Key]()
+    metadatas.clear()
+    stack.clear()
+    executables.clear()
+    blockers.clear()
 
     for ((key, vertex) <- vertices) {
       if (!metadatas.contains(key)) {
-        strongConnect(metadatas, stack, executables, blockers, key)
+        strongConnect(key)
 
         // If we encounter an ineligible vertex, the call stack returns
         // immediately, and all nodes along the way are marked ineligible, so
@@ -185,13 +191,7 @@ class TarjanDependencyGraph[
     (returnExecutables(executables.toSeq), blockers.toSet)
   }
 
-  def strongConnect(
-      metadatas: mutable.Map[Key, VertexMetadata],
-      stack: mutable.Buffer[Key],
-      executables: mutable.Buffer[Seq[Key]],
-      blockers: mutable.Set[Key],
-      v: Key
-  ): Unit = {
+  def strongConnect(v: Key): Unit = {
     val number = metadatas.size
     metadatas(v) = VertexMetadata(
       number = number,
@@ -212,7 +212,7 @@ class TarjanDependencyGraph[
         return
       } else if (!metadatas.contains(w)) {
         // If we haven't explored our dependency yet, we recurse.
-        strongConnect(metadatas, stack, executables, blockers, w)
+        strongConnect(w)
 
         // If our child is ineligible, we are ineligible. We return
         // immediately.
