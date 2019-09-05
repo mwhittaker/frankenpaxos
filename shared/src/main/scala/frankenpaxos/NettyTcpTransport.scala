@@ -1,6 +1,7 @@
 package frankenpaxos
 
 import collection.mutable
+import com.google.protobuf.ByteString
 import io.netty.bootstrap.Bootstrap
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.ByteBuf
@@ -42,6 +43,9 @@ object HostPortSerializer extends ProtoSerializer[HostPort]
 
 object NettyTcpAddressSerializer
     extends frankenpaxos.Serializer[NettyTcpAddress] {
+  // A cache of addresses, used to speed up fromByteString.
+  private val fromByteStringCache = mutable.Map[ByteString, NettyTcpAddress]()
+
   override def toBytes(x: NettyTcpAddress): Array[Byte] = {
     // We get SocketAddresses from Netty. The Netty documentation informs you
     // to downcast the SocketAddress to the appropriate concrete type (e.g.,
@@ -54,6 +58,16 @@ object NettyTcpAddressSerializer
   override def fromBytes(bytes: Array[Byte]): NettyTcpAddress = {
     val hostport = HostPortSerializer.fromBytes(bytes)
     NettyTcpAddress(new InetSocketAddress(hostport.host, hostport.port))
+  }
+
+  override def fromByteString(bytes: ByteString): NettyTcpAddress = {
+    fromByteStringCache.get(bytes) match {
+      case Some(address) => address
+      case None =>
+        val address = fromBytes(bytes.toByteArray)
+        fromByteStringCache(bytes) = address
+        address
+    }
   }
 
   override def toPrettyString(x: NettyTcpAddress): String =

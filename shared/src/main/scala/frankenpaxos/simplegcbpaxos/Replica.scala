@@ -532,8 +532,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
       case Value.Command(command) =>
         timed("executeProposal/Command") {
-          val clientAddress = transport.addressSerializer.fromBytes(
-            command.clientAddress.toByteArray
+          val clientAddress = transport.addressSerializer.fromByteString(
+            command.clientAddress
           )
           val clientIdentity = (clientAddress, command.clientPseudonym)
           clientTable.executed(clientIdentity, command.clientId) match {
