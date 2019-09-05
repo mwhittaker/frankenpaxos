@@ -102,10 +102,10 @@ class TarjanDependencyGraph[
 
   @JSExportAll
   case class VertexMetadata(
-      number: Int,
-      lowLink: Int,
-      stackIndex: Int,
-      eligible: Boolean
+      var number: Int,
+      var lowLink: Int,
+      var stackIndex: Int,
+      var eligible: Boolean
   )
 
   // execute and executeByComponent are very similar. They differ only in how
@@ -283,7 +283,7 @@ class TarjanDependencyGraph[
         // Immediately return and mark all nodes on the stack ineligible. The
         // stack will be cleared at the end of the unwinding. We also make sure
         // to record the fact that we are blocked on this vertex.
-        metadatas(v) = metadatas(v).copy(eligible = false)
+        metadatas(v).eligible = false
         blockers += w
         return
       } else if (!metadatas.contains(w)) {
@@ -293,29 +293,25 @@ class TarjanDependencyGraph[
         // If our child is ineligible, we are ineligible. We return
         // immediately.
         if (!metadatas(w).eligible) {
-          metadatas(v) = metadatas(v).copy(eligible = false)
+          metadatas(v).eligible = false
           return
         }
 
-        metadatas(v) = metadatas(v).copy(
-          lowLink = Math.min(metadatas(v).lowLink, metadatas(w).lowLink),
-          eligible = metadatas(v).eligible && metadatas(w).eligible
-        )
+        metadatas(v).lowLink =
+          Math.min(metadatas(v).lowLink, metadatas(w).lowLink)
+        metadatas(v).eligible = metadatas(v).eligible && metadatas(w).eligible
       } else if (!metadatas(w).eligible) {
         // If we depend on an ineligible vertex, we are ineligible.
         // Immediately return and mark all nodes on the stack ineligible. The
         // stack will be cleared at the end of the unwinding.
-        metadatas(v) = metadatas(v).copy(eligible = false)
+        metadatas(v).eligible = false
         return
       } else if (metadatas(w).stackIndex != -1) {
-        metadatas(v) = metadatas(v).copy(
-          lowLink = Math.min(metadatas(v).lowLink, metadatas(w).number),
-          eligible = metadatas(v).eligible && metadatas(w).eligible
-        )
+        metadatas(v).lowLink =
+          Math.min(metadatas(v).lowLink, metadatas(w).number)
+        metadatas(v).eligible = metadatas(v).eligible && metadatas(w).eligible
       } else {
-        metadatas(v) = metadatas(v).copy(
-          eligible = metadatas(v).eligible && metadatas(w).eligible
-        )
+        metadatas(v).eligible = metadatas(v).eligible && metadatas(w).eligible
       }
     }
 
@@ -330,14 +326,14 @@ class TarjanDependencyGraph[
     if (metadatas(v).stackIndex == stack.size - 1) {
       val component = stack.last
       stack.remove(stack.size - 1)
-      metadatas(component) = metadatas(component).copy(stackIndex = -1)
+      metadatas(component).stackIndex = -1
       appender.appendOne(executables, component)
     } else {
       val component = stack.slice(metadatas(v).stackIndex, stack.size)
       stack.remove(metadatas(v).stackIndex,
                    stack.size - metadatas(v).stackIndex)
       for (w <- component) {
-        metadatas(w) = metadatas(w).copy(stackIndex = -1)
+        metadatas(w).stackIndex = -1
       }
       appender.appendMany(
         executables,

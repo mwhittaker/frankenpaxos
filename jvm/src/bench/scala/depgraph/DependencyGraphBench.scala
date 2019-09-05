@@ -123,7 +123,8 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       for {
         graphType <- Gen.enumeration("graph_type")(
           Jgrapht,
-          Tarjan IncrementalTarjan
+          IncrementalTarjan,
+          Tarjan
         )
         numCommands <- Gen.enumeration("num_commands")(10000)
         depSize <- Gen.enumeration("depSize")(1, 10)
@@ -158,7 +159,8 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
       for {
         graphType <- Gen.enumeration("graph_type")(
           Jgrapht,
-          Tarjan IncrementalTarjan
+          IncrementalTarjan,
+          Tarjan
         )
         numCommands <- Gen.enumeration("num_commands")(10000)
         depSize <- Gen.enumeration("depSize")(1, 10)
