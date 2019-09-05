@@ -381,6 +381,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   protected var clientTable =
     ClientTable[(Transport#Address, ClientPseudonym), Array[Byte]]()
 
+  // The `numBlockers` argument passed to the dependency graph.
+  private val numBlockers =
+    if (options.numBlockers == -1) None else Some(options.numBlockers)
+
   // Timers to recover vertices. There are a number of different policies that
   // specify when we should try and recover a timer. For example, we may set a
   // recovery timer for a vertex as soon as we know it exits but is not
@@ -439,12 +443,16 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     committedVertices.add(vertexId)
   }
 
+  // `executables` and `blockers` are used by `execute`. Using and clearing a
+  // field is a little more efficient than allocating a new set every time. It
+  // also reduces memory pressure, allowing us to garbage collect less often.
+  private val executables = mutable.Buffer[VertexId]()
+  private val blockers = mutable.Set[VertexId]()
+
   private def execute(): Unit = {
     // Collect executable commands and blockers.
-    val (executable, blockers) = timed("execute/dependencyGraph.execute") {
-      dependencyGraph.execute(
-        if (options.numBlockers == -1) None else Some(options.numBlockers)
-      )
+    timed("execute/dependencyGraph.appendExecute") {
+      dependencyGraph.appendExecute(numBlockers, executables, blockers)
     }
     metrics.executeGraphTotal.inc()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
@@ -465,13 +473,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Execute the executables.
     timed("execute/execute") {
-      for (v <- executable) {
+      for (v <- executables) {
         import Proposal.Value
         commands.get(v) match {
           case None =>
             logger.fatal(
-              s"Vertex $v is ready for execution but the replica doesn't have " +
-                s"a Committed entry for it."
+              s"Vertex $v is ready for execution but the replica doesn't " +
+                s"have a Committed entry for it."
             )
 
           case Some(committed: Committed) =>
@@ -479,6 +487,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         }
       }
     }
+
+    // Clear the fields.
+    executables.clear()
+    blockers.clear()
   }
 
   private def executeProposal(
