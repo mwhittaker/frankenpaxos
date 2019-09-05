@@ -6,7 +6,7 @@ from .. import proto_util
 from .. import util
 from .. import workload
 from ..workload import Workload
-from typing import Any, Callable, Collection, Dict, List, NamedTuple
+from typing import Any, Callable, Collection, Dict, List, NamedTuple, Optional
 import argparse
 import csv
 import datetime
@@ -125,9 +125,11 @@ class EPaxosNet(object):
 class RemoteEPaxosNet(EPaxosNet):
     def __init__(self,
                  addresses: List[str],
+                 key_filename: Optional[str],
                  f: int,
                  num_client_procs: int) -> None:
         assert len(addresses) > 0
+        self._key_filename = key_filename
         self._f = f
         self._num_client_procs = num_client_procs
         self._hosts = [self._make_host(a) for a in addresses]
@@ -135,7 +137,10 @@ class RemoteEPaxosNet(EPaxosNet):
     def _make_host(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
-        client.connect(address)
+        if self._key_filename:
+            client.connect(address, key_filename=self._key_filename)
+        else:
+            client.connect(address)
         return host.RemoteHost(client)
 
     class _Placement(NamedTuple):
@@ -226,6 +231,7 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
         if args['address'] is not None:
             return RemoteEPaxosNet(
                         args['address'],
+                        args['identity_file'],
                         f=input.f,
                         num_client_procs=input.num_client_procs)
         else:
