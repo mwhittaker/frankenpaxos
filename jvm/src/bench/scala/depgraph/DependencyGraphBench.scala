@@ -7,6 +7,7 @@ import frankenpaxos.util
 import org.scalameter.api._
 import org.scalameter.picklers.Implicits._
 import org.scalameter.picklers.noPickler._
+import scala.collection.mutable
 
 object DependencyGraphBenchmark extends Bench.ForkedTime {
   override def aggregator: Aggregator[Double] = Aggregator.average
@@ -44,7 +45,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
     }
   }
 
-  performance of "JgraphtDependencyGraph commit" in {
+  performance of "commit" in {
     case class Params(
         graphType: GraphType,
         numCommands: Int,
@@ -73,7 +74,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
     }
   }
 
-  performance of "JgraphtDependencyGraph with cycles" in {
+  performance of "execute with cycles" in {
     case class Params(
         graphType: GraphType,
         numCommands: Int,
@@ -110,7 +111,7 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
     }
   }
 
-  performance of "JgraphtDependencyGraph without cycles" in {
+  performance of "plain execute without cycles" in {
     case class Params(
         graphType: GraphType,
         numCommands: Int,
@@ -120,17 +121,18 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
 
     val params =
       for {
-        graphType <- Gen.enumeration("graph_type")(Jgrapht,
-                                                   Tarjan,
-                                                   IncrementalTarjan)
-        numCommands <- Gen.enumeration("num_commands")(1000)
-        depSize <- Gen.enumeration("depSize")(1, 10, 25)
-        batchSize <- Gen.enumeration("batch_size")(1, 100)
+        graphType <- Gen.enumeration("graph_type")(
+          Jgrapht,
+          Tarjan IncrementalTarjan
+        )
+        numCommands <- Gen.enumeration("num_commands")(10000)
+        depSize <- Gen.enumeration("depSize")(1, 10)
+        batchSize <- Gen.enumeration("batch_size")(1, 10)
       } yield Params(graphType, numCommands, depSize, batchSize)
 
     using(params) config (
       exec.independentSamples -> 1,
-      exec.benchRuns -> 1,
+      exec.benchRuns -> 3,
     ) in { params =>
       val g = makeGraph(params.graphType)
       for (i <- 0 until params.numCommands) {
@@ -139,6 +141,45 @@ object DependencyGraphBenchmark extends Bench.ForkedTime {
         g.commit(VertexId(i, i), (), new FakeCompactSet(deps.toSet))
         if ((i + 1) % params.batchSize == 0) {
           g.execute(numBlockers = None)
+        }
+      }
+    }
+  }
+
+  performance of "appendExecute without cycles" in {
+    case class Params(
+        graphType: GraphType,
+        numCommands: Int,
+        depSize: Int,
+        batchSize: Int
+    )
+
+    val params =
+      for {
+        graphType <- Gen.enumeration("graph_type")(
+          Jgrapht,
+          Tarjan IncrementalTarjan
+        )
+        numCommands <- Gen.enumeration("num_commands")(10000)
+        depSize <- Gen.enumeration("depSize")(1, 10)
+        batchSize <- Gen.enumeration("batch_size")(1, 10)
+      } yield Params(graphType, numCommands, depSize, batchSize)
+
+    using(params) config (
+      exec.independentSamples -> 1,
+      exec.benchRuns -> 3,
+    ) in { params =>
+      val g = makeGraph(params.graphType)
+      val executables = mutable.Buffer[VertexId]()
+      val blockers = mutable.Set[VertexId]()
+      for (i <- 0 until params.numCommands) {
+        val deps = for (d <- i - params.depSize until i if d >= 0)
+          yield VertexId(d, d)
+        g.commit(VertexId(i, i), (), new FakeCompactSet(deps.toSet))
+        if ((i + 1) % params.batchSize == 0) {
+          g.appendExecute(numBlockers = None, executables, blockers)
+          executables.clear()
+          blockers.clear()
         }
       }
     }

@@ -353,7 +353,12 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
   }
 
   "All dep graph implementations" should "agree" in {
-    def test(numVertices: Int, maxVertex: Int): Unit = {
+    def test[A](
+        numVertices: Int,
+        maxVertex: Int,
+        f: DependencyGraph[Int, Int, IntPrefixSet] => A,
+        equals: (A, A) => Unit
+    ): Unit = {
       require(maxVertex >= numVertices)
       info(s"numVertices = $numVertices, maxVertex = $maxVertex")
 
@@ -398,23 +403,68 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
         // Note that we check that the graphs have the same elements. It's
         // possible that they return elements in different orders, though, so
         // they may not be exactly equal.
-        val jgraphtOutput = jgrapht.executeByComponent(None)._1
-        val scalagraphOutput = scalagraph.executeByComponent(None)._1
-        val tarjanOutput = tarjan.executeByComponent(None)._1
-        val incrementalOutput = incremental.executeByComponent(None)._1
-        jgraphtOutput should contain theSameElementsAs scalagraphOutput
-        jgraphtOutput should contain theSameElementsAs tarjanOutput
+        val jgraphtOutput = f(jgrapht)
+        val scalagraphOutput = f(scalagraph)
+        val tarjanOutput = f(tarjan)
+        val incrementalOutput = f(incremental)
+        equals(jgraphtOutput, scalagraphOutput)
+        equals(jgraphtOutput, tarjanOutput)
         if (numVertices == maxVertex) {
-          jgraphtOutput should contain theSameElementsAs incrementalOutput
+          equals(jgraphtOutput, incrementalOutput)
         }
       }
     }
 
-    test(numVertices = 5, maxVertex = 5)
-    test(numVertices = 10, maxVertex = 20)
-    test(numVertices = 10, maxVertex = 10)
-    test(numVertices = 100, maxVertex = 200)
-    test(numVertices = 100, maxVertex = 100)
+    {
+      val f = (g: DependencyGraph[Int, Int, IntPrefixSet]) => {
+        g.executeByComponent(None)._1
+      }
+      val equals = (a: Seq[Seq[Int]], b: Seq[Seq[Int]]) => {
+        a should contain theSameElementsAs b
+        ()
+      }
+      test[Seq[Seq[Int]]](numVertices = 5, maxVertex = 5, f, equals)
+      test[Seq[Seq[Int]]](numVertices = 10, maxVertex = 20, f, equals)
+      test[Seq[Seq[Int]]](numVertices = 10, maxVertex = 10, f, equals)
+      test[Seq[Seq[Int]]](numVertices = 100, maxVertex = 200, f, equals)
+      test[Seq[Seq[Int]]](numVertices = 100, maxVertex = 100, f, equals)
+    }
+    info("executeByComponent agrees")
+
+    {
+      val f = (g: DependencyGraph[Int, Int, IntPrefixSet]) => {
+        g.execute(None)._1
+      }
+      val equals = (a: Seq[Int], b: Seq[Int]) => {
+        a should contain theSameElementsAs b
+        ()
+      }
+      test[Seq[Int]](numVertices = 5, maxVertex = 5, f, equals)
+      test[Seq[Int]](numVertices = 10, maxVertex = 20, f, equals)
+      test[Seq[Int]](numVertices = 10, maxVertex = 10, f, equals)
+      test[Seq[Int]](numVertices = 50, maxVertex = 100, f, equals)
+      test[Seq[Int]](numVertices = 50, maxVertex = 50, f, equals)
+    }
+    info("execute agrees")
+
+    {
+      val f = (g: DependencyGraph[Int, Int, IntPrefixSet]) => {
+        val executables = mutable.Buffer[Int]()
+        val blockers = mutable.Set[Int]()
+        g.appendExecute(None, executables, blockers)
+        executables
+      }
+      val equals = (a: mutable.Buffer[Int], b: mutable.Buffer[Int]) => {
+        a should contain theSameElementsAs b
+        ()
+      }
+      test[mutable.Buffer[Int]](numVertices = 5, maxVertex = 5, f, equals)
+      test[mutable.Buffer[Int]](numVertices = 10, maxVertex = 20, f, equals)
+      test[mutable.Buffer[Int]](numVertices = 10, maxVertex = 10, f, equals)
+      test[mutable.Buffer[Int]](numVertices = 50, maxVertex = 100, f, equals)
+      test[mutable.Buffer[Int]](numVertices = 50, maxVertex = 50, f, equals)
+    }
+    info("appendExecute agrees")
   }
 
   // TarjanDependencyGraph /////////////////////////////////////////////////////

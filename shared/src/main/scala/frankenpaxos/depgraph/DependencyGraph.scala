@@ -1,6 +1,7 @@
 package frankenpaxos.depgraph
 
 import frankenpaxos.compact.CompactSet
+import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExportAll
 
 // # MultiPaxos
@@ -154,6 +155,24 @@ abstract class DependencyGraph[
     (executable, blockers)
   }
 
+  // appendExecute is the same as execute, but it appends to existing buffers
+  // instead of returning newly allocated objects. This can be good for
+  // performance critical code (e.g., BPaxos replicas).
+  def appendExecute(
+      numBlockers: Option[Int],
+      executables: mutable.Buffer[Key],
+      blockers: mutable.Set[Key]
+  ): Unit = {
+    val (newExecutables, newBlockers) = execute(numBlockers)
+    executables ++= newExecutables
+    blockers ++= newBlockers
+  }
+
+  // executeByComponent is the same as execute, except that strongly connected
+  // components are returned in their own Seq. This is mostly useful for
+  // testing.
+  def executeByComponent(numBlockers: Option[Int]): (Seq[Seq[Key]], Set[Key])
+
   // Typically, we only execute a command in a dependency graph if it is
   // returned by `execute`. Sometimes, however, we can figure out when to
   // execute the command without having to go through the dependency graph. For
@@ -164,11 +183,6 @@ abstract class DependencyGraph[
   // This is what `updateExecuted` is for. It informs the dependency graph that
   // some commands were already executed.
   def updateExecuted(keys: KeySet): Unit
-
-  // executeByComponent is the same as execute, except that strongly connected
-  // components are returned in their own Seq. This is mostly useful for
-  // testing.
-  def executeByComponent(numBlockers: Option[Int]): (Seq[Seq[Key]], Set[Key])
 
   // Returns the current number of vertices in the graph. This is used mainly
   // for monitoring. A dependency graph implementation may or may not prune

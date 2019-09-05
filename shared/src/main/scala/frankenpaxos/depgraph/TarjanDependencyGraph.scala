@@ -90,17 +90,8 @@ class TarjanDependencyGraph[
   // TODO(mwhittaker): Optimization opportunities for EPaxos/BPaxos-specific
   // dependency graph.
   //
-  // - Don't return Seqs of Seqs? Have a separate function for testing.
-  // - Move main metadata structures into fields and clear them instead of
-  //   allocating them every time?
   // - Use VertexIdBufferMap for `vertices`. Makes garbage collection faster.
-  // - Don't materialize `dependencies.diff(executed)`. Just store the deps.
   // - Attempt to execute vertices in increasing vertex id order.
-  // - Do a smarter iteration of deps. Iterate from executed watermark up
-  //   through the deps.
-  // - collect set of uncommitted vertices that are casuing trouble. return
-  //   these so that recovery timers can be set for them. To be efficient, this
-  //   set has to be small, but in practice I think it should be.
 
   @JSExportAll
   case class Vertex(
@@ -117,17 +108,46 @@ class TarjanDependencyGraph[
       eligible: Boolean
   )
 
+  // execute and executeByComponent are very similar. They differ only in how
+  // they flatten components. Turns out this can be a big performance
+  // difference, so we implement each with a custom way of appending executable
+  // nodes. See below for more details.
+  private trait Appender[A] {
+    def appendOne(keys: mutable.Buffer[A], key: Key): Unit
+    def appendMany(keys: mutable.Buffer[A], newKeys: mutable.Buffer[Key]): Unit
+  }
+
   @JSExport
   protected val vertices = mutable.Map[Key, Vertex]()
 
   @JSExport
   protected val executed: KeySet = emptyKeySet
 
-  // strongConnect metadata.
+  // Metadata used by execute.
   private val metadatas = mutable.Map[Key, VertexMetadata]()
   private val stack = mutable.Buffer[Key]()
-  private val executables = mutable.Buffer[Seq[Key]]()
+  private val executables = mutable.Buffer[Key]()
   private val blockers = mutable.Set[Key]()
+
+  // Flattened appender, used by execute and appendExecute.
+  private val flatAppender = new Appender[Key] {
+    def appendOne(keys: mutable.Buffer[Key], key: Key): Unit = keys += key
+    def appendMany(
+        keys: mutable.Buffer[Key],
+        newKeys: mutable.Buffer[Key]
+    ): Unit = keys ++= newKeys
+  }
+
+  // Batched appender, used by executeByComponent.
+  private val batchedAppender = new Appender[Seq[Key]] {
+    def appendOne(keys: mutable.Buffer[Seq[Key]], key: Key): Unit =
+      keys += Seq(key)
+
+    def appendMany(
+        keys: mutable.Buffer[Seq[Key]],
+        newKeys: mutable.Buffer[Key]
+    ): Unit = keys += newKeys.toSeq
+  }
 
   override def commit(
       key: Key,
@@ -158,17 +178,70 @@ class TarjanDependencyGraph[
     executables
   }
 
-  override def executeByComponent(
-      numBlockers: Option[Int]
-  ): (Seq[Seq[Key]], Set[Key]) = {
+  override def execute(numBlockers: Option[Int]): (Seq[Key], Set[Key]) = {
     metadatas.clear()
     stack.clear()
     executables.clear()
     blockers.clear()
 
+    executeImpl[Key](numBlockers, flatAppender, executables, blockers)
+    val result = (executables.toSeq, blockers.toSet)
+
+    for (key <- executables) {
+      vertices -= key
+      executed.add(key)
+    }
+
+    result
+  }
+
+  override def appendExecute(
+      numBlockers: Option[Int],
+      executables: mutable.Buffer[Key],
+      blockers: mutable.Set[Key]
+  ): Unit = {
+    metadatas.clear()
+    stack.clear()
+    val startIndex = executables.size
+    executeImpl[Key](numBlockers, flatAppender, executables, blockers)
+
+    for (i <- startIndex until executables.size) {
+      val key = executables(i)
+      vertices -= key
+      executed.add(key)
+    }
+  }
+
+  override def executeByComponent(
+      numBlockers: Option[Int]
+  ): (Seq[Seq[Key]], Set[Key]) = {
+    metadatas.clear()
+    stack.clear()
+    val executables = mutable.Buffer[Seq[Key]]()
+    val blockers = mutable.Set[Key]()
+    executeImpl[Seq[Key]](numBlockers, batchedAppender, executables, blockers)
+    val result = (executables.toSeq, blockers.toSet)
+
+    for {
+      component <- executables
+      key <- component
+    } {
+      vertices -= key
+      executed.add(key)
+    }
+
+    result
+  }
+
+  private def executeImpl[A](
+      numBlockers: Option[Int],
+      appender: Appender[A],
+      executables: mutable.Buffer[A],
+      blockers: mutable.Set[Key]
+  ): Unit = {
     for ((key, vertex) <- vertices) {
       if (!metadatas.contains(key)) {
-        strongConnect(key)
+        strongConnect(key, appender, executables, blockers)
 
         // If we encounter an ineligible vertex, the call stack returns
         // immediately, and all nodes along the way are marked ineligible, so
@@ -182,16 +255,19 @@ class TarjanDependencyGraph[
         // we return.
         numBlockers.foreach(n => {
           if (blockers.size >= n) {
-            return (returnExecutables(executables.toSeq), blockers.toSet)
+            return
           }
         })
       }
     }
-
-    (returnExecutables(executables.toSeq), blockers.toSet)
   }
 
-  def strongConnect(v: Key): Unit = {
+  private def strongConnect[A](
+      v: Key,
+      appender: Appender[A],
+      executables: mutable.Buffer[A],
+      blockers: mutable.Set[Key]
+  ): Unit = {
     val number = metadatas.size
     metadatas(v) = VertexMetadata(
       number = number,
@@ -212,7 +288,7 @@ class TarjanDependencyGraph[
         return
       } else if (!metadatas.contains(w)) {
         // If we haven't explored our dependency yet, we recurse.
-        strongConnect(w)
+        strongConnect(w, appender, executables, blockers)
 
         // If our child is ineligible, we are ineligible. We return
         // immediately.
@@ -251,19 +327,22 @@ class TarjanDependencyGraph[
     // v is the root of its strongly connected component. The nodes in the
     // component are v and all nodes after v in the stack. This is all the
     // nodes in the range v.stackIndex to the end of the stack.
-    val component = stack.slice(metadatas(v).stackIndex, stack.size)
-    stack.remove(metadatas(v).stackIndex, stack.size - metadatas(v).stackIndex)
-
-    // Update metadata of nodes in component.
-    for (w <- component) {
-      metadatas(w) = metadatas(w).copy(stackIndex = -1)
-    }
-
-    // Sort the component and append to executables.
-    if (component.size == 1) {
-      executables += component
+    if (metadatas(v).stackIndex == stack.size - 1) {
+      val component = stack.last
+      stack.remove(stack.size - 1)
+      metadatas(component) = metadatas(component).copy(stackIndex = -1)
+      appender.appendOne(executables, component)
     } else {
-      executables += component.sortBy(k => (vertices(k).sequenceNumber, k))
+      val component = stack.slice(metadatas(v).stackIndex, stack.size)
+      stack.remove(metadatas(v).stackIndex,
+                   stack.size - metadatas(v).stackIndex)
+      for (w <- component) {
+        metadatas(w) = metadatas(w).copy(stackIndex = -1)
+      }
+      appender.appendMany(
+        executables,
+        component.sortBy(k => (vertices(k).sequenceNumber, k))
+      )
     }
   }
 
