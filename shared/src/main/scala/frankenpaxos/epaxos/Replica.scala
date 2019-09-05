@@ -61,7 +61,10 @@ case class ReplicaOptions(
     // within executeGraphTimerPeriod since the last time the graph was
     // executed, the graph is executed.
     executeGraphBatchSize: Int,
-    executeGraphTimerPeriod: java.time.Duration
+    executeGraphTimerPeriod: java.time.Duration,
+    // If true, the replica records how long various things take to do and
+    // reports them using the `epaxos_replica_requests_latency` metric.
+    measureLatencies: Boolean
 )
 
 @JSExportAll
@@ -76,7 +79,8 @@ object ReplicaOptions {
     recoverInstanceTimerMaxPeriod = java.time.Duration.ofMillis(1500),
     unsafeSkipGraphExecution = false,
     executeGraphBatchSize = 1,
-    executeGraphTimerPeriod = java.time.Duration.ofSeconds(1)
+    executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
+    measureLatencies = true
   )
 }
 
@@ -87,6 +91,13 @@ class ReplicaMetrics(collectors: Collectors) {
     .name("epaxos_replica_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
+    .register()
+
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("epaxos_replica_requests_latency")
+    .labelNames("type")
+    .help("Latency (in milliseconds) of a request.")
     .register()
 
   val executeGraphTotal: Counter = collectors.counter
@@ -230,41 +241,41 @@ object Replica {
       dependencies: Set[Instance]
   )
 
-// The core data structure of every EPaxos replica, the cmd log, records
-// information about every instance that a replica knows about. In the EPaxos
-// paper, the cmd log is visualized as an infinite two-dimensional array that
-// looks like this:
-//
-//      ... ... ...
-//     |___|___|___|
-//   2 |   |   |   |
-//     |___|___|___|
-//   1 |   |   |   |
-//     |___|___|___|
-//   0 |   |   |   |
-//     |___|___|___|
-//       Q   R   S
-//
-// The array is indexed on the left by an instance number and on the bottom
-// by a replica id. Thus, every cell is indexed by an instance (e.g. Q.1),
-// and every cell contains the state of the instance that indexes it.
-// `CmdLogEntry` represents the data within a cell, and `cmdLog` represents
-// the cmd log.
-//
-// Note that EPaxos has a small bug in how it implements ballots. The EPaxos
-// TLA+ specification and Go implementation have a single ballot per command
-// log entry. As detailed in [1], this is a bug. We need two ballots, like
-// what is done in normal Paxos. Note that we haven't proven this two-ballot
-// implementation is correct, so it may also be wrong.
-//
-// [1]: https://drive.google.com/open?id=1dQ_cigMWJ7w9KAJeSYcH3cZoFpbraWxm
+  // The core data structure of every EPaxos replica, the cmd log, records
+  // information about every instance that a replica knows about. In the EPaxos
+  // paper, the cmd log is visualized as an infinite two-dimensional array that
+  // looks like this:
+  //
+  //      ... ... ...
+  //     |___|___|___|
+  //   2 |   |   |   |
+  //     |___|___|___|
+  //   1 |   |   |   |
+  //     |___|___|___|
+  //   0 |   |   |   |
+  //     |___|___|___|
+  //       Q   R   S
+  //
+  // The array is indexed on the left by an instance number and on the bottom
+  // by a replica id. Thus, every cell is indexed by an instance (e.g. Q.1),
+  // and every cell contains the state of the instance that indexes it.
+  // `CmdLogEntry` represents the data within a cell, and `cmdLog` represents
+  // the cmd log.
+  //
+  // Note that EPaxos has a small bug in how it implements ballots. The EPaxos
+  // TLA+ specification and Go implementation have a single ballot per command
+  // log entry. As detailed in [1], this is a bug. We need two ballots, like
+  // what is done in normal Paxos. Note that we haven't proven this two-ballot
+  // implementation is correct, so it may also be wrong.
+  //
+  // [1]: https://drive.google.com/open?id=1dQ_cigMWJ7w9KAJeSYcH3cZoFpbraWxm
   @JSExportAll
   sealed trait CmdLogEntry
 
-// A NoCommandEntry represents a command entry for which a replica has not
-// yet received any command (i.e., hasn't yet received a PreAccept, Accept,
-// or Commit). This is possible, for example, when a replica receives a
-// Prepare for an instance it has previously not received any messages about.
+  // A NoCommandEntry represents a command entry for which a replica has not
+  // yet received any command (i.e., hasn't yet received a PreAccept, Accept,
+  // or Commit). This is possible, for example, when a replica receives a
+  // Prepare for an instance it has previously not received any messages about.
   @JSExportAll
   case class NoCommandEntry(
       // ballot plays the role of a Paxos acceptor's ballot. voteBallot is absent
@@ -477,6 +488,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   protected val recoverInstanceTimers = mutable.Map[Instance, Transport#Timer]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    if (options.measureLatencies) {
+      val startNanos = System.nanoTime
+      val x = e
+      val stopNanos = System.nanoTime
+      metrics.requestsLatency
+        .labels(label)
+        .observe((stopNanos - startNanos).toDouble / 1000000)
+      x
+    } else {
+      e
+    }
+  }
+
   private def leaderBallot(leaderState: LeaderState): Ballot = {
     leaderState match {
       case state: PreAccepting => state.ballot
@@ -786,14 +811,16 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     if (options.unsafeSkipGraphExecution) {
       executeCommand(instance, triple.commandOrNoop)
     } else {
-      dependencyGraph.commit(
-        instance,
-        triple.sequenceNumber,
-        new FakeCompactSet[Instance](triple.dependencies)
-      )
+      timed("commit/dependencyGraph.commit") {
+        dependencyGraph.commit(
+          instance,
+          triple.sequenceNumber,
+          new FakeCompactSet[Instance](triple.dependencies)
+        )
+      }
       numPendingCommittedCommands += 1
       if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
-        execute()
+        timed("commit/execute") { execute() }
         numPendingCommittedCommands = 0
         executeGraphTimer.foreach(_.reset())
       }
@@ -803,7 +830,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private def execute(): Unit = {
     // TODO(mwhittaker): Pass numBlockers in as option.
     // TODO(mwhittaker): Do something with blockers.
-    val (executable, blockers) = dependencyGraph.execute(numBlockers = None)
+    val (executable, blockers) = timed("execute/dependencyGraph.execute") {
+      dependencyGraph.execute(numBlockers = None)
+    }
     metrics.executeGraphTotal.inc()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
@@ -817,7 +846,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           )
 
         case Some(CommittedEntry(triple)) =>
-          executeCommand(i, triple.commandOrNoop)
+          timed("execute/executeCommand") {
+            executeCommand(i, triple.commandOrNoop)
+          }
       }
     }
   }
@@ -989,18 +1020,37 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       inbound: ReplicaInbound
   ): Unit = {
     import ReplicaInbound.Request
-    inbound.request match {
-      case Request.ClientRequest(r) => handleClientRequest(src, r)
-      case Request.PreAccept(r)     => handlePreAccept(src, r)
-      case Request.PreAcceptOk(r)   => handlePreAcceptOk(src, r)
-      case Request.Accept(r)        => handleAccept(src, r)
-      case Request.AcceptOk(r)      => handleAcceptOk(src, r)
-      case Request.Commit(r)        => handleCommit(src, r)
-      case Request.Nack(r)          => handleNack(src, r)
-      case Request.Prepare(r)       => handlePrepare(src, r)
-      case Request.PrepareOk(r)     => handlePrepareOk(src, r)
+
+    val label = inbound.request match {
+      case Request.ClientRequest(_) => "ClientRequest"
+      case Request.PreAccept(_)     => "PreAccept"
+      case Request.PreAcceptOk(_)   => "PreAcceptOk"
+      case Request.Accept(_)        => "Accept"
+      case Request.AcceptOk(_)      => "AcceptOk"
+      case Request.Commit(_)        => "Commit"
+      case Request.Nack(_)          => "Nack"
+      case Request.Prepare(_)       => "Prepare"
+      case Request.PrepareOk(_)     => "PrepareOk"
       case Request.Empty => {
         logger.fatal("Empty ReplicaInbound encountered.")
+      }
+    }
+    metrics.requestsTotal.labels(label).inc()
+
+    timed(label) {
+      inbound.request match {
+        case Request.ClientRequest(r) => handleClientRequest(src, r)
+        case Request.PreAccept(r)     => handlePreAccept(src, r)
+        case Request.PreAcceptOk(r)   => handlePreAcceptOk(src, r)
+        case Request.Accept(r)        => handleAccept(src, r)
+        case Request.AcceptOk(r)      => handleAcceptOk(src, r)
+        case Request.Commit(r)        => handleCommit(src, r)
+        case Request.Nack(r)          => handleNack(src, r)
+        case Request.Prepare(r)       => handlePrepare(src, r)
+        case Request.PrepareOk(r)     => handlePrepareOk(src, r)
+        case Request.Empty => {
+          logger.fatal("Empty ReplicaInbound encountered.")
+        }
       }
     }
   }
@@ -1009,8 +1059,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       request: ClientRequest
   ): Unit = {
-    metrics.requestsTotal.labels("ClientRequest").inc()
-
     // If we already have a response to this request in the client table, we
     // simply return it.
     val clientIdentity = (src, request.command.clientPseudonym)
@@ -1049,8 +1097,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       preAccept: PreAccept
   ): Unit = {
-    metrics.requestsTotal.labels("PreAccept").inc()
-
     // Make sure we should be processing this message at all. For example,
     // sometimes we nack it, sometimes we ignore it, sometimes we re-send
     // replies that we previously sent because of it.
@@ -1183,8 +1229,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       preAcceptOk: PreAcceptOk
   ): Unit = {
-    metrics.requestsTotal.labels("PreAcceptOk").inc()
-
     leaderStates.get(preAcceptOk.instance) match {
       case None =>
         logger.debug(
@@ -1272,12 +1316,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           // We extract all (seq, deps) pairs in the PreAcceptOks, excluding our
           // own. If any appears n-2 times or more, we're good to take the fast
           // path.
-          val seqDeps: Seq[(Int, Set[Instance])] = responses
-            .filterKeys(_ != index)
-            .values
-            .to[Seq]
-            .map(p => (p.sequenceNumber, p.dependencies.toSet))
-          val candidates = Util.popularItems(seqDeps, config.fastQuorumSize - 1)
+          val seqDeps: Seq[(Int, Set[Instance])] =
+            timed("handlePreAcceptOk/collect respones") {
+              responses
+                .filterKeys(_ != index)
+                .values
+                .to[Seq]
+                .map(p => (p.sequenceNumber, p.dependencies.toSet))
+            }
+          val candidates = timed("handlePreAcceptOk/popularItems") {
+            Util.popularItems(seqDeps, config.fastQuorumSize - 1)
+          }
 
           // If we have N-2 matching responses, then we can take the fast path
           // and transition directly into the commit phase. If we don't have
@@ -1285,11 +1334,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           if (candidates.size > 0) {
             logger.checkEq(candidates.size, 1)
             val (sequenceNumber, dependencies) = candidates.head
-            commit(
-              preAcceptOk.instance,
-              CommandTriple(commandOrNoop, sequenceNumber, dependencies),
-              informOthers = true
-            )
+            timed("handlePreAcceptOk/commit") {
+              commit(
+                preAcceptOk.instance,
+                CommandTriple(commandOrNoop, sequenceNumber, dependencies),
+                informOthers = true
+              )
+            }
           } else {
             // There were not enough matching (seq, deps) pairs. We have to
             // resort to the slow path.
@@ -1301,8 +1352,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleAccept(src: Transport#Address, accept: Accept): Unit = {
-    metrics.requestsTotal.labels("Accept").inc()
-
     // Make sure we should be processing this message at all.
     val replica = chan[Replica[Transport]](src, Replica.serializer)
     val nack = ReplicaInbound().withNack(Nack(accept.instance, largestBallot))
@@ -1397,8 +1446,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       acceptOk: AcceptOk
   ): Unit = {
-    metrics.requestsTotal.labels("AcceptOk").inc()
-
     leaderStates.get(acceptOk.instance) match {
       case None =>
         logger.debug(
@@ -1449,8 +1496,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleCommit(src: Transport#Address, c: Commit): Unit = {
-    metrics.requestsTotal.labels("Commit").inc()
-
     commit(
       c.instance,
       CommandTriple(c.commandOrNoop, c.sequenceNumber, c.dependencies.toSet),
@@ -1459,8 +1504,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleNack(src: Transport#Address, nack: Nack): Unit = {
-    metrics.requestsTotal.labels("Nack").inc()
-
     // TODO(mwhittaker): Check that the nack is not out of date.
 
     // If we get a Nack, it's possible there's another replica trying to
@@ -1481,8 +1524,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       prepare: Prepare
   ): Unit = {
-    metrics.requestsTotal.labels("Prepare").inc()
-
     // Update largestBallot.
     largestBallot = BallotHelpers.max(largestBallot, prepare.ballot)
 
@@ -1610,8 +1651,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       prepareOk: PrepareOk
   ): Unit = {
-    metrics.requestsTotal.labels("PrepareOk").inc()
-
     leaderStates.get(prepareOk.instance) match {
       case None =>
         logger.debug(

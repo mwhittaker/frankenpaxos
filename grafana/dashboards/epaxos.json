@@ -15,6 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
+  "iteration": 1567648405216,
   "links": [],
   "panels": [
     {
@@ -33,6 +34,188 @@
         "y": 0
       },
       "id": 2,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "$function($metric{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Misc",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 10,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(epaxos_replica_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(epaxos_replica_requests_latency_count{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} ({{instance}})",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Latency",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 11,
       "legend": {
         "alignAsTable": false,
         "avg": false,
@@ -133,7 +316,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 21
       },
       "id": 6,
       "legend": {
@@ -247,7 +430,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 28
       },
       "id": 4,
       "legend": {
@@ -300,6 +483,13 @@
           "intervalFactor": 1,
           "legendFormat": "Chosen Commands ({{instance}})",
           "refId": "D"
+        },
+        {
+          "expr": "rate(epaxos_replica_execute_graph_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Graph Executed ({{instance}})",
+          "refId": "E"
         }
       ],
       "thresholds": [],
@@ -354,7 +544,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 36
       },
       "id": 5,
       "legend": {
@@ -440,7 +630,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 43
       },
       "id": 7,
       "legend": {
@@ -547,7 +737,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 51
       },
       "id": 8,
       "legend": {
@@ -633,7 +823,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 45
+        "y": 59
       },
       "id": 9,
       "legend": {
@@ -721,11 +911,385 @@
   "style": "dark",
   "tags": [],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "allValue": null,
+        "current": {
+          "tags": [],
+          "text": "jvm_memory_bytes_max",
+          "value": "jvm_memory_bytes_max"
+        },
+        "datasource": "Prometheus",
+        "definition": "metrics(.*)",
+        "hide": 0,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "metric",
+        "options": [
+          {
+            "selected": false,
+            "text": "epaxos_client_repropose_total",
+            "value": "epaxos_client_repropose_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_client_requests_total",
+            "value": "epaxos_client_requests_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_client_responses_total",
+            "value": "epaxos_client_responses_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_client_unpending_responses_total",
+            "value": "epaxos_client_unpending_responses_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_committed_commands_total",
+            "value": "epaxos_replica_committed_commands_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_default_to_slow_path_total",
+            "value": "epaxos_replica_default_to_slow_path_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_dependencies_count",
+            "value": "epaxos_replica_dependencies_count"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_dependencies_sum",
+            "value": "epaxos_replica_dependencies_sum"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_dependency_graph_num_vertices",
+            "value": "epaxos_replica_dependency_graph_num_vertices"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_execute_graph_timer_total",
+            "value": "epaxos_replica_execute_graph_timer_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_execute_graph_total",
+            "value": "epaxos_replica_execute_graph_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_executed_commands_total",
+            "value": "epaxos_replica_executed_commands_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_executed_noops_total",
+            "value": "epaxos_replica_executed_noops_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_repeated_commands_total",
+            "value": "epaxos_replica_repeated_commands_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_requests_latency_count",
+            "value": "epaxos_replica_requests_latency_count"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_requests_latency_sum",
+            "value": "epaxos_replica_requests_latency_sum"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_requests_total",
+            "value": "epaxos_replica_requests_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_resend_accepts_total",
+            "value": "epaxos_replica_resend_accepts_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_resend_pre_accepts_total",
+            "value": "epaxos_replica_resend_pre_accepts_total"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica_resend_prepares_total",
+            "value": "epaxos_replica_resend_prepares_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_buffer_pool_capacity_bytes",
+            "value": "jvm_buffer_pool_capacity_bytes"
+          },
+          {
+            "selected": false,
+            "text": "jvm_buffer_pool_used_buffers",
+            "value": "jvm_buffer_pool_used_buffers"
+          },
+          {
+            "selected": false,
+            "text": "jvm_buffer_pool_used_bytes",
+            "value": "jvm_buffer_pool_used_bytes"
+          },
+          {
+            "selected": false,
+            "text": "jvm_classes_loaded",
+            "value": "jvm_classes_loaded"
+          },
+          {
+            "selected": false,
+            "text": "jvm_classes_loaded_total",
+            "value": "jvm_classes_loaded_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_classes_unloaded_total",
+            "value": "jvm_classes_unloaded_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_gc_collection_seconds_count",
+            "value": "jvm_gc_collection_seconds_count"
+          },
+          {
+            "selected": false,
+            "text": "jvm_gc_collection_seconds_sum",
+            "value": "jvm_gc_collection_seconds_sum"
+          },
+          {
+            "selected": false,
+            "text": "jvm_info",
+            "value": "jvm_info"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_committed",
+            "value": "jvm_memory_bytes_committed"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_init",
+            "value": "jvm_memory_bytes_init"
+          },
+          {
+            "selected": true,
+            "text": "jvm_memory_bytes_max",
+            "value": "jvm_memory_bytes_max"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_used",
+            "value": "jvm_memory_bytes_used"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_allocated_bytes_total",
+            "value": "jvm_memory_pool_allocated_bytes_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_committed",
+            "value": "jvm_memory_pool_bytes_committed"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_init",
+            "value": "jvm_memory_pool_bytes_init"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_max",
+            "value": "jvm_memory_pool_bytes_max"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_used",
+            "value": "jvm_memory_pool_bytes_used"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_current",
+            "value": "jvm_threads_current"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_daemon",
+            "value": "jvm_threads_daemon"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_deadlocked",
+            "value": "jvm_threads_deadlocked"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_deadlocked_monitor",
+            "value": "jvm_threads_deadlocked_monitor"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_peak",
+            "value": "jvm_threads_peak"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_started_total",
+            "value": "jvm_threads_started_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_state",
+            "value": "jvm_threads_state"
+          },
+          {
+            "selected": false,
+            "text": "process_cpu_seconds_total",
+            "value": "process_cpu_seconds_total"
+          },
+          {
+            "selected": false,
+            "text": "process_max_fds",
+            "value": "process_max_fds"
+          },
+          {
+            "selected": false,
+            "text": "process_open_fds",
+            "value": "process_open_fds"
+          },
+          {
+            "selected": false,
+            "text": "process_resident_memory_bytes",
+            "value": "process_resident_memory_bytes"
+          },
+          {
+            "selected": false,
+            "text": "process_start_time_seconds",
+            "value": "process_start_time_seconds"
+          },
+          {
+            "selected": false,
+            "text": "process_virtual_memory_bytes",
+            "value": "process_virtual_memory_bytes"
+          },
+          {
+            "selected": false,
+            "text": "scrape_duration_seconds",
+            "value": "scrape_duration_seconds"
+          },
+          {
+            "selected": false,
+            "text": "scrape_samples_post_metric_relabeling",
+            "value": "scrape_samples_post_metric_relabeling"
+          },
+          {
+            "selected": false,
+            "text": "scrape_samples_scraped",
+            "value": "scrape_samples_scraped"
+          },
+          {
+            "selected": false,
+            "text": "up",
+            "value": "up"
+          }
+        ],
+        "query": "metrics(.*)",
+        "refresh": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "tags": [],
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": "Prometheus",
+        "definition": "label_values(job)",
+        "hide": 0,
+        "includeAll": true,
+        "label": null,
+        "multi": true,
+        "name": "job",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_client",
+            "value": "epaxos_client"
+          },
+          {
+            "selected": false,
+            "text": "epaxos_replica",
+            "value": "epaxos_replica"
+          }
+        ],
+        "query": "label_values(job)",
+        "refresh": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "text": "rate",
+          "value": "rate"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "function",
+        "options": [
+          {
+            "selected": true,
+            "text": "rate",
+            "value": "rate"
+          },
+          {
+            "selected": false,
+            "text": "avg_over_time",
+            "value": "avg_over_time"
+          }
+        ],
+        "query": "rate, avg_over_time",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
   },
   "time": {
-    "from": "2019-07-16T21:36:41.351Z",
-    "to": "2019-07-16T21:37:12.538Z"
+    "from": "2019-09-05T01:44:51.141Z",
+    "to": "2019-09-05T01:45:57.746Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -755,5 +1319,5 @@
   "timezone": "",
   "title": "EPaxos",
   "uid": "vC5R8YnZz",
-  "version": 3
+  "version": 1
 }

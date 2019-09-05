@@ -25,7 +25,7 @@ class FakeCompactSet[A](initialValues: Set[A] = Set[A]())
   override def diff(other: FakeCompactSet[A]): FakeCompactSet[A] =
     new FakeCompactSet[A](values.diff(other.values).toSet)
   override def materializedDiff(other: FakeCompactSet[A]): Iterable[A] =
-    values.diff(other.values)
+    values.view.filter(!other.values.contains(_))
   override def addAll(other: FakeCompactSet[A]): this.type = {
     values ++= other.values
     this
