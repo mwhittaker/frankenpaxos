@@ -887,7 +887,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           while (log.contains(chosenWatermark)) {
             chosenWatermark += 1
           }
-          executors.foreach(_.send(ExecutorInbound().withValueChosen(toValueChosen(phase2b.slot, entry))))
+          //executors.foreach(_.send(ExecutorInbound().withValueChosen(toValueChosen(phase2b.slot, entry))))
 
           valueChosenBuffer += toValueChosen(phase2b.slot, entry)
           if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
