@@ -29,7 +29,7 @@ case class ClientOptions(
 @JSExportAll
 object ClientOptions {
   val default = ClientOptions(
-    reproposePeriod = java.time.Duration.ofSeconds(10)
+    reproposePeriod = java.time.Duration.ofSeconds(20)
   )
 }
 

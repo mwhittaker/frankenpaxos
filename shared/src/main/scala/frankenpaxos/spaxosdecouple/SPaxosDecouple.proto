@@ -274,3 +274,13 @@ message ClientInbound {
     ClientReply client_reply = 1;
   }
 }
+
+message FakeLeaderInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Phase2aBuffer phase2a_buffer = 1;
+    Phase2bBuffer phase2b_buffer = 2;
+  }
+}
