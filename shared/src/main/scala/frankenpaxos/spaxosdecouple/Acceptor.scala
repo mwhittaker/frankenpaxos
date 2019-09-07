@@ -199,9 +199,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         options.waitStagger == java.time.Duration.ofSeconds(0)) {
       processProposeRequest(src, proposal) match {
         case Some(phase2b) =>
-          val leader = leaders(config.roundSystem.leader(round))
-          leader.send(
-            LeaderInbound().withPhase2BBuffer(Phase2bBuffer(Seq(phase2b)))
+          val fakeLeader = chan[FakeLeader[Transport]](src, FakeLeader.serializer)
+          fakeLeader.send(
+            FakeLeaderInbound().withPhase2BBuffer(Phase2bBuffer(Seq(phase2b)))
           )
 
         case None =>
@@ -263,8 +263,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // TODO(mwhittaker): Add phase 2 nack.
     metrics.requestsTotal.labels("Phase2aBuffer").inc()
     val buffer = Phase2bBuffer(phase2aBuffer.phase2A.flatMap(processPhase2a))
-    val leader = leaders(config.roundSystem.leader(round))
-    leader.send(LeaderInbound().withPhase2BBuffer(buffer))
+    val fakeLeader = chan[FakeLeader[Transport]](src, FakeLeader.serializer)
+    fakeLeader.send(FakeLeaderInbound().withPhase2BBuffer(buffer))
   }
 
   // Methods ///////////////////////////////////////////////////////////////////
@@ -286,8 +286,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
           processProposeRequest(src, proposeRequest)
       })
     if (phase2bs.size > 0) {
-      val leader = leaders(config.roundSystem.leader(round))
-      leader.send(LeaderInbound().withPhase2BBuffer(Phase2bBuffer(phase2bs)))
+      val fakeLeader = chan[FakeLeader[Transport]](bufferedProposeRequests.head._2, FakeLeader.serializer)
+      fakeLeader.send(FakeLeaderInbound().withPhase2BBuffer(Phase2bBuffer(phase2bs)))
     }
   }
 
