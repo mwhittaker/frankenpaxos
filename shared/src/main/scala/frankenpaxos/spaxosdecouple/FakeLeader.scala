@@ -19,6 +19,7 @@ import frankenpaxos.roundsystem.FastRound
 import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.thrifty.ThriftySystem
+
 import scala.collection.breakOut
 import scala.scalajs.js.annotation._
 
@@ -31,13 +32,33 @@ object FakeLeaderInboundSerializer extends ProtoSerializer[FakeLeaderInbound] {
 }
 
 @JSExportAll
-case class FakeLeaderOptions(valueChosenMaxBufferSize: Int, thriftySystem: ThriftySystem, heartbeatOptions: HeartbeatOptions) {}
+case class FakeLeaderOptions(
+                          thriftySystem: ThriftySystem,
+                          resendPhase1asTimerPeriod: java.time.Duration,
+                          resendPhase2asTimerPeriod: java.time.Duration,
+                          // The leader buffers phase 2a messages. This buffer can grow to at most
+                          // size `phase2aMaxBufferSize`. If the buffer does not fill up, then it is
+                          // flushed after `phase2aBufferFlushPeriod`.
+                          phase2aMaxBufferSize: Int,
+                          phase2aBufferFlushPeriod: java.time.Duration,
+                          // As with phase 2a messages, leaders buffer value chosen messages.
+                          valueChosenMaxBufferSize: Int,
+                          valueChosenBufferFlushPeriod: java.time.Duration,
+                          leaderElectionOptions: LeaderElectionOptions,
+                          heartbeatOptions: HeartbeatOptions
+                        )
 
 @JSExportAll
 object FakeLeaderOptions {
-  val default = FakeLeaderOptions(
-    valueChosenMaxBufferSize = 100,
+  val default = LeaderOptions(
     thriftySystem = ThriftySystem.Closest,
+    resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(5),
+    resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
+    phase2aMaxBufferSize = 25,
+    phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
+    valueChosenMaxBufferSize = 100,
+    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5),
+    leaderElectionOptions = LeaderElectionOptions.default,
     heartbeatOptions = HeartbeatOptions.default
   )
 }
@@ -139,24 +160,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   sealed trait State
 
-  // This leader is not the active leader.
-  @JSExportAll
-  case object Inactive extends State
-
-  // This leader is executing phase 1.
-  @JSExportAll
-  case class Phase1(
-                     // Phase 1b responses.
-                     phase1bs: mutable.Map[AcceptorId, Phase1b],
-                     // Pending proposals. When a leader receives a proposal during phase 1,
-                     // it buffers the proposal and replays it once it enters phase 2.
-                     pendingProposals: mutable.Set[(Transport#Address, Proposal)],
-                     // A timer to resend phase 1as.
-                     resendPhase1as: Transport#Timer
-                   ) extends State
-
-
-  // This leader has finished executing phase 1 and is now executing phase 2.
+  // This fake leader is now executing phase 2.
   @JSExportAll
   case class Phase2(
                      // In a classic round, leaders receive commands from clients and relay
@@ -182,7 +186,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
 
 
   @JSExport
-  protected var state: State = Phase2()
+  protected var state: State = Phase2(mutable.SortedMap[Slot, Entry](), mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]](), resendPhas)
 
   // In a classic round, leaders receive commands from clients and relay
   // them on to acceptors. pendingEntries stores these commands that are
@@ -299,7 +303,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
     // Wait for sufficiently many phase2b replies.
     phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
     phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
-    phase2bChosenInSlot(phase2, phase2b.slot) match {
+    phase2bChosenInSlot(, phase2b.slot) match {
       case NothingReadyYet =>
       // Don't do anything.
 
@@ -368,6 +372,91 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   case class ClassicReady(entry: Entry) extends Phase2bVoteResult
   case class FastReady(entry: Entry) extends Phase2bVoteResult
   case object FastStuck extends Phase2bVoteResult
+
+  def resendPhase2as(): Unit = {
+    state match {
+      case Inactive | Phase1(_, _, _) =>
+        leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
+
+      case Phase2(pendingEntries, phase2bs, _, phase2aBuffer, _, _, _) =>
+        // It's important that no slot goes forever unchosen. This prevents
+        // later slots from executing. Thus, we try and and choose a complete
+        // prefix of the log.
+        val endSlot: Int = math.max(
+          phase2bs.keys.lastOption.getOrElse(-1),
+          log.keys.lastOption.getOrElse(-1)
+        )
+
+        for (slot <- phase2bs.keys) {
+          val entryToPhase2a: Entry => Phase2a = {
+            case ECommand(command) =>
+              Phase2a(slot = slot, round = round).withUniqueId(command)
+            case ENoop =>
+              Phase2a(slot = slot, round = round).withNoop(Noop())
+          }
+
+          (pendingEntries.get(slot), phase2bs.get(slot)) match {
+            case (Some(entry), _) =>
+              // If we have some pending entry, then we propose that.
+              phase2aBuffer.append(entryToPhase2a(entry))
+
+            case (None, Some(phase2bsInSlot)) =>
+              // If there is no pending entry, then we propose the value with
+              // the most votes so far. If no value has been voted, then we
+              // just propose Noop.
+              val voteValues = phase2bsInSlot.values.map(_.vote)
+              val histogram = Util.histogram(voteValues)
+              if (voteValues.size == 0) {
+                phase2aBuffer += entryToPhase2a(ENoop)
+              } else {
+                val mostVoted = histogram.maxBy(_._2)._1
+                phase2aBuffer += entryToPhase2a(phase2bVoteToEntry(mostVoted))
+              }
+
+            case (None, None) =>
+              // If there is no pending entry and no votes, we propose Noop.
+              phase2aBuffer += entryToPhase2a(ENoop)
+          }
+        }
+
+        /*for (slot <- chosenWatermark to endSlot) {
+          val entryToPhase2a: Entry => Phase2a = {
+            case ECommand(command) =>
+              Phase2a(slot = slot, round = round).withUniqueId(command)
+            case ENoop =>
+              Phase2a(slot = slot, round = round).withNoop(Noop())
+          }
+
+          (log.contains(slot), pendingEntries.get(slot), phase2bs.get(slot)) match {
+            case (true, _, _) =>
+            // If `slot` is chosen, we don't resend anything.
+
+            case (false, Some(entry), _) =>
+              // If we have some pending entry, then we propose that.
+              phase2aBuffer.append(entryToPhase2a(entry))
+
+            case (false, None, Some(phase2bsInSlot)) =>
+              // If there is no pending entry, then we propose the value with
+              // the most votes so far. If no value has been voted, then we
+              // just propose Noop.
+              val voteValues = phase2bsInSlot.values.map(_.vote)
+              val histogram = Util.histogram(voteValues)
+              if (voteValues.size == 0) {
+                phase2aBuffer += entryToPhase2a(ENoop)
+              } else {
+                val mostVoted = histogram.maxBy(_._2)._1
+                phase2aBuffer += entryToPhase2a(phase2bVoteToEntry(mostVoted))
+              }
+
+            case (false, None, None) =>
+              // If there is no pending entry and no votes, we propose Noop.
+              phase2aBuffer += entryToPhase2a(ENoop)
+          }
+        }*/
+
+        flushPhase2aBuffer(thrifty = false)
+    }
+  }
 
   // TODO(mwhittaker): Document.
   private def phase2bChosenInSlot(

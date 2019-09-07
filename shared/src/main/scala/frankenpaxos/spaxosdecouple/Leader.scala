@@ -208,6 +208,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     for (a <- config.executorAddresses)
       yield chan[Executor[Transport]](a, Executor.serializer)
 
+  // Channels to fake leaders
+  private val fakeLeaders: Seq[Chan[FakeLeader[Transport]]] =
+    for (a <- config.fakeLeaderAddresses)
+      yield chan[FakeLeader[Transport]](a, FakeLeader.serializer)
+
   // Channels to all the acceptors.
   private val acceptorsByAddress
   : Map[Transport#Address, Chan[Acceptor[Transport]]] = {
@@ -353,7 +358,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     "resendPhase2as",
     options.resendPhase2asTimerPeriod,
     () => {
-      resendPhase2as()
+      //resendPhase2as()
       resendPhase2asTimer.start()
       metrics.resendPhase2asTotal.inc()
     }
@@ -372,7 +377,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     "valueChosenBufferFlush",
     options.valueChosenBufferFlushPeriod,
     () => {
-      flushValueChosenBuffer()
+      //flushValueChosenBuffer()
       metrics.valueChosenBufferFlushTotal.inc()
     }
   )
@@ -422,7 +427,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Proposal(r)    => handleProposal(src, r)
       case Request.Phase1B(r)           => handlePhase1b(src, r)
       case Request.Phase1BNack(r)       => handlePhase1bNack(src, r)
-      case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
+      //case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
       case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
       case Request.Empty =>
         leaderLogger.fatal("Empty LeaderInbound encountered.")
@@ -703,7 +708,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def handlePhase2bBuffer(
+  /*private def handlePhase2bBuffer(
                                    src: Transport#Address,
                                    phase2bBuffer: Phase2bBuffer
                                  ): Unit = {
@@ -711,7 +716,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     for (phase2b <- phase2bBuffer.phase2B) {
       processPhase2b(src, phase2b)
     }
-  }
+  }*/
 
   private def handleValueChosenBuffer(
                                        src: Transport#Address,
@@ -850,7 +855,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         .to[Set])
   }
 
-  private def processPhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
+  /*private def processPhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
     def toValueChosen(slot: Slot, entry: Entry): ValueChosen = {
       entry match {
         case ECommand(command) =>
@@ -1010,7 +1015,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         NothingReadyYet
     }
-  }
+  }*/
 
   def flushPhase2aBuffer(thrifty: Boolean): Unit = {
     state match {
@@ -1022,13 +1027,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case Phase2(_, _, _, phase2aBuffer, phase2aBufferFlushTimer, _, _) =>
         if (phase2aBuffer.size > 0) {
-          val msg =
+          /*val msg =
             AcceptorInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
           if (thrifty) {
             thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
           } else {
             acceptors.foreach(_.send(msg))
-          }
+          }*/
+          val r = scala.util.Random
+          val rand = r.nextInt(fakeLeaders.size)
+          fakeLeaders(rand).send(FakeLeaderInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer)))
           phase2aBuffer.clear()
           phase2aBufferFlushTimer.reset()
         } else {
@@ -1037,7 +1045,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  def flushValueChosenBuffer(): Unit = {
+  /*def flushValueChosenBuffer(): Unit = {
     state match {
       case Inactive =>
         logger.fatal("Flushing valueChosenBuffer while inactive.")
@@ -1059,9 +1067,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           bufferFlushTimer.reset()
         }
     }
-  }
+  }*/
 
-  def resendPhase2as(): Unit = {
+  /*def resendPhase2as(): Unit = {
     state match {
       case Inactive | Phase1(_, _, _) =>
         leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
@@ -1112,7 +1120,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         flushPhase2aBuffer(thrifty = false)
     }
-  }
+  }*/
 
   // Switch over to a new leader. If the new leader is ourselves, then we
   // increase our round and enter a new round larger than `higherThanRound`.
