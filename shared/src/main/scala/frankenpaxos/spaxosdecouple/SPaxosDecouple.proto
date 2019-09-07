@@ -245,7 +245,6 @@ message LeaderInbound {
     Proposal proposal = 1;
     Phase1b phase1b = 2;
     Phase1bNack phase1b_nack = 3;
-    Phase2bBuffer phase2b_buffer = 4;
     ValueChosenBuffer value_chosen_buffer = 5;
   }
 }

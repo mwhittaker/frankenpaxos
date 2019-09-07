@@ -372,7 +372,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
               }
 
               if (phase2a.value.isNoop) {
-                pendingEntries(phase2a.slot) = ENoop()
+                pendingEntries(phase2a.slot) = ENoop
               }
               phase2bs(phase2a.slot) = mutable.Map()
             }
@@ -526,9 +526,6 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
       .map(acceptorsByAddress(_))
   }
 
-
-
-
   private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {
     phase2bVote match {
       case Phase2b.Vote.UniqueId(command) => ECommand(command)
@@ -547,18 +544,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
 
   def resendPhase2as(): Unit = {
     state match {
-      case Inactive | Phase1(_, _, _) =>
-        leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
-
       case Phase2(pendingEntries, phase2bs, _, phase2aBuffer, _, _, _) =>
-        // It's important that no slot goes forever unchosen. This prevents
-        // later slots from executing. Thus, we try and and choose a complete
-        // prefix of the log.
-        val endSlot: Int = math.max(
-          phase2bs.keys.lastOption.getOrElse(-1),
-          log.keys.lastOption.getOrElse(-1)
-        )
-
         for (slot <- phase2bs.keys) {
           val entryToPhase2a: Entry => Phase2a = {
             case ECommand(command) =>
@@ -590,42 +576,6 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
               phase2aBuffer += entryToPhase2a(ENoop)
           }
         }
-
-        /*for (slot <- chosenWatermark to endSlot) {
-          val entryToPhase2a: Entry => Phase2a = {
-            case ECommand(command) =>
-              Phase2a(slot = slot, round = round).withUniqueId(command)
-            case ENoop =>
-              Phase2a(slot = slot, round = round).withNoop(Noop())
-          }
-
-          (log.contains(slot), pendingEntries.get(slot), phase2bs.get(slot)) match {
-            case (true, _, _) =>
-            // If `slot` is chosen, we don't resend anything.
-
-            case (false, Some(entry), _) =>
-              // If we have some pending entry, then we propose that.
-              phase2aBuffer.append(entryToPhase2a(entry))
-
-            case (false, None, Some(phase2bsInSlot)) =>
-              // If there is no pending entry, then we propose the value with
-              // the most votes so far. If no value has been voted, then we
-              // just propose Noop.
-              val voteValues = phase2bsInSlot.values.map(_.vote)
-              val histogram = Util.histogram(voteValues)
-              if (voteValues.size == 0) {
-                phase2aBuffer += entryToPhase2a(ENoop)
-              } else {
-                val mostVoted = histogram.maxBy(_._2)._1
-                phase2aBuffer += entryToPhase2a(phase2bVoteToEntry(mostVoted))
-              }
-
-            case (false, None, None) =>
-              // If there is no pending entry and no votes, we propose Noop.
-              phase2aBuffer += entryToPhase2a(ENoop)
-          }
-        }*/
-
         flushPhase2aBuffer(thrifty = false)
     }
   }
