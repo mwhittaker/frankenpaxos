@@ -50,7 +50,7 @@ case class FakeLeaderOptions(
 
 @JSExportAll
 object FakeLeaderOptions {
-  val default = LeaderOptions(
+  val default = FakeLeaderOptions(
     thriftySystem = ThriftySystem.Closest,
     resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(5),
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
@@ -65,6 +65,101 @@ object FakeLeaderOptions {
 
 @JSExportAll
 class FakeLeaderMetrics(collectors: Collectors) {
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val executedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_executed_commands_total")
+    .help("Total number of executed state machine commands.")
+    .register()
+
+  val executedNoopsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_executed_noops_total")
+    .help("Total number of \"executed\" noops.")
+    .register()
+
+  val repeatedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_repeated_commands_total")
+    .help("Total number of commands that were redundantly chosen.")
+    .register()
+
+  val chosenCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_chosen_commands_total")
+    .labelNames("type") // "fast" or "classic".
+    .help(
+    "Total number of commands that were chosen (with potential duplicates)."
+  )
+    .register()
+
+  val leaderChangesTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_leader_changes_total")
+    .help("Total number of leader changes.")
+    .register()
+
+  val stuckTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_stuck_total")
+    .help("Total number of times the leader got stuck in phase 2.")
+    .register()
+
+  val chosenWatermark: Gauge = collectors.gauge
+    .build()
+    .name("fast_multipaxos_leader_chosen_watermark")
+    .help("The index at which all smaller log entries have been chosen.")
+    .register()
+
+  val nextSlot: Gauge = collectors.gauge
+    .build()
+    .name("fast_multipaxos_leader_next_slot")
+    .help("The next free slot in the log.")
+    .register()
+
+  val resendPhase1asTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_resend_phase1as_total")
+    .help("Total number of times the leader resent phase 1a messages.")
+    .register()
+
+  val resendPhase2asTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_resend_phase2as_total")
+    .help("Total number of times the leader resent phase 2a messages.")
+    .register()
+
+  val phase2aBufferFullTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_phase2a_buffer_full_total")
+    .help("Total number of times the phase 2a buffer filled up.")
+    .register()
+
+  val phase2aBufferFlushTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_phase2a_buffer_flush_total")
+    .help("Total number of times the phase 2a buffer was flushed by a timer.")
+    .register()
+
+  val valueChosenBufferFullTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_value_chosen_buffer_full_total")
+    .help("Total number of times the value chosen buffer filled up.")
+    .register()
+
+  val valueChosenBufferFlushTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_leader_value_chosen_buffer_flush_total")
+    .help(
+      "Total number of times the value chosen buffer was flushed by a timer."
+    )
+    .register()
 }
 
 @JSExportAll
@@ -156,6 +251,34 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
 
 
+  private val resendPhase2asTimer: Transport#Timer = timer(
+    "resendPhase2as",
+    options.resendPhase2asTimerPeriod,
+    () => {
+      resendPhase2as()
+      resendPhase2asTimer.start()
+      metrics.resendPhase2asTotal.inc()
+    }
+  )
+
+  private val phase2aBufferFlushTimer: Transport#Timer = timer(
+    "phase2aBufferFlush",
+    options.phase2aBufferFlushPeriod,
+    () => {
+      flushPhase2aBuffer(thrifty = true)
+      metrics.phase2aBufferFlushTotal.inc()
+    }
+  )
+
+  private val valueChosenBufferFlushTimer: Transport#Timer = timer(
+    "valueChosenBufferFlush",
+    options.valueChosenBufferFlushPeriod,
+    () => {
+      flushValueChosenBuffer()
+      metrics.valueChosenBufferFlushTotal.inc()
+    }
+  )
+
   // The state of the leader.
   @JSExportAll
   sealed trait State
@@ -186,28 +309,14 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
 
 
   @JSExport
-  protected var state: State = Phase2(mutable.SortedMap[Slot, Entry](), mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]](), resendPhas)
-
-  // In a classic round, leaders receive commands from clients and relay
-  // them on to acceptors. pendingEntries stores these commands that are
-  // pending votes. Note that during a fast round, a leader may not have a
-  // pending command for a slot, even though it does have phase 2bs for it.
-  protected var pendingEntries: mutable.SortedMap[Slot, Entry] = mutable.SortedMap[Slot, Entry]()
-  // For each slot, the set of phase 2b messages for that slot. In a
-  // classic round, all the phase 2b messages will be for the same command.
-  // In a fast round, they do not necessarily have to be.
-  protected var phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]] = mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]]()
-
-  // A set of buffered value chosen messages.
-  protected var valueChosenBuffer: mutable.Buffer[ValueChosen] = mutable.Buffer[ValueChosen]()
+  protected var state: State = Phase2(mutable.SortedMap[Slot, Entry](), mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]](),
+    resendPhase2asTimer, mutable.Buffer[Phase2a](), phase2aBufferFlushTimer, mutable.Buffer[ValueChosen](), valueChosenBufferFlushTimer)
 
   // Custom logger.
   val leaderLogger = new Logger(frankenpaxos.LogDebug) {
     private def withInfo(s: String): String = {
       val stateString = state match {
-        case Phase1(_, _, _)             => "Phase 1"
         case Phase2(_, _, _, _, _, _, _) => "Phase 2"
-        case Inactive                    => "Inactive"
       }
       s"[$stateString, round=$round] " + s
     }
@@ -245,17 +354,60 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
                               src: Transport#Address,
                               phase2aBuffer: Phase2aBuffer
                             ): Unit = {
-    round = phase2aBuffer.phase2A.head.round
-    flushPhase2aBuffer(phase2aBuffer, thrifty = true)
+    state match {
+      case Phase2(pendingEntries,
+      phase2bs,
+      _,
+      phase2aBuffer,
+      phase2aBufferFlushTimer,
+      _,
+      _) =>
+        round = phase2aBuffer.head.round
+        config.roundSystem.roundType(round) match {
+          case ClassicRound =>
+            for (phase2a <- phase2aBuffer) {
+              phase2aBuffer += phase2a
+              if (phase2a.value.isUniqueId) {
+                pendingEntries(phase2a.slot) = ECommand(phase2a.value.uniqueId.get)
+              }
+
+              if (phase2a.value.isNoop) {
+                pendingEntries(phase2a.slot) = ENoop()
+              }
+              phase2bs(phase2a.slot) = mutable.Map()
+            }
+
+            if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
+              metrics.phase2aBufferFullTotal.inc()
+              flushPhase2aBuffer(thrifty = true)
+            }
+
+          case FastRound =>
+            // If we're in a fast round, and the client knows we're in a fast
+            // round (because request.round == round), then the client should
+            // not be sending the leader any requests. It only does so if there
+            // was a failure. In this case, we change to a higher round.
+            leaderLogger.debug("Something went very wrong, SPaxos only works with classic rounds")
+        }
+    }
   }
 
-  def flushPhase2aBuffer(phase2aBuffer: Phase2aBuffer, thrifty: Boolean): Unit = {
-    val msg =
-      AcceptorInbound().withPhase2ABuffer(phase2aBuffer)
-    if (thrifty) {
-      thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
-    } else {
-      acceptors.foreach(_.send(msg))
+  def flushPhase2aBuffer(thrifty: Boolean): Unit = {
+    state match {
+      case Phase2(_, _, _, phase2aBuffer, phase2aBufferFlushTimer, _, _) =>
+        if (phase2aBuffer.size > 0) {
+          val msg =
+            AcceptorInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
+          if (thrifty) {
+            thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
+          } else {
+            acceptors.foreach(_.send(msg))
+          }
+          phase2aBuffer.clear()
+          phase2aBufferFlushTimer.reset()
+        } else {
+          phase2aBufferFlushTimer.reset()
+        }
     }
   }
 
@@ -264,6 +416,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
                                    src: Transport#Address,
                                    phase2bBuffer: Phase2bBuffer
                                  ): Unit = {
+    metrics.requestsTotal.labels("Phase2bBuffer").inc()
     for (phase2b <- phase2bBuffer.phase2B) {
       processPhase2b(src, phase2b)
     }
@@ -278,48 +431,67 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
 
-    def choose(entry: Entry): Unit = {
-      pendingEntries -= phase2b.slot
-      phase2bs -= phase2b.slot
+    state match {
+      case phase2 @ Phase2(pendingEntries,
+      phase2bs,
+      _,
+      _,
+      _,
+      valueChosenBuffer,
+      valueChosenBufferFlushTimer) =>
+        def choose(entry: Entry): Unit = {
+          //log(phase2b.slot) = entry
+          pendingEntries -= phase2b.slot
+          phase2bs -= phase2b.slot
 
-      valueChosenBuffer += toValueChosen(phase2b.slot, entry)
-      if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
-        for (leader <- leaders) {
-          leader.send(LeaderInbound().withValueChosenBuffer(ValueChosenBuffer(valueChosenBuffer)))
+          valueChosenBuffer += toValueChosen(phase2b.slot, entry)
+          if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
+            metrics.valueChosenBufferFullTotal.inc()
+            flushValueChosenBuffer()
+          }
         }
-        valueChosenBuffer.clear()
-      }
-    }
 
-    // Ignore responses that are not in our current round.
-    if (phase2b.round != round) {
-      leaderLogger.debug(
-        s"A leader received a phase 2b response for round " +
-          s"${phase2b.round} from $src but is in round ${round}."
-      )
-      return
-    }
+        // Ignore responses that are not in our current round.
+        if (phase2b.round != round) {
+          leaderLogger.debug(
+            s"A leader received a phase 2b response for round " +
+              s"${phase2b.round} from $src but is in round ${round}."
+          )
+          return
+        }
 
-    // Wait for sufficiently many phase2b replies.
-    phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
-    phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
-    phase2bChosenInSlot(, phase2b.slot) match {
-      case NothingReadyYet =>
-      // Don't do anything.
+        // Ignore responses for entries that have already been chosen.
+        if (valueChosenBuffer.contains(ValueChosen(phase2b.slot))) {
+          // Without thriftiness, this is the normal case, so it prints a LOT.
+          // So, we comment it out.
+          //
+          leaderLogger.debug("Value already chosen"
+          )
+          return
+        }
 
-      case ClassicReady(entry) =>
-        choose(entry)
+        // Wait for sufficiently many phase2b replies.
+        phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
+        phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
+        phase2bChosenInSlot(phase2, phase2b.slot) match {
+          case NothingReadyYet =>
+          // Don't do anything.
 
-      case FastReady(entry) =>
-        choose(entry)
+          case ClassicReady(entry) =>
+            choose(entry)
+            metrics.chosenCommandsTotal.labels("classic").inc()
 
-      case FastStuck =>
-        // The fast round is stuck, so we start again in a higher round.
-        // TODO(mwhittaker): We might want to have all stuck things pending
-        // for the next round.
-        leaderLogger.debug(
-          s"Slot ${phase2b.slot} is stuck. Changing to a higher round."
-        )
+          case FastReady(entry) =>
+            choose(entry)
+            metrics.chosenCommandsTotal.labels("fast").inc()
+
+          case FastStuck =>
+            // The fast round is stuck, so we start again in a higher round.
+            // TODO(mwhittaker): We might want to have all stuck things pending
+            // for the next round.
+            leaderLogger.debug("SPaxos does not support fast rounds")
+            metrics.stuckTotal.inc()
+        }
     }
   }
 
