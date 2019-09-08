@@ -44,6 +44,11 @@ class SPaxosDecouple {
       JsTransportAddress("Executor 2"),
       JsTransportAddress("Executor 3")
     ),
+    fakeLeaderAddresses = List(
+      JsTransportAddress("FakeLeader 1"),
+      JsTransportAddress("FakeLeader 2"),
+      JsTransportAddress("FakeLeader 3")
+    ),
     roundSystem = new roundsystem.RoundSystem.ClassicRoundRobin(1)
   )
 
@@ -76,6 +81,22 @@ class SPaxosDecouple {
     (logger, leader)
   }
   val (leader1logger, leader1) = leaders(0)
+
+  // Fake Leaders.
+  val fakeLeaders = for (i <- 1 to 3) yield {
+    val logger = new JsLogger()
+    val address = JsTransportAddress(s"FakeLeader $i")
+    val fakeLeader = new FakeLeader[JsTransport](address,
+                                         transport,
+                                         logger,
+                                         config,
+      FakeLeaderOptions.default, new FakeLeaderMetrics(FakeCollectors))
+    (logger, fakeLeader)
+  }
+  val (fakeleader1logger, fakeleader1) = fakeLeaders(0)
+  val (fakeleader2logger, fakeleader2) = fakeLeaders(1)
+  val (fakeleader3logger, fakeleader3) = fakeLeaders(2)
+
 
   // Acceptors.
   val acceptorOptions = AcceptorOptions(

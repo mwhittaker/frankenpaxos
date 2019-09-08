@@ -44,8 +44,7 @@ case class FakeLeaderOptions(
                           // As with phase 2a messages, leaders buffer value chosen messages.
                           valueChosenMaxBufferSize: Int,
                           valueChosenBufferFlushPeriod: java.time.Duration,
-                          leaderElectionOptions: LeaderElectionOptions,
-                          heartbeatOptions: HeartbeatOptions
+                          //heartbeatOptions: HeartbeatOptions
                         )
 
 @JSExportAll
@@ -58,8 +57,7 @@ object FakeLeaderOptions {
     phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
     valueChosenMaxBufferSize = 100,
     valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5),
-    leaderElectionOptions = LeaderElectionOptions.default,
-    heartbeatOptions = HeartbeatOptions.default
+    //heartbeatOptions = HeartbeatOptions.default
   )
 }
 
@@ -195,8 +193,8 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
 
   // Fields ////////////////////////////////////////////////////////////////////
   // Sanity check the Paxos configuration and compute the leader's id.
-  logger.check(config.leaderAddresses.contains(address))
-  private val leaderId = config.leaderAddresses.indexOf(address)
+  logger.check(config.fakeLeaderAddresses.contains(address))
+  private val leaderId = config.fakeLeaderAddresses.indexOf(address)
 
   // Channels to all real leaders.
   private val leaders: Seq[Chan[Leader[Transport]]] =
@@ -218,9 +216,9 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   private val acceptors: Seq[Chan[Acceptor[Transport]]] =
     acceptorsByAddress.values.toSeq
 
-  @JSExport
+  /*@JSExport
   protected val heartbeatAddress: Transport#Address =
-    config.leaderHeartbeatAddresses(leaderId)
+    config.leaderHeartbeatAddresses.head
   @JSExport
   protected val heartbeat: frankenpaxos.heartbeat.Participant[Transport] =
     new frankenpaxos.heartbeat.Participant[Transport](
@@ -229,7 +227,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
       logger = logger,
       addresses = config.acceptorHeartbeatAddresses,
       options = options.heartbeatOptions
-    )
+    )*/
 
   // The current round. Initially, the leader that owns round 0 is the active
   // leader, and all other leaders are inactive.
@@ -238,7 +236,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   if (config.roundSystem.leader(0) == leaderId) 0 else -1
 
   // The log of chosen commands. Public for testing.
-  val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
+  //val log: mutable.SortedMap[Slot, Entry] = mutable.SortedMap()
 
   // The client table records the response to the latest request from each
   // client. For example, if command c1 sends command x with id 2 to a leader
@@ -246,9 +244,9 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   // y) in the client table.
   //
   // TODO(mwhittaker): Extract out a client table abstraction?
-  @JSExport
-  protected var clientTable =
-  mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
+  //@JSExport
+  //protected var clientTable =
+  //mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
 
 
   private val resendPhase2asTimer: Transport#Timer = timer(
@@ -352,8 +350,9 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handlePhase2aBuffer(
                               src: Transport#Address,
-                              phase2aBuffer: Phase2aBuffer
+                              phase2aBufferParam: Phase2aBuffer
                             ): Unit = {
+    leaderLogger.debug("reached handler")
     state match {
       case Phase2(pendingEntries,
       phase2bs,
@@ -362,10 +361,12 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
       phase2aBufferFlushTimer,
       _,
       _) =>
-        round = phase2aBuffer.head.round
+        leaderLogger.debug("Reached here")
+        //round = Math.max(round, phase2aBuffer.head.round)
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
-            for (phase2a <- phase2aBuffer) {
+            for (phase2a <- phase2aBufferParam.phase2A) {
+              round = phase2a.round
               phase2aBuffer += phase2a
               if (phase2a.value.isUniqueId) {
                 pendingEntries(phase2a.slot) = ECommand(phase2a.value.uniqueId.get)
@@ -379,8 +380,10 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
 
             if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
               metrics.phase2aBufferFullTotal.inc()
-              flushPhase2aBuffer(thrifty = true)
+              //flushPhase2aBuffer(thrifty = true)
             }
+            leaderLogger.debug("Message")
+            flushPhase2aBuffer(thrifty = true)
 
           case FastRound =>
             // If we're in a fast round, and the client knows we're in a fast
@@ -395,14 +398,16 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   def flushPhase2aBuffer(thrifty: Boolean): Unit = {
     state match {
       case Phase2(_, _, _, phase2aBuffer, phase2aBufferFlushTimer, _, _) =>
+        leaderLogger.debug("Outside if")
         if (phase2aBuffer.size > 0) {
+          leaderLogger.debug("Reached flush")
           val msg =
             AcceptorInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
-          if (thrifty) {
+          /*if (thrifty) {
             thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
-          } else {
+          } else {*/
             acceptors.foreach(_.send(msg))
-          }
+          //}
           phase2aBuffer.clear()
           phase2aBufferFlushTimer.reset()
         } else {
@@ -519,11 +524,12 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   def thriftyAcceptors(min: Int): Set[Chan[Acceptor[Transport]]] = {
     // The addresses returned by the heartbeat node are heartbeat addresses.
     // We have to transform them into acceptor addresses.
-    options.thriftySystem
+    /*options.thriftySystem
       .choose(heartbeat.unsafeNetworkDelay, min)
       .map(config.acceptorHeartbeatAddresses.indexOf(_))
       .map(config.acceptorAddresses(_))
-      .map(acceptorsByAddress(_))
+      .map(acceptorsByAddress(_))*/
+    acceptors.toSet
   }
 
   private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {

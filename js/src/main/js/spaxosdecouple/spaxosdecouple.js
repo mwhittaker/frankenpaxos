@@ -165,6 +165,39 @@ let leader_info = {
   `,
 };
 
+let fake_leader_info = {
+  props: ['node'],
+
+  template: `
+    <div>
+      <div><strong>round</strong>: {{node.actor.round}}</div>
+      <div><strong>state</strong>: {{node.actor.state}}</div>
+      <div>
+        <strong>pendingEntries</strong>:
+        <frankenpaxos-map :map=node.actor.state.pendingEntries>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        <strong>phase2bs</strong>:
+        <frankenpaxos-map :map=node.actor.state.phase2bs v-slot="slotProps">
+          <frankenpaxos-map :map="slotProps.value">
+          </frankenpaxos-map>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        <strong>phase2aBuffer</strong>:
+        <frankenpaxos-seq :seq=node.actor.state.phase2aBuffer>
+        </frankenpaxos-seq>
+      </div>
+      <div>
+        <strong>valueChosenBuffer</strong>:
+        <frankenpaxos-seq :seq=node.actor.state.valueChosenBuffer>
+        </frankenpaxos-seq>
+      </div>
+    </div>
+  `,
+};
+
 function make_nodes(SPaxosDecouple, snap) {
   // https://flatuicolors.com/palette/defo
   let flat_red = '#e74c3c';
@@ -256,6 +289,37 @@ function make_nodes(SPaxosDecouple, snap) {
     ],
     color: flat_blue,
     component: heartbeat_info,
+  }
+
+  // Fake Leaders
+  nodes[SPaxosDecouple.fakeleader1.address] = {
+    actor: SPaxosDecouple.fakeleader1,
+    svgs: [
+      snap.circle(leaders_x, leader1_y + 100, 20).attr(colored(flat_blue)),
+      snap.text(leaders_x, leader1_y + 100, '1').attr(number_style),
+    ],
+    color: flat_blue,
+    component: fake_leader_info,
+  }
+
+  nodes[SPaxosDecouple.fakeleader2.address] = {
+    actor: SPaxosDecouple.fakeleader2,
+    svgs: [
+      snap.circle(leaders_x, leader1_y + 200, 20).attr(colored(flat_blue)),
+      snap.text(leaders_x, leader1_y + 200, '2').attr(number_style),
+    ],
+    color: flat_blue,
+    component: fake_leader_info,
+  }
+
+  nodes[SPaxosDecouple.fakeleader3.address] = {
+    actor: SPaxosDecouple.fakeleader3,
+    svgs: [
+      snap.circle(leaders_x, leader1_y + 300, 20).attr(colored(flat_blue)),
+      snap.text(leaders_x, leader1_y + 300, '3').attr(number_style),
+    ],
+    color: flat_blue,
+    component: fake_leader_info,
   }
 
   // Proposers
