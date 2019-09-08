@@ -55,8 +55,8 @@ object FakeLeaderOptions {
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
     phase2aMaxBufferSize = 25,
     phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
-    valueChosenMaxBufferSize = 100,
-    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5),
+    valueChosenMaxBufferSize = 0,
+    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(1),
     //heartbeatOptions = HeartbeatOptions.default
   )
 }
@@ -352,7 +352,6 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
                               src: Transport#Address,
                               phase2aBufferParam: Phase2aBuffer
                             ): Unit = {
-    leaderLogger.debug("reached handler")
     state match {
       case Phase2(pendingEntries,
       phase2bs,
@@ -361,7 +360,6 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
       phase2aBufferFlushTimer,
       _,
       _) =>
-        leaderLogger.debug("Reached here")
         //round = Math.max(round, phase2aBuffer.head.round)
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
@@ -382,7 +380,6 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
               metrics.phase2aBufferFullTotal.inc()
               //flushPhase2aBuffer(thrifty = true)
             }
-            leaderLogger.debug("Message")
             flushPhase2aBuffer(thrifty = true)
 
           case FastRound =>
@@ -398,7 +395,6 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   def flushPhase2aBuffer(thrifty: Boolean): Unit = {
     state match {
       case Phase2(_, _, _, phase2aBuffer, phase2aBufferFlushTimer, _, _) =>
-        leaderLogger.debug("Outside if")
         if (phase2aBuffer.size > 0) {
           leaderLogger.debug("Reached flush")
           val msg =
@@ -450,8 +446,10 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
           phase2bs -= phase2b.slot
 
           valueChosenBuffer += toValueChosen(phase2b.slot, entry)
+          leaderLogger.debug("made it valuechosen buffer")
           if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
             metrics.valueChosenBufferFullTotal.inc()
+            leaderLogger.debug("valuechosen if statement")
             flushValueChosenBuffer()
           }
         }
@@ -503,8 +501,11 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   def flushValueChosenBuffer(): Unit = {
     state match {
       case Phase2(_, _, _, _, _, buffer, bufferFlushTimer) =>
+        leaderLogger.debug("Got to the flush value chosen buffer")
         if (buffer.size > 0) {
+          leaderLogger.debug("Buffer value chosen greater than 0")
           leaders.foreach(_.send(LeaderInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))))
+          executors.foreach(_.send(ExecutorInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))))
           buffer.clear()
           bufferFlushTimer.reset()
         } else {
