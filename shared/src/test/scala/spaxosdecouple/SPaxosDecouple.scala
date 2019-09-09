@@ -21,6 +21,7 @@ class SPaxosDecouple(
   val numProposers = f + 1
   val numExecutors = f + 1
   val numLeaders = 1
+  val numFakeLeaders = f + 1
   val numAcceptors = 2 * f + 1
 
   // Configuration.
@@ -40,6 +41,8 @@ class SPaxosDecouple(
       yield FakeTransportAddress(s"Leader Election $i"),
     executorAddresses = for (i <- 1 to numExecutors)
       yield FakeTransportAddress(s"Executor $i"),
+    fakeLeaderAddresses = for (i <- 1 to numFakeLeaders)
+      yield FakeTransportAddress(s"FakeLeader $i"),
     roundSystem = new RoundSystem.ClassicRoundRobin(numLeaders)
   )
 
@@ -81,6 +84,17 @@ class SPaxosDecouple(
                                 config,
                                 options,
                                 new AcceptorMetrics(FakeCollectors))
+  }
+
+  // Fake Leaders.
+  val fakeLeaders = for (i <- 1 to numFakeLeaders) yield {
+    val options = FakeLeaderOptions.default
+    new FakeLeader[FakeTransport](FakeTransportAddress(s"FakeLeader $i"),
+                                transport,
+                                logger,
+                                config,
+                                options,
+                                new FakeLeaderMetrics(FakeCollectors))
   }
 
   // Executors
@@ -170,7 +184,8 @@ class SimulatedSPaxosDecouple(
         sPaxosDecouple.leaders.map(_.address) ++
         sPaxosDecouple.acceptors.map(_.address) ++
         sPaxosDecouple.proposers.map(_.address) ++
-        sPaxosDecouple.executors.map(_.address)
+        sPaxosDecouple.executors.map(_.address) ++
+        sPaxosDecouple.fakeLeaders.map(_.address)
     }.toSet
 
     def goodMessage(msg: FakeTransportMessage): Boolean =

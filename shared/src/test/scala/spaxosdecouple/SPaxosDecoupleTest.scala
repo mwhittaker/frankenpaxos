@@ -5,7 +5,7 @@ import frankenpaxos.simulator.{BadHistory, Simulator}
 import org.scalatest.FlatSpec
 
 class SPaxosDecoupleSpec extends FlatSpec {
-  val runLength = 100
+  val runLength = 1000
   val numRuns = 500
 
   def test(sim: SimulatedSPaxosDecouple): Unit = {
