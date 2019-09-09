@@ -392,6 +392,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       Inactive
     }
 
+  @JSExport
+  protected val pendingIds: mutable.Set[UniqueId] = mutable.Set[UniqueId]()
+
+  @JSExport
+  protected val chosenIds: mutable.Set[UniqueId] = mutable.Set[UniqueId]()
+
   // Custom logger.
   val leaderLogger = new Logger(frankenpaxos.LogDebug) {
     private def withInfo(s: String): String = {
@@ -515,10 +521,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
+            if (pendingIds.contains(proposal.uniqueId) || chosenIds.contains(proposal.uniqueId)) {
+              return
+            }
             phase2aBuffer += Phase2a(slot = nextSlot, round = round)
               .withUniqueId(proposal.uniqueId)
             pendingEntries(nextSlot) = ECommand(proposal.uniqueId)
             phase2bs(nextSlot) = mutable.Map()
+            pendingIds.add(proposal.uniqueId)
             nextSlot += 1
             if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
               metrics.phase2aBufferFullTotal.inc()
@@ -737,6 +747,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case None =>
           log(valueChosen.slot) = entry
       }
+
+      pendingIds.remove(valueChosen.getUniqueId)
+      chosenIds.add(valueChosen.getUniqueId)
     }
     //executeLog()
     while (log.contains(chosenWatermark)) {

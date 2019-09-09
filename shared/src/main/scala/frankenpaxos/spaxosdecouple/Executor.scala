@@ -138,7 +138,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
       case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
       case Request.Forward(r) => handleForwardRequest(src, r)
       case Request.Empty => {
-        logger.fatal("Empty AcceptorInbound encountered.")
+        logger.fatal("Empty ExecutorInbound encountered.")
       }
     }
   }
@@ -214,27 +214,30 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
 
           if (!executed) {
             val command = idRequestMap.getOrElse(UniqueId(clientAddressBytes, clientPseudonym, clientId), null)
-            val output = stateMachine.run(command.toByteArray())
-            clientTable((clientAddress, clientPseudonym)) = (clientId, output)
+            if (command != null) {
+              val output = stateMachine.run(command.toByteArray())
+              clientTable((clientAddress, clientPseudonym)) = (clientId, output)
 
-            // Note that only the leader replies to the client since
-            // ProposeReplies include the round of the leader, and only the
-            // leader knows this.
-            if (!chosenIds.contains(UniqueId(clientAddressBytes, clientPseudonym, clientId))) {
-              // Only one executor responds to the client
-              if (clientId % config.executorAddresses.size == index) {
-                val client =
-                  chan[Client[Transport]](clientAddress, Client.serializer)
-                client.send(
-                  ClientInbound().withClientReply(
-                    ClientReply(clientPseudonym = clientPseudonym,
-                      clientId = clientId,
-                      result = ByteString.copyFrom(output))
+              // Note that only the leader replies to the client since
+              // ProposeReplies include the round of the leader, and only the
+              // leader knows this.
+              if (!chosenIds.contains(UniqueId(clientAddressBytes, clientPseudonym, clientId))) {
+                // Only one executor responds to the client
+                if (clientId % config.executorAddresses.size == index) {
+                  val client =
+                    chan[Client[Transport]](clientAddress, Client.serializer)
+                  client.send(
+                    ClientInbound().withClientReply(
+                      ClientReply(clientPseudonym = clientPseudonym,
+                        clientId = clientId,
+                        result = ByteString.copyFrom(output))
+                    )
                   )
-                )
+                }
+                chosenIds.add(UniqueId(clientAddressBytes, clientPseudonym, clientId))
               }
-              chosenIds.add(UniqueId(clientAddressBytes, clientPseudonym, clientId))
             }
+
           }
         case ENoop =>
           // Do nothing.
@@ -247,11 +250,15 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
 
 
   def handleForwardRequest(src: Transport#Address, forward: Forward) = {
-    requestsDisseminated.add(forward.clientRequest)
-    idRequestMap.put(forward.clientRequest.uniqueId, forward.clientRequest.command)
-
-    val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
-    proposer.send(ProposerInbound().withAcknowledge(Acknowledge(uniqueId = forward.clientRequest.uniqueId)))
+    if (requestsDisseminated.contains(forward.clientRequest)) {
+      logger.debug("contained requests")
+    }
+    if (!requestsDisseminated.contains(forward.clientRequest)) {
+      requestsDisseminated.add(forward.clientRequest)
+      idRequestMap.put(forward.clientRequest.uniqueId, forward.clientRequest.command)
+      val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
+      proposer.send(ProposerInbound().withAcknowledge(Acknowledge(uniqueId = forward.clientRequest.uniqueId)))
+    }
   }
 }
 

@@ -206,9 +206,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
           case Some(pendingCommand) =>
             val request = toProposeRequest(pendingCommand)
-            for ((_, leader) <- proposers) {
-              leader.send(ProposerInbound().withClientRequest(request))
-            }
+            val r = scala.util.Random
+            val index = r.nextInt(config.proposerAddresses.size)
+            val proposer = proposers(index)
+            proposer.send(ProposerInbound().withClientRequest(request))
         }
         t.start()
       }
