@@ -205,6 +205,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             )
 
           case Some(pendingCommand) =>
+            logger.debug("Had to repropose: " + pendingCommand.command)
             val request = toProposeRequest(pendingCommand)
             val r = scala.util.Random
             val index = r.nextInt(config.proposerAddresses.size)
