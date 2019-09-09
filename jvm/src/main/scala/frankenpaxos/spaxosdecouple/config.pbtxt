@@ -17,4 +17,7 @@ proposerAddress { host: "localhost" port: 13200}
 executorAddress { host: "localhost" port: 14000}
 executorAddress { host: "localhost" port: 14100}
 executorAddress { host: "localhost" port: 14200}
+fakeLeaderAddress { host: "localhost" port: 15000}
+fakeLeaderAddress { host: "localhost" port: 15100}
+fakeLeaderAddress { host: "localhost" port: 15200}
 roundSystemType: CLASSIC_ROUND_ROBIN

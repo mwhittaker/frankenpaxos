@@ -21,6 +21,7 @@ object ConfigUtil {
       acceptorHeartbeatAddresses = toAddresses(proto.acceptorHeartbeatAddress),
       proposerAddresses = toAddresses(proto.proposerAddress),
       executorAddresses = toAddresses(proto.executorAddress),
+      fakeLeaderAddresses = toAddresses(proto.fakeLeaderAddress),
       roundSystem = proto.roundSystemType match {
         case RoundSystemType.CLASSIC_ROUND_ROBIN =>
           new RoundSystem.ClassicRoundRobin(proto.leaderAddress.size)

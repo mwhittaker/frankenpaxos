@@ -27,5 +27,6 @@ message ConfigProto {
   repeated HostPortProto acceptorHeartbeatAddress = 6;
   repeated HostPortProto proposerAddress = 7;
   repeated HostPortProto executorAddress = 8;
-  required RoundSystemType roundSystemType = 9;
+  repeated HostPortProto fakeLeaderAddress = 9;
+  required RoundSystemType roundSystemType = 10;
 }
