@@ -13,6 +13,7 @@ import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.spaxosdecouple.Leader.{ECommand, ENoop, Entry}
 import frankenpaxos.statemachine.StateMachine
+import scala.util.control.Breaks._
 
 import scala.scalajs.js.annotation._
 
@@ -125,6 +126,9 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var index: Int = config.executorAddresses.indexOf(address)
 
+  @JSExport
+  protected var chosenBeforeForward: mutable.Set[UniqueId] = mutable.Set()
+
   private val proposers: Seq[Chan[Proposer[Transport]]] = {
     for (proposerAddress <- config.proposerAddresses)
       yield chan[Proposer[Transport]](proposerAddress, Proposer.serializer)
@@ -236,6 +240,9 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
                 }
                 chosenIds.add(UniqueId(clientAddressBytes, clientPseudonym, clientId))
               }
+            } else {
+              chosenBeforeForward.add(UniqueId(clientAddressBytes, clientPseudonym, clientId))
+              break
             }
 
           }
@@ -250,8 +257,25 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
 
 
   def handleForwardRequest(src: Transport#Address, forward: Forward) = {
-    if (requestsDisseminated.contains(forward.clientRequest)) {
-      logger.debug("contained requests")
+    if (chosenBeforeForward.contains(forward.clientRequest.uniqueId)) {
+      if (forward.clientRequest.uniqueId.clientId % config.executorAddresses.size == index) {
+
+        val output = stateMachine.run(forward.clientRequest.command.toByteArray())
+        val clientAddress = transport.addressSerializer.fromBytes(
+          forward.clientRequest.uniqueId.clientAddress.toByteArray()
+        )
+        clientTable((clientAddress, forward.clientRequest.uniqueId.clientPseudonym)) = (forward.clientRequest.uniqueId.clientId, output)
+        val client =
+          chan[Client[Transport]](clientAddress, Client.serializer)
+        client.send(
+          ClientInbound().withClientReply(
+            ClientReply(clientPseudonym = forward.clientRequest.uniqueId.clientPseudonym,
+              clientId = forward.clientRequest.uniqueId.clientId,
+              result = ByteString.copyFrom(output))
+          )
+        )
+      }
+      chosenBeforeForward.remove(forward.clientRequest.uniqueId)
     }
     if (!requestsDisseminated.contains(forward.clientRequest)) {
       requestsDisseminated.add(forward.clientRequest)

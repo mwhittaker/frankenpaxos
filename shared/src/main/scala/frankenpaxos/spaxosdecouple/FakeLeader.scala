@@ -55,7 +55,7 @@ object FakeLeaderOptions {
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
     phase2aMaxBufferSize = 25,
     phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
-    valueChosenMaxBufferSize = 100,
+    valueChosenMaxBufferSize = 1,
     valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5),
     //heartbeatOptions = HeartbeatOptions.default
   )
@@ -399,11 +399,11 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
           leaderLogger.debug("Reached flush")
           val msg =
             AcceptorInbound().withPhase2ABuffer(Phase2aBuffer(phase2aBuffer))
-          /*if (thrifty) {
+          if (thrifty) {
             thriftyAcceptors(quorumSize(round)).foreach(_.send(msg))
-          } else {*/
+          } else {
             acceptors.foreach(_.send(msg))
-          //}
+          }
           phase2aBuffer.clear()
           phase2aBufferFlushTimer.reset()
         } else {
@@ -446,10 +446,8 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
           phase2bs -= phase2b.slot
 
           valueChosenBuffer += toValueChosen(phase2b.slot, entry)
-          leaderLogger.debug("made it valuechosen buffer")
           if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
             metrics.valueChosenBufferFullTotal.inc()
-            leaderLogger.debug("valuechosen if statement")
             flushValueChosenBuffer()
           }
         }
@@ -468,8 +466,6 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
           // Without thriftiness, this is the normal case, so it prints a LOT.
           // So, we comment it out.
           //
-          leaderLogger.debug("Value already chosen"
-          )
           return
         }
 
@@ -501,9 +497,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   def flushValueChosenBuffer(): Unit = {
     state match {
       case Phase2(_, _, _, _, _, buffer, bufferFlushTimer) =>
-        leaderLogger.debug("Got to the flush value chosen buffer")
         if (buffer.size > 0) {
-          leaderLogger.debug("Buffer value chosen greater than 0")
           leaders.foreach(_.send(LeaderInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))))
           executors.foreach(_.send(ExecutorInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))))
           buffer.clear()
@@ -525,12 +519,17 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
   def thriftyAcceptors(min: Int): Set[Chan[Acceptor[Transport]]] = {
     // The addresses returned by the heartbeat node are heartbeat addresses.
     // We have to transform them into acceptor addresses.
-    /*options.thriftySystem
-      .choose(heartbeat.unsafeNetworkDelay, min)
+    val unsafeNetworkDelay = {
+      for (acceptor <- config.acceptorHeartbeatAddresses) yield {
+        acceptor -> java.time.Duration.ofSeconds(Long.MaxValue, 999999999)
+      }
+    }.toMap
+    options.thriftySystem
+      .choose(unsafeNetworkDelay, min)
       .map(config.acceptorHeartbeatAddresses.indexOf(_))
       .map(config.acceptorAddresses(_))
-      .map(acceptorsByAddress(_))*/
-    acceptors.toSet
+      .map(acceptorsByAddress(_))
+    //acceptors.toSet
   }
 
   private def phase2bVoteToEntry(phase2bVote: Phase2b.Vote): Entry = {
