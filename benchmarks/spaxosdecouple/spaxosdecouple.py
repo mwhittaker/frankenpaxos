@@ -162,6 +162,9 @@ class SPaxosDecoupleNet(object):
     def acceptor_heartbeats(self) -> List[host.Endpoint]:
         raise NotImplementedError()
 
+    def fake_leaders(self) -> List[host.Endpoint]:
+        raise NotImplementedError()
+
     def config(self) -> proto_util.Message:
         return {
             'f': self.f(),
@@ -192,6 +195,9 @@ class SPaxosDecoupleNet(object):
             'executorAddress': [
                 {'host': e.host.ip(), 'port': e.port}
                 for e in self.executors()
+            ],
+            'fakeLeaderAddress': [
+                {'host': e.host.ip(), 'port': e.port}
             ],
             'roundSystemType': self.rs_type()
         }
@@ -224,6 +230,7 @@ class SPaxosDecoupleNet(SPaxosDecoupleNet):
         acceptor_heartbeats: List[host.Endpoint]
         proposers: List[host.Endpoint]
         executors: List[host.Endpoint]
+        fake_leaders: List[host.Endpoint]
 
     def _placement(self) -> '_Placement':
         ports = itertools.count(10000, 100)
@@ -239,7 +246,8 @@ class SPaxosDecoupleNet(SPaxosDecoupleNet):
                 acceptors = portify(self._hosts * (2*self.f() + 1)),
                 acceptor_heartbeats = portify(self._hosts * (2*self.f() + 1)),
                 proposers = portify(self._hosts * (self.f() + 1)),
-                executors = portify(self._hosts * (self.f() + 1))
+                executors = portify(self._hosts * (self.f() + 1)),
+                fake_leaders = portify(self._hosts * (self.f() + 1))
             )
         else:
             raise NotImplementedError()
@@ -274,6 +282,9 @@ class SPaxosDecoupleNet(SPaxosDecoupleNet):
     def executors(self) -> List[host.Endpoint]:
         return self._placement().executors
 
+    def fake_leaders(self) -> List[host.Endpoint]:
+        return self._placement().fake_leaders
+
 
 class SPaxosDecoupleMininet(SPaxosDecoupleNet):
     def __enter__(self) -> 'SPaxosDecoupleNet':
@@ -302,6 +313,7 @@ class SingleSwitchMininet(SPaxosDecoupleMininet):
         self._acceptor_heartbeats: List[host.Endpoint] = []
         self._proposers: List[host.Endpoint] = []
         self._executors: List[host.Endpoint] = []
+        self._fake_leaders: List[host.Endpoint] = []
         self._net = mininet.net.Mininet()
 
         switch = self._net.addSwitch('s1')
@@ -346,6 +358,15 @@ class SingleSwitchMininet(SPaxosDecoupleMininet):
             self._executors.append(
                 host.Endpoint(host.MininetHost(executor), 14000))
 
+        num_fake_leaders = f + 1
+        for i in range(num_fake_leaders):
+            fake_leader = self._net.addHost(f'f{i}')
+            self._net.addLink(fake_leader, switch)
+            self._fake_leaders.append(
+                host.Endpoint(host.MininetHost(fake_leader), 14000))
+
+
+
 
     def net(self) -> mininet.net.Mininet:
         return self._net
@@ -379,6 +400,9 @@ class SingleSwitchMininet(SPaxosDecoupleMininet):
 
     def executors(self) -> List[host.Endpoint]:
         return self._executors
+
+    def fake_leaders(self) -> List[host.Endpoint]:
+        return self._fake_leaders
 
 
 # Suite ########################################################################
@@ -536,6 +560,26 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
             executor_procs.append(proc)
         bench.log('Executors started.')
 
+        # Launch fake leaders
+        fake_leader_procs = []
+        for (i, fake_leader) in enumerate(net.fake_leaders()):
+            proc = bench.popen(
+                host=fake_leader.host,
+                label=f'fake_leader_{i}',
+                cmd = [
+                    'java',
+                    '-cp', os.path.abspath(args['jar']),
+                    'frankenpaxos.spaxosdecouple.FakeLeaderMain',
+                    '--index', str(i),
+                    '--config', config_filename,
+                    '--prometheus_host', fake_leader.host.ip(),
+                    '--prometheus_port',
+                    str(executor.port + 1) if input.monitored else '-1',
+                ],
+            )
+            fake_leader_procs.append(proc)
+        bench.log('Fake Leaders started.')
+
         # Launch Prometheus.
         if input.monitored:
             prometheus_config = prometheus.prometheus_config(
@@ -551,6 +595,9 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                     [f'{e.host.ip()}:{e.port + 1}' for e in net.proposers()],
                   'spaxos_decouple_executor':
                     [f'{e.host.ip()}:{e.port + 1}' for e in net.executors()],
+                  'spaxos_decouple_fake_leader':
+                    [f'{e.host.ip()}:{e.port + 1}' for e in net.fake_leaders()],
+
                 }
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
@@ -607,7 +654,7 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
         # Wait for clients to finish and then terminate everything.
         for proc in client_procs:
             proc.wait()
-        for proc in leader_procs + acceptor_procs + proposer_procs + executor_procs:
+        for proc in leader_procs + acceptor_procs + proposer_procs + executor_procs + fake_leader_procs:
             proc.kill()
         if input.monitored:
             prometheus_server.kill()
