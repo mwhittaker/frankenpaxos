@@ -17,7 +17,7 @@ class SPaxosDecouple(
 ) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
-  val numClients = f + 1
+  val numClients = 20
   val numProposers = f + 1
   val numExecutors = f + 1
   val numLeaders = 1

@@ -52,11 +52,11 @@ object FakeLeaderOptions {
   val default = FakeLeaderOptions(
     thriftySystem = ThriftySystem.Closest,
     resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(5),
-    resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(30),
+    resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(5),
     phase2aMaxBufferSize = 25,
     phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
-    valueChosenMaxBufferSize = 0,
-    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(1),
+    valueChosenMaxBufferSize = 100,
+    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5),
     //heartbeatOptions = HeartbeatOptions.default
   )
 }
