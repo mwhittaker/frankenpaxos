@@ -198,6 +198,7 @@ class SPaxosDecoupleNet(object):
             ],
             'fakeLeaderAddress': [
                 {'host': e.host.ip(), 'port': e.port}
+                for e in self.fake_leaders()
             ],
             'roundSystemType': self.rs_type()
         }
