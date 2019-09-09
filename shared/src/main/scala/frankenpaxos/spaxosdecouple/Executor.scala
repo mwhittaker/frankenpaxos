@@ -13,7 +13,6 @@ import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.spaxosdecouple.Leader.{ECommand, ENoop, Entry}
 import frankenpaxos.statemachine.StateMachine
-import scala.util.control.Breaks._
 
 import scala.scalajs.js.annotation._
 
@@ -242,7 +241,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
               }
             } else {
               chosenBeforeForward.add(UniqueId(clientAddressBytes, clientPseudonym, clientId))
-              break
+              return
             }
 
           }
