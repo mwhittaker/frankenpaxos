@@ -11,7 +11,7 @@ import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.roundsystem.RoundSystem
-import frankenpaxos.spaxosdecouple.Leader.{ECommand, ENoop, Entry}
+import frankenpaxos.spaxosdecouple.Executor.{ECommand, ENoop, Entry}
 import frankenpaxos.statemachine.StateMachine
 
 import scala.scalajs.js.annotation._
@@ -27,6 +27,9 @@ object ExecutorInboundSerializer extends ProtoSerializer[ExecutorInbound] {
 @JSExportAll
 object Executor {
   val serializer = ExecutorInboundSerializer
+  sealed trait Entry
+  case class ECommand(uniqueId: UniqueId) extends Entry
+  object ENoop extends Entry
 }
 
 @JSExportAll
@@ -279,8 +282,8 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
     if (!requestsDisseminated.contains(forward.clientRequest)) {
       requestsDisseminated.add(forward.clientRequest)
       idRequestMap.put(forward.clientRequest.uniqueId, forward.clientRequest.command)
-      val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
-      proposer.send(ProposerInbound().withAcknowledge(Acknowledge(uniqueId = forward.clientRequest.uniqueId)))
+      /*val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
+      proposer.send(ProposerInbound().withAcknowledge(Acknowledge(uniqueId = forward.clientRequest.uniqueId)))*/
     }
   }
 }

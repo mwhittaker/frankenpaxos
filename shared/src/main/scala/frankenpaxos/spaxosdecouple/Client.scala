@@ -102,10 +102,16 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var pendingCommands = mutable.Map[Pseudonym, PendingCommand]()
 
-// Leader and acceptor channels.
-  private val proposers: Map[Int, Chan[Proposer[Transport]]] = {
-    for ((address, i) <- config.proposerAddresses.zipWithIndex)
-      yield i -> chan[Proposer[Transport]](address, Proposer.serializer)
+  // Leader channels
+  private val leaders: Map[Int, Chan[Leader[Transport]]] = {
+    for ((address, i) <- config.leaderAddresses.zipWithIndex)
+      yield i -> chan[Leader[Transport]](address, Leader.serializer)
+  }.toMap
+
+  // Executor channels
+  private val executors: Map[Int, Chan[Executor[Transport]]] = {
+    for ((address, i) <- config.executorAddresses.zipWithIndex)
+      yield i -> chan[Executor[Transport]](address, Executor.serializer)
   }.toMap
 
   // Timers ////////////////////////////////////////////////////////////////////
@@ -185,10 +191,17 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
     val request = toProposeRequest(pendingCommand)
-    val r = scala.util.Random
+    /*val r = scala.util.Random
     val index = r.nextInt(config.proposerAddresses.size)
     val leader = proposers(index)
-    leader.send(ProposerInbound().withClientRequest(request))
+    leader.send(ProposerInbound().withClientRequest(request))*/
+    for ((_, leader) <- leaders) {
+      leader.send(LeaderInbound().withProposal(Proposal(request.uniqueId, round)))
+    }
+
+    for ((_, executor) <- executors) {
+      executor.send(ExecutorInbound().withForward(Forward(request)))
+    }
   }
 
   private def reproposeTimer(pseudonym: Pseudonym): Transport#Timer = {
@@ -208,9 +221,9 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             logger.debug("Had to repropose: " + pendingCommand.command)
             val request = toProposeRequest(pendingCommand)
             val r = scala.util.Random
-            val index = r.nextInt(config.proposerAddresses.size)
-            val proposer = proposers(index)
-            proposer.send(ProposerInbound().withClientRequest(request))
+            val index = r.nextInt(config.executorAddresses.size)
+            val executor = executors(index)
+            executor.send(ExecutorInbound().withForward(Forward(request)))
         }
         t.start()
       }

@@ -434,7 +434,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Request.Phase1B(r)           => handlePhase1b(src, r)
       case Request.Phase1BNack(r)       => handlePhase1bNack(src, r)
       //case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
-      case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
+      //case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
       case Request.Empty =>
         leaderLogger.fatal("Empty LeaderInbound encountered.")
     }
@@ -728,7 +728,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }*/
 
-  private def handleValueChosenBuffer(
+  /*private def handleValueChosenBuffer(
                                        src: Transport#Address,
                                        valueChosenBuffer: ValueChosenBuffer
                                      ): Unit = {
@@ -755,7 +755,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     while (log.contains(chosenWatermark)) {
       chosenWatermark += 1
     }
-  }
+  }*/
 
   // Methods ///////////////////////////////////////////////////////////////////
   def quorumSize(round: Round): Int = {

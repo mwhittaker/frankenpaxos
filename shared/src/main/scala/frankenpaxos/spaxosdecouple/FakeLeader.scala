@@ -498,7 +498,7 @@ class FakeLeader[Transport <: frankenpaxos.Transport[Transport]](
     state match {
       case Phase2(_, _, _, _, _, buffer, bufferFlushTimer) =>
         if (buffer.size > 0) {
-          leaders.foreach(_.send(LeaderInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))))
+          //leaders.foreach(_.send(LeaderInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))))
           executors.foreach(_.send(ExecutorInbound().withValueChosenBuffer(ValueChosenBuffer(buffer))))
           buffer.clear()
           bufferFlushTimer.reset()

@@ -108,16 +108,6 @@ class SPaxosDecouple(
       options,
       new ExecutorMetrics(FakeCollectors))
   }
-
-  val proposers = for (i <- 1 to numProposers) yield {
-    val options = ProposerOptions.default
-    new Proposer[FakeTransport](FakeTransportAddress(s"Proposer $i"),
-      transport,
-      logger,
-      config,
-      options,
-      new ProposerMetrics(FakeCollectors))
-  }
 }
 
 object SimulatedSPaxosDecouple {
@@ -137,7 +127,7 @@ class SimulatedSPaxosDecouple(
   override type System = SPaxosDecouple
   // The state of SPaxosDecouple records the set of chosen entries for every
   // log slot. Every set should be empty or a singleton.
-  override type State = collection.SortedMap[Slot, Set[Leader.Entry]]
+  override type State = collection.SortedMap[Slot, Set[Executor.Entry]]
   override type Command = SimulatedSPaxosDecouple.Command
 
   var valueChosen: Boolean = false
@@ -156,9 +146,9 @@ class SimulatedSPaxosDecouple(
     }
 
     // We look at the commands recorded chosen by the leaders.
-    val chosen = sPaxosDecouple.leaders
-      .map(leader => leader.log.mapValues(Set[Leader.Entry](_)))
-      .foldLeft(collection.SortedMap[Slot, Set[Leader.Entry]]())(merge(_, _))
+    val chosen = sPaxosDecouple.executors
+      .map(executor => executor.log.mapValues(Set[Executor.Entry](_)))
+      .foldLeft(collection.SortedMap[Slot, Set[Executor.Entry]]())(merge(_, _))
     if (chosen.size > 0) {
       valueChosen = true
     }
@@ -183,7 +173,6 @@ class SimulatedSPaxosDecouple(
       sPaxosDecouple.clients.map(_.address) ++
         sPaxosDecouple.leaders.map(_.address) ++
         sPaxosDecouple.acceptors.map(_.address) ++
-        sPaxosDecouple.proposers.map(_.address) ++
         sPaxosDecouple.executors.map(_.address) ++
         sPaxosDecouple.fakeLeaders.map(_.address)
     }.toSet
@@ -287,8 +276,8 @@ class SimulatedSPaxosDecouple(
       newState: State
   ): SimulatedSystem.InvariantResult = {
     for (slot <- oldState.keys ++ newState.keys) {
-      val oldChosen = oldState.getOrElse(slot, Set[Leader.Entry]())
-      val newChosen = newState.getOrElse(slot, Set[Leader.Entry]())
+      val oldChosen = oldState.getOrElse(slot, Set[Executor.Entry]())
+      val newChosen = newState.getOrElse(slot, Set[Executor.Entry]())
       if (!oldChosen.subsetOf(newChosen)) {
         SimulatedSystem.InvariantViolated(
           s"Slot $slot was $oldChosen but now is $newChosen."
