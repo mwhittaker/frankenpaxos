@@ -29,4 +29,15 @@ class Noop extends StateMachine {
       override def getConflicts(command: Array[Byte]): Set[Key] = Set()
     }
   }
+
+  override def topKConflictIndex[Key](
+      k: Int,
+      like: VertexIdLike[Key]
+  ): ConflictIndex[Key, Array[Byte]] =
+    new ConflictIndex[Key, Array[Byte]] {
+      override def put(key: Key, command: Array[Byte]): Option[Array[Byte]] =
+        None
+      override def remove(key: Key): Option[Array[Byte]] = ???
+      override def getConflicts(command: Array[Byte]): Set[Key] = Set()
+    }
 }

@@ -33,8 +33,13 @@ trait StateMachine {
 
   // Returns a conflict index. The default implementation is inefficient. If
   // you care about efficiency, you should override this method.
-  def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
-    new NaiveConflictIndex(conflicts)
+  def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]]
+
+  // Returns a top-k conflict index.
+  def topKConflictIndex[Key](
+      k: Int,
+      like: VertexIdLike[Key]
+  ): ConflictIndex[Key, Array[Byte]]
 }
 
 object StateMachine {

@@ -10,6 +10,11 @@ trait TypedStateMachine[I, O] extends StateMachine {
   def outputSerializer: frankenpaxos.Serializer[O]
   def typedRun(input: I): O
   def typedConflicts(firstCommand: I, secondCommand: I): Boolean
+  def typedConflictIndex[Key](): ConflictIndex[Key, I]
+  def typedTopKConflictIndex[Key](
+      k: Int,
+      like: VertexIdLike[Key]
+  ): ConflictIndex[Key, I]
 
   // Concrete value members.
   override def run(input: Array[Byte]): Array[Byte] = {
@@ -26,7 +31,9 @@ trait TypedStateMachine[I, O] extends StateMachine {
                    inputSerializer.fromBytes(secondCommand))
   }
 
-  override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] = {
+  private def erasedConflictIndex[Key](
+      conflictIndex: ConflictIndex[Key, I]
+  ): ConflictIndex[Key, Array[Byte]] =
     new ConflictIndex[Key, Array[Byte]] {
       private val index = typedConflictIndex[Key]()
 
@@ -44,8 +51,13 @@ trait TypedStateMachine[I, O] extends StateMachine {
         index.getConflicts(inputSerializer.fromBytes(command))
       }
     }
-  }
 
-  def typedConflictIndex[Key](): ConflictIndex[Key, I] =
-    new NaiveConflictIndex(typedConflicts)
+  override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
+    erasedConflictIndex(typedConflictIndex())
+
+  override def topKConflictIndex[Key](
+      k: Int,
+      like: VertexIdLike[Key]
+  ): ConflictIndex[Key, Array[Byte]] =
+    erasedConflictIndex(typedTopKConflictIndex(k, like))
 }

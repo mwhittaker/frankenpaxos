@@ -220,4 +220,225 @@ class KeyValueStore
       }
     }
   }
+
+  class TopOne[T](like: VertexIdLike[T]) {
+    type LeaderIndex = Int
+    val topOnes = mutable.Map[LeaderIndex, T]()
+
+    def put(x: T): Unit = {
+      topOnes.get(like.leaderIndex(x)) match {
+        case Some(y) =>
+          if (like.id(x) > like.id(y)) {
+            topOnes(like.leaderIndex(x)) = x
+          }
+        case None =>
+          topOnes(like.leaderIndex(x)) = x
+      }
+    }
+
+    def get(): Set[T] = topOnes.values.toSet
+
+    def mergeEquals(other: TopOne[T]): Unit = {
+      for ((leaderIndex, y) <- other.topOnes) {
+        topOnes.get(leaderIndex) match {
+          case None => topOnes(leaderIndex) = y
+          case Some(x) =>
+            if (like.id(y) > like.id(x)) {
+              topOnes(leaderIndex) = y
+            }
+        }
+      }
+    }
+  }
+
+  class TopK[T](k: Int, like: VertexIdLike[T]) {
+    type LeaderIndex = Int
+    val topOnes = mutable.Map[LeaderIndex, mutable.SortedSet[T]]()
+
+    def put(x: T): Unit = {
+      topOnes.get(like.leaderIndex(x)) match {
+        case Some(ys) =>
+          ys += x
+          if (ys.size > k) {
+            ys.remove(ys.head)
+          }
+        case None =>
+          topOnes(like.leaderIndex(x)) =
+            mutable.SortedSet(x)(like.intraLeaderOrdering)
+      }
+    }
+
+    def get(): Set[T] = topOnes.values.flatten.toSet
+
+    def mergeEquals(other: TopK[T]): Unit = {
+      for ((leaderIndex, ys) <- other.topOnes) {
+        topOnes.get(leaderIndex) match {
+          case None =>
+            val xs = mutable.SortedSet()(like.intraLeaderOrdering)
+            topOnes(leaderIndex) = xs
+            xs ++= ys
+          case Some(xs) =>
+            xs ++= ys
+            while (xs.size > k) {
+              xs.remove(xs.head)
+            }
+        }
+      }
+    }
+  }
+
+  def typedTopKConflictIndex[CommandKey](
+      k: Int,
+      like: VertexIdLike[CommandKey]
+  ): ConflictIndex[CommandKey, KeyValueStoreInput] = {
+    if (k == 1) {
+      new ConflictIndex[CommandKey, KeyValueStoreInput] {
+        type LeaderIndex = Int
+        private val gets = mutable.Map[String, TopOne[CommandKey]]()
+        private val sets = mutable.Map[String, TopOne[CommandKey]]()
+
+        override def put(
+            commandKey: CommandKey,
+            command: KeyValueStoreInput
+        ): Option[KeyValueStoreInput] = {
+          import KeyValueStoreInput.Request
+          command.request match {
+            case Request.GetRequest(GetRequest(keys)) =>
+              for (key <- keys) {
+                gets.getOrElseUpdate(key, new TopOne(like)).put(commandKey)
+              }
+
+            case Request.SetRequest(SetRequest(keyValues)) =>
+              for (SetKeyValuePair(key, _) <- keyValues) {
+                sets.getOrElseUpdate(key, new TopOne(like)).put(commandKey)
+              }
+
+            case Request.Empty =>
+              throw new IllegalStateException()
+          }
+          None
+        }
+
+        override def remove(
+            commandKey: CommandKey
+        ): Option[KeyValueStoreInput] = ???
+
+        override def getConflicts(
+            command: KeyValueStoreInput
+        ): Set[CommandKey] = {
+          import KeyValueStoreInput.Request
+          command.request match {
+            case Request.GetRequest(GetRequest(keys)) =>
+              if (keys.size == 0) {
+                Set()
+              } else {
+                val merged = new TopOne(like)
+                for (key <- keys) {
+                  sets.get(key) match {
+                    case None         =>
+                    case Some(topOne) => merged.mergeEquals(topOne)
+                  }
+                }
+                merged.get()
+              }
+
+            case Request.SetRequest(SetRequest(keyValues)) =>
+              if (keyValues.size == 0) {
+                Set()
+              } else {
+                val merged = new TopOne(like)
+                for (SetKeyValuePair(key, _) <- keyValues) {
+                  sets.get(key) match {
+                    case None         =>
+                    case Some(topOne) => merged.mergeEquals(topOne)
+                  }
+                  gets.get(key) match {
+                    case None         =>
+                    case Some(topOne) => merged.mergeEquals(topOne)
+                  }
+                }
+                merged.get()
+              }
+
+            case Request.Empty =>
+              throw new IllegalStateException()
+          }
+        }
+      }
+    } else {
+      new ConflictIndex[CommandKey, KeyValueStoreInput] {
+        type LeaderIndex = Int
+        private val gets = mutable.Map[String, TopK[CommandKey]]()
+        private val sets = mutable.Map[String, TopK[CommandKey]]()
+
+        override def put(
+            commandKey: CommandKey,
+            command: KeyValueStoreInput
+        ): Option[KeyValueStoreInput] = {
+          import KeyValueStoreInput.Request
+          command.request match {
+            case Request.GetRequest(GetRequest(keys)) =>
+              for (key <- keys) {
+                gets.getOrElseUpdate(key, new TopK(k, like)).put(commandKey)
+              }
+
+            case Request.SetRequest(SetRequest(keyValues)) =>
+              for (SetKeyValuePair(key, _) <- keyValues) {
+                sets.getOrElseUpdate(key, new TopK(k, like)).put(commandKey)
+              }
+
+            case Request.Empty =>
+              throw new IllegalStateException()
+          }
+          None
+        }
+
+        override def remove(
+            commandKey: CommandKey
+        ): Option[KeyValueStoreInput] = ???
+
+        override def getConflicts(
+            command: KeyValueStoreInput
+        ): Set[CommandKey] = {
+          import KeyValueStoreInput.Request
+          command.request match {
+            case Request.GetRequest(GetRequest(keys)) =>
+              if (keys.size == 0) {
+                Set()
+              } else {
+                val merged = new TopK(k, like)
+                for (key <- keys) {
+                  sets.get(key) match {
+                    case None       =>
+                    case Some(topK) => merged.mergeEquals(topK)
+                  }
+                }
+                merged.get()
+              }
+
+            case Request.SetRequest(SetRequest(keyValues)) =>
+              if (keyValues.size == 0) {
+                Set()
+              } else {
+                val merged = new TopK(k, like)
+                for (SetKeyValuePair(key, _) <- keyValues) {
+                  sets.get(key) match {
+                    case None       =>
+                    case Some(topK) => merged.mergeEquals(topK)
+                  }
+                  gets.get(key) match {
+                    case None       =>
+                    case Some(topK) => merged.mergeEquals(topK)
+                  }
+                }
+                merged.get()
+              }
+
+            case Request.Empty =>
+              throw new IllegalStateException()
+          }
+        }
+      }
+    }
+  }
 }

@@ -37,4 +37,67 @@ class AppendLog extends StateMachine {
       override def remove(key: Key): Option[Array[Byte]] = xs.remove(key)
       override def getConflicts(command: Array[Byte]): Set[Key] = xs.keys.toSet
     }
+
+  override def topKConflictIndex[Key](
+      k: Int,
+      like: VertexIdLike[Key]
+  ): ConflictIndex[Key, Array[Byte]] = {
+    if (k == 1) {
+      new ConflictIndex[Key, Array[Byte]] {
+        type LeaderIndex = Int
+        private val commands = mutable.Map[LeaderIndex, Key]()
+
+        override def put(
+            key: Key,
+            command: Array[Byte]
+        ): Option[Array[Byte]] = {
+          val leaderIndex = like.leaderIndex(key)
+          commands.get(leaderIndex) match {
+            case None => commands(leaderIndex) = key
+
+            case Some(largestKey) =>
+              if (leaderIndex > like.leaderIndex(largestKey)) {
+                commands(leaderIndex) = key
+              }
+          }
+          None
+        }
+
+        override def remove(key: Key): Option[Array[Byte]] = ???
+
+        override def getConflicts(command: Array[Byte]): Set[Key] =
+          commands.values.toSet
+      }
+    } else {
+      new ConflictIndex[Key, Array[Byte]] {
+        type LeaderIndex = Int
+        private val commands =
+          mutable.Map[LeaderIndex, mutable.SortedSet[Key]]()
+
+        override def put(
+            key: Key,
+            command: Array[Byte]
+        ): Option[Array[Byte]] = {
+          val leaderIndex = like.leaderIndex(key)
+          commands.get(leaderIndex) match {
+            case None =>
+              commands(leaderIndex) =
+                mutable.SortedSet[Key](key)(like.intraLeaderOrdering)
+
+            case Some(keys) =>
+              keys += key
+              if (keys.size > k) {
+                keys -= keys.firstKey
+              }
+          }
+          None
+        }
+
+        override def remove(key: Key): Option[Array[Byte]] = ???
+
+        override def getConflicts(command: Array[Byte]): Set[Key] =
+          commands.values.flatten.toSet
+      }
+    }
+  }
 }
