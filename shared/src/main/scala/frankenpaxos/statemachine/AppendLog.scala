@@ -44,59 +44,37 @@ class AppendLog extends StateMachine {
   ): ConflictIndex[Key, Array[Byte]] = {
     if (k == 1) {
       new ConflictIndex[Key, Array[Byte]] {
-        type LeaderIndex = Int
-        private val commands = mutable.Map[LeaderIndex, Key]()
+        private val topOne = new TopOne[Key](like)
 
         override def put(
             key: Key,
             command: Array[Byte]
         ): Option[Array[Byte]] = {
-          val leaderIndex = like.leaderIndex(key)
-          commands.get(leaderIndex) match {
-            case None => commands(leaderIndex) = key
-
-            case Some(largestKey) =>
-              if (leaderIndex > like.leaderIndex(largestKey)) {
-                commands(leaderIndex) = key
-              }
-          }
+          topOne.put(key)
           None
         }
 
         override def remove(key: Key): Option[Array[Byte]] = ???
 
         override def getConflicts(command: Array[Byte]): Set[Key] =
-          commands.values.toSet
+          topOne.get()
       }
     } else {
       new ConflictIndex[Key, Array[Byte]] {
-        type LeaderIndex = Int
-        private val commands =
-          mutable.Map[LeaderIndex, mutable.SortedSet[Key]]()
+        private val topK = new TopK[Key](k, like)
 
         override def put(
             key: Key,
             command: Array[Byte]
         ): Option[Array[Byte]] = {
-          val leaderIndex = like.leaderIndex(key)
-          commands.get(leaderIndex) match {
-            case None =>
-              commands(leaderIndex) =
-                mutable.SortedSet[Key](key)(like.intraLeaderOrdering)
-
-            case Some(keys) =>
-              keys += key
-              if (keys.size > k) {
-                keys -= keys.firstKey
-              }
-          }
+          topK.put(key)
           None
         }
 
         override def remove(key: Key): Option[Array[Byte]] = ???
 
         override def getConflicts(command: Array[Byte]): Set[Key] =
-          commands.values.flatten.toSet
+          topK.get()
       }
     }
   }
