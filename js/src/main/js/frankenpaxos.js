@@ -996,7 +996,8 @@ Vue.component('frankenpaxos-top-one', {
   template: `
     <fp-object>
       <fp-field :name="'topOnes'">
-        <frankenpaxos-map :map="value.topOnes"></frankenpaxos-map>
+        <frankenpaxos-horizontal-seq :seq="value.topOnes">
+        </frankenpaxos-horizontal-seq>
       </fp-field>
     </fp-object>
   `,
@@ -1011,7 +1012,7 @@ Vue.component('frankenpaxos-top-k', {
   template: `
     <fp-object>
       <fp-field :name="'topOnes'">
-        <frankenpaxos-map :map="value.topOnes"></frankenpaxos-map>
+        <frankenpaxos-seq :seq="value.topOnes"></frankenpaxos-seq>
       </fp-field>
     </fp-object>
   `,

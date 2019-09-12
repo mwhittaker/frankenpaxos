@@ -54,7 +54,8 @@ class AppendLog extends StateMachine {
   ): ConflictIndex[Key, Array[Byte]] = {
     if (k == 1) {
       new ConflictIndex[Key, Array[Byte]] {
-        private val topOne = new TopOne(numLeaders, like)
+        @JSExport
+        protected val topOne = new TopOne(numLeaders, like)
 
         override def put(key: Key, command: Array[Byte]): Unit = topOne.put(key)
         override def putSnapshot(key: Key): Unit = topOne.put(key)
@@ -63,7 +64,8 @@ class AppendLog extends StateMachine {
       }
     } else {
       new ConflictIndex[Key, Array[Byte]] {
-        private val topK = new TopK[Key](k, numLeaders, like)
+        @JSExport
+        protected val topK = new TopK[Key](k, numLeaders, like)
 
         override def put(key: Key, command: Array[Byte]): Unit = topK.put(key)
         override def putSnapshot(key: Key): Unit = topK.put(key)
