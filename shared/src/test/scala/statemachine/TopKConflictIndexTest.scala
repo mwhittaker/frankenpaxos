@@ -33,6 +33,24 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     conflictIndex
   }
 
+  private def putWithSnapshots(
+      conflictIndex: ConflictIndex[(Int, Int), Array[Byte]]
+  ): ConflictIndex[(Int, Int), Array[Byte]] = {
+    conflictIndex.put((0, 0), bytes(0))
+    conflictIndex.put((0, 1), bytes(0))
+    conflictIndex.put((0, 2), bytes(0))
+    conflictIndex.put((1, 0), bytes(1))
+    conflictIndex.put((1, 1), bytes(1))
+    conflictIndex.put((2, 0), bytes(2))
+    conflictIndex.putSnapshot((3, 2))
+    conflictIndex.putSnapshot((3, 0))
+    conflictIndex.putSnapshot((5, 0))
+    conflictIndex.putSnapshot((4, 1))
+    conflictIndex.putSnapshot((4, 0))
+    conflictIndex.putSnapshot((3, 1))
+    conflictIndex
+  }
+
   // Noop //////////////////////////////////////////////////////////////////////
   "Noop top-k conflict index" should "getConflicts correctly" in {
     val noop = new Noop()
@@ -46,6 +64,45 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     conflictIndices(1).getConflicts(bytes(0)) shouldBe Set()
     conflictIndices(2).getConflicts(bytes(0)) shouldBe Set()
     conflictIndices(3).getConflicts(bytes(0)) shouldBe Set()
+  }
+
+  it should "getConflicts with snapshots correctly" in {
+    val noop = new Noop()
+    val conflictIndices = {
+      for (k <- 1 until 5) yield {
+        putWithSnapshots(noop.topKConflictIndex[(Int, Int)](k, intTuple))
+      }
+    }.toSeq
+
+    conflictIndices(0).getConflicts(bytes(0)) shouldBe
+      Set((3, 2), (4, 1), (5, 0))
+    conflictIndices(1).getConflicts(bytes(0)) shouldBe
+      Set((3, 1), (3, 2), (4, 0), (4, 1), (5, 0))
+    conflictIndices(2).getConflicts(bytes(0)) shouldBe
+      Set((3, 0), (3, 1), (3, 2), (4, 0), (4, 1), (5, 0))
+    conflictIndices(3).getConflicts(bytes(0)) shouldBe
+      Set((3, 0), (3, 1), (3, 2), (4, 0), (4, 1), (5, 0))
+  }
+
+  it should "getSnapshotConflicts correctly" in {
+    val noop = new Noop()
+    val conflictIndices = {
+      for (k <- 1 until 5) yield {
+        putWithSnapshots(noop.topKConflictIndex[(Int, Int)](k, intTuple))
+      }
+    }.toSeq
+
+    conflictIndices(0).getSnapshotConflicts() shouldBe
+      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
+    conflictIndices(1).getSnapshotConflicts() shouldBe
+      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(2).getSnapshotConflicts() shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(3).getSnapshotConflicts() shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
   }
 
   // Register //////////////////////////////////////////////////////////////////
@@ -67,6 +124,48 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
       Set((0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (2, 0))
   }
 
+  it should "getConflicts with snapshots correctly" in {
+    val register = new Register()
+    val conflictIndices = {
+      for (k <- 1 until 5) yield {
+        putWithSnapshots(register.topKConflictIndex[(Int, Int)](k, intTuple))
+      }
+    }.toSeq
+
+    conflictIndices(0).getConflicts(bytes(0)) shouldBe
+      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
+    conflictIndices(1).getConflicts(bytes(0)) shouldBe
+      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(2).getConflicts(bytes(0)) shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(3).getConflicts(bytes(0)) shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+  }
+
+  it should "getSnapshotConflicts correctly" in {
+    val register = new Register()
+    val conflictIndices = {
+      for (k <- 1 until 5) yield {
+        putWithSnapshots(register.topKConflictIndex[(Int, Int)](k, intTuple))
+      }
+    }.toSeq
+
+    conflictIndices(0).getSnapshotConflicts() shouldBe
+      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
+    conflictIndices(1).getSnapshotConflicts() shouldBe
+      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(2).getSnapshotConflicts() shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(3).getSnapshotConflicts() shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+  }
+
   // AppendLog /////////////////////////////////////////////////////////////////
   "AppendLog top-k conflict index" should "getConflicts correctly" in {
     val appendLog = new AppendLog()
@@ -84,6 +183,48 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
       Set((0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (2, 0))
     conflictIndices(3).getConflicts(bytes(0)) shouldBe
       Set((0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (2, 0))
+  }
+
+  it should "getConflicts with snapshots correctly" in {
+    val log = new AppendLog()
+    val conflictIndices = {
+      for (k <- 1 until 5) yield {
+        putWithSnapshots(log.topKConflictIndex[(Int, Int)](k, intTuple))
+      }
+    }.toSeq
+
+    conflictIndices(0).getConflicts(bytes(0)) shouldBe
+      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
+    conflictIndices(1).getConflicts(bytes(0)) shouldBe
+      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(2).getConflicts(bytes(0)) shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(3).getConflicts(bytes(0)) shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+  }
+
+  it should "getSnapshotConflicts correctly" in {
+    val log = new AppendLog()
+    val conflictIndices = {
+      for (k <- 1 until 5) yield {
+        putWithSnapshots(log.topKConflictIndex[(Int, Int)](k, intTuple))
+      }
+    }.toSeq
+
+    conflictIndices(0).getSnapshotConflicts() shouldBe
+      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
+    conflictIndices(1).getSnapshotConflicts() shouldBe
+      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(2).getSnapshotConflicts() shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(3).getSnapshotConflicts() shouldBe
+      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
+        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
   }
 
   // KeyValueStore /////////////////////////////////////////////////////////////
@@ -154,5 +295,71 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     index2.getConflicts(get("x", "y", "z")) shouldBe Set((0, 2), (1, 1), (1, 3))
     index2.getConflicts(set("x", "y", "z")) shouldBe
       Set((0, 2), (0, 3), (1, 1), (1, 3), (2, 10), (2, 20))
+  }
+
+  it should "get complicated conflicts with snapshots correctly" in {
+    def put(
+        conflictIndex: ConflictIndex[(Int, Int), KeyValueStoreInput]
+    ): ConflictIndex[(Int, Int), KeyValueStoreInput] = {
+      conflictIndex.put((0, 0), get("x"))
+      conflictIndex.put((1, 3), set("x", "y"))
+      conflictIndex.put((2, 20), get("y", "z"))
+      conflictIndex.put((2, 10), get("y", "z"))
+      conflictIndex.put((0, 1), get("x"))
+      conflictIndex.put((0, 3), get("x"))
+      conflictIndex.put((0, 2), set("x"))
+      conflictIndex.put((1, 1), set("x", "y"))
+      conflictIndex.put((2, 20), get("y", "z"))
+      conflictIndex.putSnapshot((3, 0))
+      conflictIndex.putSnapshot((3, 10))
+      conflictIndex.putSnapshot((3, 20))
+      conflictIndex
+
+      // snapshots
+      // (3, 0), (3, 10), (3, 20)
+      //
+      // gets
+      // x: (0, 0), (0, 1), (0, 3)
+      // y: (2, 10), (2, 20)
+      // z: (2, 10), (2, 20)
+      //
+      // sets
+      // x: (0, 2), (1, 1), (1, 3)
+      // y: (1, 1), (1, 3)
+      // z:
+    }
+
+    val kvs = new KeyValueStore()
+
+    // k = 1
+    val index1 = put(kvs.typedTopKConflictIndex[(Int, Int)](k = 1, intTuple))
+    index1.getConflicts(get("x")) shouldBe Set((0, 2), (1, 3), (3, 20))
+    index1.getConflicts(get("y")) shouldBe Set((1, 3), (3, 20))
+    index1.getConflicts(get("z")) shouldBe Set((3, 20))
+    index1.getConflicts(set("x")) shouldBe Set((0, 3), (1, 3), (3, 20))
+    index1.getConflicts(set("y")) shouldBe Set((1, 3), (2, 20), (3, 20))
+    index1.getConflicts(set("z")) shouldBe Set((2, 20), (3, 20))
+    index1.getConflicts(get("x", "y", "z")) shouldBe
+      Set((0, 2), (1, 3), (3, 20))
+    index1.getConflicts(set("x", "y", "z")) shouldBe
+      Set((0, 3), (1, 3), (2, 20), (3, 20))
+
+    // k = 2
+    val index2 = put(kvs.typedTopKConflictIndex[(Int, Int)](k = 2, intTuple))
+    index2.getConflicts(get("x")) shouldBe
+      Set((0, 2), (1, 1), (1, 3), (3, 10), (3, 20))
+    index2.getConflicts(get("y")) shouldBe
+      Set((1, 1), (1, 3), (3, 10), (3, 20))
+    index2.getConflicts(get("z")) shouldBe Set((3, 10), (3, 20))
+    index2.getConflicts(set("x")) shouldBe
+      Set((0, 2), (0, 3), (1, 1), (1, 3), (3, 10), (3, 20))
+    index2.getConflicts(set("y")) shouldBe
+      Set((1, 1), (1, 3), (2, 10), (2, 20), (3, 10), (3, 20))
+    index2.getConflicts(set("z")) shouldBe
+      Set((2, 10), (2, 20), (3, 10), (3, 20))
+    index2.getConflicts(get("x", "y", "z")) shouldBe
+      Set((0, 2), (1, 1), (1, 3), (3, 10), (3, 20))
+    index2.getConflicts(set("x", "y", "z")) shouldBe
+      Set((0, 2), (0, 3), (1, 1), (1, 3), (2, 10), (2, 20), (3, 10), (3, 20))
   }
 }

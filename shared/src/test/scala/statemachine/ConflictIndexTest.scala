@@ -18,15 +18,6 @@ class ConflictIndexTest extends FlatSpec with Matchers {
     conflictIndex.put(2, bytes(2))
   }
 
-  it should "remove correctly" in {
-    val noop = new Noop()
-    val conflictIndex = noop.conflictIndex[Int]()
-    conflictIndex.put(0, bytes(0))
-    val removed = conflictIndex.remove(0)
-    removed shouldBe defined
-    removed.get shouldBe bytes(0)
-  }
-
   it should "getConflicts correctly" in {
     val noop = new Noop()
     val conflictIndex = noop.conflictIndex[Int]()
@@ -36,6 +27,26 @@ class ConflictIndexTest extends FlatSpec with Matchers {
     conflictIndex.getConflicts(bytes(0)) shouldBe Set()
     conflictIndex.getConflicts(bytes(1)) shouldBe Set()
     conflictIndex.getConflicts(bytes(2)) shouldBe Set()
+  }
+
+  it should "getConflicts with snapshots correctly" in {
+    val noop = new Noop()
+    val conflictIndex = noop.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.putSnapshot(1)
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.getConflicts(bytes(0)) shouldBe Set(1)
+    conflictIndex.getConflicts(bytes(1)) shouldBe Set(1)
+    conflictIndex.getConflicts(bytes(2)) shouldBe Set(1)
+  }
+
+  it should "getSnapshotConflicts correctly" in {
+    val noop = new Noop()
+    val conflictIndex = noop.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.putSnapshot(1)
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.getSnapshotConflicts() shouldBe Set(0, 1, 2)
   }
 
   // Register //////////////////////////////////////////////////////////////////
@@ -52,9 +63,7 @@ class ConflictIndexTest extends FlatSpec with Matchers {
     val conflictIndex = register.conflictIndex[Int]()
     conflictIndex.put(0, bytes(0))
     conflictIndex.put(1, bytes(1))
-    val removed = conflictIndex.remove(0)
-    removed shouldBe defined
-    removed.get shouldBe bytes(0)
+    conflictIndex.remove(0)
     conflictIndex.getConflicts(bytes(2)) shouldBe Set(1)
   }
 
@@ -67,6 +76,26 @@ class ConflictIndexTest extends FlatSpec with Matchers {
     conflictIndex.getConflicts(bytes(0)) shouldBe Set(0, 1, 2)
     conflictIndex.getConflicts(bytes(1)) shouldBe Set(0, 1, 2)
     conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
+  }
+
+  it should "getConflicts with snapshots correctly" in {
+    val register = new Register()
+    val conflictIndex = register.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.putSnapshot(1)
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.getConflicts(bytes(0)) shouldBe Set(0, 1, 2)
+    conflictIndex.getConflicts(bytes(1)) shouldBe Set(0, 1, 2)
+    conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
+  }
+
+  it should "getSnapshotConflicts correctly" in {
+    val register = new Register()
+    val conflictIndex = register.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.putSnapshot(1)
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.getSnapshotConflicts() shouldBe Set(0, 1, 2)
   }
 
   // AppendLog /////////////////////////////////////////////////////////////////
@@ -83,9 +112,7 @@ class ConflictIndexTest extends FlatSpec with Matchers {
     val conflictIndex = log.conflictIndex[Int]()
     conflictIndex.put(0, bytes(0))
     conflictIndex.put(1, bytes(1))
-    val removed = conflictIndex.remove(0)
-    removed shouldBe defined
-    removed.get shouldBe bytes(0)
+    conflictIndex.remove(0)
     conflictIndex.getConflicts(bytes(2)) shouldBe Set(1)
   }
 
@@ -98,6 +125,26 @@ class ConflictIndexTest extends FlatSpec with Matchers {
     conflictIndex.getConflicts(bytes(0)) shouldBe Set(0, 1, 2)
     conflictIndex.getConflicts(bytes(1)) shouldBe Set(0, 1, 2)
     conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
+  }
+
+  it should "getConflicts with snapshots correctly" in {
+    val log = new AppendLog()
+    val conflictIndex = log.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.putSnapshot(1)
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.getConflicts(bytes(0)) shouldBe Set(0, 1, 2)
+    conflictIndex.getConflicts(bytes(1)) shouldBe Set(0, 1, 2)
+    conflictIndex.getConflicts(bytes(2)) shouldBe Set(0, 1, 2)
+  }
+
+  it should "getSnapshotConflicts correctly" in {
+    val log = new AppendLog()
+    val conflictIndex = log.conflictIndex[Int]()
+    conflictIndex.put(0, bytes(0))
+    conflictIndex.putSnapshot(1)
+    conflictIndex.put(2, bytes(2))
+    conflictIndex.getSnapshotConflicts() shouldBe Set(0, 1, 2)
   }
 
   // KeyValueStore /////////////////////////////////////////////////////////////
@@ -122,9 +169,7 @@ class ConflictIndexTest extends FlatSpec with Matchers {
     val conflictIndex = kvs.typedConflictIndex[Int]()
     conflictIndex.put(0, get("x", "y"))
     conflictIndex.put(1, get("x", "y"))
-    val removed = conflictIndex.remove(0)
-    removed shouldBe defined
-    removed.get shouldBe get("x", "y")
+    conflictIndex.remove(0)
     conflictIndex.getConflicts(set("x", "y")) shouldBe Set(1)
   }
 
@@ -141,5 +186,36 @@ class ConflictIndexTest extends FlatSpec with Matchers {
     conflictIndex.getConflicts(set("y")) shouldBe Set(0, 1, 2)
     conflictIndex.getConflicts(set("z")) shouldBe Set(1, 2, 3)
     conflictIndex.getConflicts(set("a")) shouldBe Set()
+  }
+
+  it should "getConflicts with snapshots correctly" in {
+    val kvs = new KeyValueStore()
+    val conflictIndex = kvs.typedConflictIndex[Int]()
+    conflictIndex.put(0, get("a", "b"))
+    conflictIndex.put(1, get("y", "z"))
+    conflictIndex.putSnapshot(2)
+    conflictIndex.put(3, set("z"))
+
+    conflictIndex.getConflicts(get("a")) shouldBe Set(2)
+    conflictIndex.getConflicts(get("b")) shouldBe Set(2)
+    conflictIndex.getConflicts(get("x")) shouldBe Set(2)
+    conflictIndex.getConflicts(get("y")) shouldBe Set(2)
+    conflictIndex.getConflicts(get("z")) shouldBe Set(2, 3)
+    conflictIndex.getConflicts(set("a")) shouldBe Set(0, 2)
+    conflictIndex.getConflicts(set("b")) shouldBe Set(0, 2)
+    conflictIndex.getConflicts(set("x")) shouldBe Set(2)
+    conflictIndex.getConflicts(set("y")) shouldBe Set(1, 2)
+    conflictIndex.getConflicts(set("z")) shouldBe Set(1, 2, 3)
+  }
+
+  it should "getSnapshotConflicts correctly" in {
+    val kvs = new KeyValueStore()
+    val conflictIndex = kvs.typedConflictIndex[Int]()
+    conflictIndex.put(0, get("a", "b"))
+    conflictIndex.put(1, get("y", "z"))
+    conflictIndex.putSnapshot(2)
+    conflictIndex.put(3, set("z"))
+
+    conflictIndex.getSnapshotConflicts() shouldBe Set(0, 1, 2, 3)
   }
 }

@@ -1,5 +1,7 @@
 package frankenpaxos.simplegcbpaxos
 
+import frankenpaxos.statemachine.VertexIdLike
+
 object VertexIdHelpers {
   implicit val vertexIdOrdering = new Ordering[VertexId] {
     override def compare(x: VertexId, y: VertexId): Int = {
@@ -8,5 +10,10 @@ object VertexIdHelpers {
       val ordering = Ordering.Tuple2[Int, Int]
       ordering.compare((xleaderIndex, xid), (yleaderIndex, yid))
     }
+  }
+
+  implicit val like = new VertexIdLike[VertexId] {
+    override def leaderIndex(vertexId: VertexId) = vertexId.leaderIndex
+    override def id(vertexId: VertexId) = vertexId.id
   }
 }

@@ -22,11 +22,19 @@ class Noop extends StateMachine {
 
   override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] = {
     new ConflictIndex[Key, Array[Byte]] {
-      private val commands = mutable.Map[Key, Array[Byte]]()
-      override def put(key: Key, command: Array[Byte]): Option[Array[Byte]] =
-        commands.put(key, command)
-      override def remove(key: Key): Option[Array[Byte]] = commands.remove(key)
-      override def getConflicts(command: Array[Byte]): Set[Key] = Set()
+      private val noops = mutable.Set[Key]()
+      private val snapshots = mutable.Set[Key]()
+
+      override def put(key: Key, command: Array[Byte]): Unit = noops += key
+      override def putSnapshot(key: Key): Unit = snapshots.add(key)
+      override def remove(key: Key): Unit = {
+        noops -= key
+        snapshots -= key
+      }
+      override def getConflicts(command: Array[Byte]): Set[Key] =
+        snapshots.toSet
+      override def getSnapshotConflicts(): Set[Key] =
+        (noops ++ snapshots).toSet
     }
   }
 
@@ -34,10 +42,41 @@ class Noop extends StateMachine {
       k: Int,
       like: VertexIdLike[Key]
   ): ConflictIndex[Key, Array[Byte]] =
-    new ConflictIndex[Key, Array[Byte]] {
-      override def put(key: Key, command: Array[Byte]): Option[Array[Byte]] =
-        None
-      override def remove(key: Key): Option[Array[Byte]] = ???
-      override def getConflicts(command: Array[Byte]): Set[Key] = Set()
+    if (k == 1) {
+      new ConflictIndex[Key, Array[Byte]] {
+        private val noops = new TopOne(like)
+        private val snapshots = new TopOne(like)
+
+        override def put(key: Key, command: Array[Byte]): Unit = noops.put(key)
+        override def putSnapshot(key: Key): Unit = snapshots.put(key)
+        override def remove(key: Key): Unit =
+          throw new java.lang.UnsupportedOperationException()
+        override def getConflicts(command: Array[Byte]): Set[Key] =
+          snapshots.get()
+        override def getSnapshotConflicts(): Set[Key] = {
+          val merged = new TopOne(like)
+          merged.mergeEquals(noops)
+          merged.mergeEquals(snapshots)
+          merged.get()
+        }
+      }
+    } else {
+      new ConflictIndex[Key, Array[Byte]] {
+        private val noops = new TopK(k, like)
+        private val snapshots = new TopK(k, like)
+
+        override def put(key: Key, command: Array[Byte]): Unit = noops.put(key)
+        override def putSnapshot(key: Key): Unit = snapshots.put(key)
+        override def remove(key: Key): Unit =
+          throw new java.lang.UnsupportedOperationException()
+        override def getConflicts(command: Array[Byte]): Set[Key] =
+          snapshots.get()
+        override def getSnapshotConflicts(): Set[Key] = {
+          val merged = new TopK(k, like)
+          merged.mergeEquals(noops)
+          merged.mergeEquals(snapshots)
+          merged.get()
+        }
+      }
     }
 }

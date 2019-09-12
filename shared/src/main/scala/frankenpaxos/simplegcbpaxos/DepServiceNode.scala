@@ -8,6 +8,7 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
+import frankenpaxos.statemachine.ConflictIndex
 import frankenpaxos.statemachine.StateMachine
 import frankenpaxos.util
 import scala.collection.mutable
@@ -24,26 +25,34 @@ object DepServiceNodeInboundSerializer
 
 @JSExportAll
 case class DepServiceNodeOptions(
+    // If topKDependencies is -1, then a dependency service node returns every
+    // dependency of a command. If topKDependencies is equal to k for some k > 0,
+    // then a dependency service node only returns the top-k dependencies for
+    // every leader.
+    topKDependencies: Int,
     // A dependency service node garbage collects its conflict index every
-    // `garbageCollectEveryNCommands` commands that it receives.
+    // `garbageCollectEveryNCommands` commands that it receives, if
+    // topKDependencies = -1. If topKDependencies > 0, then there's no need to
+    // garbage collect.
     garbageCollectEveryNCommands: Int,
-    // If true, the dependency service node records how long various things
-    // take to do and reports them using the
-    // `simple_gc_bpaxos_dep_service_node_requests_latency` metric.
-    measureLatencies: Boolean,
     // If `unsafeReturnNoDependencies` is true, dependency service nodes return
     // no dependencies for every command. As the name suggests, this is unsafe
     // and breaks the protocol. It should be used only for performance
     // debugging and evaluation.
-    unsafeReturnNoDependencies: Boolean
+    unsafeReturnNoDependencies: Boolean,
+    // If true, the dependency service node records how long various things
+    // take to do and reports them using the
+    // `simple_gc_bpaxos_dep_service_node_requests_latency` metric.
+    measureLatencies: Boolean
 )
 
 @JSExportAll
 object DepServiceNodeOptions {
   val default = DepServiceNodeOptions(
+    topKDependencies = -1,
     garbageCollectEveryNCommands = 100,
-    measureLatencies = true,
-    unsafeReturnNoDependencies = false
+    unsafeReturnNoDependencies = false,
+    measureLatencies = true
   )
 }
 
@@ -145,19 +154,45 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   logger.check(config.depServiceNodeAddresses.contains(address))
   private val index = config.depServiceNodeAddresses.indexOf(address)
 
-  // This compacted conflict index stores all of the commands seen so far. When
-  // a dependency service node receives a new command, it uses the conflict
-  // index to efficiently compute dependencies.
-  @JSExport
-  protected val conflictIndex =
-    new CompactConflictIndex(config.leaderAddresses.size, stateMachine)
+  // The conflict index stores all of the commands seen so far. When a
+  // dependency service node receives a new command, it uses the conflict index
+  // to efficiently compute dependencies. If topKDependencies = -1, then we
+  // conflict index. Otherwise, we use compactConflictIndex.
+  sealed trait SomeConflictIndex
 
-  // The number of commands that the dependency service node has received since
-  // the last time it garbage collected.  Every
-  // `options.garbageCollectEveryNCommands` commands, this value is reset and
-  // the conflict index is garbage collected.
+  case class Uncompacted(
+      // A top-k conflict index.
+      conflictIndex: ConflictIndex[VertexId, Array[Byte]],
+      // The conflictIndex' high watermark. The largest id for every leader
+      // that was every inserted.
+      highWatermark: mutable.Buffer[Int]
+  ) extends SomeConflictIndex
+
+  case class Compacted(
+      // A compacted (not top-k) conflict index.
+      conflictIndex: CompactConflictIndex,
+      // The number of commands that the dependency service node has received
+      // since the last time it garbage collected.  Every
+      // `options.garbageCollectEveryNCommands` commands, this value is reset
+      // and the conflict index is garbage collected.
+      numCommandsPendingGc: Int
+  ) extends SomeConflictIndex
+
   @JSExport
-  protected var numCommandsPendingGc: Int = 0
+  protected var conflictIndex: SomeConflictIndex =
+    if (options.topKDependencies > 0) {
+      Uncompacted(
+        conflictIndex = stateMachine.topKConflictIndex(options.topKDependencies,
+                                                       VertexIdHelpers.like),
+        highWatermark = mutable.Buffer.fill(config.leaderAddresses.size)(0)
+      )
+    } else {
+      Compacted(
+        conflictIndex =
+          new CompactConflictIndex(config.leaderAddresses.size, stateMachine),
+        numCommandsPendingGc = 0
+      )
+    }
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -224,36 +259,86 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     import CommandOrSnapshot.Value
-    val dependencies = dependencyRequest.commandOrSnapshot.value match {
-      case Value.Snapshot(_) =>
-        metrics.snapshotsTotal.inc()
-        val dependencies = timed("DependencyRequest/snapshotDependencies") {
-          val dependencies = conflictIndex.highWatermark()
-          dependencies.subtractOne(dependencyRequest.vertexId)
-          dependencies
-        }
-        conflictIndex.putSnapshot(dependencyRequest.vertexId)
-        metrics.snapshotDependencies.observe(dependencies.size)
-        metrics.uncompactedSnapshotDependencies.observe(
-          dependencies.uncompactedSize
-        )
-        dependencies
+    val dependencies =
+      (conflictIndex, dependencyRequest.commandOrSnapshot.value) match {
+        case (_, Value.Empty) =>
+          logger.fatal("DepServiceNode received empty CommandOrSnapshot.")
 
-      case Value.Command(command) =>
-        val bytes = command.command.toByteArray
-        var dependencies = timed("DependencyRequest/computeDependencies") {
-          val dependencies = conflictIndex.getConflicts(bytes)
-          dependencies.subtractOne(dependencyRequest.vertexId)
-          dependencies
-        }
-        conflictIndex.put(dependencyRequest.vertexId, bytes)
-        metrics.dependencies.observe(dependencies.size)
-        metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
-        dependencies
+        case (Uncompacted(conflictIndex, highWatermark), Value.Snapshot(_)) =>
+          val dependencies: VertexIdPrefixSet =
+            timed("DependencyRequest/uncompacted snapshot deps") {
+              val dependencies = VertexIdPrefixSet(highWatermark.toSeq)
+              dependencies.subtractOne(dependencyRequest.vertexId)
+              dependencies
+            }
+          conflictIndex.putSnapshot(dependencyRequest.vertexId)
+          highWatermark(dependencyRequest.vertexId.leaderIndex) = Math.max(
+            highWatermark(dependencyRequest.vertexId.leaderIndex),
+            dependencyRequest.vertexId.id
+          )
 
-      case Value.Empty =>
-        logger.fatal("DepServiceNode received empty CommandOrSnapshot.")
-    }
+          // Update metrics.
+          metrics.snapshotsTotal.inc()
+          metrics.snapshotDependencies.observe(dependencies.size)
+          metrics.uncompactedSnapshotDependencies.observe(
+            dependencies.uncompactedSize
+          )
+
+          dependencies
+
+        case (Uncompacted(conflictIndex, highWatermark),
+              Value.Command(command)) =>
+          val bytes = command.command.toByteArray
+          var dependencies: VertexIdPrefixSet =
+            timed("DependencyRequest/uncompacted deps") {
+              val dependencies =
+                VertexIdPrefixSet.fromTopK(config.leaderAddresses.size,
+                                           conflictIndex.getConflicts(bytes))
+              dependencies.subtractOne(dependencyRequest.vertexId)
+              dependencies
+            }
+          conflictIndex.put(dependencyRequest.vertexId, bytes)
+          highWatermark(dependencyRequest.vertexId.leaderIndex) = Math.max(
+            highWatermark(dependencyRequest.vertexId.leaderIndex),
+            dependencyRequest.vertexId.id
+          )
+
+          // Update metrics.
+          metrics.dependencies.observe(dependencies.size)
+          metrics.uncompactedDependencies.observe(
+            dependencies.uncompactedSize
+          )
+          dependencies
+
+        case (Compacted(conflictIndex, _), Value.Snapshot(_)) =>
+          metrics.snapshotsTotal.inc()
+          val dependencies =
+            timed("DependencyRequest/compacted snapshot deps") {
+              val dependencies = conflictIndex.highWatermark()
+              dependencies.subtractOne(dependencyRequest.vertexId)
+              dependencies
+            }
+          conflictIndex.putSnapshot(dependencyRequest.vertexId)
+          metrics.snapshotDependencies.observe(dependencies.size)
+          metrics.uncompactedSnapshotDependencies.observe(
+            dependencies.uncompactedSize
+          )
+          dependencies
+
+        case (Compacted(conflictIndex, _), Value.Command(command)) =>
+          val bytes = command.command.toByteArray
+          var dependencies = timed("DependencyRequest/compacted deps") {
+            val dependencies = conflictIndex.getConflicts(bytes)
+            dependencies.subtractOne(dependencyRequest.vertexId)
+            dependencies
+          }
+          conflictIndex.put(dependencyRequest.vertexId, bytes)
+          metrics.dependencies.observe(dependencies.size)
+          metrics.uncompactedDependencies.observe(
+            dependencies.uncompactedSize
+          )
+          dependencies
+      }
 
     timed("DependencyRequest/send") {
       leader.send(
@@ -265,13 +350,18 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       )
     }
 
-    numCommandsPendingGc += 1
-    if (numCommandsPendingGc % options.garbageCollectEveryNCommands == 0) {
-      timed("DependencyRequest/garbageCollect") {
-        conflictIndex.garbageCollect()
-      }
-      metrics.garbageCollectionTotal.inc()
-      numCommandsPendingGc = 0
+    conflictIndex match {
+      case _: Uncompacted =>
+      case compacted @ Compacted(_, numCommandsPendingGc) =>
+        var n = numCommandsPendingGc
+        if (n % options.garbageCollectEveryNCommands == 0) {
+          timed("DependencyRequest/garbageCollect") {
+            compacted.conflictIndex.garbageCollect()
+          }
+          metrics.garbageCollectionTotal.inc()
+          n = 0
+        }
+        conflictIndex = compacted.copy(numCommandsPendingGc = n)
     }
   }
 }

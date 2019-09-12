@@ -69,6 +69,35 @@ object VertexIdPrefixSet {
     new VertexIdPrefixSet(watermarks.size, intPrefixSets)
   }
 
+  def fromTopK(
+      numLeaders: Int,
+      vertexIds: Set[VertexId]
+  ): VertexIdPrefixSet = {
+    val watermarks = mutable.Buffer.fill(numLeaders)(0)
+    val values = mutable.Buffer.fill(numLeaders)(mutable.Set[Int]())
+    for (vertexId <- vertexIds) {
+      val VertexId(leaderIndex, id) = vertexId
+      if (watermarks(leaderIndex) == 0) {
+        watermarks(leaderIndex) = id
+      } else {
+        watermarks(leaderIndex) = Math.min(watermarks(leaderIndex), id)
+      }
+      values(leaderIndex) += id
+    }
+
+    val intPrefixSets = mutable.Buffer[IntPrefixSet]()
+    for (i <- 0 until numLeaders) {
+      val watermark = if (watermarks(i) == 0) {
+        0
+      } else {
+        watermarks(i) + 1
+      }
+      intPrefixSets += IntPrefixSet.fromWatermarkAndMutableSet(watermark,
+                                                               values(i))
+    }
+    new VertexIdPrefixSet(numLeaders, intPrefixSets)
+  }
+
   // Construct a VertexIdPrefixSet from a proto produced by
   // VertexIdPrefixSet.toProto.
   def fromProto(proto: VertexIdPrefixSetProto): VertexIdPrefixSet = {

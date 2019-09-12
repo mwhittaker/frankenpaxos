@@ -22,4 +22,49 @@ class VertexIdPrefixSetTest extends FlatSpec with Matchers {
     cloned.contains(new VertexId(1, 1)) shouldBe false
     cloned.contains(new VertexId(2, 2)) shouldBe false
   }
+
+  it should "apply from watermarks correctly" in {
+    val vertices = VertexIdPrefixSet(Seq(0, 1, 2, 3))
+    vertices.materialize() shouldBe Set(
+      new VertexId(1, 0),
+      new VertexId(2, 0),
+      new VertexId(2, 1),
+      new VertexId(3, 0),
+      new VertexId(3, 1),
+      new VertexId(3, 2)
+    )
+  }
+
+  it should "fromWatermarksAndSet correctly" in {
+    val vertices = VertexIdPrefixSet.fromWatermarksAndSet(
+      Seq(0, 1, 2),
+      Set(new VertexId(0, 10), new VertexId(1, 1))
+    )
+    vertices.materialize() shouldBe Set(
+      new VertexId(0, 10),
+      new VertexId(1, 0),
+      new VertexId(1, 1),
+      new VertexId(2, 0),
+      new VertexId(2, 1)
+    )
+  }
+
+  it should "fromTopK correctly" in {
+    val vertices = VertexIdPrefixSet.fromTopK(
+      4,
+      Set(new VertexId(0, 2), new VertexId(0, 10)) ++
+        Set(new VertexId(1, 0), new VertexId(1, 1), new VertexId(1, 5)) ++
+        Set(new VertexId(3, 10), new VertexId(3, 5), new VertexId(3, 1))
+    )
+    vertices.materialize() shouldBe
+      Set(new VertexId(0, 0),
+          new VertexId(0, 1),
+          new VertexId(0, 2),
+          new VertexId(0, 10)) ++
+        Set(new VertexId(1, 0), new VertexId(1, 1), new VertexId(1, 5)) ++
+        Set(new VertexId(3, 0),
+            new VertexId(3, 1),
+            new VertexId(3, 5),
+            new VertexId(3, 10))
+  }
 }

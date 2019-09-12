@@ -98,6 +98,7 @@ class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
   }
 
   def putSnapshot(vertexId: VertexId): Unit = {
+    newConflictIndex.putSnapshot(vertexId)
     updateWatermark(newWatermark, vertexId.leaderIndex, vertexId.id + 1)
   }
 
@@ -107,6 +108,14 @@ class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
         newConflictIndex.getConflicts(command) ++
           oldConflictIndex.getConflicts(command)
       )
+      .addAll(VertexIdPrefixSet(gcWatermark))
+  }
+
+  def getSnapshotConflicts(): VertexIdPrefixSet = {
+    VertexIdPrefixSet
+      .fromTopK(numLeaders,
+                newConflictIndex.getSnapshotConflicts() ++
+                  oldConflictIndex.getSnapshotConflicts())
       .addAll(VertexIdPrefixSet(gcWatermark))
   }
 

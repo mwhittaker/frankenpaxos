@@ -28,22 +28,27 @@ class Register extends StateMachine {
       secondCommand: Array[Byte]
   ): Boolean = true
 
-  override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] = {
+  override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
     new ConflictIndex[Key, Array[Byte]] {
-      private val commands = mutable.Map[Key, Array[Byte]]()
+      private val commandsAndSnapshots = mutable.Set[Key]()
 
-      override def put(key: Key, command: Array[Byte]): Option[Array[Byte]] =
-        commands.put(key, command)
+      override def put(key: Key, command: Array[Byte]): Unit =
+        commandsAndSnapshots += key
 
-      override def remove(key: Key): Option[Array[Byte]] =
-        commands.remove(key)
+      override def putSnapshot(key: Key): Unit =
+        commandsAndSnapshots += key
 
-      // Since every pair of commands conflict, we return every key except for
-      // `key`.
+      override def remove(key: Key): Unit =
+        commandsAndSnapshots -= key
+
+      // Since every pair of commands conflict, we return every key.
       override def getConflicts(command: Array[Byte]): Set[Key] =
-        commands.keys.toSet
+        commandsAndSnapshots.toSet
+
+      // Since every pair of commands conflict, we return every key.
+      override def getSnapshotConflicts(): Set[Key] =
+        commandsAndSnapshots.toSet
     }
-  }
 
   override def topKConflictIndex[Key](
       k: Int,
@@ -53,35 +58,23 @@ class Register extends StateMachine {
       new ConflictIndex[Key, Array[Byte]] {
         private val topOne = new TopOne(like)
 
-        override def put(
-            key: Key,
-            command: Array[Byte]
-        ): Option[Array[Byte]] = {
-          topOne.put(key)
-          None
-        }
-
-        override def remove(key: Key): Option[Array[Byte]] = ???
-
-        override def getConflicts(command: Array[Byte]): Set[Key] =
-          topOne.get()
+        override def put(key: Key, command: Array[Byte]): Unit = topOne.put(key)
+        override def putSnapshot(key: Key): Unit = topOne.put(key)
+        override def remove(key: Key): Unit =
+          throw new java.lang.UnsupportedOperationException()
+        override def getConflicts(command: Array[Byte]): Set[Key] = topOne.get()
+        override def getSnapshotConflicts(): Set[Key] = topOne.get()
       }
     } else {
       new ConflictIndex[Key, Array[Byte]] {
         private val topK = new TopK[Key](k, like)
 
-        override def put(
-            key: Key,
-            command: Array[Byte]
-        ): Option[Array[Byte]] = {
-          topK.put(key)
-          None
-        }
-
-        override def remove(key: Key): Option[Array[Byte]] = ???
-
-        override def getConflicts(command: Array[Byte]): Set[Key] =
-          topK.get()
+        override def put(key: Key, command: Array[Byte]): Unit = topK.put(key)
+        override def putSnapshot(key: Key): Unit = topK.put(key)
+        override def remove(key: Key): Unit =
+          throw new java.lang.UnsupportedOperationException()
+        override def getConflicts(command: Array[Byte]): Set[Key] = topK.get()
+        override def getSnapshotConflicts(): Set[Key] = topK.get()
       }
     }
   }

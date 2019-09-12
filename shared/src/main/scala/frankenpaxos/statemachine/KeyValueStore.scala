@@ -107,13 +107,13 @@ class KeyValueStore
   }
 
   override def typedConflictIndex[CommandKey]()
-    : ConflictIndex[CommandKey, KeyValueStoreInput] = {
+    : ConflictIndex[CommandKey, KeyValueStoreInput] =
     new ConflictIndex[CommandKey, KeyValueStoreInput] {
       // Commands maps command keys to commands. gets and sets are inverted
       // indexes that record the commands that get or set a particular key. For
       // example, if we put command `get(x), get(y)` with key 1 and put command
       // `set(y), set(z)` with command 2, then commands, gets, and sets, look
-      // like this.
+      // like this. `snapshots` stores the set of snapshots.
       //
       //   commands | 1 | get(x), get(y) |
       //            | 2 | set(y), set(z) |
@@ -126,40 +126,41 @@ class KeyValueStore
       private val commands = mutable.Map[CommandKey, KeyValueStoreInput]()
       private val gets = mutable.Map[String, mutable.Set[CommandKey]]()
       private val sets = mutable.Map[String, mutable.Set[CommandKey]]()
+      private val snapshots = mutable.Set[CommandKey]()
 
       override def put(
           commandKey: CommandKey,
           command: KeyValueStoreInput
-      ): Option[KeyValueStoreInput] = {
-        val o = remove(commandKey)
+      ): Unit = {
+        remove(commandKey)
         commands(commandKey) = command
 
         import KeyValueStoreInput.Request
         command.request match {
           case Request.GetRequest(GetRequest(keys)) =>
             for (key <- keys) {
-              gets.getOrElseUpdate(key, mutable.Set())
-              gets(key) += commandKey
+              gets.getOrElseUpdate(key, mutable.Set()) += commandKey
             }
 
           case Request.SetRequest(SetRequest(keyValues)) =>
             for (SetKeyValuePair(key, _) <- keyValues) {
-              sets.getOrElseUpdate(key, mutable.Set())
-              sets(key) += commandKey
+              sets.getOrElseUpdate(key, mutable.Set()) += commandKey
             }
 
           case Request.Empty =>
             throw new IllegalStateException()
         }
-
-        o
       }
+
+      override def putSnapshot(commandKey: CommandKey): Unit =
+        snapshots += commandKey
 
       override def remove(
           commandKey: CommandKey
-      ): Option[KeyValueStoreInput] = {
+      ): Unit = {
         commands.remove(commandKey) match {
-          case None => None
+          case None =>
+            None
 
           case Some(input) => {
             import KeyValueStoreInput.Request
@@ -183,7 +184,6 @@ class KeyValueStore
               case Request.Empty =>
                 throw new IllegalStateException()
             }
-            Some(input)
           }
         }
       }
@@ -194,32 +194,28 @@ class KeyValueStore
         import KeyValueStoreInput.Request
         val commandKeys = command.request match {
           case Request.GetRequest(GetRequest(keys)) =>
-            keys
-              .to[Set]
-              .map(key => sets.getOrElse(key, mutable.Set()).to[Set])
-              .flatten
+            val setConflicts =
+              keys.map(key => sets.getOrElse(key, mutable.Set())).flatten
+            (setConflicts ++ snapshots).toSet
 
           case Request.SetRequest(SetRequest(keyValues)) =>
             val keys = keyValues.map({ case SetKeyValuePair(k, v) => k })
-            val getCommandKeys =
-              keys
-                .to[Set]
-                .map(key => gets.getOrElse(key, mutable.Set()).to[Set])
-                .flatten
-            val setCommandKeys =
-              keys
-                .to[Set]
-                .map(key => sets.getOrElse(key, mutable.Set()).to[Set])
-                .flatten
-            getCommandKeys.union(setCommandKeys)
+            val getConflicts =
+              keys.map(key => gets.getOrElse(key, mutable.Set()))
+            val setConflicts =
+              keys.map(key => sets.getOrElse(key, mutable.Set()))
+            ((getConflicts ++ setConflicts).flatten ++ snapshots).toSet
 
           case Request.Empty =>
             throw new IllegalStateException()
         }
         commandKeys
       }
+
+      override def getSnapshotConflicts(): Set[CommandKey] = {
+        ((gets.values ++ sets.values).flatten ++ snapshots).toSet
+      }
     }
-  }
 
   def typedTopKConflictIndex[CommandKey](
       k: Int,
@@ -230,11 +226,12 @@ class KeyValueStore
         type LeaderIndex = Int
         private val gets = mutable.Map[String, TopOne[CommandKey]]()
         private val sets = mutable.Map[String, TopOne[CommandKey]]()
+        private val snapshots = new TopOne[CommandKey](like)
 
         override def put(
             commandKey: CommandKey,
             command: KeyValueStoreInput
-        ): Option[KeyValueStoreInput] = {
+        ): Unit = {
           import KeyValueStoreInput.Request
           command.request match {
             case Request.GetRequest(GetRequest(keys)) =>
@@ -250,12 +247,13 @@ class KeyValueStore
             case Request.Empty =>
               throw new IllegalStateException()
           }
-          None
         }
 
-        override def remove(
-            commandKey: CommandKey
-        ): Option[KeyValueStoreInput] = ???
+        override def putSnapshot(commandKey: CommandKey): Unit =
+          snapshots.put(commandKey)
+
+        override def remove(commandKey: CommandKey): Unit =
+          throw new java.lang.UnsupportedOperationException()
 
         override def getConflicts(
             command: KeyValueStoreInput
@@ -264,7 +262,7 @@ class KeyValueStore
           command.request match {
             case Request.GetRequest(GetRequest(keys)) =>
               if (keys.size == 0) {
-                Set()
+                snapshots.get()
               } else {
                 val merged = new TopOne(like)
                 for (key <- keys) {
@@ -273,12 +271,13 @@ class KeyValueStore
                     case Some(topOne) => merged.mergeEquals(topOne)
                   }
                 }
+                merged.mergeEquals(snapshots)
                 merged.get()
               }
 
             case Request.SetRequest(SetRequest(keyValues)) =>
               if (keyValues.size == 0) {
-                Set()
+                snapshots.get()
               } else {
                 val merged = new TopOne(like)
                 for (SetKeyValuePair(key, _) <- keyValues) {
@@ -291,6 +290,7 @@ class KeyValueStore
                     case Some(topOne) => merged.mergeEquals(topOne)
                   }
                 }
+                merged.mergeEquals(snapshots)
                 merged.get()
               }
 
@@ -298,17 +298,30 @@ class KeyValueStore
               throw new IllegalStateException()
           }
         }
+
+        override def getSnapshotConflicts(): Set[CommandKey] = {
+          val merged = new TopOne(like)
+          for (topOne <- gets.values) {
+            merged.mergeEquals(topOne)
+          }
+          for (topOne <- sets.values) {
+            merged.mergeEquals(topOne)
+          }
+          merged.mergeEquals(snapshots)
+          merged.get()
+        }
       }
     } else {
       new ConflictIndex[CommandKey, KeyValueStoreInput] {
         type LeaderIndex = Int
         private val gets = mutable.Map[String, TopK[CommandKey]]()
         private val sets = mutable.Map[String, TopK[CommandKey]]()
+        private val snapshots = new TopK[CommandKey](k, like)
 
         override def put(
             commandKey: CommandKey,
             command: KeyValueStoreInput
-        ): Option[KeyValueStoreInput] = {
+        ): Unit = {
           import KeyValueStoreInput.Request
           command.request match {
             case Request.GetRequest(GetRequest(keys)) =>
@@ -324,12 +337,13 @@ class KeyValueStore
             case Request.Empty =>
               throw new IllegalStateException()
           }
-          None
         }
 
-        override def remove(
-            commandKey: CommandKey
-        ): Option[KeyValueStoreInput] = ???
+        override def putSnapshot(commandKey: CommandKey): Unit =
+          snapshots.put(commandKey)
+
+        override def remove(commandKey: CommandKey): Unit =
+          throw new java.lang.UnsupportedOperationException()
 
         override def getConflicts(
             command: KeyValueStoreInput
@@ -338,39 +352,53 @@ class KeyValueStore
           command.request match {
             case Request.GetRequest(GetRequest(keys)) =>
               if (keys.size == 0) {
-                Set()
+                snapshots.get()
               } else {
                 val merged = new TopK(k, like)
                 for (key <- keys) {
                   sets.get(key) match {
-                    case None       =>
-                    case Some(topK) => merged.mergeEquals(topK)
+                    case None         =>
+                    case Some(topOne) => merged.mergeEquals(topOne)
                   }
                 }
+                merged.mergeEquals(snapshots)
                 merged.get()
               }
 
             case Request.SetRequest(SetRequest(keyValues)) =>
               if (keyValues.size == 0) {
-                Set()
+                snapshots.get()
               } else {
                 val merged = new TopK(k, like)
                 for (SetKeyValuePair(key, _) <- keyValues) {
                   sets.get(key) match {
-                    case None       =>
-                    case Some(topK) => merged.mergeEquals(topK)
+                    case None         =>
+                    case Some(topOne) => merged.mergeEquals(topOne)
                   }
                   gets.get(key) match {
-                    case None       =>
-                    case Some(topK) => merged.mergeEquals(topK)
+                    case None         =>
+                    case Some(topOne) => merged.mergeEquals(topOne)
                   }
                 }
+                merged.mergeEquals(snapshots)
                 merged.get()
               }
 
             case Request.Empty =>
               throw new IllegalStateException()
           }
+        }
+
+        override def getSnapshotConflicts(): Set[CommandKey] = {
+          val merged = new TopK(k, like)
+          for (topOne <- gets.values) {
+            merged.mergeEquals(topOne)
+          }
+          for (topOne <- sets.values) {
+            merged.mergeEquals(topOne)
+          }
+          merged.mergeEquals(snapshots)
+          merged.get()
         }
       }
     }
