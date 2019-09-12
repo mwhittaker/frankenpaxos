@@ -3,6 +3,8 @@ package frankenpaxos.simplegcbpaxos
 import frankenpaxos.compact.CompactSet
 import frankenpaxos.compact.CompactSetFactory
 import frankenpaxos.compact.IntPrefixSet
+import frankenpaxos.statemachine.TopK
+import frankenpaxos.statemachine.TopOne
 import frankenpaxos.util
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
@@ -49,6 +51,15 @@ object VertexIdPrefixSet {
     new VertexIdPrefixSet(watermarks.size, intPrefixSets)
   }
 
+  @JSExport("apply")
+  def fromWatermarks(watermarks: mutable.Buffer[Int]): VertexIdPrefixSet = {
+    val intPrefixSets = mutable.Buffer[IntPrefixSet]()
+    for (watermark <- watermarks) {
+      intPrefixSets += IntPrefixSet.fromWatermark(watermark)
+    }
+    new VertexIdPrefixSet(watermarks.size, intPrefixSets)
+  }
+
   // Construct a VertexIdPrefixSet from a set of watermarks and a set of
   // VertexIds. It is assumed but not enforced that every vertex id in
   // VertexIds is larger than the corresponding watermark.
@@ -69,31 +80,24 @@ object VertexIdPrefixSet {
     new VertexIdPrefixSet(watermarks.size, intPrefixSets)
   }
 
-  def fromTopK(
-      numLeaders: Int,
-      vertexIds: Set[VertexId]
-  ): VertexIdPrefixSet = {
-    val watermarks = mutable.Buffer.fill(numLeaders)(0)
-    val values = mutable.Buffer.fill(numLeaders)(mutable.Set[Int]())
-    for (vertexId <- vertexIds) {
-      val VertexId(leaderIndex, id) = vertexId
-      if (watermarks(leaderIndex) == 0) {
-        watermarks(leaderIndex) = id
-      } else {
-        watermarks(leaderIndex) = Math.min(watermarks(leaderIndex), id)
-      }
-      values(leaderIndex) += id
-    }
+  def fromTopOne(topOne: TopOne[VertexId]): VertexIdPrefixSet =
+    VertexIdPrefixSet.fromWatermarks(topOne.get())
 
+  def fromTopK(topK: TopK[VertexId]): VertexIdPrefixSet = {
+    val sortedSets = topK.get()
+    val numLeaders = sortedSets.size
     val intPrefixSets = mutable.Buffer[IntPrefixSet]()
-    for (i <- 0 until numLeaders) {
-      val watermark = if (watermarks(i) == 0) {
-        0
+    for (sortedSet <- sortedSets) {
+      if (sortedSet.size == 0) {
+        intPrefixSets += IntPrefixSet()
+      } else if (sortedSet.size == 1) {
+        intPrefixSets += IntPrefixSet.fromWatermark(sortedSet.head + 1)
       } else {
-        watermarks(i) + 1
+        intPrefixSets += IntPrefixSet.fromWatermarkAndMutableSet(
+          sortedSet.head + 1,
+          sortedSet.drop(1).to[mutable.Set]
+        )
       }
-      intPrefixSets += IntPrefixSet.fromWatermarkAndMutableSet(watermark,
-                                                               values(i))
     }
     new VertexIdPrefixSet(numLeaders, intPrefixSets)
   }

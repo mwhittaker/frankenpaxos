@@ -44,37 +44,29 @@ class Register extends StateMachine {
       // Since every pair of commands conflict, we return every key.
       override def getConflicts(command: Array[Byte]): Set[Key] =
         commandsAndSnapshots.toSet
-
-      // Since every pair of commands conflict, we return every key.
-      override def getSnapshotConflicts(): Set[Key] =
-        commandsAndSnapshots.toSet
     }
 
   override def topKConflictIndex[Key](
       k: Int,
+      numLeaders: Int,
       like: VertexIdLike[Key]
   ): ConflictIndex[Key, Array[Byte]] = {
     if (k == 1) {
       new ConflictIndex[Key, Array[Byte]] {
-        private val topOne = new TopOne(like)
+        private val topOne = new TopOne(numLeaders, like)
 
         override def put(key: Key, command: Array[Byte]): Unit = topOne.put(key)
         override def putSnapshot(key: Key): Unit = topOne.put(key)
-        override def remove(key: Key): Unit =
-          throw new java.lang.UnsupportedOperationException()
-        override def getConflicts(command: Array[Byte]): Set[Key] = topOne.get()
-        override def getSnapshotConflicts(): Set[Key] = topOne.get()
+        override def getTopOneConflicts(command: Array[Byte]): TopOne[Key] =
+          topOne
       }
     } else {
       new ConflictIndex[Key, Array[Byte]] {
-        private val topK = new TopK[Key](k, like)
+        private val topK = new TopK[Key](k, numLeaders, like)
 
         override def put(key: Key, command: Array[Byte]): Unit = topK.put(key)
         override def putSnapshot(key: Key): Unit = topK.put(key)
-        override def remove(key: Key): Unit =
-          throw new java.lang.UnsupportedOperationException()
-        override def getConflicts(command: Array[Byte]): Set[Key] = topK.get()
-        override def getSnapshotConflicts(): Set[Key] = topK.get()
+        override def getTopKConflicts(command: Array[Byte]): TopK[Key] = topK
       }
     }
   }

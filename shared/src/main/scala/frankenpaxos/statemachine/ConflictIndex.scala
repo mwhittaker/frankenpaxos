@@ -45,13 +45,16 @@ trait ConflictIndex[Key, Command] {
   def putSnapshot(key: Key): Unit
 
   // Remove a command or snapshot from the conflict index.
-  def remove(key: Key): Unit
+  def remove(key: Key): Unit =
+    throw new java.lang.UnsupportedOperationException()
 
-  // `getConflicts(command)` returns some subset of the keys in the conflict
-  // index that map to commands that conflict with `command`.
-  def getConflicts(command: Command): Set[Key]
-
-  // `getSnapshotConflicts` returns some subset of the keys in the conflict
-  // index.
-  def getSnapshotConflicts(): Set[Key]
+  // Return all conflicts.
+  def getConflicts(command: Command): Set[Key] =
+    throw new java.lang.UnsupportedOperationException()
+  // Return top one conflicts.
+  def getTopOneConflicts(command: Command): TopOne[Key] =
+    throw new java.lang.UnsupportedOperationException()
+  // Return top-k conflicts.
+  def getTopKConflicts(command: Command): TopK[Key] =
+    throw new java.lang.UnsupportedOperationException()
 }

@@ -1,5 +1,7 @@
 package frankenpaxos.simplegcbpaxos
 
+import frankenpaxos.statemachine.TopK
+import frankenpaxos.statemachine.TopOne
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
 
@@ -49,13 +51,31 @@ class VertexIdPrefixSetTest extends FlatSpec with Matchers {
     )
   }
 
+  it should "fromTopOne correctly" in {
+    val topOne = new TopOne(3, VertexIdHelpers.like)
+    topOne.put(VertexId(0, 1))
+    topOne.put(VertexId(2, 3))
+    val vertices = VertexIdPrefixSet.fromTopOne(topOne)
+    vertices.materialize() shouldBe
+      Set(new VertexId(0, 0), new VertexId(0, 1)) ++
+        Set() ++
+        Set(new VertexId(2, 0),
+            new VertexId(2, 1),
+            new VertexId(2, 2),
+            new VertexId(2, 3))
+  }
+
   it should "fromTopK correctly" in {
-    val vertices = VertexIdPrefixSet.fromTopK(
-      4,
-      Set(new VertexId(0, 2), new VertexId(0, 10)) ++
-        Set(new VertexId(1, 0), new VertexId(1, 1), new VertexId(1, 5)) ++
-        Set(new VertexId(3, 10), new VertexId(3, 5), new VertexId(3, 1))
-    )
+    val topK = new TopK(k = 2, numLeaders = 4, VertexIdHelpers.like)
+    topK.put(VertexId(0, 2))
+    topK.put(VertexId(0, 10))
+    topK.put(VertexId(1, 0))
+    topK.put(VertexId(1, 1))
+    topK.put(VertexId(1, 5))
+    topK.put(VertexId(3, 1))
+    topK.put(VertexId(3, 5))
+    topK.put(VertexId(3, 10))
+    val vertices = VertexIdPrefixSet.fromTopK(topK)
     vertices.materialize() shouldBe
       Set(new VertexId(0, 0),
           new VertexId(0, 1),
@@ -64,6 +84,9 @@ class VertexIdPrefixSetTest extends FlatSpec with Matchers {
         Set(new VertexId(1, 0), new VertexId(1, 1), new VertexId(1, 5)) ++
         Set(new VertexId(3, 0),
             new VertexId(3, 1),
+            new VertexId(3, 2),
+            new VertexId(3, 3),
+            new VertexId(3, 4),
             new VertexId(3, 5),
             new VertexId(3, 10))
   }

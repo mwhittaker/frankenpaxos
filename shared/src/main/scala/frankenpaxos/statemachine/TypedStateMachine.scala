@@ -13,6 +13,7 @@ trait TypedStateMachine[I, O] extends StateMachine {
   def typedConflictIndex[Key](): ConflictIndex[Key, I]
   def typedTopKConflictIndex[Key](
       k: Int,
+      numLeaders: Int,
       like: VertexIdLike[Key]
   ): ConflictIndex[Key, I]
 
@@ -46,13 +47,12 @@ trait TypedStateMachine[I, O] extends StateMachine {
       override def remove(key: Key): Unit =
         index.remove(key)
 
-      override def getConflicts(command: Array[Byte]): Set[Key] = {
+      override def getConflicts(command: Array[Byte]): Set[Key] =
         index.getConflicts(inputSerializer.fromBytes(command))
-      }
-
-      override def getSnapshotConflicts(): Set[Key] = {
-        index.getSnapshotConflicts()
-      }
+      override def getTopOneConflicts(command: Array[Byte]): TopOne[Key] =
+        index.getTopOneConflicts(inputSerializer.fromBytes(command))
+      override def getTopKConflicts(command: Array[Byte]): TopK[Key] =
+        index.getTopKConflicts(inputSerializer.fromBytes(command))
     }
 
   override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
@@ -60,7 +60,8 @@ trait TypedStateMachine[I, O] extends StateMachine {
 
   override def topKConflictIndex[Key](
       k: Int,
+      numLeaders: Int,
       like: VertexIdLike[Key]
   ): ConflictIndex[Key, Array[Byte]] =
-    erasedConflictIndex(typedTopKConflictIndex(k, like))
+    erasedConflictIndex(typedTopKConflictIndex(k, numLeaders, like))
 }

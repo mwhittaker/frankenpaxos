@@ -38,6 +38,7 @@ trait StateMachine {
   // Returns a top-k conflict index.
   def topKConflictIndex[Key](
       k: Int,
+      numLeaders: Int,
       like: VertexIdLike[Key]
   ): ConflictIndex[Key, Array[Byte]]
 }

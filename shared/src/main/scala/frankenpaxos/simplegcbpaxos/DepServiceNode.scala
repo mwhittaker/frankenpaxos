@@ -183,20 +183,24 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   ) extends SomeConflictIndex
 
   @JSExport
-  protected var conflictIndex: SomeConflictIndex =
+  protected var conflictIndex: SomeConflictIndex = {
+    val numLeaders = config.leaderAddresses.size
     if (options.topKDependencies > 0) {
       Uncompacted(
-        conflictIndex = stateMachine.topKConflictIndex(options.topKDependencies,
-                                                       VertexIdHelpers.like),
-        highWatermark = mutable.Buffer.fill(config.leaderAddresses.size)(0)
+        conflictIndex = stateMachine.topKConflictIndex(
+          options.topKDependencies,
+          numLeaders,
+          VertexIdHelpers.like
+        ),
+        highWatermark = mutable.Buffer.fill(numLeaders)(0)
       )
     } else {
       Compacted(
-        conflictIndex =
-          new CompactConflictIndex(config.leaderAddresses.size, stateMachine),
+        conflictIndex = new CompactConflictIndex(numLeaders, stateMachine),
         numCommandsPendingGc = 0
       )
     }
+  }
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -298,15 +302,23 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
         case (Uncompacted(conflictIndex, highWatermark),
               Value.Command(command)) =>
           val bytes = command.command.toByteArray
-          val rawDependencies =
-            timed("DependencyRequest/uncompacted getConflicts") {
-              conflictIndex.getConflicts(bytes)
+          val dependencies = if (options.topKDependencies == 1) {
+            val topOne =
+              timed("DependencyRequest/uncompacted getTopOneConflicts") {
+                conflictIndex.getTopOneConflicts(bytes)
+              }
+            timed("DependencyRequest/uncompacted fromTopOne") {
+              VertexIdPrefixSet.fromTopOne(topOne)
             }
-          val dependencies =
+          } else {
+            val topK =
+              timed("DependencyRequest/uncompacted getTopKConflicts") {
+                conflictIndex.getTopKConflicts(bytes)
+              }
             timed("DependencyRequest/uncompacted fromTopK") {
-              VertexIdPrefixSet.fromTopK(config.leaderAddresses.size,
-                                         rawDependencies)
+              VertexIdPrefixSet.fromTopK(topK)
             }
+          }
           timed("DependencyRequest/uncompacted subtractOne") {
             dependencies.subtractOne(dependencyRequest.vertexId)
           }

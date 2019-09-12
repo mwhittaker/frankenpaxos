@@ -3,6 +3,7 @@ package frankenpaxos.statemachine
 import org.scalacheck.Gen
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
+import scala.collection.mutable
 
 class TopKConflictIndexTest extends FlatSpec with Matchers {
   val intTuple = new VertexIdLike[(Int, Int)] {
@@ -56,53 +57,73 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val noop = new Noop()
     val conflictIndices = {
       for (k <- 1 until 5) yield {
-        putPyramid(noop.topKConflictIndex[(Int, Int)](k, intTuple))
+        putPyramid(
+          noop.topKConflictIndex[(Int, Int)](k, numLeaders = 3, intTuple)
+        )
       }
     }.toSeq
 
-    conflictIndices(0).getConflicts(bytes(0)) shouldBe Set()
-    conflictIndices(1).getConflicts(bytes(0)) shouldBe Set()
-    conflictIndices(2).getConflicts(bytes(0)) shouldBe Set()
-    conflictIndices(3).getConflicts(bytes(0)) shouldBe Set()
+    conflictIndices(0).getTopOneConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(0, 0, 0)
+    conflictIndices(1).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int]()
+      )
+    conflictIndices(2).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int]()
+      )
+    conflictIndices(3).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int]()
+      )
   }
 
   it should "getConflicts with snapshots correctly" in {
     val noop = new Noop()
     val conflictIndices = {
       for (k <- 1 until 5) yield {
-        putWithSnapshots(noop.topKConflictIndex[(Int, Int)](k, intTuple))
+        putWithSnapshots(
+          noop.topKConflictIndex[(Int, Int)](k, numLeaders = 6, intTuple)
+        )
       }
     }.toSeq
 
-    conflictIndices(0).getConflicts(bytes(0)) shouldBe
-      Set((3, 2), (4, 1), (5, 0))
-    conflictIndices(1).getConflicts(bytes(0)) shouldBe
-      Set((3, 1), (3, 2), (4, 0), (4, 1), (5, 0))
-    conflictIndices(2).getConflicts(bytes(0)) shouldBe
-      Set((3, 0), (3, 1), (3, 2), (4, 0), (4, 1), (5, 0))
-    conflictIndices(3).getConflicts(bytes(0)) shouldBe
-      Set((3, 0), (3, 1), (3, 2), (4, 0), (4, 1), (5, 0))
-  }
-
-  it should "getSnapshotConflicts correctly" in {
-    val noop = new Noop()
-    val conflictIndices = {
-      for (k <- 1 until 5) yield {
-        putWithSnapshots(noop.topKConflictIndex[(Int, Int)](k, intTuple))
-      }
-    }.toSeq
-
-    conflictIndices(0).getSnapshotConflicts() shouldBe
-      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
-    conflictIndices(1).getSnapshotConflicts() shouldBe
-      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(2).getSnapshotConflicts() shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(3).getSnapshotConflicts() shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(0).getTopOneConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(0, 0, 0, 3, 2, 1)
+    conflictIndices(1).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(2).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(3).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
   }
 
   // Register //////////////////////////////////////////////////////////////////
@@ -110,60 +131,73 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val register = new Register()
     val conflictIndices = {
       for (k <- 1 until 5) yield {
-        putPyramid(register.topKConflictIndex[(Int, Int)](k, intTuple))
+        putPyramid(
+          register.topKConflictIndex[(Int, Int)](k, numLeaders = 3, intTuple)
+        )
       }
     }.toSeq
 
-    conflictIndices(0).getConflicts(bytes(0)) shouldBe
-      Set((0, 2), (1, 1), (2, 0))
-    conflictIndices(1).getConflicts(bytes(0)) shouldBe
-      Set((0, 1), (0, 2), (1, 0), (1, 1), (2, 0))
-    conflictIndices(2).getConflicts(bytes(0)) shouldBe
-      Set((0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (2, 0))
-    conflictIndices(3).getConflicts(bytes(0)) shouldBe
-      Set((0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (2, 0))
+    conflictIndices(0).getTopOneConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(3, 2, 1)
+    conflictIndices(1).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(2).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(3).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
   }
 
   it should "getConflicts with snapshots correctly" in {
     val register = new Register()
     val conflictIndices = {
       for (k <- 1 until 5) yield {
-        putWithSnapshots(register.topKConflictIndex[(Int, Int)](k, intTuple))
+        putWithSnapshots(
+          register.topKConflictIndex[(Int, Int)](k, numLeaders = 6, intTuple)
+        )
       }
     }.toSeq
 
-    conflictIndices(0).getConflicts(bytes(0)) shouldBe
-      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
-    conflictIndices(1).getConflicts(bytes(0)) shouldBe
-      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(2).getConflicts(bytes(0)) shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(3).getConflicts(bytes(0)) shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-  }
-
-  it should "getSnapshotConflicts correctly" in {
-    val register = new Register()
-    val conflictIndices = {
-      for (k <- 1 until 5) yield {
-        putWithSnapshots(register.topKConflictIndex[(Int, Int)](k, intTuple))
-      }
-    }.toSeq
-
-    conflictIndices(0).getSnapshotConflicts() shouldBe
-      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
-    conflictIndices(1).getSnapshotConflicts() shouldBe
-      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(2).getSnapshotConflicts() shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(3).getSnapshotConflicts() shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(0).getTopOneConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(3, 2, 1, 3, 2, 1)
+    conflictIndices(1).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(2).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(3).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
   }
 
   // AppendLog /////////////////////////////////////////////////////////////////
@@ -171,60 +205,73 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val appendLog = new AppendLog()
     val conflictIndices = {
       for (k <- 1 until 5) yield {
-        putPyramid(appendLog.topKConflictIndex[(Int, Int)](k, intTuple))
+        putPyramid(
+          appendLog.topKConflictIndex[(Int, Int)](k, numLeaders = 3, intTuple)
+        )
       }
     }.toSeq
 
-    conflictIndices(0).getConflicts(bytes(0)) shouldBe
-      Set((0, 2), (1, 1), (2, 0))
-    conflictIndices(1).getConflicts(bytes(0)) shouldBe
-      Set((0, 1), (0, 2), (1, 0), (1, 1), (2, 0))
-    conflictIndices(2).getConflicts(bytes(0)) shouldBe
-      Set((0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (2, 0))
-    conflictIndices(3).getConflicts(bytes(0)) shouldBe
-      Set((0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (2, 0))
+    conflictIndices(0).getTopOneConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(3, 2, 1)
+    conflictIndices(1).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(2).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(3).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
   }
 
   it should "getConflicts with snapshots correctly" in {
     val log = new AppendLog()
     val conflictIndices = {
       for (k <- 1 until 5) yield {
-        putWithSnapshots(log.topKConflictIndex[(Int, Int)](k, intTuple))
+        putWithSnapshots(
+          log.topKConflictIndex[(Int, Int)](k, numLeaders = 6, intTuple)
+        )
       }
     }.toSeq
 
-    conflictIndices(0).getConflicts(bytes(0)) shouldBe
-      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
-    conflictIndices(1).getConflicts(bytes(0)) shouldBe
-      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(2).getConflicts(bytes(0)) shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(3).getConflicts(bytes(0)) shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-  }
-
-  it should "getSnapshotConflicts correctly" in {
-    val log = new AppendLog()
-    val conflictIndices = {
-      for (k <- 1 until 5) yield {
-        putWithSnapshots(log.topKConflictIndex[(Int, Int)](k, intTuple))
-      }
-    }.toSeq
-
-    conflictIndices(0).getSnapshotConflicts() shouldBe
-      Set((0, 2), (1, 1), (2, 0), (3, 2), (4, 1), (5, 0))
-    conflictIndices(1).getSnapshotConflicts() shouldBe
-      Set((0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(2).getSnapshotConflicts() shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
-    conflictIndices(3).getSnapshotConflicts() shouldBe
-      Set((0, 0), (0, 1), (0, 2)) ++ Set((1, 0), (1, 1)) ++ Set((2, 0)) ++
-        Set((3, 0), (3, 1), (3, 2)) ++ Set((4, 0), (4, 1)) ++ Set((5, 0))
+    conflictIndices(0).getTopOneConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(3, 2, 1, 3, 2, 1)
+    conflictIndices(1).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(2).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
+    conflictIndices(3).getTopKConflicts(bytes(0)).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](0, 1, 2),
+        mutable.SortedSet[Int](0, 1),
+        mutable.SortedSet[Int](0)
+      )
   }
 
   // KeyValueStore /////////////////////////////////////////////////////////////
@@ -236,15 +283,8 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
       SetRequest(keys.map(key => SetKeyValuePair(key = key, value = "")))
     )
 
-  "Key-value store top-k conflict index" should "get no conflicts correctly" in {
-    for (k <- 1 until 5) {
-      val kvs = new KeyValueStore()
-      val conflictIndex = kvs.typedTopKConflictIndex[(Int, Int)](k, intTuple)
-      conflictIndex.getConflicts(get("a")) shouldBe Set()
-    }
-  }
-
-  it should "get complicated conflicts correctly" in {
+  "Key-value store top-k conflict index" should
+    "get complicated conflicts correctly" in {
     def put(
         conflictIndex: ConflictIndex[(Int, Int), KeyValueStoreInput]
     ): ConflictIndex[(Int, Int), KeyValueStoreInput] = {
@@ -273,28 +313,78 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val kvs = new KeyValueStore()
 
     // k = 1
-    val index1 = put(kvs.typedTopKConflictIndex[(Int, Int)](k = 1, intTuple))
-    index1.getConflicts(get("x")) shouldBe Set((0, 2), (1, 3))
-    index1.getConflicts(get("y")) shouldBe Set((1, 3))
-    index1.getConflicts(get("z")) shouldBe Set()
-    index1.getConflicts(set("x")) shouldBe Set((0, 3), (1, 3))
-    index1.getConflicts(set("y")) shouldBe Set((1, 3), (2, 20))
-    index1.getConflicts(set("z")) shouldBe Set((2, 20))
-    index1.getConflicts(get("x", "y", "z")) shouldBe Set((0, 2), (1, 3))
-    index1.getConflicts(set("x", "y", "z")) shouldBe Set((0, 3),
-                                                         (1, 3),
-                                                         (2, 20))
+    val index1 = put(
+      kvs.typedTopKConflictIndex[(Int, Int)](k = 1, numLeaders = 3, intTuple)
+    )
+    index1.getTopOneConflicts(get("x")).get() shouldBe
+      mutable.Buffer(3, 4, 0)
+    index1.getTopOneConflicts(get("y")).get() shouldBe
+      mutable.Buffer(0, 4, 0)
+    index1.getTopOneConflicts(get("z")).get() shouldBe
+      mutable.Buffer(0, 0, 0)
+    index1.getTopOneConflicts(set("x")).get() shouldBe
+      mutable.Buffer(4, 4, 0)
+    index1.getTopOneConflicts(set("y")).get() shouldBe
+      mutable.Buffer(0, 4, 21)
+    index1.getTopOneConflicts(set("z")).get() shouldBe
+      mutable.Buffer(0, 0, 21)
+    index1.getTopOneConflicts(get("x", "y", "z")).get() shouldBe
+      mutable.Buffer(3, 4, 0)
+    index1.getTopOneConflicts(set("x", "y", "z")).get() shouldBe
+      mutable.Buffer(4, 4, 21)
+
     // k = 2
-    val index2 = put(kvs.typedTopKConflictIndex[(Int, Int)](k = 2, intTuple))
-    index2.getConflicts(get("x")) shouldBe Set((0, 2), (1, 1), (1, 3))
-    index2.getConflicts(get("y")) shouldBe Set((1, 1), (1, 3))
-    index2.getConflicts(get("z")) shouldBe Set()
-    index2.getConflicts(set("x")) shouldBe Set((0, 2), (0, 3), (1, 1), (1, 3))
-    index2.getConflicts(set("y")) shouldBe Set((1, 1), (1, 3), (2, 10), (2, 20))
-    index2.getConflicts(set("z")) shouldBe Set((2, 10), (2, 20))
-    index2.getConflicts(get("x", "y", "z")) shouldBe Set((0, 2), (1, 1), (1, 3))
-    index2.getConflicts(set("x", "y", "z")) shouldBe
-      Set((0, 2), (0, 3), (1, 1), (1, 3), (2, 10), (2, 20))
+    val index2 = put(
+      kvs.typedTopKConflictIndex[(Int, Int)](k = 2, numLeaders = 3, intTuple)
+    )
+    index2.getTopKConflicts(get("x")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](2),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int]()
+      )
+    index2.getTopKConflicts(get("y")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int]()
+      )
+    index2.getTopKConflicts(get("z")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int]()
+      )
+    index2.getTopKConflicts(set("x")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](2, 3),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int]()
+      )
+    index2.getTopKConflicts(set("y")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int](10, 20)
+      )
+    index2.getTopKConflicts(set("z")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](10, 20)
+      )
+    index2.getTopKConflicts(get("x", "y", "z")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](2),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int]()
+      )
+    index2.getTopKConflicts(set("x", "y", "z")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](2, 3),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int](10, 20)
+      )
   }
 
   it should "get complicated conflicts with snapshots correctly" in {
@@ -332,34 +422,85 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val kvs = new KeyValueStore()
 
     // k = 1
-    val index1 = put(kvs.typedTopKConflictIndex[(Int, Int)](k = 1, intTuple))
-    index1.getConflicts(get("x")) shouldBe Set((0, 2), (1, 3), (3, 20))
-    index1.getConflicts(get("y")) shouldBe Set((1, 3), (3, 20))
-    index1.getConflicts(get("z")) shouldBe Set((3, 20))
-    index1.getConflicts(set("x")) shouldBe Set((0, 3), (1, 3), (3, 20))
-    index1.getConflicts(set("y")) shouldBe Set((1, 3), (2, 20), (3, 20))
-    index1.getConflicts(set("z")) shouldBe Set((2, 20), (3, 20))
-    index1.getConflicts(get("x", "y", "z")) shouldBe
-      Set((0, 2), (1, 3), (3, 20))
-    index1.getConflicts(set("x", "y", "z")) shouldBe
-      Set((0, 3), (1, 3), (2, 20), (3, 20))
+    val index1 = put(
+      kvs.typedTopKConflictIndex[(Int, Int)](k = 1, numLeaders = 4, intTuple)
+    )
+    index1.getTopOneConflicts(get("x")).get() shouldBe
+      mutable.Buffer(3, 4, 0, 21)
+    index1.getTopOneConflicts(get("y")).get() shouldBe
+      mutable.Buffer(0, 4, 0, 21)
+    index1.getTopOneConflicts(get("z")).get() shouldBe
+      mutable.Buffer(0, 0, 0, 21)
+    index1.getTopOneConflicts(set("x")).get() shouldBe
+      mutable.Buffer(4, 4, 0, 21)
+    index1.getTopOneConflicts(set("y")).get() shouldBe
+      mutable.Buffer(0, 4, 21, 21)
+    index1.getTopOneConflicts(set("z")).get() shouldBe
+      mutable.Buffer(0, 0, 21, 21)
+    index1.getTopOneConflicts(get("x", "y", "z")).get() shouldBe
+      mutable.Buffer(3, 4, 0, 21)
+    index1.getTopOneConflicts(set("x", "y", "z")).get() shouldBe
+      mutable.Buffer(4, 4, 21, 21)
 
     // k = 2
-    val index2 = put(kvs.typedTopKConflictIndex[(Int, Int)](k = 2, intTuple))
-    index2.getConflicts(get("x")) shouldBe
-      Set((0, 2), (1, 1), (1, 3), (3, 10), (3, 20))
-    index2.getConflicts(get("y")) shouldBe
-      Set((1, 1), (1, 3), (3, 10), (3, 20))
-    index2.getConflicts(get("z")) shouldBe Set((3, 10), (3, 20))
-    index2.getConflicts(set("x")) shouldBe
-      Set((0, 2), (0, 3), (1, 1), (1, 3), (3, 10), (3, 20))
-    index2.getConflicts(set("y")) shouldBe
-      Set((1, 1), (1, 3), (2, 10), (2, 20), (3, 10), (3, 20))
-    index2.getConflicts(set("z")) shouldBe
-      Set((2, 10), (2, 20), (3, 10), (3, 20))
-    index2.getConflicts(get("x", "y", "z")) shouldBe
-      Set((0, 2), (1, 1), (1, 3), (3, 10), (3, 20))
-    index2.getConflicts(set("x", "y", "z")) shouldBe
-      Set((0, 2), (0, 3), (1, 1), (1, 3), (2, 10), (2, 20), (3, 10), (3, 20))
+    val index2 = put(
+      kvs.typedTopKConflictIndex[(Int, Int)](k = 2, numLeaders = 4, intTuple)
+    )
+    index2.getTopKConflicts(get("x")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](2),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](10, 20)
+      )
+    index2.getTopKConflicts(get("y")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](10, 20)
+      )
+    index2.getTopKConflicts(get("z")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](10, 20)
+      )
+    index2.getTopKConflicts(set("x")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](2, 3),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](10, 20)
+      )
+    index2.getTopKConflicts(set("y")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int](10, 20),
+        mutable.SortedSet[Int](10, 20)
+      )
+    index2.getTopKConflicts(set("z")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](10, 20),
+        mutable.SortedSet[Int](10, 20)
+      )
+    index2.getTopKConflicts(get("x", "y", "z")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](2),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](10, 20)
+      )
+    index2.getTopKConflicts(set("x", "y", "z")).get() shouldBe
+      mutable.Buffer(
+        mutable.SortedSet[Int](2, 3),
+        mutable.SortedSet[Int](1, 3),
+        mutable.SortedSet[Int](10, 20),
+        mutable.SortedSet[Int](10, 20)
+      )
   }
 }

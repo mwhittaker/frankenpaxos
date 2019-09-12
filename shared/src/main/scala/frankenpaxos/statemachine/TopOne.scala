@@ -3,34 +3,22 @@ package frankenpaxos.statemachine
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
-class TopOne[T](like: VertexIdLike[T]) {
+class TopOne[V](numLeaders: Int, like: VertexIdLike[V]) {
   type LeaderIndex = Int
 
   @JSExport
-  protected val topOnes = mutable.Map[LeaderIndex, T]()
+  protected val topOnes = mutable.Buffer.fill[Int](numLeaders)(0)
 
-  def put(x: T): Unit = {
-    topOnes.get(like.leaderIndex(x)) match {
-      case Some(y) =>
-        if (like.id(x) > like.id(y)) {
-          topOnes(like.leaderIndex(x)) = x
-        }
-      case None =>
-        topOnes(like.leaderIndex(x)) = x
-    }
+  def put(x: V): Unit = {
+    val i = like.leaderIndex(x)
+    topOnes(i) = Math.max(topOnes(i), like.id(x) + 1)
   }
 
-  def get(): Set[T] = topOnes.values.toSet
+  def get(): mutable.Buffer[Int] = topOnes
 
-  def mergeEquals(other: TopOne[T]): Unit = {
-    for ((leaderIndex, y) <- other.topOnes) {
-      topOnes.get(leaderIndex) match {
-        case None => topOnes(leaderIndex) = y
-        case Some(x) =>
-          if (like.id(y) > like.id(x)) {
-            topOnes(leaderIndex) = y
-          }
-      }
+  def mergeEquals(other: TopOne[V]): Unit = {
+    for (i <- 0 until numLeaders) {
+      topOnes(i) = Math.max(topOnes(i), other.topOnes(i))
     }
   }
 }

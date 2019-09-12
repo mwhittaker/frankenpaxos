@@ -1,5 +1,6 @@
 package frankenpaxos.statemachine
 
+import collection.mutable
 import org.scalacheck.Gen
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
@@ -19,27 +20,38 @@ class TopKTest extends FlatSpec with Matchers {
 
   "A TopK" should "return empty set after no puts" in {
     for (k <- 1 until 10) {
-      val topK = new TopK(k, intTuple)
-      topK.get() shouldBe Set()
+      val topK = new TopK(k, numLeaders = 3, intTuple)
+      topK.get() shouldBe mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int]()
+      )
     }
   }
 
   it should "return one thing after putting it" in {
     for (k <- 1 until 10) {
-      val topK = new TopK(k, intTuple)
+      val topK = new TopK(k, numLeaders = 3, intTuple)
       topK.put((0, 0))
-      topK.get() shouldBe Set((0, 0))
+      topK.get() shouldBe mutable.Buffer(
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int]()
+      )
     }
   }
 
   it should "return one thing per leader after putting them" in {
     for (k <- 1 until 10) {
-      val topK = new TopK(k, intTuple)
+      val topK = new TopK(k, numLeaders = 3, intTuple)
       topK.put((0, 0))
       topK.put((1, 1))
       topK.put((2, 2))
-      topK.put((3, 3))
-      topK.get() shouldBe Set((0, 0), (1, 1), (2, 2), (3, 3))
+      topK.get() shouldBe mutable.Buffer(
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](1),
+        mutable.SortedSet[Int](2)
+      )
     }
   }
 
@@ -58,66 +70,83 @@ class TopKTest extends FlatSpec with Matchers {
       topK
     }
 
-    val top1 = put(new TopK(1, intTuple))
-    val top2 = put(new TopK(2, intTuple))
-    val top3 = put(new TopK(3, intTuple))
-    val top4 = put(new TopK(4, intTuple))
+    val top1 = put(new TopK(1, numLeaders = 5, intTuple))
+    val top2 = put(new TopK(2, numLeaders = 5, intTuple))
+    val top3 = put(new TopK(3, numLeaders = 5, intTuple))
+    val top4 = put(new TopK(4, numLeaders = 5, intTuple))
 
-    top1.get() shouldBe Set((0, 2), (1, 10), (2, 2), (4, 7))
-    top2.get() shouldBe
-      Set((0, 2), (0, 1), (1, 1), (1, 10), (2, 2), (4, 7), (4, 3))
-    top3.get() shouldBe
-      Set((0, 0),
-          (0, 1),
-          (0, 2),
-          (1, 1),
-          (1, 10),
-          (2, 2),
-          (4, 1),
-          (4, 3),
-          (4, 7))
-    top4.get() shouldBe
-      Set((0, 0),
-          (0, 1),
-          (0, 2),
-          (1, 1),
-          (1, 10),
-          (2, 2),
-          (4, 1),
-          (4, 3),
-          (4, 7))
+    top1.get() shouldBe mutable.Buffer(
+      mutable.SortedSet[Int](2),
+      mutable.SortedSet[Int](10),
+      mutable.SortedSet[Int](2),
+      mutable.SortedSet[Int](),
+      mutable.SortedSet[Int](7)
+    )
+    top2.get() shouldBe mutable.Buffer(
+      mutable.SortedSet[Int](1, 2),
+      mutable.SortedSet[Int](1, 10),
+      mutable.SortedSet[Int](2),
+      mutable.SortedSet[Int](),
+      mutable.SortedSet[Int](3, 7)
+    )
+    top3.get() shouldBe mutable.Buffer(
+      mutable.SortedSet[Int](0, 1, 2),
+      mutable.SortedSet[Int](1, 10),
+      mutable.SortedSet[Int](2),
+      mutable.SortedSet[Int](),
+      mutable.SortedSet[Int](1, 3, 7)
+    )
+    top4.get() shouldBe mutable.Buffer(
+      mutable.SortedSet[Int](0, 1, 2),
+      mutable.SortedSet[Int](1, 10),
+      mutable.SortedSet[Int](2),
+      mutable.SortedSet[Int](),
+      mutable.SortedSet[Int](1, 3, 7)
+    )
   }
 
   it should "merge two empty indexes correctly" in {
     for (k <- 1 until 5) {
-      val lhs = new TopK(k, intTuple)
-      val rhs = new TopK(k, intTuple)
+      val lhs = new TopK(k, numLeaders = 3, intTuple)
+      val rhs = new TopK(k, numLeaders = 3, intTuple)
       lhs.mergeEquals(rhs)
-      lhs.get() shouldBe Set()
+      lhs.get() shouldBe mutable.Buffer(
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int](),
+        mutable.SortedSet[Int]()
+      )
     }
   }
 
   it should "merge lhs empty correctly" in {
     for (k <- 1 until 5) {
-      val lhs = new TopK(k, intTuple)
-      val rhs = new TopK(k, intTuple)
+      val lhs = new TopK(k, numLeaders = 3, intTuple)
+      val rhs = new TopK(k, numLeaders = 3, intTuple)
       rhs.put((0, 0))
       rhs.put((1, 1))
       rhs.put((2, 2))
       lhs.mergeEquals(rhs)
-      lhs.get() shouldBe Set((0, 0), (1, 1), (2, 2))
+      lhs.get() shouldBe mutable.Buffer(
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](1),
+        mutable.SortedSet[Int](2)
+      )
     }
   }
 
   it should "merge rhs empty correctly" in {
     for (k <- 1 until 5) {
-      val lhs = new TopK(k, intTuple)
-      val rhs = new TopK(k, intTuple)
+      val lhs = new TopK(k, numLeaders = 3, intTuple)
+      val rhs = new TopK(k, numLeaders = 3, intTuple)
       lhs.put((0, 0))
       lhs.put((1, 1))
       lhs.put((2, 2))
       lhs.mergeEquals(rhs)
-      lhs.get() shouldBe Set((0, 0), (1, 1), (2, 2))
+      lhs.get() shouldBe mutable.Buffer(
+        mutable.SortedSet[Int](0),
+        mutable.SortedSet[Int](1),
+        mutable.SortedSet[Int](2)
+      )
     }
   }
 
@@ -154,24 +183,40 @@ class TopKTest extends FlatSpec with Matchers {
       lhs
     }
 
-    val lhs1 = mergeEquals(new TopK(k = 1, intTuple), new TopK(k = 1, intTuple))
-    lhs1.get() shouldBe Set((0, 300), (1, 300), (2, 300), (3, 1))
+    val lhs1 = mergeEquals(new TopK(k = 1, numLeaders = 4, intTuple),
+                           new TopK(k = 1, numLeaders = 4, intTuple))
+    lhs1.get() shouldBe mutable.Buffer(
+      mutable.SortedSet[Int](300),
+      mutable.SortedSet[Int](300),
+      mutable.SortedSet[Int](300),
+      mutable.SortedSet[Int](1)
+    )
 
-    val lhs2 = mergeEquals(new TopK(k = 2, intTuple), new TopK(k = 2, intTuple))
-    lhs2.get() shouldBe
-      Set((0, 200), (0, 300)) ++ Set((1, 200), (1, 300)) ++
-        Set((2, 200), (2, 300)) ++ Set((3, 0), (3, 1))
+    val lhs2 = mergeEquals(new TopK(k = 2, numLeaders = 4, intTuple),
+                           new TopK(k = 2, numLeaders = 4, intTuple))
+    lhs2.get() shouldBe mutable.Buffer(
+      mutable.SortedSet[Int](200, 300),
+      mutable.SortedSet[Int](200, 300),
+      mutable.SortedSet[Int](200, 300),
+      mutable.SortedSet[Int](0, 1)
+    )
 
-    val lhs3 = mergeEquals(new TopK(k = 3, intTuple), new TopK(k = 3, intTuple))
-    lhs3.get() shouldBe
-      Set((0, 100), (0, 200), (0, 300)) ++ Set((1, 100), (1, 200), (1, 300)) ++
-        Set((2, 100), (2, 200), (2, 300)) ++ Set((3, 0), (3, 1))
+    val lhs3 = mergeEquals(new TopK(k = 3, numLeaders = 4, intTuple),
+                           new TopK(k = 3, numLeaders = 4, intTuple))
+    lhs3.get() shouldBe mutable.Buffer(
+      mutable.SortedSet[Int](100, 200, 300),
+      mutable.SortedSet[Int](100, 200, 300),
+      mutable.SortedSet[Int](100, 200, 300),
+      mutable.SortedSet[Int](0, 1)
+    )
 
-    val lhs4 = mergeEquals(new TopK(k = 4, intTuple), new TopK(k = 4, intTuple))
-    lhs4.get() shouldBe
-      Set((0, 3), (0, 100), (0, 200), (0, 300)) ++
-        Set((1, 3), (1, 100), (1, 200), (1, 300)) ++
-        Set((2, 3), (2, 100), (2, 200), (2, 300)) ++
-        Set((3, 0), (3, 1))
+    val lhs4 = mergeEquals(new TopK(k = 4, numLeaders = 4, intTuple),
+                           new TopK(k = 4, numLeaders = 4, intTuple))
+    lhs4.get() shouldBe mutable.Buffer(
+      mutable.SortedSet[Int](3, 100, 200, 300),
+      mutable.SortedSet[Int](3, 100, 200, 300),
+      mutable.SortedSet[Int](3, 100, 200, 300),
+      mutable.SortedSet[Int](0, 1)
+    )
   }
 }

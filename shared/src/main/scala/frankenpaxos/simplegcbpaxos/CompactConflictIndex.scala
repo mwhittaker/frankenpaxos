@@ -111,14 +111,6 @@ class CompactConflictIndex(numLeaders: Int, stateMachine: StateMachine) {
       .addAll(VertexIdPrefixSet(gcWatermark))
   }
 
-  def getSnapshotConflicts(): VertexIdPrefixSet = {
-    VertexIdPrefixSet
-      .fromTopK(numLeaders,
-                newConflictIndex.getSnapshotConflicts() ++
-                  oldConflictIndex.getSnapshotConflicts())
-      .addAll(VertexIdPrefixSet(gcWatermark))
-  }
-
   def garbageCollect(): Unit = {
     for (i <- 0 until numLeaders) {
       updateWatermark(gcWatermark, i, oldWatermark(i))
