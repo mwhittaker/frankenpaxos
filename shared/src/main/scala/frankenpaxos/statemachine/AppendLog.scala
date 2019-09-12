@@ -30,7 +30,8 @@ class AppendLog extends StateMachine {
 
   override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
     new ConflictIndex[Key, Array[Byte]] {
-      private val commandsAndSnapshots = mutable.Set[Key]()
+      @JSExport
+      protected val commandsAndSnapshots = mutable.Set[Key]()
 
       override def put(key: Key, command: Array[Byte]): Unit =
         commandsAndSnapshots += key

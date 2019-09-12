@@ -362,35 +362,75 @@ let dep_node_info = {
     node: Object,
   },
 
+  methods: {
+    conflictIndex: function() {
+      return this.node.actor.conflictIndex;
+    },
+  },
+
   // TODO(mwhittaker): Improve display of conflictIndex.
   template: `
     <div>
-      <div>
-        conflictIndex =
-        <fp-object>
-          <fp-field
-            :name="'newConflictIndex'"
-            :value="node.actor.conflictIndex.newConflictIndex">
-          </fp-field>
-          <fp-field
-            :name="'newWatermark'"
-            :value="node.actor.conflictIndex.newWatermark">
-          </fp-field>
-          <fp-field
-            :name="'oldConflictIndex'"
-            :value="node.actor.conflictIndex.oldConflictIndex">
-          </fp-field>
-          <fp-field
-            :name="'oldWatermark'"
-            :value="node.actor.conflictIndex.oldWatermark">
-          </fp-field>
-          <fp-field
-            :name="'gcWatermark'"
-            :value="node.actor.conflictIndex.gcWatermark">
-          </fp-field>
-        </fp-object>
+      <div v-if="conflictIndex().constructor.name.endsWith('Uncompacted')">
+        <div>
+          conflictIndex =
+          <fp-object>
+            <fp-field :name="'topOne'"
+                      v-if="node.actor.options.topKDependencies == 1">
+              <frankenpaxos-top-one
+                :value="conflictIndex().conflictIndex.topOne">
+              </frankenpaxos-top-one>
+            </fp-field>
+            <fp-field :name="'topK'" v-else>
+              <frankenpaxos-top-k
+                :value="conflictIndex().conflictIndex.topK">
+              </frankenpaxos-top-k>
+            </fp-field>
+          </fp-object>
+        </div>
+        <div>
+          highWatermark =
+          {{conflictIndex().highWatermark}}
+        </div>
       </div>
-      <div>numCommandsPendingGc = {{node.actor.numCommandsPendingGc}}</div>
+
+      <div v-if="conflictIndex().constructor.name.endsWith('Compacted')">
+        <div>
+          conflictIndex =
+          <fp-object>
+            <fp-field :name="'newConflictIndex'">
+              <fp-object>
+                <fp-field :name="'commandsAndSnapshots'">
+                  {{conflictIndex().conflictIndex
+                                   .newConflictIndex
+                                   .commandsAndSnapshots}}
+                </fp-field>
+              </fp-object>
+            </fp-field>
+            <fp-field
+              :name="'newWatermark'"
+              :value="conflictIndex().conflictIndex.newWatermark">
+            </fp-field>
+            <fp-field :name="'oldConflictIndex'">
+              <fp-object>
+                <fp-field :name="'commandsAndSnapshots'">
+                  {{conflictIndex().conflictIndex
+                                   .oldConflictIndex
+                                   .commandsAndSnapshots}}
+                </fp-field>
+              </fp-object>
+            </fp-field>
+            <fp-field
+              :name="'oldWatermark'"
+              :value="conflictIndex().conflictIndex.oldWatermark">
+            </fp-field>
+            <fp-field
+              :name="'gcWatermark'"
+              :value="conflictIndex().conflictIndex.gcWatermark">
+            </fp-field>
+          </fp-object>
+        </div>
+      </div>
     </div>
   `,
 };

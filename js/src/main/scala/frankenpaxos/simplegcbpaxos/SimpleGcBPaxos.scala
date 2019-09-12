@@ -118,6 +118,7 @@ class SimpleGcBPaxos {
         config = config,
         stateMachine = new AppendLog(),
         options = DepServiceNodeOptions.default.copy(
+          topKDependencies = 2,
           garbageCollectEveryNCommands = 2
         ),
         metrics = new DepServiceNodeMetrics(FakeCollectors)

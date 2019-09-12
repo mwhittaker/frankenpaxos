@@ -987,6 +987,36 @@ Vue.component('frankenpaxos-buffer-map', {
   `,
 });
 
+// TopOne.
+Vue.component('frankenpaxos-top-one', {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <fp-object>
+      <fp-field :name="'topOnes'">
+        <frankenpaxos-map :map="value.topOnes"></frankenpaxos-map>
+      </fp-field>
+    </fp-object>
+  `,
+});
+
+// TopK.
+Vue.component('frankenpaxos-top-k', {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <fp-object>
+      <fp-field :name="'topOnes'">
+        <frankenpaxos-map :map="value.topOnes"></frankenpaxos-map>
+      </fp-field>
+    </fp-object>
+  `,
+});
+
 // TarjanDependencyGraph.
 Vue.component('frankenpaxos-tarjan', {
   props: {

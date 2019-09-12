@@ -13,6 +13,10 @@ object JsUtils {
 
   def setToJs[A](m: Set[A]): js.Array[A] = seqToJs(m.to[Seq])
   def setToJs[A](m: mutable.Set[A]): js.Array[A] = seqToJs(m.to[mutable.Seq])
+  def setToJs[A](m: scala.collection.SortedSet[A]): js.Array[A] =
+    seqToJs(m.to[Seq])
+  def setToJs[A](m: mutable.SortedSet[A]): js.Array[A] =
+    seqToJs(m.to[mutable.Seq])
 
   def mapToJs[K, V](m: Map[K, V]): js.Array[js.Array[Any]] = {
     seqToJs(m.map({ case (k, v) => tupleToJs((k, v)) }).to[Seq])

@@ -137,7 +137,8 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
     logger: Logger,
     config: Config[Transport],
     stateMachine: StateMachine,
-    options: DepServiceNodeOptions = DepServiceNodeOptions.default,
+    @JSExport
+    var options: DepServiceNodeOptions = DepServiceNodeOptions.default,
     metrics: DepServiceNodeMetrics = new DepServiceNodeMetrics(
       PrometheusCollectors
     )
@@ -158,8 +159,10 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
   // dependency service node receives a new command, it uses the conflict index
   // to efficiently compute dependencies. If topKDependencies = -1, then we
   // conflict index. Otherwise, we use compactConflictIndex.
+  @JSExportAll
   sealed trait SomeConflictIndex
 
+  @JSExportAll
   case class Uncompacted(
       // A top-k conflict index.
       conflictIndex: ConflictIndex[VertexId, Array[Byte]],
@@ -168,6 +171,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
       highWatermark: mutable.Buffer[Int]
   ) extends SomeConflictIndex
 
+  @JSExportAll
   case class Compacted(
       // A compacted (not top-k) conflict index.
       conflictIndex: CompactConflictIndex,
@@ -353,7 +357,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
     conflictIndex match {
       case _: Uncompacted =>
       case compacted @ Compacted(_, numCommandsPendingGc) =>
-        var n = numCommandsPendingGc
+        var n = numCommandsPendingGc + 1
         if (n % options.garbageCollectEveryNCommands == 0) {
           timed("DependencyRequest/garbageCollect") {
             compacted.conflictIndex.garbageCollect()

@@ -1,10 +1,13 @@
 package frankenpaxos.statemachine
 
 import scala.collection.mutable
+import scala.scalajs.js.annotation._
 
 class TopOne[T](like: VertexIdLike[T]) {
   type LeaderIndex = Int
-  val topOnes = mutable.Map[LeaderIndex, T]()
+
+  @JSExport
+  protected val topOnes = mutable.Map[LeaderIndex, T]()
 
   def put(x: T): Unit = {
     topOnes.get(like.leaderIndex(x)) match {
