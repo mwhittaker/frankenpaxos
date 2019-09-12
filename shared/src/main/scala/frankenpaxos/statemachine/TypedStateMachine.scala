@@ -34,23 +34,26 @@ trait TypedStateMachine[I, O] extends StateMachine {
   private def erasedConflictIndex[Key](
       conflictIndex: ConflictIndex[Key, I]
   ): ConflictIndex[Key, Array[Byte]] =
-    ???
-  // new ConflictIndex[Key, Array[Byte]] {
-  //   private val index = typedConflictIndex[Key]()
-  //
-  //   override def put(key: Key, command: Array[Byte]) =
-  //     index.put(key, inputSerializer.fromBytes(command))
-  //
-  //   override def putSnapshot(key: Key) =
-  //     index.putSnapshot(key)
-  //
-  //   override def remove(key: Key): Unit =
-  //     index.remove(key)
-  //
-  //   override def getConflicts(command: Array[Byte]): Set[Key] = {
-  //     index.getConflicts(inputSerializer.fromBytes(command))
-  //   }
-  // }
+    new ConflictIndex[Key, Array[Byte]] {
+      private val index = typedConflictIndex[Key]()
+
+      override def put(key: Key, command: Array[Byte]): Unit =
+        index.put(key, inputSerializer.fromBytes(command))
+
+      override def putSnapshot(key: Key): Unit =
+        index.putSnapshot(key)
+
+      override def remove(key: Key): Unit =
+        index.remove(key)
+
+      override def getConflicts(command: Array[Byte]): Set[Key] = {
+        index.getConflicts(inputSerializer.fromBytes(command))
+      }
+
+      override def getSnapshotConflicts(): Set[Key] = {
+        index.getSnapshotConflicts()
+      }
+    }
 
   override def conflictIndex[Key](): ConflictIndex[Key, Array[Byte]] =
     erasedConflictIndex(typedConflictIndex())
