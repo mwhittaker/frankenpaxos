@@ -46,9 +46,10 @@ class LeaderOptions(NamedTuple):
 
 
 class DepServiceNodeOptions(NamedTuple):
+    top_k_dependencies: int = -1
     garbage_collect_every_n_commands: int = 10000
-    measure_latencies: bool = True
     unsafe_return_no_dependencies: bool = False
+    measure_latencies: bool = True
 
 
 class AcceptorOptions(NamedTuple):
@@ -479,14 +480,16 @@ class SimpleGcBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', dep.host.ip(),
                     '--prometheus_port',
                         str(dep.port + 1) if input.monitored else '-1',
+                    '--options.topKDependencies',
+                        str(input.dep_service_node_options.top_k_dependencies),
                     '--options.garbageCollectEveryNCommands',
                         str(input.dep_service_node_options
                                 .garbage_collect_every_n_commands),
-                    '--options.measureLatencies',
-                        str(input.dep_service_node_options.measure_latencies),
                     '--options.unsafeReturnNoDependencies',
                         str(input.dep_service_node_options
                                  .unsafe_return_no_dependencies),
+                    '--options.measureLatencies',
+                        str(input.dep_service_node_options.measure_latencies),
                 ],
             )
             if input.profiled:
