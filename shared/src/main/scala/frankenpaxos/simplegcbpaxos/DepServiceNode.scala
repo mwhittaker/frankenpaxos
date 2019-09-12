@@ -271,15 +271,20 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
         case (Uncompacted(conflictIndex, highWatermark), Value.Snapshot(_)) =>
           val dependencies: VertexIdPrefixSet =
             timed("DependencyRequest/uncompacted snapshot deps") {
-              val dependencies = VertexIdPrefixSet(highWatermark.toSeq)
-              dependencies.subtractOne(dependencyRequest.vertexId)
-              dependencies
+              VertexIdPrefixSet(highWatermark.toSeq)
             }
-          conflictIndex.putSnapshot(dependencyRequest.vertexId)
-          highWatermark(dependencyRequest.vertexId.leaderIndex) = Math.max(
-            highWatermark(dependencyRequest.vertexId.leaderIndex),
-            dependencyRequest.vertexId.id
-          )
+          timed("DependencyRequest/uncompacted snapshot subtractOne") {
+            dependencies.subtractOne(dependencyRequest.vertexId)
+          }
+          timed("DependencyRequest/uncompacted snapshot putSnapshot") {
+            conflictIndex.putSnapshot(dependencyRequest.vertexId)
+          }
+          timed("DependencyRequest/uncompacted snapshot highWatermark") {
+            highWatermark(dependencyRequest.vertexId.leaderIndex) = Math.max(
+              highWatermark(dependencyRequest.vertexId.leaderIndex),
+              dependencyRequest.vertexId.id
+            )
+          }
 
           // Update metrics.
           metrics.snapshotsTotal.inc()
@@ -293,54 +298,75 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
         case (Uncompacted(conflictIndex, highWatermark),
               Value.Command(command)) =>
           val bytes = command.command.toByteArray
-          var dependencies: VertexIdPrefixSet =
-            timed("DependencyRequest/uncompacted deps") {
-              val dependencies =
-                VertexIdPrefixSet.fromTopK(config.leaderAddresses.size,
-                                           conflictIndex.getConflicts(bytes))
-              dependencies.subtractOne(dependencyRequest.vertexId)
-              dependencies
+          val rawDependencies =
+            timed("DependencyRequest/uncompacted getConflicts") {
+              conflictIndex.getConflicts(bytes)
             }
-          conflictIndex.put(dependencyRequest.vertexId, bytes)
-          highWatermark(dependencyRequest.vertexId.leaderIndex) = Math.max(
-            highWatermark(dependencyRequest.vertexId.leaderIndex),
-            dependencyRequest.vertexId.id
-          )
+          val dependencies =
+            timed("DependencyRequest/uncompacted fromTopK") {
+              VertexIdPrefixSet.fromTopK(config.leaderAddresses.size,
+                                         rawDependencies)
+            }
+          timed("DependencyRequest/uncompacted subtractOne") {
+            dependencies.subtractOne(dependencyRequest.vertexId)
+          }
+          timed("DependencyRequest/uncompacted put") {
+            conflictIndex.put(dependencyRequest.vertexId, bytes)
+          }
+          timed("DependencyRequest/uncompacted highWatermark") {
+            highWatermark(dependencyRequest.vertexId.leaderIndex) = Math.max(
+              highWatermark(dependencyRequest.vertexId.leaderIndex),
+              dependencyRequest.vertexId.id
+            )
+          }
 
           // Update metrics.
           metrics.dependencies.observe(dependencies.size)
           metrics.uncompactedDependencies.observe(
             dependencies.uncompactedSize
           )
+
           dependencies
 
         case (Compacted(conflictIndex, _), Value.Snapshot(_)) =>
-          metrics.snapshotsTotal.inc()
           val dependencies =
-            timed("DependencyRequest/compacted snapshot deps") {
-              val dependencies = conflictIndex.highWatermark()
-              dependencies.subtractOne(dependencyRequest.vertexId)
-              dependencies
+            timed("DependencyRequest/compacted snapshot highWatermark") {
+              conflictIndex.highWatermark()
             }
-          conflictIndex.putSnapshot(dependencyRequest.vertexId)
+          timed("DependencyRequest/compacted snapshot subtractOne") {
+            dependencies.subtractOne(dependencyRequest.vertexId)
+          }
+          timed("DependencyRequest/putSnapshot") {
+            conflictIndex.putSnapshot(dependencyRequest.vertexId)
+          }
+
+          // Update metrics.
+          metrics.snapshotsTotal.inc()
           metrics.snapshotDependencies.observe(dependencies.size)
           metrics.uncompactedSnapshotDependencies.observe(
             dependencies.uncompactedSize
           )
+
           dependencies
 
         case (Compacted(conflictIndex, _), Value.Command(command)) =>
           val bytes = command.command.toByteArray
-          var dependencies = timed("DependencyRequest/compacted deps") {
-            val dependencies = conflictIndex.getConflicts(bytes)
-            dependencies.subtractOne(dependencyRequest.vertexId)
-            dependencies
+          var dependencies = timed("DependencyRequest/compacted getConflicts") {
+            conflictIndex.getConflicts(bytes)
           }
-          conflictIndex.put(dependencyRequest.vertexId, bytes)
+          timed("DependencyRequest/compacted subtractOne") {
+            dependencies.subtractOne(dependencyRequest.vertexId)
+          }
+          timed("DependencyRequest/compacted put") {
+            conflictIndex.put(dependencyRequest.vertexId, bytes)
+          }
+
+          // Update metrics.
           metrics.dependencies.observe(dependencies.size)
           metrics.uncompactedDependencies.observe(
             dependencies.uncompactedSize
           )
+
           dependencies
       }
 
