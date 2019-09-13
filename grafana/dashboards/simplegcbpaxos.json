@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1568341744191,
+  "iteration": 1568415403397,
   "links": [],
   "panels": [
     {
@@ -1180,6 +1180,156 @@
         "x": 0,
         "y": 72
       },
+      "id": 20,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(zigzag_tarjan_method_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Method \"{{name}}\" ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_ignored_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Ignored commands ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_already_executed_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Already executed ({{instance}})",
+          "refId": "J"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_in_metadatas_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "In metadatas ({{instance}})",
+          "refId": "E"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_not_in_metadatas_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Not in metadatas ({{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_ineligible_stack_size_sum[1s]) / rate(zigzag_tarjan_ineligible_stack_size_count[1s])",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 1,
+          "legendFormat": "Average ineligible stack size ({{instance}})",
+          "refId": "F"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_early_blockers_return_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Early blockers return ({{instance}})",
+          "refId": "D"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_num_children_visited_sum[1s]) / rate(zigzag_tarjan_num_children_visited_count[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Average num children visited ({{instance}})",
+          "refId": "G"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_strong_connect_branch_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "strongConnect branch \"{{branch}}\" ({{instance}})",
+          "refId": "H"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_component_size_sum[1s]) / rate(zigzag_tarjan_component_size_count[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Average component size ({{instance}})",
+          "refId": "I"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Zigzag Tarjan Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 80
+      },
       "id": 7,
       "legend": {
         "avg": false,
@@ -1264,7 +1414,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 80
+        "y": 88
       },
       "id": 13,
       "legend": {
@@ -1357,7 +1507,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 88
+        "y": 96
       },
       "id": 15,
       "legend": {
@@ -1457,7 +1607,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 96
+        "y": 104
       },
       "id": 8,
       "legend": {
@@ -1543,7 +1693,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 104
+        "y": 112
       },
       "id": 9,
       "legend": {
@@ -2152,8 +2302,8 @@
     ]
   },
   "time": {
-    "from": "2019-09-13T02:27:54.285Z",
-    "to": "2019-09-13T02:28:40.642Z"
+    "from": "2019-09-13T22:48:54.556Z",
+    "to": "2019-09-13T22:49:59.717Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -2183,5 +2333,5 @@
   "timezone": "",
   "title": "Simple GC BPaxos",
   "uid": "fz4gS_KWk",
-  "version": 2
+  "version": 4
 }
