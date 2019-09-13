@@ -377,14 +377,14 @@ class TarjanDependencyGraph[
         // Immediately return and mark all nodes on the stack ineligible. The
         // stack will be cleared at the end of the unwinding. We also make sure
         // to record the fact that we are blocked on this vertex.
-        metrics.strongConnectBranchTotal.labels("uncommitted child")
+        metrics.strongConnectBranchTotal.labels("uncommitted child").inc()
         metadatas(v).eligible = false
         blockers += w
         metrics.numChildrenVisited.observe(numChildren)
         return
       } else if (!metadatas.contains(w)) {
         // If we haven't explored our dependency yet, we recurse.
-        metrics.strongConnectBranchTotal.labels("unexplored child")
+        metrics.strongConnectBranchTotal.labels("unexplored child").inc()
         strongConnect(w, appender, executables, blockers)
 
         // If our child is ineligible, we are ineligible. We return
@@ -402,17 +402,17 @@ class TarjanDependencyGraph[
         // If we depend on an ineligible vertex, we are ineligible.
         // Immediately return and mark all nodes on the stack ineligible. The
         // stack will be cleared at the end of the unwinding.
-        metrics.strongConnectBranchTotal.labels("ineligible child")
+        metrics.strongConnectBranchTotal.labels("ineligible child").inc()
         metadatas(v).eligible = false
         metrics.numChildrenVisited.observe(numChildren)
         return
       } else if (metadatas(w).stackIndex != -1) {
-        metrics.strongConnectBranchTotal.labels("on stack child")
+        metrics.strongConnectBranchTotal.labels("on stack child").inc()
         metadatas(v).lowLink =
           Math.min(metadatas(v).lowLink, metadatas(w).number)
         metadatas(v).eligible = metadatas(v).eligible && metadatas(w).eligible
       } else {
-        metrics.strongConnectBranchTotal.labels("off stack child")
+        metrics.strongConnectBranchTotal.labels("off stack child").inc()
         metadatas(v).eligible = metadatas(v).eligible && metadatas(w).eligible
       }
     }
