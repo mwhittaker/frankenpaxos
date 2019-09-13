@@ -175,7 +175,7 @@ class ReplicaMetrics(collectors: Collectors) {
 
   val recoverVertexTimers: Summary = collectors.summary
     .build()
-    .name("simple_gc_bpaxos_recover_vertex_timers")
+    .name("simple_gc_bpaxos_replica_recover_vertex_timers")
     .help("The number of recover vertex timers that a replica has.")
     .register()
 

@@ -275,8 +275,13 @@ class IntPrefixSet private (
     this
   }
 
-  def toProto(): IntPrefixSetProto =
-    IntPrefixSetProto(watermark = watermark, value = values.toSeq)
+  def toProto(): IntPrefixSetProto = {
+    if (values.size == 0) {
+      IntPrefixSetProto(watermark = watermark, value = Seq())
+    } else {
+      IntPrefixSetProto(watermark = watermark, value = values.toSeq)
+    }
+  }
 
   // Compact `values`, making it as small as possible and making `watermark` as
   // large as possible.

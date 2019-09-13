@@ -275,7 +275,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
         case (Uncompacted(conflictIndex, highWatermark), Value.Snapshot(_)) =>
           val dependencies: VertexIdPrefixSet =
             timed("DependencyRequest/uncompacted snapshot deps") {
-              VertexIdPrefixSet(highWatermark.toSeq)
+              VertexIdPrefixSet(highWatermark)
             }
           timed("DependencyRequest/uncompacted snapshot subtractOne") {
             dependencies.subtractOne(dependencyRequest.vertexId)
@@ -297,7 +297,9 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
             dependencies.uncompactedSize
           )
 
-          dependencies
+          timed("DependencyRequest/uncompacted snapshot toProto") {
+            dependencies.toProto()
+          }
 
         case (Uncompacted(conflictIndex, highWatermark),
               Value.Command(command)) =>
@@ -338,7 +340,9 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
             dependencies.uncompactedSize
           )
 
-          dependencies
+          timed("DependencyRequest/uncompacted toProto") {
+            dependencies.toProto()
+          }
 
         case (Compacted(conflictIndex, _), Value.Snapshot(_)) =>
           val dependencies =
@@ -359,7 +363,9 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
             dependencies.uncompactedSize
           )
 
-          dependencies
+          timed("DependencyRequest/compacted snapshot toProto") {
+            dependencies.toProto()
+          }
 
         case (Compacted(conflictIndex, _), Value.Command(command)) =>
           val bytes = command.command.toByteArray
@@ -379,7 +385,9 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
             dependencies.uncompactedSize
           )
 
-          dependencies
+          timed("DependencyRequest/compacted toProto") {
+            dependencies.toProto()
+          }
       }
 
     timed("DependencyRequest/send") {
@@ -387,7 +395,7 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
         LeaderInbound().withDependencyReply(
           DependencyReply(vertexId = dependencyRequest.vertexId,
                           depServiceNodeIndex = index,
-                          dependencies = dependencies.toProto())
+                          dependencies = dependencies)
         )
       )
     }
