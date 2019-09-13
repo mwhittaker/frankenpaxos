@@ -9,6 +9,7 @@ package frankenpaxos.util
 trait VertexIdLike[T] {
   def leaderIndex(x: T): Int
   def id(x: T): Int
+  def make(leaderIndex: Int, id: Int): T
 
   val intraLeaderOrdering = new scala.math.Ordering[T] {
     override def compare(x: T, y: T): Int =

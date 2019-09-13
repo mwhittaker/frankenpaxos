@@ -45,6 +45,8 @@ class BufferMap[V](val growSize: Int = 5000) {
     buffer(normalize(key)) = Some(value)
   }
 
+  def contains(key: Int): Boolean = get(key).isDefined
+
   def garbageCollect(watermark: Int): Unit = {
     if (watermark <= this.watermark) {
       return

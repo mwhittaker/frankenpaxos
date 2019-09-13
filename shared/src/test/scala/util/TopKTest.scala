@@ -6,21 +6,15 @@ import org.scalatest.FlatSpec
 import org.scalatest.Matchers
 
 class TopKTest extends FlatSpec with Matchers {
-  val intTuple = new VertexIdLike[(Int, Int)] {
-    def leaderIndex(t: (Int, Int)): Int = {
-      val (x, _) = t
-      x
-    }
-
-    def id(t: (Int, Int)): Int = {
-      val (_, y) = t
-      y
-    }
+  val like = new VertexIdLike[(Int, Int)] {
+    override def leaderIndex(t: (Int, Int)): Int = t._1
+    override def id(t: (Int, Int)): Int = t._2
+    override def make(x: Int, y: Int): (Int, Int) = (x, y)
   }
 
   "A TopK" should "return empty set after no puts" in {
     for (k <- 1 until 10) {
-      val topK = new TopK(k, numLeaders = 3, intTuple)
+      val topK = new TopK(k, numLeaders = 3, like)
       topK.get() shouldBe mutable.Buffer(
         mutable.SortedSet[Int](),
         mutable.SortedSet[Int](),
@@ -31,7 +25,7 @@ class TopKTest extends FlatSpec with Matchers {
 
   it should "return one thing after putting it" in {
     for (k <- 1 until 10) {
-      val topK = new TopK(k, numLeaders = 3, intTuple)
+      val topK = new TopK(k, numLeaders = 3, like)
       topK.put((0, 0))
       topK.get() shouldBe mutable.Buffer(
         mutable.SortedSet[Int](0),
@@ -43,7 +37,7 @@ class TopKTest extends FlatSpec with Matchers {
 
   it should "return one thing per leader after putting them" in {
     for (k <- 1 until 10) {
-      val topK = new TopK(k, numLeaders = 3, intTuple)
+      val topK = new TopK(k, numLeaders = 3, like)
       topK.put((0, 0))
       topK.put((1, 1))
       topK.put((2, 2))
@@ -70,10 +64,10 @@ class TopKTest extends FlatSpec with Matchers {
       topK
     }
 
-    val top1 = put(new TopK(1, numLeaders = 5, intTuple))
-    val top2 = put(new TopK(2, numLeaders = 5, intTuple))
-    val top3 = put(new TopK(3, numLeaders = 5, intTuple))
-    val top4 = put(new TopK(4, numLeaders = 5, intTuple))
+    val top1 = put(new TopK(1, numLeaders = 5, like))
+    val top2 = put(new TopK(2, numLeaders = 5, like))
+    val top3 = put(new TopK(3, numLeaders = 5, like))
+    val top4 = put(new TopK(4, numLeaders = 5, like))
 
     top1.get() shouldBe mutable.Buffer(
       mutable.SortedSet[Int](2),
@@ -107,8 +101,8 @@ class TopKTest extends FlatSpec with Matchers {
 
   it should "merge two empty indexes correctly" in {
     for (k <- 1 until 5) {
-      val lhs = new TopK(k, numLeaders = 3, intTuple)
-      val rhs = new TopK(k, numLeaders = 3, intTuple)
+      val lhs = new TopK(k, numLeaders = 3, like)
+      val rhs = new TopK(k, numLeaders = 3, like)
       lhs.mergeEquals(rhs)
       lhs.get() shouldBe mutable.Buffer(
         mutable.SortedSet[Int](),
@@ -120,8 +114,8 @@ class TopKTest extends FlatSpec with Matchers {
 
   it should "merge lhs empty correctly" in {
     for (k <- 1 until 5) {
-      val lhs = new TopK(k, numLeaders = 3, intTuple)
-      val rhs = new TopK(k, numLeaders = 3, intTuple)
+      val lhs = new TopK(k, numLeaders = 3, like)
+      val rhs = new TopK(k, numLeaders = 3, like)
       rhs.put((0, 0))
       rhs.put((1, 1))
       rhs.put((2, 2))
@@ -136,8 +130,8 @@ class TopKTest extends FlatSpec with Matchers {
 
   it should "merge rhs empty correctly" in {
     for (k <- 1 until 5) {
-      val lhs = new TopK(k, numLeaders = 3, intTuple)
-      val rhs = new TopK(k, numLeaders = 3, intTuple)
+      val lhs = new TopK(k, numLeaders = 3, like)
+      val rhs = new TopK(k, numLeaders = 3, like)
       lhs.put((0, 0))
       lhs.put((1, 1))
       lhs.put((2, 2))
@@ -183,8 +177,8 @@ class TopKTest extends FlatSpec with Matchers {
       lhs
     }
 
-    val lhs1 = mergeEquals(new TopK(k = 1, numLeaders = 4, intTuple),
-                           new TopK(k = 1, numLeaders = 4, intTuple))
+    val lhs1 = mergeEquals(new TopK(k = 1, numLeaders = 4, like),
+                           new TopK(k = 1, numLeaders = 4, like))
     lhs1.get() shouldBe mutable.Buffer(
       mutable.SortedSet[Int](300),
       mutable.SortedSet[Int](300),
@@ -192,8 +186,8 @@ class TopKTest extends FlatSpec with Matchers {
       mutable.SortedSet[Int](1)
     )
 
-    val lhs2 = mergeEquals(new TopK(k = 2, numLeaders = 4, intTuple),
-                           new TopK(k = 2, numLeaders = 4, intTuple))
+    val lhs2 = mergeEquals(new TopK(k = 2, numLeaders = 4, like),
+                           new TopK(k = 2, numLeaders = 4, like))
     lhs2.get() shouldBe mutable.Buffer(
       mutable.SortedSet[Int](200, 300),
       mutable.SortedSet[Int](200, 300),
@@ -201,8 +195,8 @@ class TopKTest extends FlatSpec with Matchers {
       mutable.SortedSet[Int](0, 1)
     )
 
-    val lhs3 = mergeEquals(new TopK(k = 3, numLeaders = 4, intTuple),
-                           new TopK(k = 3, numLeaders = 4, intTuple))
+    val lhs3 = mergeEquals(new TopK(k = 3, numLeaders = 4, like),
+                           new TopK(k = 3, numLeaders = 4, like))
     lhs3.get() shouldBe mutable.Buffer(
       mutable.SortedSet[Int](100, 200, 300),
       mutable.SortedSet[Int](100, 200, 300),
@@ -210,8 +204,8 @@ class TopKTest extends FlatSpec with Matchers {
       mutable.SortedSet[Int](0, 1)
     )
 
-    val lhs4 = mergeEquals(new TopK(k = 4, numLeaders = 4, intTuple),
-                           new TopK(k = 4, numLeaders = 4, intTuple))
+    val lhs4 = mergeEquals(new TopK(k = 4, numLeaders = 4, like),
+                           new TopK(k = 4, numLeaders = 4, like))
     lhs4.get() shouldBe mutable.Buffer(
       mutable.SortedSet[Int](3, 100, 200, 300),
       mutable.SortedSet[Int](3, 100, 200, 300),

@@ -6,31 +6,25 @@ import org.scalatest.Matchers
 import scala.collection.mutable
 
 class TopOneTest extends FlatSpec with Matchers {
-  val intTuple = new VertexIdLike[(Int, Int)] {
-    def leaderIndex(t: (Int, Int)): Int = {
-      val (x, _) = t
-      x
-    }
-
-    def id(t: (Int, Int)): Int = {
-      val (_, y) = t
-      y
-    }
+  val like = new VertexIdLike[(Int, Int)] {
+    override def leaderIndex(t: (Int, Int)): Int = t._1
+    override def id(t: (Int, Int)): Int = t._2
+    override def make(x: Int, y: Int): (Int, Int) = (x, y)
   }
 
   "A TopOne" should "return zeros after no puts" in {
-    val topOne = new TopOne(3, intTuple)
+    val topOne = new TopOne(3, like)
     topOne.get() shouldBe mutable.Buffer(0, 0, 0)
   }
 
   it should "return one thing after putting it" in {
-    val topOne = new TopOne(3, intTuple)
+    val topOne = new TopOne(3, like)
     topOne.put((0, 0))
     topOne.get() shouldBe mutable.Buffer(1, 0, 0)
   }
 
   it should "return one thing per leader after putting them" in {
-    val topOne = new TopOne(3, intTuple)
+    val topOne = new TopOne(3, like)
     topOne.put((0, 0))
     topOne.put((1, 1))
     topOne.put((2, 2))
@@ -38,7 +32,7 @@ class TopOneTest extends FlatSpec with Matchers {
   }
 
   it should "return top thing per leader after lots of puts" in {
-    val topOne = new TopOne(5, intTuple)
+    val topOne = new TopOne(5, like)
     topOne.put((0, 0))
     topOne.put((0, 1))
     topOne.put((0, 2))
@@ -53,15 +47,15 @@ class TopOneTest extends FlatSpec with Matchers {
   }
 
   it should "merge two empty indexes correctly" in {
-    val lhs = new TopOne(3, intTuple)
-    val rhs = new TopOne(3, intTuple)
+    val lhs = new TopOne(3, like)
+    val rhs = new TopOne(3, like)
     lhs.mergeEquals(rhs)
     lhs.get() shouldBe mutable.Buffer(0, 0, 0)
   }
 
   it should "merge lhs empty correctly" in {
-    val lhs = new TopOne(3, intTuple)
-    val rhs = new TopOne(3, intTuple)
+    val lhs = new TopOne(3, like)
+    val rhs = new TopOne(3, like)
     rhs.put((0, 0))
     rhs.put((1, 1))
     rhs.put((2, 2))
@@ -70,8 +64,8 @@ class TopOneTest extends FlatSpec with Matchers {
   }
 
   it should "merge rhs empty correctly" in {
-    val lhs = new TopOne(3, intTuple)
-    val rhs = new TopOne(3, intTuple)
+    val lhs = new TopOne(3, like)
+    val rhs = new TopOne(3, like)
     lhs.put((0, 0))
     lhs.put((1, 1))
     lhs.put((2, 2))
@@ -80,8 +74,8 @@ class TopOneTest extends FlatSpec with Matchers {
   }
 
   it should "merge neither empty correctly" in {
-    val lhs = new TopOne(3, intTuple)
-    val rhs = new TopOne(3, intTuple)
+    val lhs = new TopOne(3, like)
+    val rhs = new TopOne(3, like)
     lhs.put((0, 0))
     lhs.put((1, 1))
     lhs.put((2, 2))

@@ -15,5 +15,7 @@ object VertexIdHelpers {
   implicit val like = new VertexIdLike[VertexId] {
     override def leaderIndex(vertexId: VertexId) = vertexId.leaderIndex
     override def id(vertexId: VertexId) = vertexId.id
+    override def make(leaderIndex: Int, id: Int): VertexId =
+      VertexId(leaderIndex, id)
   }
 }

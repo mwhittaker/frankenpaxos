@@ -1044,6 +1044,54 @@ Vue.component('frankenpaxos-tarjan', {
   `,
 });
 
+// ZigzagTarjanDependencyGraph.
+Vue.component('frankenpaxos-zigzag-tarjan', {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <fp-object>
+      <fp-field :name="'vertices'">
+        <frankenpaxos-foreach :value="value.vertices"
+                              v-slot="{value: buffer_map, index: i}">
+          Leader {{i}}
+          <frankenpaxos-buffer-map :value="buffer_map"
+                                   v-slot="{value: vertex_option}">
+            <frankenpaxos-option :value="vertex_option">
+              <template v-slot:if="{value: v}">
+                <fp-object>
+                  <fp-field :name="'key'" :value="v.key">
+                  </fp-field>
+                  <fp-field :name="'sequenceNumber'" :value="v.sequenceNumber">
+                  </fp-field>
+                  <fp-field :name="'dependencies'" :value="v.dependencies">
+                  </fp-field>
+                </fp-object>
+              </template>
+              <template v-slot:else="_">
+                None
+              </template>
+            </frankenpaxos-option>
+          </frankenpaxos-buffer-map>
+        </frankenpaxos-foreach>
+      </fp-field>
+
+      <fp-field :name="'nextKeyToExecute'">
+        {{value.nextKeyToExecute}}
+      </fp-field>
+
+      <fp-field :name="'numCommandsSinceLastGc'">
+        {{value.numCommandsSinceLastGc}}
+      </fp-field>
+
+      <fp-field :name="'executed'">
+        {{value.executed}}
+      </fp-field>
+    </fp-object>
+  `,
+});
+
 // This is taken directly from https://github.com/alexcode/vue2vis.
 const arrayDiff = (arr1, arr2) => arr1.filter(x => arr2.indexOf(x) === -1);
 

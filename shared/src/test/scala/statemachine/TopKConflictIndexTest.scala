@@ -9,16 +9,10 @@ import org.scalatest.Matchers
 import scala.collection.mutable
 
 class TopKConflictIndexTest extends FlatSpec with Matchers {
-  val intTuple = new VertexIdLike[(Int, Int)] {
-    def leaderIndex(t: (Int, Int)): Int = {
-      val (x, _) = t
-      x
-    }
-
-    def id(t: (Int, Int)): Int = {
-      val (_, y) = t
-      y
-    }
+  val like = new VertexIdLike[(Int, Int)] {
+    override def leaderIndex(t: (Int, Int)): Int = t._1
+    override def id(t: (Int, Int)): Int = t._2
+    override def make(x: Int, y: Int): (Int, Int) = (x, y)
   }
 
   private def bytes(x: Int): Array[Byte] = {
@@ -60,9 +54,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val noop = new Noop()
     val conflictIndices = {
       for (k <- 1 until 5) yield {
-        putPyramid(
-          noop.topKConflictIndex[(Int, Int)](k, numLeaders = 3, intTuple)
-        )
+        putPyramid(noop.topKConflictIndex[(Int, Int)](k, numLeaders = 3, like))
       }
     }.toSeq
 
@@ -93,7 +85,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val conflictIndices = {
       for (k <- 1 until 5) yield {
         putWithSnapshots(
-          noop.topKConflictIndex[(Int, Int)](k, numLeaders = 6, intTuple)
+          noop.topKConflictIndex[(Int, Int)](k, numLeaders = 6, like)
         )
       }
     }.toSeq
@@ -135,7 +127,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val conflictIndices = {
       for (k <- 1 until 5) yield {
         putPyramid(
-          register.topKConflictIndex[(Int, Int)](k, numLeaders = 3, intTuple)
+          register.topKConflictIndex[(Int, Int)](k, numLeaders = 3, like)
         )
       }
     }.toSeq
@@ -167,7 +159,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val conflictIndices = {
       for (k <- 1 until 5) yield {
         putWithSnapshots(
-          register.topKConflictIndex[(Int, Int)](k, numLeaders = 6, intTuple)
+          register.topKConflictIndex[(Int, Int)](k, numLeaders = 6, like)
         )
       }
     }.toSeq
@@ -209,7 +201,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val conflictIndices = {
       for (k <- 1 until 5) yield {
         putPyramid(
-          appendLog.topKConflictIndex[(Int, Int)](k, numLeaders = 3, intTuple)
+          appendLog.topKConflictIndex[(Int, Int)](k, numLeaders = 3, like)
         )
       }
     }.toSeq
@@ -241,7 +233,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
     val conflictIndices = {
       for (k <- 1 until 5) yield {
         putWithSnapshots(
-          log.topKConflictIndex[(Int, Int)](k, numLeaders = 6, intTuple)
+          log.topKConflictIndex[(Int, Int)](k, numLeaders = 6, like)
         )
       }
     }.toSeq
@@ -317,7 +309,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
 
     // k = 1
     val index1 = put(
-      kvs.typedTopKConflictIndex[(Int, Int)](k = 1, numLeaders = 3, intTuple)
+      kvs.typedTopKConflictIndex[(Int, Int)](k = 1, numLeaders = 3, like)
     )
     index1.getTopOneConflicts(get("x")).get() shouldBe
       mutable.Buffer(3, 4, 0)
@@ -338,7 +330,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
 
     // k = 2
     val index2 = put(
-      kvs.typedTopKConflictIndex[(Int, Int)](k = 2, numLeaders = 3, intTuple)
+      kvs.typedTopKConflictIndex[(Int, Int)](k = 2, numLeaders = 3, like)
     )
     index2.getTopKConflicts(get("x")).get() shouldBe
       mutable.Buffer(
@@ -426,7 +418,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
 
     // k = 1
     val index1 = put(
-      kvs.typedTopKConflictIndex[(Int, Int)](k = 1, numLeaders = 4, intTuple)
+      kvs.typedTopKConflictIndex[(Int, Int)](k = 1, numLeaders = 4, like)
     )
     index1.getTopOneConflicts(get("x")).get() shouldBe
       mutable.Buffer(3, 4, 0, 21)
@@ -447,7 +439,7 @@ class TopKConflictIndexTest extends FlatSpec with Matchers {
 
     // k = 2
     val index2 = put(
-      kvs.typedTopKConflictIndex[(Int, Int)](k = 2, numLeaders = 4, intTuple)
+      kvs.typedTopKConflictIndex[(Int, Int)](k = 2, numLeaders = 4, like)
     )
     index2.getTopKConflicts(get("x")).get() shouldBe
       mutable.Buffer(

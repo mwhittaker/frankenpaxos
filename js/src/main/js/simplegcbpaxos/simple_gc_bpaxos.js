@@ -571,6 +571,8 @@ let replica_info = {
 
       <div>
         dependencyGraph =
+        <!-- <frankenpaxos-zigzag-tarjan :value="node.actor.dependencyGraph"> -->
+        <!-- </frankenpaxos-zigzag-tarjan> -->
         <frankenpaxos-tarjan :value="node.actor.dependencyGraph">
         </frankenpaxos-tarjan>
       </div>
