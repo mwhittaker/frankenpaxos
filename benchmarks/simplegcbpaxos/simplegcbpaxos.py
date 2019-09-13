@@ -73,6 +73,9 @@ class ReplicaOptions(NamedTuple):
     measure_latencies: bool = True
     unsafe_dont_recover: bool = False
 
+class ZigzagOptions(NamedTuple):
+    vertices_grow_size: int = 5000
+    garbage_collect_every_n_commands: int = 1000
 
 class GarbageCollectorOptions(NamedTuple):
     pass
@@ -134,8 +137,8 @@ class Input(NamedTuple):
 
     # Replica options. ########################################################
     replica_options: ReplicaOptions
+    replica_zigzag_options: ZigzagOptions
     replica_log_level: str
-    replica_dependency_graph: str
 
     # Garbage collector options. ###############################################
     garbage_collector_options: GarbageCollectorOptions
@@ -538,7 +541,6 @@ class SimpleGcBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--config', config_filename,
                     '--log_level', input.replica_log_level,
                     '--state_machine', input.state_machine,
-                    '--dependency_graph', input.replica_dependency_graph,
                     '--prometheus_host', replica.host.ip(),
                     '--prometheus_port',
                         str(replica.port + 1) if input.monitored else '-1',
@@ -574,6 +576,11 @@ class SimpleGcBPaxosSuite(benchmark.Suite[Input, Output]):
                         str(input.replica_options.measure_latencies),
                     '--options.unsafeDontRecover',
                         str(input.replica_options.unsafe_dont_recover),
+                    '--zigzag.verticesGrowSize',
+                        str(input.replica_zigzag_options.vertices_grow_size),
+                    '--zigzag.garbageCollectEveryNCommands',
+                        str(input.replica_zigzag_options
+                                 .garbage_collect_every_n_commands),
                 ],
             )
             if input.profiled:

@@ -10,6 +10,8 @@ import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
 import frankenpaxos.depgraph.DependencyGraph
 import frankenpaxos.depgraph.TarjanDependencyGraph
+import frankenpaxos.depgraph.ZigzagTarjanDependencyGraph
+import frankenpaxos.depgraph.ZigzagTarjanDependencyGraphOptions
 import frankenpaxos.statemachine
 import frankenpaxos.statemachine.KeyValueStore
 import frankenpaxos.statemachine.StateMachine
@@ -27,26 +29,32 @@ object ReplicaMain extends App {
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       stateMachine: StateMachine = new statemachine.Noop(),
-      dependencyGraphFactory: VertexIdPrefixSet => DependencyGraph[
-        VertexId,
-        Unit,
-        VertexIdPrefixSet
-      ] = _ => ???,
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
       // Options.
-      options: ReplicaOptions = ReplicaOptions.default
+      options: ReplicaOptions = ReplicaOptions.default,
+      zigzagOptions: ZigzagTarjanDependencyGraphOptions =
+        ZigzagTarjanDependencyGraphOptions.default
   )
-
-  implicit val dependencyGraphRead =
-    DependencyGraph.read[VertexId, Unit, VertexIdPrefixSet]
 
   implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def optionAction(
         f: (A, ReplicaOptions) => ReplicaOptions
     ): scopt.OptionDef[A, Flags] =
       o.action((x, flags) => flags.copy(options = f(x, flags.options)))
+  }
+
+  implicit class ZigzagOptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def zigzagOptionAction(
+        f: (
+            A,
+            ZigzagTarjanDependencyGraphOptions
+        ) => ZigzagTarjanDependencyGraphOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action(
+        (x, flags) => flags.copy(zigzagOptions = f(x, flags.zigzagOptions))
+      )
   }
 
   val parser = new scopt.OptionParser[Flags]("") {
@@ -59,11 +67,6 @@ object ReplicaMain extends App {
     opt[StateMachine]("state_machine")
       .required()
       .action((x, f) => f.copy(stateMachine = x))
-    opt[
-      VertexIdPrefixSet => DependencyGraph[VertexId, Unit, VertexIdPrefixSet]
-    ]("dependency_graph")
-      .required()
-      .action((x, f) => f.copy(dependencyGraphFactory = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
@@ -95,6 +98,10 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(sendSnapshotEveryNCommands = x))
     opt[Boolean]("options.measureLatencies")
       .optionAction((x, o) => o.copy(measureLatencies = x))
+    opt[Int]("zigzag.verticesGrowSize")
+      .zigzagOptionAction((x, o) => o.copy(verticesGrowSize = x))
+    opt[Int]("zigzag.garbageCollectEveryNCommands")
+      .zigzagOptionAction((x, o) => o.copy(garbageCollectEveryNCommands = x))
   }
 
   // Parse flags.
@@ -114,8 +121,11 @@ object ReplicaMain extends App {
     logger = logger,
     config = config,
     stateMachine = flags.stateMachine,
-    dependencyGraph = flags.dependencyGraphFactory(
-      VertexIdPrefixSet(config.leaderAddresses.size)
+    dependencyGraph = new ZigzagTarjanDependencyGraph(
+      VertexIdPrefixSet(config.leaderAddresses.size),
+      numLeaders = config.leaderAddresses.size,
+      like = VertexIdHelpers.like,
+      options = flags.zigzagOptions
     ),
     options = flags.options
   )
