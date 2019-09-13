@@ -1,9 +1,79 @@
 package frankenpaxos.depgraph
 
 import frankenpaxos.compact.CompactSet
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.Gauge
+import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExport
 import scala.scalajs.js.annotation.JSExportAll
+
+@JSExportAll
+class TarjanDependencyGraphMetrics(collectors: Collectors) {
+  val methodTotal: Counter = collectors.counter
+    .build()
+    .name("tarjan_method_total")
+    .labelNames("name")
+    .help("Total number of method invocations.")
+    .register()
+
+  val ignoredTotal: Counter = collectors.counter
+    .build()
+    .name("tarjan_ignored_total")
+    .help(
+      "Total number of committed vertices that were ignored because they " +
+        "were already committed or already executed."
+    )
+    .register()
+
+  val inMetadatasTotal: Counter = collectors.counter
+    .build()
+    .name("tarjan_in_metadatas_total")
+    .help("Total number of vertices in executeImpl that are in metadatas.")
+    .register()
+
+  val notInMetadatasTotal: Counter = collectors.counter
+    .build()
+    .name("tarjan_not_in_metadatas_total")
+    .help("Total number of vertices in executeImpl that are not in metadatas.")
+    .register()
+
+  val ineligibleStackSize: Summary = collectors.summary
+    .build()
+    .name("tarjan_ineligible_stack_size")
+    .help("Size of stack upon finding an ineligible vertex.")
+    .register()
+
+  val earlyBlockersReturnTotal: Counter = collectors.counter
+    .build()
+    .name("tarjan_early_blockers_return_total")
+    .help(
+      "Total number of times execution is stopped because enough blockers " +
+        "are found."
+    )
+    .register()
+
+  val numChildrenVisited: Summary = collectors.summary
+    .build()
+    .name("tarjan_num_children_visited")
+    .help("The number of children a node visits in strongConnect.")
+    .register()
+
+  val strongConnectBranchTotal: Counter = collectors.counter
+    .build()
+    .name("tarjan_strong_connect_branch_total")
+    .labelNames("branch")
+    .help("Total number of times each branch of strongConnect is taken.")
+    .register()
+
+  val componentSize: Summary = collectors.summary
+    .build()
+    .name("tarjan_component_size")
+    .help("The size of a strongly connected component.")
+    .register()
+}
 
 // TarjanDependencyGraph implements a dependency graph using Tarjans's strongly
 // connected components algorithm [1, 2]. JgraphtDependencyGraph and
@@ -82,7 +152,10 @@ class TarjanDependencyGraph[
     KeySet <: CompactSet[KeySet] { type T = Key }
 ](
     // TODO(mwhittaker): Take in a factory instead.
-    emptyKeySet: KeySet
+    emptyKeySet: KeySet,
+    metrics: TarjanDependencyGraphMetrics = new TarjanDependencyGraphMetrics(
+      PrometheusCollectors
+    )
 )(
     implicit override val keyOrdering: Ordering[Key],
     implicit override val sequenceNumberOrdering: Ordering[SequenceNumber]
@@ -154,8 +227,11 @@ class TarjanDependencyGraph[
       sequenceNumber: SequenceNumber,
       dependencies: KeySet
   ): Unit = {
+    metrics.methodTotal.labels("commit").inc()
+
     // Ignore repeated commands.
     if (vertices.contains(key) || executed.contains(key)) {
+      metrics.ignoredTotal.inc()
       return
     }
 
@@ -179,6 +255,8 @@ class TarjanDependencyGraph[
   }
 
   override def execute(numBlockers: Option[Int]): (Seq[Key], Set[Key]) = {
+    metrics.methodTotal.labels("execute").inc()
+
     metadatas.clear()
     stack.clear()
     executables.clear()
@@ -200,6 +278,8 @@ class TarjanDependencyGraph[
       executables: mutable.Buffer[Key],
       blockers: mutable.Set[Key]
   ): Unit = {
+    metrics.methodTotal.labels("appendExecute").inc()
+
     metadatas.clear()
     stack.clear()
     val startIndex = executables.size
@@ -215,6 +295,8 @@ class TarjanDependencyGraph[
   override def executeByComponent(
       numBlockers: Option[Int]
   ): (Seq[Seq[Key]], Set[Key]) = {
+    metrics.methodTotal.labels("executeByComponent").inc()
+
     metadatas.clear()
     stack.clear()
     val executables = mutable.Buffer[Seq[Key]]()
@@ -239,14 +321,18 @@ class TarjanDependencyGraph[
       executables: mutable.Buffer[A],
       blockers: mutable.Set[Key]
   ): Unit = {
+    metrics.methodTotal.labels("executeImpl").inc()
+
     for ((key, vertex) <- vertices) {
       if (!metadatas.contains(key)) {
+        metrics.notInMetadatasTotal.inc()
         strongConnect(key, appender, executables, blockers)
 
         // If we encounter an ineligible vertex, the call stack returns
         // immediately, and all nodes along the way are marked ineligible, so
         // we clear the stack.
         if (!metadatas(key).eligible) {
+          metrics.ineligibleStackSize.observe(stack.size)
           stack.clear()
         }
 
@@ -255,9 +341,12 @@ class TarjanDependencyGraph[
         // we return.
         numBlockers.foreach(n => {
           if (blockers.size >= n) {
+            metrics.earlyBlockersReturnTotal.inc()
             return
           }
         })
+      } else {
+        metrics.inMetadatasTotal.inc()
       }
     }
   }
@@ -268,6 +357,8 @@ class TarjanDependencyGraph[
       executables: mutable.Buffer[A],
       blockers: mutable.Set[Key]
   ): Unit = {
+    metrics.methodTotal.labels("strongConnect").inc()
+
     val number = metadatas.size
     metadatas(v) = VertexMetadata(
       number = number,
@@ -277,23 +368,30 @@ class TarjanDependencyGraph[
     )
     stack += v
 
+    var numChildren = 0
     for (w <- vertices(v).dependencies.materializedDiff(executed)) {
+      numChildren += 1
+
       if (!vertices.contains(w)) {
         // If we depend on an uncommitted vertex, we are ineligible.
         // Immediately return and mark all nodes on the stack ineligible. The
         // stack will be cleared at the end of the unwinding. We also make sure
         // to record the fact that we are blocked on this vertex.
+        metrics.strongConnectBranchTotal.labels("uncommitted child")
         metadatas(v).eligible = false
         blockers += w
+        metrics.numChildrenVisited.observe(numChildren)
         return
       } else if (!metadatas.contains(w)) {
         // If we haven't explored our dependency yet, we recurse.
+        metrics.strongConnectBranchTotal.labels("unexplored child")
         strongConnect(w, appender, executables, blockers)
 
         // If our child is ineligible, we are ineligible. We return
         // immediately.
         if (!metadatas(w).eligible) {
           metadatas(v).eligible = false
+          metrics.numChildrenVisited.observe(numChildren)
           return
         }
 
@@ -304,16 +402,21 @@ class TarjanDependencyGraph[
         // If we depend on an ineligible vertex, we are ineligible.
         // Immediately return and mark all nodes on the stack ineligible. The
         // stack will be cleared at the end of the unwinding.
+        metrics.strongConnectBranchTotal.labels("ineligible child")
         metadatas(v).eligible = false
+        metrics.numChildrenVisited.observe(numChildren)
         return
       } else if (metadatas(w).stackIndex != -1) {
+        metrics.strongConnectBranchTotal.labels("on stack child")
         metadatas(v).lowLink =
           Math.min(metadatas(v).lowLink, metadatas(w).number)
         metadatas(v).eligible = metadatas(v).eligible && metadatas(w).eligible
       } else {
+        metrics.strongConnectBranchTotal.labels("off stack child")
         metadatas(v).eligible = metadatas(v).eligible && metadatas(w).eligible
       }
     }
+    metrics.numChildrenVisited.observe(numChildren)
 
     // v is not the root of its strongly connected component.
     if (metadatas(v).lowLink != metadatas(v).number) {
@@ -328,6 +431,7 @@ class TarjanDependencyGraph[
       stack.remove(stack.size - 1)
       metadatas(component).stackIndex = -1
       appender.appendOne(executables, component)
+      metrics.componentSize.observe(1)
     } else {
       val component = stack.slice(metadatas(v).stackIndex, stack.size)
       stack.remove(metadatas(v).stackIndex,
@@ -339,6 +443,7 @@ class TarjanDependencyGraph[
         executables,
         component.sortBy(k => (vertices(k).sequenceNumber, k))
       )
+      metrics.componentSize.observe(component.size)
     }
   }
 

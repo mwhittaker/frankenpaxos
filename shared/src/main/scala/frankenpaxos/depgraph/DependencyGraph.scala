@@ -1,6 +1,7 @@
 package frankenpaxos.depgraph
 
 import frankenpaxos.compact.CompactSet
+import frankenpaxos.monitoring.Collectors
 import scala.collection.mutable
 import scala.scalajs.js.annotation.JSExportAll
 
@@ -192,6 +193,23 @@ abstract class DependencyGraph[
 }
 
 object DependencyGraph {
+  sealed trait DependencyGraphType
+  case object Jgrapht extends DependencyGraphType
+  case object ScalaGraph extends DependencyGraphType
+  case object Tarjan extends DependencyGraphType
+  case object IncrementalTarjan extends DependencyGraphType
+
+  implicit val read: scopt.Read[DependencyGraphType] = scopt.Read.reads({
+    case "Jgrapht"           => Jgrapht
+    case "ScalaGraph"        => ScalaGraph
+    case "Tarjan"            => Tarjan
+    case "IncrementalTarjan" => IncrementalTarjan
+    case x =>
+      throw new IllegalArgumentException(
+        s"$x is not one of Jgrapht, ScalaGraph, Tarjan, or IncrementalTarjan."
+      )
+  })
+
   def read[K, S, KSet <: CompactSet[KSet] { type T = K }](
       implicit keyOrdering: Ordering[K],
       sequenceNumberOrdering: Ordering[S]

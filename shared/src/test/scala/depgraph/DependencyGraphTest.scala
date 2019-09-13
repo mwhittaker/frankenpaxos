@@ -2,6 +2,7 @@ package frankenpaxos.depgraph
 
 import com.google.protobuf.ByteString
 import frankenpaxos.compact.IntPrefixSet
+import frankenpaxos.monitoring.FakeCollectors
 import org.scalacheck.Gen
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
@@ -10,12 +11,14 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
+  private val tarjanMetrics = new TarjanDependencyGraphMetrics(FakeCollectors)
   private def jgraph =
     new JgraphtDependencyGraph[Int, Int, IntPrefixSet](IntPrefixSet())
   private def scala =
     new ScalaGraphDependencyGraph[Int, Int, IntPrefixSet](IntPrefixSet())
   private def tarjan =
-    new TarjanDependencyGraph[Int, Int, IntPrefixSet](IntPrefixSet())
+    new TarjanDependencyGraph[Int, Int, IntPrefixSet](IntPrefixSet(),
+                                                      tarjanMetrics)
   private def incremental =
     new IncrementalTarjanDependencyGraph[Int, Int, IntPrefixSet](IntPrefixSet())
 
@@ -381,7 +384,8 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
         val scalagraph =
           new ScalaGraphDependencyGraph[Int, Int, IntPrefixSet](IntPrefixSet())
         val tarjan =
-          new TarjanDependencyGraph[Int, Int, IntPrefixSet](IntPrefixSet())
+          new TarjanDependencyGraph[Int, Int, IntPrefixSet](IntPrefixSet(),
+                                                            tarjanMetrics)
         val incremental =
           new IncrementalTarjanDependencyGraph[Int, Int, IntPrefixSet](
             IntPrefixSet()

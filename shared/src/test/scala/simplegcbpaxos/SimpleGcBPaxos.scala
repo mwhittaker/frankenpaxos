@@ -4,6 +4,7 @@ import VertexIdHelpers.vertexIdOrdering
 import frankenpaxos.Util
 import frankenpaxos.Util.MapHelpers
 import frankenpaxos.depgraph.TarjanDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraphMetrics
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator.FakeLogger
 import frankenpaxos.simulator.FakeTransport
@@ -123,7 +124,8 @@ class SimpleGcBPaxos(val f: Int, seed: Long) {
       config = config,
       stateMachine = new KeyValueStore(),
       dependencyGraph = new TarjanDependencyGraph(
-        VertexIdPrefixSet(config.leaderAddresses.size)
+        VertexIdPrefixSet(config.leaderAddresses.size),
+        new TarjanDependencyGraphMetrics(FakeCollectors)
       ),
       options = ReplicaOptions.default.copy(
         commandsGrowSize = 10,
