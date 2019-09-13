@@ -1,4 +1,4 @@
-package frankenpaxos.statemachine
+package frankenpaxos.util
 
 // BPaxos VertexIds and EPaxos Instances are really the same thing. They
 // consist of a leader index and a monotonically increasing id. A VertexIdLike

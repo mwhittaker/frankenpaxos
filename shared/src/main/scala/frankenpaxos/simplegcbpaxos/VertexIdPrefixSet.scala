@@ -3,9 +3,9 @@ package frankenpaxos.simplegcbpaxos
 import frankenpaxos.compact.CompactSet
 import frankenpaxos.compact.CompactSetFactory
 import frankenpaxos.compact.IntPrefixSet
-import frankenpaxos.statemachine.TopK
-import frankenpaxos.statemachine.TopOne
 import frankenpaxos.util
+import frankenpaxos.util.TopK
+import frankenpaxos.util.TopOne
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 

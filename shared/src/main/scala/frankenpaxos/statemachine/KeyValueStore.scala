@@ -1,6 +1,9 @@
 package frankenpaxos.statemachine
 
 import collection.mutable
+import frankenpaxos.util.TopK
+import frankenpaxos.util.TopOne
+import frankenpaxos.util.VertexIdLike
 import org.scalacheck.Gen
 import scala.scalajs.js.annotation._
 

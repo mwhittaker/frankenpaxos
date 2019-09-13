@@ -1,5 +1,9 @@
 package frankenpaxos.statemachine
 
+import frankenpaxos.util.TopK
+import frankenpaxos.util.TopOne
+import frankenpaxos.util.VertexIdLike
+
 // A StateMachine takes in strings and outputs strings. A TypedStateMachine, on
 // the other hand, is parameterized by an input type I and output type O.
 // TypedStateMachines are useful when inputs and outputs are non-trivial (e.g.,

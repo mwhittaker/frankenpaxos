@@ -1,5 +1,8 @@
 package frankenpaxos.statemachine
 
+import frankenpaxos.util.TopK
+import frankenpaxos.util.TopOne
+import frankenpaxos.util.VertexIdLike
 import org.scalacheck.Gen
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers

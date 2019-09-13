@@ -1,4 +1,4 @@
-package frankenpaxos.statemachine
+package frankenpaxos.util
 
 import collection.mutable
 import org.scalacheck.Gen

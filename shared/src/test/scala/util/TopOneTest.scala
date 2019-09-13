@@ -1,4 +1,4 @@
-package frankenpaxos.statemachine
+package frankenpaxos.util
 
 import org.scalacheck.Gen
 import org.scalatest.FlatSpec

@@ -1,5 +1,7 @@
 package frankenpaxos.statemachine
 
+import frankenpaxos.util.VertexIdLike
+
 // A deterministic state machine. A state machine begins in some initial state
 // when it is constructed. Then, the state machine can repeatedly execute
 // commands using the `run` method. `run` produces an ouput for every input.

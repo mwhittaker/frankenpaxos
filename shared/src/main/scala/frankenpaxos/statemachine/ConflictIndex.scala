@@ -1,5 +1,9 @@
 package frankenpaxos.statemachine
 
+import frankenpaxos.util.TopK
+import frankenpaxos.util.TopOne
+import frankenpaxos.util.VertexIdLike
+
 // Two state machine commands x and y conflict if there exists a state in which
 // x and y do not commute; i.e. there exists a state in which executing x and
 // then y does not produce the same final state and outputs as executing y and

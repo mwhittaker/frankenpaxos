@@ -1,7 +1,8 @@
 package frankenpaxos.simplegcbpaxos
 
-import frankenpaxos.statemachine.TopK
-import frankenpaxos.statemachine.TopOne
+import frankenpaxos.util.TopK
+import frankenpaxos.util.TopOne
+import frankenpaxos.util.VertexIdLike
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
 

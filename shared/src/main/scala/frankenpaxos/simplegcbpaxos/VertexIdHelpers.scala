@@ -1,6 +1,6 @@
 package frankenpaxos.simplegcbpaxos
 
-import frankenpaxos.statemachine.VertexIdLike
+import frankenpaxos.util.VertexIdLike
 
 object VertexIdHelpers {
   implicit val vertexIdOrdering = new Ordering[VertexId] {

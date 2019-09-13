@@ -1,4 +1,4 @@
-package frankenpaxos.statemachine
+package frankenpaxos.util
 
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
