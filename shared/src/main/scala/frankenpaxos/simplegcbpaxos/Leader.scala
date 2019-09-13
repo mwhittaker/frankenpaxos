@@ -8,6 +8,7 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.thrifty.ThriftySystem
@@ -62,6 +63,12 @@ class LeaderMetrics(collectors: Collectors) {
     .build()
     .name("simple_gc_bpaxos_leader_resend_dependency_requests_total")
     .help("Total number of times the leader resent DependencyRequest messages.")
+    .register()
+
+  val nextId: Gauge = collectors.gauge
+    .build()
+    .name("simple_gc_bpaxos_leader_next_id")
+    .help("Next id of the leader")
     .register()
 }
 
@@ -154,6 +161,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private def getAndIncrementNextVertexId(): VertexId = {
     val vertexId = nextVertexId
     nextVertexId += 1
+    metrics.nextId.inc()
     VertexId(leaderIndex = index, id = vertexId)
   }
 

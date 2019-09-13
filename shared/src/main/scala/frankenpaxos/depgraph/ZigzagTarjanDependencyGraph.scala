@@ -44,7 +44,7 @@ class ZigzagTarjanDependencyGraphMetrics(collectors: Collectors) {
 
   val alreadyExecutedTotal: Counter = collectors.counter
     .build()
-    .name("zigzag_tarjan_in_metadatas_total")
+    .name("zigzag_tarjan_already_executed_total")
     .help("Total number of vertices in executeImpl that were already executed.")
     .register()
 
