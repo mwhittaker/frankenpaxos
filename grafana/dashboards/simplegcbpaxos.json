@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1567627302309,
+  "iteration": 1568335502958,
   "links": [],
   "panels": [
     {
@@ -975,6 +975,13 @@
           "intervalFactor": 1,
           "legendFormat": "Execute Graph ({{instance}})",
           "refId": "D"
+        },
+        {
+          "expr": "rate(simple_gc_bpaxos_replica_recover_vertex_timers_sum[1s]) / rate(simple_gc_bpaxos_replica_recover_vertex_timers_count[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Average recover vertex timers ({{instance}})",
+          "refId": "F"
         }
       ],
       "thresholds": [],
@@ -2003,8 +2010,8 @@
     ]
   },
   "time": {
-    "from": "2019-09-04T20:00:07.045Z",
-    "to": "2019-09-04T20:00:23.814Z"
+    "from": "2019-09-13T00:43:54.912Z",
+    "to": "2019-09-13T00:44:43.595Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -2034,5 +2041,5 @@
   "timezone": "",
   "title": "Simple GC BPaxos",
   "uid": "fz4gS_KWk",
-  "version": 4
+  "version": 1
 }
