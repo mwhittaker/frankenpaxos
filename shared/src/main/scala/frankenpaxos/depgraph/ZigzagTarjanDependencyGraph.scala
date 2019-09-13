@@ -168,7 +168,7 @@ class ZigzagTarjanDependencyGraph[
   )
 
   @JSExport
-  protected var nextKeyToExecute = (0, 0)
+  protected var executedWatermark = mutable.Buffer.fill[Int](numLeaders)(0)
 
   @JSExport
   protected var numCommandsSinceLastGc: Int = 0
@@ -193,25 +193,14 @@ class ZigzagTarjanDependencyGraph[
   private def containsVertex(key: Key): Boolean =
     getVertex(key).isDefined
 
-  private def next(): (Key, Option[Vertex]) = {
-    val (leaderIndex, id) = nextKeyToExecute
+  private def next(leaderIndex: Int): (Key, Option[Vertex]) = {
+    val id = executedWatermark(leaderIndex)
     (like.make(leaderIndex, id), vertices(leaderIndex).get(id))
   }
 
-  private def advance(): Unit = {
-    var (leaderIndex, id) = nextKeyToExecute
-    leaderIndex += 1
-    if (leaderIndex % numLeaders == 0) {
-      nextKeyToExecute = (0, id + 1)
-    } else {
-      nextKeyToExecute = (leaderIndex, id)
-    }
-  }
-
   private def garbageCollect(): Unit = {
-    val (_, id) = nextKeyToExecute
     for (i <- 0 until numLeaders) {
-      vertices(i).garbageCollect(id)
+      vertices(i).garbageCollect(executedWatermark(i))
     }
   }
 
@@ -247,7 +236,7 @@ class ZigzagTarjanDependencyGraph[
     executables.clear()
     blockers.clear()
 
-    executeImpl[Key](numBlockers, flatAppender, executables, blockers)
+    executeImpl[Key](flatAppender, executables, blockers)
     val result = (executables.toSeq, blockers.toSet)
 
     numCommandsSinceLastGc += executables.size
@@ -269,7 +258,7 @@ class ZigzagTarjanDependencyGraph[
     metadatas.clear()
     stack.clear()
     val startIndex = executables.size
-    executeImpl[Key](numBlockers, flatAppender, executables, blockers)
+    executeImpl[Key](flatAppender, executables, blockers)
 
     numCommandsSinceLastGc += (executables.size - startIndex)
     if (numCommandsSinceLastGc >= options.garbageCollectEveryNCommands) {
@@ -287,7 +276,7 @@ class ZigzagTarjanDependencyGraph[
     stack.clear()
     val executables = mutable.Buffer[Seq[Key]]()
     val blockers = mutable.Set[Key]()
-    executeImpl[Seq[Key]](numBlockers, batchedAppender, executables, blockers)
+    executeImpl[Seq[Key]](batchedAppender, executables, blockers)
     val result = (executables.toSeq, blockers.toSet)
 
     for { component <- executables; key <- component } {
@@ -303,20 +292,33 @@ class ZigzagTarjanDependencyGraph[
 
   // Implementation ////////////////////////////////////////////////////////////
   private def executeImpl[A](
-      numBlockers: Option[Int],
       appender: Appender[A, Key],
       executables: mutable.Buffer[A],
       blockers: mutable.Set[Key]
   ): Unit = {
     metrics.methodTotal.labels("executeImpl").inc()
+    for (i <- 0 until numLeaders) {
+      executeColumnImpl(appender, executables, blockers, i)
+    }
+  }
+
+  private def executeColumnImpl[A](
+      appender: Appender[A, Key],
+      executables: mutable.Buffer[A],
+      blockers: mutable.Set[Key],
+      leaderIndex: Int
+  ): Unit = {
+    metrics.methodTotal.labels("executeColumnImpl").inc()
 
     while (true) {
-      next() match {
-        case (key, None) =>
+      val id = executedWatermark(leaderIndex)
+      val key = like.make(leaderIndex, id)
+      vertices(leaderIndex).get(id) match {
+        case None =>
           blockers += key
           return
 
-        case (key, Some(vertex)) =>
+        case Some(vertex) =>
           if (executed.contains(key)) {
             // We've already executed this vertex in a previous invocation of
             // executeImpl.
@@ -341,7 +343,8 @@ class ZigzagTarjanDependencyGraph[
             // and was executed.
             metrics.inMetadatasTotal.inc()
           }
-          advance()
+
+          executedWatermark(leaderIndex) += 1
       }
     }
   }
