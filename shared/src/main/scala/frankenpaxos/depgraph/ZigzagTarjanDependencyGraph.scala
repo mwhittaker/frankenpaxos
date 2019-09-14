@@ -297,55 +297,75 @@ class ZigzagTarjanDependencyGraph[
       blockers: mutable.Set[Key]
   ): Unit = {
     metrics.methodTotal.labels("executeImpl").inc()
-    for (i <- 0 until numLeaders) {
-      executeColumnImpl(appender, executables, blockers, i)
+
+    val eligibleColumns = (0 until numLeaders).toBuffer
+    var index = 0
+
+    while (eligibleColumns.size > 0) {
+      val leaderIndex = eligibleColumns(index)
+      val id = executedWatermark(leaderIndex)
+      val executed =
+        executeKeyImpl(appender, executables, blockers, leaderIndex, id)
+
+      if (executed) {
+        executedWatermark(leaderIndex) += 1
+        index += 1
+        if (index >= eligibleColumns.size) {
+          index = 0
+        }
+      } else {
+        eligibleColumns.remove(index)
+        if (index >= eligibleColumns.size) {
+          index = 0
+        }
+      }
     }
   }
 
-  private def executeColumnImpl[A](
+  private def executeKeyImpl[A](
       appender: Appender[A, Key],
       executables: mutable.Buffer[A],
       blockers: mutable.Set[Key],
-      leaderIndex: Int
-  ): Unit = {
-    metrics.methodTotal.labels("executeColumnImpl").inc()
+      leaderIndex: Int,
+      id: Int
+  ): Boolean = {
+    metrics.methodTotal.labels("executeKeyImpl").inc()
 
-    while (true) {
-      val id = executedWatermark(leaderIndex)
-      val key = like.make(leaderIndex, id)
-      vertices(leaderIndex).get(id) match {
-        case None =>
-          blockers += key
-          return
+    val key = like.make(leaderIndex, id)
+    vertices(leaderIndex).get(id) match {
+      case None =>
+        blockers += key
+        false
 
-        case Some(vertex) =>
-          if (executed.contains(key)) {
-            // We've already executed this vertex in a previous invocation of
-            // executeImpl.
-            metrics.alreadyExecutedTotal.inc()
-          } else if (!metadatas.contains(key)) {
-            // This vertex hasn't been executed yet and this is the first time
-            // we're visiting it on this invocation of executeImpl.
-            metrics.notInMetadatasTotal.inc()
-            strongConnect(key, appender, executables, blockers)
+      case Some(vertex) =>
+        if (executed.contains(key)) {
+          // We've already executed this vertex in a previous invocation of
+          // executeImpl.
+          metrics.alreadyExecutedTotal.inc()
+          true
+        } else if (!metadatas.contains(key)) {
+          // This vertex hasn't been executed yet and this is the first time
+          // we're visiting it on this invocation of executeImpl.
+          metrics.notInMetadatasTotal.inc()
+          strongConnect(key, appender, executables, blockers)
 
-            // If we encounter an ineligible vertex, the call stack returns
-            // immediately, and all nodes along the way are marked ineligible,
-            // so we clear the stack.
-            if (!metadatas(key).eligible) {
-              metrics.ineligibleStackSize.observe(stack.size)
-              stack.clear()
-              metrics.earlyBlockersReturnTotal.inc()
-              return
-            }
+          // If we encounter an ineligible vertex, the call stack returns
+          // immediately, and all nodes along the way are marked ineligible,
+          // so we clear the stack.
+          if (!metadatas(key).eligible) {
+            metrics.ineligibleStackSize.observe(stack.size)
+            stack.clear()
+            metrics.earlyBlockersReturnTotal.inc()
+            false
           } else {
-            // This vertex has been executed on this invocation of executeImpl
-            // and was executed.
-            metrics.inMetadatasTotal.inc()
+            true
           }
-
-          executedWatermark(leaderIndex) += 1
-      }
+        } else {
+          // This vertex has been executed on this invocation of executeImpl
+          // and was executed.
+          metrics.inMetadatasTotal.inc()
+          true
+        }
     }
   }
 

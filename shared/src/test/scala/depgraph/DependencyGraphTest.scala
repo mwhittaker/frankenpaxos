@@ -737,6 +737,22 @@ class DependencyGraphTest extends FlatSpec with Matchers with PropertyChecks {
       Set((0, 4), (1, 0), (2, 0)))
   }
 
+  it should "handle tall column correctly" in {
+    val graph = zigzag(
+      ZigzagTarjanDependencyGraphOptions(verticesGrowSize = 10,
+                                         garbageCollectEveryNCommands = 3)
+    )
+    graph.commit((0, 0), 0, new FakeCompactSet(Set()))
+    graph.commit((1, 0), 0, new FakeCompactSet(Set()))
+    graph.commit((1, 1), 0, new FakeCompactSet(Set()))
+    graph.commit((1, 2), 0, new FakeCompactSet(Set()))
+    graph.commit((1, 3), 0, new FakeCompactSet(Set()))
+    graph.executeByComponent(None) shouldBe (
+      Seq(Seq((0, 0)), Seq((1, 0)), Seq((1, 1)), Seq((1, 2)), Seq((1, 3))),
+      Set((0, 1), (1, 4), (2, 0))
+    )
+  }
+
   it should "updateExecuted correctly" in {
     val graph = zigzag(
       ZigzagTarjanDependencyGraphOptions(verticesGrowSize = 10,
