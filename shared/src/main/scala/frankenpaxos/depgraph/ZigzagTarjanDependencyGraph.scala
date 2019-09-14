@@ -399,6 +399,8 @@ class ZigzagTarjanDependencyGraph[
         metrics.strongConnectBranchTotal.labels("on stack child").inc()
         metadatas(v).lowLink =
           Math.min(metadatas(v).lowLink, metadatas(w).number)
+      } else {
+        metrics.strongConnectBranchTotal.labels("else").inc()
       }
     }
     metrics.numChildrenVisited.observe(numChildren)
