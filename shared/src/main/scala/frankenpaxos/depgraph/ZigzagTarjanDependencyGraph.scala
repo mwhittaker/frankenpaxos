@@ -349,22 +349,25 @@ class ZigzagTarjanDependencyGraph[
           metrics.notInMetadatasTotal.inc()
           strongConnect(key, appender, executables, blockers)
 
-          // If we encounter an ineligible vertex, the call stack returns
-          // immediately, and all nodes along the way are marked ineligible,
-          // so we clear the stack.
+          // If we encounter an ineligible vertex, we are not executed. If we
+          // don't, then we are executed.
           if (!metadatas(key).eligible) {
             metrics.ineligibleStackSize.observe(stack.size)
+            for (v <- stack) {
+              metadatas(v).eligible = false
+              metadatas(v).stackIndex = -1
+            }
             stack.clear()
-            metrics.earlyBlockersReturnTotal.inc()
             false
           } else {
             true
           }
         } else {
-          // This vertex has been executed on this invocation of executeImpl
-          // and was executed.
+          // This vertex has already been visited during this invocation of
+          // executeImpl. If it is eligible, it was executed. Otherwise, it
+          // wasn't.
           metrics.inMetadatasTotal.inc()
-          true
+          metadatas(key).eligible
         }
     }
   }
@@ -387,16 +390,20 @@ class ZigzagTarjanDependencyGraph[
     stack += v
 
     var numChildren = 0
-    for (w <- getVertex(v).get.dependencies.materializedDiff(executed)) {
+    val iterator = getVertex(v).get.dependencies.diffIterator(executed)
+    while (iterator.hasNext) {
+      val w = iterator.next()
       numChildren += 1
 
       if (!containsVertex(w)) {
-        // If we depend on an uncommitted vertex, we are ineligible.
-        // Immediately return and mark all nodes on the stack ineligible. The
-        // stack will be cleared at the end of the unwinding. We also make sure
+        // If we depend on an uncommitted vertex, we are ineligible. The stack
+        // of calls to strongConnect will now unwind, with each vertex along
+        // the way marked ineligible.
+        // We
         // to record the fact that we are blocked on this vertex.
         metrics.strongConnectBranchTotal.labels("uncommitted child").inc()
         metadatas(v).eligible = false
+        metadatas(v).stackIndex = -1
         blockers += w
         metrics.numChildrenVisited.observe(numChildren)
         return
@@ -409,14 +416,22 @@ class ZigzagTarjanDependencyGraph[
         // immediately.
         if (!metadatas(w).eligible) {
           metadatas(v).eligible = false
+          metadatas(v).stackIndex = -1
           metrics.numChildrenVisited.observe(numChildren)
           return
         }
 
         metadatas(v).lowLink =
           Math.min(metadatas(v).lowLink, metadatas(w).lowLink)
+      } else if (!metadatas(w).eligible) {
+        metrics.strongConnectBranchTotal.labels("ineligible child").inc()
+        metadatas(v).eligible = false
+        metadatas(v).stackIndex = -1
+        metrics.numChildrenVisited.observe(numChildren)
+        return
       } else if (metadatas(w).stackIndex != -1) {
         metrics.strongConnectBranchTotal.labels("on stack child").inc()
+        assert(metadatas(w).eligible)
         metadatas(v).lowLink =
           Math.min(metadatas(v).lowLink, metadatas(w).number)
       } else {
