@@ -57,6 +57,16 @@ class VertexIdPrefixSet private (
       })
   }
 
+  override def diffIterator(other: VertexIdPrefixSet): Iterator[VertexId] = {
+    var iterator = Iterator[VertexId]()
+    for (i <- 0 until numLeaders) {
+      iterator ++= intPrefixSets(i)
+        .diffIterator(other.intPrefixSets(i))
+        .map(VertexId(i, _))
+    }
+    iterator
+  }
+
   override def addAll(other: VertexIdPrefixSet): this.type = {
     for ((lhs, rhs) <- intPrefixSets.zip(other.intPrefixSets)) {
       lhs.addAll(rhs)

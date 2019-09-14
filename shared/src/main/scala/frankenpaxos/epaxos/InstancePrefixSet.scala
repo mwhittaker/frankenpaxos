@@ -57,6 +57,16 @@ class InstancePrefixSet private (
       })
   }
 
+  override def diffIterator(other: InstancePrefixSet): Iterator[Instance] = {
+    var iterator = Iterator[Instance]()
+    for (i <- 0 until numReplicas) {
+      iterator ++= intPrefixSets(i)
+        .diffIterator(other.intPrefixSets(i))
+        .map(Instance(i, _))
+    }
+    iterator
+  }
+
   override def addAll(other: InstancePrefixSet): this.type = {
     for ((lhs, rhs) <- intPrefixSets.zip(other.intPrefixSets)) {
       lhs.addAll(rhs)

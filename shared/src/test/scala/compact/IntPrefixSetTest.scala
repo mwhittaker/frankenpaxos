@@ -202,6 +202,32 @@ class IntPrefixSetTest extends FlatSpec with Matchers with PropertyChecks {
     }
   }
 
+  it should "diffIterator random sets correctly" in {
+    forAll(twoGen) { (params: TwoParams) =>
+      val TwoParams(lhs, rhs) = params
+      val lhsPrefixSet = IntPrefixSet(lhs)
+      val rhsPrefixSet = IntPrefixSet(rhs)
+      val diff = Set() ++ lhsPrefixSet.diffIterator(rhsPrefixSet)
+      diff shouldBe lhs.diff(rhs)
+    }
+  }
+
+  it should "watermark diffIterator updated watermark correctly" in {
+    val lhs = IntPrefixSet(Set(0, 1, 2, 3, 4, 5))
+    val rhs = IntPrefixSet(Set())
+    val iterator = lhs.diffIterator(rhs)
+    iterator.hasNext shouldBe true
+    iterator.next() shouldBe 0
+    iterator.hasNext shouldBe true
+    iterator.next() shouldBe 1
+    rhs.addAll(IntPrefixSet(Set(0, 1, 2, 3)))
+    iterator.hasNext shouldBe true
+    iterator.next() shouldBe 4
+    iterator.hasNext shouldBe true
+    iterator.next() shouldBe 5
+    iterator.hasNext shouldBe false
+  }
+
   it should "addAll random sets correctly" in {
     forAll(twoGen) { (params: TwoParams) =>
       val TwoParams(lhs, rhs) = params

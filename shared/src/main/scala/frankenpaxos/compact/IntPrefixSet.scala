@@ -48,6 +48,141 @@ object IntPrefixSet {
     override def empty = IntPrefixSet()
     override def fromSet(xs: Set[Int]) = IntPrefixSet(xs)
   }
+
+  class DiffIterator(me: IntPrefixSet, other: IntPrefixSet)
+      extends Iterator[Int] {
+    val iterator: Iterator[Int] = if (me.values.isEmpty) {
+      new WatermarkIterator(0, me.watermark, other)
+    } else {
+      new WatermarkIterator(0, me.watermark, other) ++
+        new ValuesIterator(me.values.iterator, other)
+    }
+
+    override def hasNext: Boolean = iterator.hasNext
+    override def next(): Int = iterator.next()
+  }
+
+  trait OptionIterator[A] extends Iterator[A] {
+    def getNext(): Option[A]
+
+    private var cached: Option[Option[A]] = None
+
+    override def hasNext(): Boolean = {
+      cached match {
+        case None =>
+          val x = getNext()
+          cached = Some(x)
+          x.isDefined
+        case Some(x) =>
+          x.isDefined
+      }
+    }
+
+    override def next(): A = {
+      cached match {
+        case None =>
+          getNext().get
+        case Some(x) =>
+          cached = None
+          x.get
+      }
+    }
+  }
+
+  class ValuesIterator(values: Iterator[Int], other: IntPrefixSet)
+      extends OptionIterator[Int] {
+    override def getNext(): Option[Int] = {
+      if (!values.hasNext) {
+        return None
+      }
+
+      var x = values.next()
+      while (x < other.watermark || other.values.contains(x)) {
+        if (!values.hasNext) {
+          return None
+        }
+        x = values.next()
+      }
+
+      Some(x)
+    }
+  }
+
+  class WatermarkIterator(from: Int, to: Int, other: IntPrefixSet)
+      extends OptionIterator[Int] {
+    private var x: Int = from
+
+    override def getNext(): Option[Int] = {
+      WatermarkIterator.getNext(x, to, other) match {
+        case None =>
+          None
+        case Some(y) =>
+          x = y + 1
+          Some(y)
+      }
+    }
+  }
+
+  object WatermarkIterator {
+    def getNext(from: Int, to: Int, other: IntPrefixSet): Option[Int] = {
+      // If `from` (inclusive) is greater than or equal to `to` (exclusive),
+      // then our range is empty.
+      if (from >= to) {
+        return None
+      }
+
+      // If `to` is less than or equal to `other.watermark`, then our entire
+      // range is covered by other's watermark, so we don't have any values to
+      // return.
+      //
+      //          |
+      //          |-- watermark
+      //     to --|
+      //          |
+      //          |
+      //   from --|
+      if (to <= other.watermark) {
+        return None
+      }
+
+      // Otherwise, `to` is larger than the other watermark. There are two
+      // cases to consider. First, if `from` is larger than or equal to
+      // watermark:
+      //
+      //     to --|
+      //          |
+      //          |
+      //   from --|
+      //          |-- watermark
+      //          |
+      //
+      // then we begin our iteration from `from`. Second, if `from` is smaller
+      // than watermark, then we begin our iteration from watermark.
+      //
+      //     to --|
+      //          |
+      //          |
+      //          |-- watermark
+      //          |
+      //   from --|
+      var startIterationFrom = Math.max(from, other.watermark)
+
+      // Next, we simply find the first value greater than or equal to
+      // `startIterationFrom` that is not in `other.values`. As a special case,
+      // if `other.values` is empty, we can return immediately.
+      if (other.values.isEmpty) {
+        return Some(startIterationFrom)
+      }
+
+      while (other.values.contains(startIterationFrom)) {
+        startIterationFrom += 1
+        if (startIterationFrom >= to) {
+          return None
+        }
+      }
+      Some(startIterationFrom)
+    }
+  }
 }
 
 // An IntPrefixSetis an add-only set of natural numbers (i.e., integers greater
@@ -175,6 +310,9 @@ class IntPrefixSet private (
       }
     }
   }
+
+  override def diffIterator(other: IntPrefixSet): Iterator[Int] =
+    new IntPrefixSet.DiffIterator(this, other)
 
   override def addAll(other: IntPrefixSet): this.type = {
     // Through benchmarking, checking if various sets are empty actually speeds

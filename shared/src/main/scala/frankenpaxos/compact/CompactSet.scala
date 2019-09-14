@@ -43,6 +43,10 @@ trait CompactSet[Self <: CompactSet[Self]] {
   // return an eager Iterable (e.g., Vector).
   def materializedDiff(other: Self): Iterable[T]
 
+  // Computes the set difference of two compacts sets. Note that the returned
+  // iterator is not invalidated if `other` is grown.
+  def diffIterator(other: Self): Iterator[T]
+
   // Compute the set union of two compact sets.
   def addAll(other: Self): this.type
 
