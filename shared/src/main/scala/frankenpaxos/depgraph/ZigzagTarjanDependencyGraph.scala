@@ -15,17 +15,28 @@ import scala.scalajs.js.annotation.JSExportAll
 case class ZigzagTarjanDependencyGraphOptions(
     verticesGrowSize: Int,
     garbageCollectEveryNCommands: Int
+    // TODO(mwhittaker): Add measureLatencies.
+    // measureLatencies: Boolean
 )
 
 object ZigzagTarjanDependencyGraphOptions {
   val default = ZigzagTarjanDependencyGraphOptions(
     verticesGrowSize = 1000,
     garbageCollectEveryNCommands = 1000
+    // TODO(mwhittaker): Add measureLatencies.
+    // measureLatencies = true
   )
 }
 
 @JSExportAll
 class ZigzagTarjanDependencyGraphMetrics(collectors: Collectors) {
+  val latency: Summary = collectors.summary
+    .build()
+    .name("zigzag_tarjan_latency")
+    .labelNames("type")
+    .help("Latency (in milliseconds) of a misc. things.")
+    .register()
+
   val methodTotal: Counter = collectors.counter
     .build()
     .name("zigzag_tarjan_method_total")
@@ -187,6 +198,17 @@ class ZigzagTarjanDependencyGraph[
   private val blockers = mutable.Set[Key]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    // Add measureLatencies.
+    val startNanos = System.nanoTime
+    val x = e
+    val stopNanos = System.nanoTime
+    metrics.latency
+      .labels(label)
+      .observe((stopNanos - startNanos).toDouble / 1000000)
+    x
+  }
+
   private def getVertex(key: Key): Option[Vertex] =
     vertices(like.leaderIndex(key)).get(like.id(key))
 
@@ -255,14 +277,18 @@ class ZigzagTarjanDependencyGraph[
   ): Unit = {
     metrics.methodTotal.labels("appendExecute").inc()
 
-    metadatas.clear()
-    stack.clear()
+    timed("clear metadata") {
+      metadatas.clear()
+      stack.clear()
+    }
     val startIndex = executables.size
-    executeImpl[Key](flatAppender, executables, blockers)
+    timed("executeImpl") {
+      executeImpl[Key](flatAppender, executables, blockers)
+    }
 
     numCommandsSinceLastGc += (executables.size - startIndex)
     if (numCommandsSinceLastGc >= options.garbageCollectEveryNCommands) {
-      garbageCollect()
+      timed("garbageCollect") { garbageCollect() }
       numCommandsSinceLastGc = 0
     }
   }
@@ -331,143 +357,183 @@ class ZigzagTarjanDependencyGraph[
   ): Boolean = {
     metrics.methodTotal.labels("executeKeyImpl").inc()
 
-    val key = like.make(leaderIndex, id)
+    val v = like.make(leaderIndex, id)
     vertices(leaderIndex).get(id) match {
       case None =>
-        blockers += key
+        blockers += v
         false
 
       case Some(vertex) =>
-        if (executed.contains(key)) {
+        if (executed.contains(v)) {
           // We've already executed this vertex in a previous invocation of
           // executeImpl.
           metrics.alreadyExecutedTotal.inc()
-          true
-        } else if (!metadatas.contains(key)) {
-          // This vertex hasn't been executed yet and this is the first time
-          // we're visiting it on this invocation of executeImpl.
-          metrics.notInMetadatasTotal.inc()
-          strongConnect(key, appender, executables, blockers)
+          return true
+        }
 
-          // If we encounter an ineligible vertex, we are not executed. If we
-          // don't, then we are executed.
-          if (!metadatas(key).eligible) {
-            metrics.ineligibleStackSize.observe(stack.size)
-            for (v <- stack) {
-              metadatas(v).eligible = false
-              metadatas(v).stackIndex = -1
+        metadatas.get(v) match {
+          case None =>
+            // This vertex hasn't been executed yet and this is the first time
+            // we're visiting it on this invocation of executeImpl.
+            metrics.notInMetadatasTotal.inc()
+            val vMetadata = timed("strongConnect") {
+              strongConnect(v, vertex, appender, executables, blockers)
             }
-            stack.clear()
-            false
-          } else {
-            true
-          }
-        } else {
-          // This vertex has already been visited during this invocation of
-          // executeImpl. If it is eligible, it was executed. Otherwise, it
-          // wasn't.
-          metrics.inMetadatasTotal.inc()
-          metadatas(key).eligible
+
+            // If we encounter an ineligible vertex, we are not executed. If we
+            // don't, then we are executed.
+            if (!vMetadata.eligible) {
+              metrics.ineligibleStackSize.observe(stack.size)
+              timed("stack update") {
+                for (v <- stack) {
+                  metadatas(v).eligible = false
+                  metadatas(v).stackIndex = -1
+                }
+                stack.clear()
+              }
+              false
+            } else {
+              true
+            }
+          case Some(vMetadata) =>
+            // This vertex has already been visited during this invocation of
+            // executeImpl. If it is eligible, it was executed. Otherwise, it
+            // wasn't.
+            metrics.inMetadatasTotal.inc()
+            vMetadata.eligible
         }
     }
   }
 
   private def strongConnect[A](
       v: Key,
+      vertex: Vertex,
       appender: Appender[A, Key],
       executables: mutable.Buffer[A],
       blockers: mutable.Set[Key]
-  ): Unit = {
+  ): VertexMetadata = {
     metrics.methodTotal.labels("strongConnect").inc()
 
+    // If we don't have any children, we can bypass a lot of stuff and execute
+    // ourselves immediately.
     val number = metadatas.size
-    metadatas(v) = VertexMetadata(
+    val iterator = timed("diffIterator") {
+      vertex.dependencies.diffIterator(executed)
+    }
+    if (!iterator.hasNext) {
+      val vMetadata = VertexMetadata(
+        number = number,
+        lowLink = number,
+        stackIndex = -1,
+        eligible = true
+      )
+      metadatas(v) = vMetadata
+      appender.appendOne(executables, v)
+      executed.add(v)
+      metrics.componentSize.observe(1)
+      metrics.numChildrenVisited.observe(0)
+      return vMetadata
+    }
+
+    // Otherwise, we have some children, so we take a slightly slower path.
+    val vMetadata = VertexMetadata(
       number = number,
       lowLink = number,
       stackIndex = stack.size,
       eligible = true
     )
+    metadatas(v) = vMetadata
     stack += v
 
     var numChildren = 0
-    val iterator = getVertex(v).get.dependencies.diffIterator(executed)
     while (iterator.hasNext) {
       val w = iterator.next()
       numChildren += 1
 
-      if (!containsVertex(w)) {
-        // If we depend on an uncommitted vertex, we are ineligible. The stack
-        // of calls to strongConnect will now unwind, with each vertex along
-        // the way marked ineligible.
-        // We
-        // to record the fact that we are blocked on this vertex.
-        metrics.strongConnectBranchTotal.labels("uncommitted child").inc()
-        metadatas(v).eligible = false
-        metadatas(v).stackIndex = -1
-        blockers += w
-        metrics.numChildrenVisited.observe(numChildren)
-        return
-      } else if (!metadatas.contains(w)) {
-        // If we haven't explored our dependency yet, we recurse.
-        metrics.strongConnectBranchTotal.labels("unexplored child").inc()
-        strongConnect(w, appender, executables, blockers)
-
-        // If our child is ineligible, we are ineligible. We return
-        // immediately.
-        if (!metadatas(w).eligible) {
-          metadatas(v).eligible = false
-          metadatas(v).stackIndex = -1
+      getVertex(w) match {
+        case None =>
+          // If we depend on an uncommitted vertex, we are ineligible. The
+          // stack of calls to strongConnect will now unwind, with each vertex
+          // along the way marked ineligible. We also make sure to record the
+          // fact that we are blocked on this vertex.
+          metrics.strongConnectBranchTotal.labels("uncommitted child").inc()
+          vMetadata.eligible = false
+          vMetadata.stackIndex = -1
+          blockers += w
           metrics.numChildrenVisited.observe(numChildren)
-          return
-        }
+          return vMetadata
 
-        metadatas(v).lowLink =
-          Math.min(metadatas(v).lowLink, metadatas(w).lowLink)
-      } else if (!metadatas(w).eligible) {
-        metrics.strongConnectBranchTotal.labels("ineligible child").inc()
-        metadatas(v).eligible = false
-        metadatas(v).stackIndex = -1
-        metrics.numChildrenVisited.observe(numChildren)
-        return
-      } else if (metadatas(w).stackIndex != -1) {
-        metrics.strongConnectBranchTotal.labels("on stack child").inc()
-        assert(metadatas(w).eligible)
-        metadatas(v).lowLink =
-          Math.min(metadatas(v).lowLink, metadatas(w).number)
-      } else {
-        metrics.strongConnectBranchTotal.labels("else").inc()
+        case Some(wertex) =>
+          metadatas.get(w) match {
+            case None => {
+              // If we haven't explored our dependency yet, we recurse.
+              metrics.strongConnectBranchTotal.labels("unexplored child").inc()
+              val wMetadata =
+                strongConnect(w, wertex, appender, executables, blockers)
+
+              // If our child is ineligible, we are ineligible. We return
+              // immediately.
+              if (!wMetadata.eligible) {
+                vMetadata.eligible = false
+                vMetadata.stackIndex = -1
+                metrics.numChildrenVisited.observe(numChildren)
+                return vMetadata
+              }
+
+              vMetadata.lowLink = Math.min(vMetadata.lowLink, wMetadata.lowLink)
+            }
+            case Some(wMetadata) => {
+              if (!wMetadata.eligible) {
+                metrics.strongConnectBranchTotal
+                  .labels("ineligible child")
+                  .inc()
+                vMetadata.eligible = false
+                vMetadata.stackIndex = -1
+                metrics.numChildrenVisited.observe(numChildren)
+                return vMetadata
+              } else if (wMetadata.stackIndex != -1) {
+                metrics.strongConnectBranchTotal.labels("on stack child").inc()
+                assert(wMetadata.eligible)
+                vMetadata.lowLink =
+                  Math.min(vMetadata.lowLink, wMetadata.number)
+              } else {
+                metrics.strongConnectBranchTotal.labels("else").inc()
+              }
+            }
+          }
       }
     }
     metrics.numChildrenVisited.observe(numChildren)
 
     // v is not the root of its strongly connected component.
-    if (metadatas(v).lowLink != metadatas(v).number) {
-      return
+    if (vMetadata.lowLink != vMetadata.number) {
+      return vMetadata
     }
 
     // v is the root of its strongly connected component. The nodes in the
     // component are v and all nodes after v in the stack. This is all the
     // nodes in the range v.stackIndex to the end of the stack.
-    if (metadatas(v).stackIndex == stack.size - 1) {
-      val component = stack.last
-      stack.remove(stack.size - 1)
-      metadatas(component).stackIndex = -1
-      appender.appendOne(executables, component)
-      executed.add(component)
-      metrics.componentSize.observe(1)
-    } else {
-      val component = stack.slice(metadatas(v).stackIndex, stack.size)
-      stack.remove(metadatas(v).stackIndex,
-                   stack.size - metadatas(v).stackIndex)
-      for (w <- component) {
-        metadatas(w).stackIndex = -1
-        executed.add(w)
+    timed("form component") {
+      if (vMetadata.stackIndex == stack.size - 1) {
+        stack.remove(stack.size - 1)
+        vMetadata.stackIndex = -1
+        appender.appendOne(executables, v)
+        executed.add(v)
+        metrics.componentSize.observe(1)
+      } else {
+        val component = stack.slice(vMetadata.stackIndex, stack.size)
+        stack.remove(vMetadata.stackIndex, stack.size - vMetadata.stackIndex)
+        for (w <- component) {
+          metadatas(w).stackIndex = -1
+          executed.add(w)
+        }
+        appender.appendMany(
+          executables,
+          component.sortBy(k => (getVertex(k).get.sequenceNumber, k))
+        )
+        metrics.componentSize.observe(component.size)
       }
-      appender.appendMany(
-        executables,
-        component.sortBy(k => (getVertex(k).get.sequenceNumber, k))
-      )
-      metrics.componentSize.observe(component.size)
     }
+    vMetadata
   }
 }
