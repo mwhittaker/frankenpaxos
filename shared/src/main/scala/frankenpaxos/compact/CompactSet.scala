@@ -74,4 +74,7 @@ trait CompactSet[Self <: CompactSet[Self]] {
 
   // Materialize the compact set as an actual Set.
   def materialize(): Set[T]
+
+  // TODO(mwhittaker): Clean this up
+  def leaderIndexWatermark(leaderIndex: Int): Int = ???
 }

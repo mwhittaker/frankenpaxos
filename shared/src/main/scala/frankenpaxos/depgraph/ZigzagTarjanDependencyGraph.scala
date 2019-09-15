@@ -330,11 +330,11 @@ class ZigzagTarjanDependencyGraph[
     while (eligibleColumns.size > 0) {
       val leaderIndex = eligibleColumns(index)
       val id = executedWatermark(leaderIndex)
-      val executed =
-        executeKeyImpl(appender, executables, blockers, leaderIndex, id)
-
-      if (executed) {
-        executedWatermark(leaderIndex) += 1
+      if (executeKeyImpl(appender, executables, blockers, leaderIndex, id)) {
+        executedWatermark(leaderIndex) = Math.max(
+          executedWatermark(leaderIndex) + 1,
+          executed.leaderIndexWatermark(leaderIndex)
+        )
         index += 1
         if (index >= eligibleColumns.size) {
           index = 0

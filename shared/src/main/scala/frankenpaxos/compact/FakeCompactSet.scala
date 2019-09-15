@@ -44,6 +44,7 @@ class FakeCompactSet[A](initialValues: Set[A] = Set[A]())
   override def uncompactedSize: Int = values.size
   override def subset(): FakeCompactSet[A] = new FakeCompactSet(values.toSet)
   override def materialize(): Set[A] = values.toSet
+  override def leaderIndexWatermark(leaderIndex: Int): Int = 0
 }
 
 object FakeCompactSet {
