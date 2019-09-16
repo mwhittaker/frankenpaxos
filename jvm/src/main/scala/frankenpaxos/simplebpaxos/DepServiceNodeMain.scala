@@ -32,6 +32,13 @@ object DepServiceNodeMain extends App {
       options: DepServiceNodeOptions = DepServiceNodeOptions.default
   )
 
+  implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def optionAction(
+        f: (A, DepServiceNodeOptions) => DepServiceNodeOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => flags.copy(options = f(x, flags.options)))
+  }
+
   val parser = new scopt.OptionParser[Flags]("") {
     help("help")
 
@@ -49,6 +56,12 @@ object DepServiceNodeMain extends App {
     opt[Int]("prometheus_port")
       .action((x, f) => f.copy(prometheusPort = x))
       .text(s"-1 to disable")
+
+    // Options.
+    opt[Boolean]("options.unsafeReturnNoDependencies")
+      .optionAction((x, o) => o.copy(unsafeReturnNoDependencies = x))
+    opt[Int]("options.topKDependencies")
+      .optionAction((x, o) => o.copy(topKDependencies = x))
   }
 
   // Parse flags.

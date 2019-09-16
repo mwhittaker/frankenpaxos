@@ -53,26 +53,10 @@ object Acceptor {
   type Round = Int
 
   @JSExportAll
-  case class VoteValue(
-      commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId]
-  )
-
-  def toProto(voteValue: VoteValue): VoteValueProto = {
-    VoteValueProto(commandOrNoop = voteValue.commandOrNoop,
-                   dependency = voteValue.dependencies.toSeq)
-  }
-
-  def fromProto(voteValueProto: VoteValueProto): VoteValue = {
-    VoteValue(commandOrNoop = voteValueProto.commandOrNoop,
-              dependencies = voteValueProto.dependency.toSet)
-  }
-
-  @JSExportAll
   case class State(
       round: Round,
       voteRound: Round,
-      voteValue: Option[VoteValue]
+      voteValue: Option[VoteValueProto]
   )
 }
 
@@ -160,7 +144,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
           acceptorId = index,
           round = phase1a.round,
           voteRound = state.voteRound,
-          voteValue = state.voteValue.map(toProto)
+          voteValue = state.voteValue
         )
       )
     )
@@ -198,7 +182,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     states(phase2a.vertexId) = state.copy(
       round = phase2a.round,
       voteRound = phase2a.round,
-      voteValue = Some(fromProto(phase2a.voteValue))
+      voteValue = Some(phase2a.voteValue)
     )
     proposer.send(
       ProposerInbound().withPhase2B(

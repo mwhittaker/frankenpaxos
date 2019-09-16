@@ -41,7 +41,9 @@ case class ReplicaOptions(
     // See frankenpaxos.epaxos.Replica for information on the following options.
     unsafeSkipGraphExecution: Boolean,
     executeGraphBatchSize: Int,
-    executeGraphTimerPeriod: java.time.Duration
+    executeGraphTimerPeriod: java.time.Duration,
+    // numBlockers argument to DependencyGraph#execute. -1 is None.
+    numBlockers: Int
 )
 
 @JSExportAll
@@ -51,7 +53,8 @@ object ReplicaOptions {
     recoverVertexTimerMaxPeriod = java.time.Duration.ofMillis(1500),
     unsafeSkipGraphExecution = false,
     executeGraphBatchSize = 1,
-    executeGraphTimerPeriod = java.time.Duration.ofSeconds(1)
+    executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
+    numBlockers = 1
   )
 }
 
@@ -133,7 +136,7 @@ object Replica {
   @JSExportAll
   case class Committed(
       commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId]
+      dependencies: VertexIdPrefixSet
   )
 }
 
@@ -216,14 +219,23 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  private val numBlockers =
+    if (options.numBlockers == -1) None else Some(options.numBlockers)
+  private val executables = mutable.Buffer[VertexId]()
+  private val blockers = mutable.Set[VertexId]()
   private def execute(): Unit = {
-    // TODO(mwhittaker): Pass in numBlockers as an option.
-    // TODO(mwhittaker): Do something with blockers.
-    val (executable, blockers) = dependencyGraph.execute(numBlockers = None)
+    dependencyGraph.appendExecute(numBlockers, executables, blockers)
     metrics.executeGraphTotal.inc()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
-    for (v <- executable) {
+    // Register recover timers for the blockers.
+    for (v <- blockers) {
+      if (!recoverVertexTimers.contains(v)) {
+        recoverVertexTimers(v) = makeRecoverVertexTimer(v)
+      }
+    }
+
+    for (v <- executables) {
       import CommandOrNoop.Value
       commands.get(v) match {
         case None =>
@@ -236,6 +248,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           executeCommand(v, committed.commandOrNoop)
       }
     }
+
+    // Clear the fields.
+    executables.clear()
+    blockers.clear()
   }
 
   private def executeCommand(
@@ -370,20 +386,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // Record the committed command.
-    val dependencies = commit.dependency.toSet
+    val dependencies = VertexIdPrefixSet.fromProto(commit.dependencies)
     commands(commit.vertexId) = Committed(commit.commandOrNoop, dependencies)
     metrics.dependencies.observe(dependencies.size)
 
-    // Stop any recovery timer for the current vertex, and start recovery
-    // timers for any uncommitted vertices on which we depend.
-    recoverVertexTimers.get(commit.vertexId).foreach(_.stop())
-    recoverVertexTimers -= commit.vertexId
-    for {
-      v <- dependencies
-      if !commands.contains(v)
-      if !recoverVertexTimers.contains(v)
-    } {
-      recoverVertexTimers(v) = makeRecoverVertexTimer(v)
+    // Stop any recovery timer for the current vertex.
+    recoverVertexTimers.get(commit.vertexId) match {
+      case Some(timer) =>
+        timer.stop()
+        recoverVertexTimers -= commit.vertexId
+      case None =>
+      // Do nothing.
     }
 
     // If we're skipping the graph, execute the command right away. Otherwise,
@@ -392,11 +405,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     if (options.unsafeSkipGraphExecution) {
       executeCommand(commit.vertexId, commit.commandOrNoop)
     } else {
-      dependencyGraph.commit(
-        commit.vertexId,
-        (),
-        VertexIdPrefixSet(config.leaderAddresses.size, dependencies)
-      )
+      dependencyGraph.commit(commit.vertexId, (), dependencies)
       numPendingCommittedCommands += 1
       if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
         execute()

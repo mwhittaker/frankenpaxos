@@ -4,6 +4,8 @@ import frankenpaxos.compact.CompactSet
 import frankenpaxos.compact.CompactSetFactory
 import frankenpaxos.compact.IntPrefixSet
 import frankenpaxos.util
+import frankenpaxos.util.TopK
+import frankenpaxos.util.TopOne
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -49,6 +51,15 @@ object VertexIdPrefixSet {
     new VertexIdPrefixSet(watermarks.size, intPrefixSets)
   }
 
+  @JSExport("apply")
+  def fromWatermarks(watermarks: mutable.Buffer[Int]): VertexIdPrefixSet = {
+    val intPrefixSets = mutable.Buffer[IntPrefixSet]()
+    for (watermark <- watermarks) {
+      intPrefixSets += IntPrefixSet.fromWatermark(watermark)
+    }
+    new VertexIdPrefixSet(watermarks.size, intPrefixSets)
+  }
+
   // Construct a VertexIdPrefixSet from a set of watermarks and a set of
   // VertexIds. It is assumed but not enforced that every vertex id in
   // VertexIds is larger than the corresponding watermark.
@@ -67,6 +78,28 @@ object VertexIdPrefixSet {
       intPrefixSets += IntPrefixSet.fromWatermarkAndMutableSet(watermark, set)
     }
     new VertexIdPrefixSet(watermarks.size, intPrefixSets)
+  }
+
+  def fromTopOne(topOne: TopOne[VertexId]): VertexIdPrefixSet =
+    VertexIdPrefixSet.fromWatermarks(topOne.get())
+
+  def fromTopK(topK: TopK[VertexId]): VertexIdPrefixSet = {
+    val sortedSets = topK.get()
+    val numLeaders = sortedSets.size
+    val intPrefixSets = mutable.Buffer[IntPrefixSet]()
+    for (sortedSet <- sortedSets) {
+      if (sortedSet.size == 0) {
+        intPrefixSets += IntPrefixSet()
+      } else if (sortedSet.size == 1) {
+        intPrefixSets += IntPrefixSet.fromWatermark(sortedSet.head + 1)
+      } else {
+        intPrefixSets += IntPrefixSet.fromWatermarkAndMutableSet(
+          sortedSet.head + 1,
+          sortedSet.drop(1).to[mutable.Set]
+        )
+      }
+    }
+    new VertexIdPrefixSet(numLeaders, intPrefixSets)
   }
 
   // Construct a VertexIdPrefixSet from a proto produced by

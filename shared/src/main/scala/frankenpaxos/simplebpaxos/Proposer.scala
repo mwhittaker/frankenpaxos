@@ -86,7 +86,7 @@ object Proposer {
       // The current round.
       round: Round,
       // The pending value that this proposer wants to get chosen.
-      value: Acceptor.VoteValue,
+      value: VoteValueProto,
       // Phase 1b responses.
       phase1bs: mutable.Map[AcceptorId, Phase1b],
       // A timer to resend phase 1as.
@@ -98,7 +98,7 @@ object Proposer {
       // The current round.
       round: Round,
       // The value that this proposer is proposing.
-      value: Acceptor.VoteValue,
+      value: VoteValueProto,
       // Phase 2b responses.
       phase2bs: mutable.Map[AcceptorId, Phase2b],
       // A timer to resend phase 2as.
@@ -108,7 +108,7 @@ object Proposer {
   @JSExportAll
   case class Chosen[Transport <: frankenpaxos.Transport[Transport]](
       commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId]
+      dependencies: VertexIdPrefixSetProto
   ) extends State[Transport]
 }
 
@@ -167,7 +167,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   private def proposeImpl(
       vertexId: VertexId,
       commandOrNoop: CommandOrNoop,
-      dependencies: Set[VertexId]
+      dependencies: VertexIdPrefixSetProto
   ): Unit = {
     states.get(vertexId) match {
       case Some(_) =>
@@ -178,8 +178,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case None =>
-        val value = Acceptor.VoteValue(commandOrNoop = commandOrNoop,
-                                       dependencies = dependencies)
+        val value = VoteValueProto(commandOrNoop = commandOrNoop,
+                                   dependencies = dependencies)
         val round = roundSystem(vertexId).nextClassicRound(index, -1)
 
         // If we're the leader of round 0, then we can skip phase 1 and proceed
@@ -187,9 +187,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // phase 2.
         if (round == 0) {
           // Send phase2a to all acceptors.
-          val phase2a = Phase2a(vertexId = vertexId,
-                                round = round,
-                                voteValue = Acceptor.toProto(value))
+          val phase2a =
+            Phase2a(vertexId = vertexId, round = round, voteValue = value)
           thriftyAcceptors(config.quorumSize)
             .foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
 
@@ -291,7 +290,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     proposeImpl(propose.vertexId,
                 CommandOrNoop().withCommand(propose.command),
-                propose.dependency.toSet)
+                propose.dependencies)
   }
 
   private def handlePhase1b(
@@ -330,7 +329,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // some acceptor in the quorum has voted, then we must propose the
         // value with the highest vote round.
         val maxVoteRound = phase1.phase1bs.values.map(_.voteRound).max
-        val proposal: Acceptor.VoteValue = if (maxVoteRound == -1) {
+        val proposal: VoteValueProto = if (maxVoteRound == -1) {
           phase1.value
         } else {
           val proto = phase1.phase1bs.values
@@ -338,14 +337,14 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
             .get
             .voteValue
             .get
-          Acceptor.fromProto(proto)
+          proto
         }
 
         // Send phase2as to the acceptors.
         val phase2a = Phase2a(
           vertexId = phase1b.vertexId,
           round = phase1.round,
-          voteValue = Acceptor.toProto(proposal)
+          voteValue = proposal
         )
         thriftyAcceptors(config.quorumSize)
           .foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
@@ -406,7 +405,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
             ReplicaInbound().withCommit(
               Commit(vertexId = phase2b.vertexId,
                      commandOrNoop = phase2.value.commandOrNoop,
-                     dependency = phase2.value.dependencies.toSeq)
+                     dependencies = phase2.value.dependencies)
             )
           )
         }
@@ -493,7 +492,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         proposeImpl(
           recover.vertexId,
           CommandOrNoop().withNoop(Noop()),
-          Set[VertexId]()
+          VertexIdPrefixSetProto(config.leaderAddresses.size)
         )
 
       case Some(_: Phase1[_]) | Some(_: Phase2[_]) =>
@@ -508,7 +507,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           ReplicaInbound().withCommit(
             Commit(vertexId = recover.vertexId,
                    commandOrNoop = chosen.commandOrNoop,
-                   dependency = chosen.dependencies.toSeq)
+                   dependencies = chosen.dependencies)
           )
         )
     }

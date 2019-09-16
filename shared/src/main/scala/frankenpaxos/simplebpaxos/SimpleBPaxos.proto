@@ -93,7 +93,7 @@ message CommandOrNoop {
 
 message VoteValueProto {
   required CommandOrNoop commandOrNoop = 1;
-  repeated VertexId dependency = 2;
+  required VertexIdPrefixSetProto dependencies = 2;
 }
 
 message VertexIdPrefixSetProto {
@@ -123,7 +123,7 @@ message DependencyReply {
 
   required VertexId vertex_id = 1;
   required int32 dep_service_node_index = 2;
-  repeated VertexId dependency = 3;
+  required VertexIdPrefixSetProto dependencies = 3;
 }
 
 message Propose {
@@ -132,7 +132,7 @@ message Propose {
 
   required VertexId vertex_id = 1;
   required Command command = 2;
-  repeated VertexId dependency = 3;
+  required VertexIdPrefixSetProto dependencies = 3;
 }
 
 message Phase1a {
@@ -186,7 +186,7 @@ message Commit {
 
   required VertexId vertex_id = 1;
   required CommandOrNoop command_or_noop = 2;
-  repeated VertexId dependency = 3;
+  required VertexIdPrefixSetProto dependencies = 3;
 }
 
 message ClientReply {

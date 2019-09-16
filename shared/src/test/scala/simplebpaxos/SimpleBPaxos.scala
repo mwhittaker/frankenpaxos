@@ -148,7 +148,7 @@ class SimulatedSimpleBPaxos(val f: Int) extends SimulatedSystem {
   override type System = SimpleBPaxos
   // For each vertex id, we record the set of chosen VoteValues. If everything
   // is correct, thevery set should contain at most one vote value.
-  override type State = Map[VertexId, Set[Acceptor.VoteValue]]
+  override type State = Map[VertexId, Set[VoteValueProto]]
   override type Command = SimulatedSimpleBPaxos.Command
 
   // True if some value has been chosen in some execution of the system.
@@ -171,10 +171,10 @@ class SimulatedSimpleBPaxos(val f: Int) extends SimulatedSystem {
       .map(replica => Map() ++ replica.commands)
       .map(commands => {
         commands.mapValues(
-          c => Set(Acceptor.VoteValue(c.commandOrNoop, c.dependencies))
+          c => Set(VoteValueProto(c.commandOrNoop, c.dependencies.toProto()))
         )
       })
-      .foldLeft(Map[VertexId, Set[Acceptor.VoteValue]]())(merge(_, _))
+      .foldLeft(Map[VertexId, Set[VoteValueProto]]())(merge(_, _))
 
     if (chosen.size > 0) {
       valueChosen = true
@@ -234,8 +234,10 @@ class SimulatedSimpleBPaxos(val f: Int) extends SimulatedSystem {
     val chosens = state.filter({ case (_, chosen) => chosen.size > 1 })
     for ((vertexA, chosenA) <- chosens) {
       for ((vertexB, chosenB) <- chosens if vertexA != vertexB) {
-        val Acceptor.VoteValue(commandOrNoopA, depsA) = chosenA.head
-        val Acceptor.VoteValue(commandOrNoopB, depsB) = chosenB.head
+        val VoteValueProto(commandOrNoopA, depsAProto) = chosenA.head
+        val VoteValueProto(commandOrNoopB, depsBProto) = chosenB.head
+        val depsA = VertexIdPrefixSet.fromProto(depsAProto)
+        val depsB = VertexIdPrefixSet.fromProto(depsBProto)
 
         import CommandOrNoop.Value._
         (commandOrNoopA.value, commandOrNoopB.value) match {
@@ -271,8 +273,8 @@ class SimulatedSimpleBPaxos(val f: Int) extends SimulatedSystem {
   ): SimulatedSystem.InvariantResult = {
     // Check that sets of chosen values only grow over time.
     for (vertexId <- oldState.keys ++ newState.keys) {
-      val oldChosen = oldState.getOrElse(vertexId, Set[Acceptor.VoteValue]())
-      val newChosen = newState.getOrElse(vertexId, Set[Acceptor.VoteValue]())
+      val oldChosen = oldState.getOrElse(vertexId, Set[VoteValueProto]())
+      val newChosen = newState.getOrElse(vertexId, Set[VoteValueProto]())
       if (!oldChosen.subsetOf(newChosen)) {
         SimulatedSystem.InvariantViolated(
           s"Vertex $vertexId was $oldChosen but now is $newChosen."
