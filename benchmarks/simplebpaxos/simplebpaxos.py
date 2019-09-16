@@ -46,7 +46,8 @@ class LeaderOptions(NamedTuple):
 
 
 class DepServiceNodeOptions(NamedTuple):
-    pass
+    top_k_dependencies: int = -1
+    unsafe_return_no_dependencies: bool = False
 
 
 class AcceptorOptions(NamedTuple):
@@ -62,6 +63,12 @@ class ReplicaOptions(NamedTuple):
     execute_graph_batch_size: int = 1
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
+    num_blockers: int = -1
+
+
+class ZigzagOptions(NamedTuple):
+    vertices_grow_size: int = 5000
+    garbage_collect_every_n_commands: int = 1000
 
 
 class Input(NamedTuple):
@@ -120,8 +127,8 @@ class Input(NamedTuple):
 
     # Replica options. ########################################################
     replica_options: ReplicaOptions
+    replica_zigzag_options: ZigzagOptions
     replica_log_level: str
-    replica_dependency_graph: str
 
     # Client options. ##########################################################
     client_options: ClientOptions
@@ -438,6 +445,11 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_host', dep.host.ip(),
                     '--prometheus_port',
                         str(dep.port + 1) if input.monitored else '-1',
+                    '--options.topKDependencies',
+                        str(input.dep_service_node_options.top_k_dependencies),
+                    '--options.unsafeReturnNoDependencies',
+                        str(input.dep_service_node_options
+                                 .unsafe_return_no_dependencies),
                 ],
             )
             if input.profiled:
@@ -482,7 +494,6 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--config', config_filename,
                     '--log_level', input.replica_log_level,
                     '--state_machine', input.state_machine,
-                    '--dependency_graph', input.replica_dependency_graph,
                     '--prometheus_host', replica.host.ip(),
                     '--prometheus_port',
                         str(replica.port + 1) if input.monitored else '-1',
@@ -504,6 +515,13 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         '{}s'.format(input.replica_options
                                      .execute_graph_timer_period
                                      .total_seconds()),
+                    '--options.numBlockers',
+                        str(input.replica_options.num_blockers),
+                    '--zigzag.verticesGrowSize',
+                        str(input.replica_zigzag_options.vertices_grow_size),
+                    '--zigzag.garbageCollectEveryNCommands',
+                        str(input.replica_zigzag_options
+                                 .garbage_collect_every_n_commands),
                 ],
             )
             if input.profiled:
