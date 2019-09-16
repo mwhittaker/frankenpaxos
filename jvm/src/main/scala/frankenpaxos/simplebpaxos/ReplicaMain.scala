@@ -88,6 +88,8 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(executeGraphBatchSize = x))
     opt[java.time.Duration]("options.executeGraphTimerPeriod")
       .optionAction((x, o) => o.copy(executeGraphTimerPeriod = x))
+    opt[Int]("options.numBlockers")
+      .optionAction((x, o) => o.copy(numBlockers = x))
     opt[Int]("zigzag.verticesGrowSize")
       .zigzagOptionAction((x, o) => o.copy(verticesGrowSize = x))
     opt[Int]("zigzag.garbageCollectEveryNCommands")
