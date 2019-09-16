@@ -70,6 +70,38 @@ class UniformSingleKeyWorkload(
   }
 }
 
+// A BernoulliSingleKeyWorkload sets key `x` with likelihood p and gets key `y`
+// with likelihood 1 - p. Thus, p is the conflict rate.
+class BernoulliSingleKeyWorkload(
+    conflictRate: Float,
+    sizeMean: Int,
+    sizeStd: Int
+) extends Workload {
+  override def toString(): String =
+    s"BernoulliSingleKeyWorkload(" +
+      s"conflictRate=$conflictRate, sizeMean=$sizeMean, sizeStd=$sizeStd)"
+
+  override def get(): Array[Byte] = {
+    val command = if (Random.nextFloat() <= conflictRate) {
+      var size = (Random.nextGaussian() * sizeStd + sizeMean).round.toInt
+      size = Math.max(0, size)
+      val value = Random.nextString(size)
+      statemachine
+        .KeyValueStoreInput()
+        .withSetRequest(
+          statemachine.SetRequest(
+            keyValue = Seq(statemachine.SetKeyValuePair("x", value))
+          )
+        )
+    } else {
+      statemachine
+        .KeyValueStoreInput()
+        .withGetRequest(statemachine.GetRequest(key = Seq("y")))
+    }
+    command.toByteArray
+  }
+}
+
 object Workload {
   def fromProto(proto: WorkloadProto): Workload = {
     import WorkloadProto.Value
@@ -80,6 +112,10 @@ object Workload {
         new UniformSingleKeyWorkload(numKeys = w.numKeys,
                                      sizeMean = w.sizeMean,
                                      sizeStd = w.sizeStd)
+      case Value.BernoulliSingleKeyWorkload(w) =>
+        new BernoulliSingleKeyWorkload(conflictRate = w.conflictRate,
+                                       sizeMean = w.sizeMean,
+                                       sizeStd = w.sizeStd)
       case Value.Empty =>
         throw new IllegalArgumentException("Empty WorkloadProto encountered.")
     }
@@ -98,51 +134,4 @@ object Workload {
   // workload is parameterized by a number of variables. Instead of trying to
   // do something fancy with flags, we specify workloads using a proto.
   implicit val read: scopt.Read[Workload] = scopt.Read.reads(fromFile)
-
-  // object WorkloadParser extends RegexParsers {
-  //   def int: Parser[Int] = """(0|[1-9]\d*)""".r ^^ { _.toInt }
-  //   def double: Parser[Double] = """\d+(\.\d*)?""".r ^^ { _.toDouble }
-  //
-  //   def arg[T](word: String, parser: Parser[T]): Parser[T] =
-  //     (word ~ "=").? ~> parser
-  //
-  //   def workload[A](name: String, arg0: Parser[A]): Parser[A] =
-  //     name ~> "(" ~> arg0 <~ ")"
-  //
-  //   def workload[A, B](
-  //       name: String,
-  //       arg0: Parser[A],
-  //       arg1: Parser[B]
-  //   ): Parser[A ~ B] =
-  //     (name ~> "(" ~> arg0 <~ ",") ~ arg1 <~ ")"
-  //
-  //   def workload[A, B, C](
-  //       name: String,
-  //       arg0: Parser[A],
-  //       arg1: Parser[B],
-  //       arg2: Parser[C]
-  //   ): Parser[A ~ B ~ C] =
-  //     ((name ~> "(" ~> arg0 <~ ",") ~ arg1 <~ ",") ~ arg2 <~ ")"
-  //
-  //   def stringWorkload: Parser[Workload] =
-  //     workload(
-  //       "StringWorkload",
-  //       arg("sizeMean", int),
-  //       arg("sizeStd", double)
-  //     ) ^^ {
-  //       case mean ~ std => new StringWorkload(mean, std)
-  //     }
-  //
-  //   def uniformSingleKeyWorkload: Parser[Workload] =
-  //     workload(
-  //       "UniformSingleKeyWorkload",
-  //       arg("numKeys", int),
-  //       arg("sizeMean", int),
-  //       arg("sizeStd", double)
-  //     ) ^^ {
-  //       case n ~ mean ~ std => new UniformSingleKeyWorkload(n, mean, std)
-  //     }
-  //
-  //   def workload: Parser[Workload] = stringWorkload | uniformSingleKeyWorkload
-  // }
 }

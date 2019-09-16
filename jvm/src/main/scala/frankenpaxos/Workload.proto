@@ -20,9 +20,16 @@ message UniformSingleKeyWorkloadProto {
   required int32 size_std = 3;
 }
 
+message BernoulliSingleKeyWorkloadProto {
+  required float conflict_rate = 1;
+  required int32 size_mean = 2;
+  required int32 size_std = 3;
+}
+
 message WorkloadProto {
   oneof value {
     StringWorkloadProto string_workload = 1;
     UniformSingleKeyWorkloadProto uniform_single_key_workload = 2;
+    BernoulliSingleKeyWorkloadProto bernoulli_single_key_workload = 3;
   }
 }
