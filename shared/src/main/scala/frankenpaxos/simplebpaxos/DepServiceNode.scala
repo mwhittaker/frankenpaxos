@@ -95,7 +95,8 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
     logger: Logger,
     config: Config[Transport],
     stateMachine: StateMachine,
-    options: DepServiceNodeOptions = DepServiceNodeOptions.default,
+    @JSExport
+    var options: DepServiceNodeOptions = DepServiceNodeOptions.default,
     metrics: DepServiceNodeMetrics = new DepServiceNodeMetrics(
       PrometheusCollectors
     )

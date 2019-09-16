@@ -82,8 +82,7 @@ const vote_value_component = {
         </command-or-noop>
       </fp-field>
       <fp-field :name="'dependencies'">
-        <frankenpaxos-set :set="value.dependencies">
-        </frankenpaxos-set>
+        {{value.dependencies}}
       </fp-field>
     </fp-object>
   `,
@@ -311,10 +310,10 @@ const proposer_info = {
           Chosen
           <fp-object>
             <fp-field :name="'commandOrNoop'">
-              <command-or-noop :set="state.commandOrNoop"></command-or-noop>
+              <command-or-noop :value="state.commandOrNoop"></command-or-noop>
             </fp-field>
             <fp-field :name="'dependencies'">
-              <frankenpaxos-set :set="state.dependencies"></frankenpaxos-set>
+              {{state.dependencies}}
             </fp-field>
           </fp-object>
         </div>
@@ -331,14 +330,26 @@ let dep_node_info = {
   // TODO(mwhittaker): Improve display of conflictIndex.
   template: `
     <div>
-      <div>conflictIndex = {{node.actor.conflictIndex}}</div>
+      <div>
+        conflictIndex =
+        <fp-object>
+          <fp-field :name="'topOne'"
+                    v-if="node.actor.options.topKDependencies == 1">
+            <frankenpaxos-top-one
+              :value="node.actor.conflictIndex.topOne">
+            </frankenpaxos-top-one>
+          </fp-field>
+          <fp-field :name="'topK'" v-else>
+            <frankenpaxos-top-k
+              :value="node.actor.conflictIndex.topK">
+            </frankenpaxos-top-k>
+          </fp-field>
+        </fp-object>
+      </div>
 
       <div>
         dependenciesCache =
-        <frankenpaxos-map
-          :map="node.actor.dependenciesCache"
-          v-slot="{value: deps}">
-          <frankenpaxos-set :set="deps"></frankenpaxos-set>
+        <frankenpaxos-map :map="node.actor.dependenciesCache">
         </frankenpaxos-map>
       </div>
     </div>
@@ -393,34 +404,6 @@ let replica_info = {
     };
   },
 
-  methods: {
-    vertex_id_to_string: function(vertex_id) {
-      return vertex_id.leaderIndex + "." + vertex_id.id;
-    },
-
-    nodes: function() {
-      let ns = this.JsUtils.setToJs(this.node.actor.dependencyGraph.nodes);
-      return ns.map(vertex_id => {
-        return {
-          id: this.vertex_id_to_string(vertex_id),
-          label: this.vertex_id_to_string(vertex_id),
-        };
-      });
-    },
-
-    edges: function() {
-      let es = this.JsUtils.setToJs(this.node.actor.dependencyGraph.edges);
-      es = es.map(t => this.JsUtils.tupleToJs(t));
-      es = es.map(t => {
-        return {
-          from: this.vertex_id_to_string(t[0]),
-          to: this.vertex_id_to_string(t[1]),
-        };
-      });
-      return es;
-    },
-  },
-
   template: `
     <div>
       <div>stateMachine = {{node.actor.stateMachine}}</div>
@@ -437,12 +420,10 @@ let replica_info = {
 
       <div>
         dependencyGraph =
-        <frankenpaxos-graph
-          style="height: 200px; border: 1pt solid black;"
-          :nodes="nodes()"
-          :edges="edges()"
-          :options="options">
-        </frankenpaxos-graph>
+        <!-- <frankenpaxos-zigzag-tarjan :value="node.actor.dependencyGraph"> -->
+        <!-- </frankenpaxos-zigzag-tarjan> -->
+        <frankenpaxos-tarjan :value="node.actor.dependencyGraph">
+        </frankenpaxos-tarjan>
       </div>
 
       <div>
@@ -453,7 +434,7 @@ let replica_info = {
               <command-or-noop :value="cmd.commandOrNoop"></command-or-noop>
             </fp-field>
             <fp-field :name="'dependencies'">
-              <frankenpaxos-set :set="cmd.dependencies"></frankenpaxos-set>
+              {{cmd.dependencies}}
             </fp-field>
           </fp-object>
         </frankenpaxos-map>

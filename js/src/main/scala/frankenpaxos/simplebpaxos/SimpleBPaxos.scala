@@ -4,7 +4,8 @@ import VertexIdHelpers.vertexIdOrdering
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
-import frankenpaxos.depgraph.ScalaGraphDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraphMetrics
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.AppendLog
 import scala.scalajs.js.annotation._
@@ -144,8 +145,9 @@ class SimpleBPaxos {
       logger = new JsLogger(),
       config = config,
       stateMachine = new AppendLog(),
-      dependencyGraph = new ScalaGraphDependencyGraph(
-        VertexIdPrefixSet(config.leaderAddresses.size)
+      dependencyGraph = new TarjanDependencyGraph(
+        VertexIdPrefixSet(config.leaderAddresses.size),
+        new TarjanDependencyGraphMetrics(FakeCollectors)
       ),
       options = ReplicaOptions.default.copy(
         recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),

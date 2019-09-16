@@ -3,7 +3,8 @@ package frankenpaxos.simplebpaxos
 import VertexIdHelpers.vertexIdOrdering
 import frankenpaxos.Util
 import frankenpaxos.Util.MapHelpers
-import frankenpaxos.depgraph.JgraphtDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraphMetrics
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator.FakeLogger
 import frankenpaxos.simulator.FakeTransport
@@ -119,8 +120,9 @@ class SimpleBPaxos(val f: Int, seed: Long) {
       logger = new FakeLogger(),
       config = config,
       stateMachine = new KeyValueStore(),
-      dependencyGraph = new JgraphtDependencyGraph(
-        VertexIdPrefixSet(config.leaderAddresses.size)
+      dependencyGraph = new TarjanDependencyGraph(
+        VertexIdPrefixSet(config.leaderAddresses.size),
+        new TarjanDependencyGraphMetrics(FakeCollectors)
       ),
       options = ReplicaOptions.default.copy(
         recoverVertexTimerMinPeriod = java.time.Duration.ofSeconds(10),
