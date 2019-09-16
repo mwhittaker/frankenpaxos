@@ -42,6 +42,10 @@ class ReplicaOptions(NamedTuple):
     top_k_dependencies: int = 1
     unsafe_return_no_dependencies: bool = False
 
+class ZigzagOptions(NamedTuple):
+    vertices_grow_size: int = 5000
+    garbage_collect_every_n_commands: int = 1000
+
 
 class ClientOptions(NamedTuple):
     repropose_period: datetime.timedelta = datetime.timedelta(milliseconds=100)
@@ -85,8 +89,8 @@ class Input(NamedTuple):
 
     # Replica options. #########################################################
     replica_options: ReplicaOptions
+    replica_zigzag_options: ZigzagOptions
     replica_log_level: str
-    replica_dependency_graph: str
 
     # Client parameters. #######################################################
     client_options: ClientOptions
@@ -274,7 +278,6 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                     '--config', config_filename,
                     '--log_level', input.replica_log_level,
                     '--state_machine', input.state_machine,
-                    '--dependency_graph', input.replica_dependency_graph,
                     '--prometheus_host', replica.host.ip(),
                     '--prometheus_port',
                         str(replica.port + 1) if input.monitored else '-1',
@@ -322,6 +325,11 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                         "true"
                         if input.replica_options.unsafe_return_no_dependencies
                         else "false",
+                    '--zigzag.verticesGrowSize',
+                        str(input.replica_zigzag_options.vertices_grow_size),
+                    '--zigzag.garbageCollectEveryNCommands',
+                        str(input.replica_zigzag_options
+                                 .garbage_collect_every_n_commands),
                 ],
             )
             replica_procs.append(proc)
