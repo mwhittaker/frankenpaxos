@@ -19,6 +19,7 @@ syntax = "proto2";
 package frankenpaxos.epaxos;
 
 import "scalapb/scalapb.proto";
+import "frankenpaxos/compact/IntPrefixSet.proto";
 
 option (scalapb.options) = {
   package_name: "frankenpaxos.epaxos"
@@ -93,6 +94,14 @@ enum CommandStatus {
   Accepted = 2;
 }
 
+message InstancePrefixSetProto {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 numReplicas = 1;
+  repeated frankenpaxos.compact.IntPrefixSetProto int_prefix_set = 2;
+}
+
 // Protocol messages. //////////////////////////////////////////////////////////
 message ClientRequest {
   option (scalapb.message).annotations =
@@ -110,7 +119,7 @@ message PreAccept {
 
   required CommandOrNoop command_or_noop = 3;
   required int32 sequence_number = 4;
-  repeated Instance dependencies = 5;
+  required InstancePrefixSetProto dependencies = 5;
 }
 
 message PreAcceptOk {
@@ -122,7 +131,7 @@ message PreAcceptOk {
   required int32 replica_index = 3;
 
   required int32 sequence_number = 4;
-  repeated Instance dependencies = 5;
+  required InstancePrefixSetProto dependencies = 5;
 }
 
 message Accept {
@@ -134,7 +143,7 @@ message Accept {
 
   required CommandOrNoop command_or_noop = 3;
   required int32 sequence_number = 4;
-  repeated Instance dependencies = 5;
+  required InstancePrefixSetProto dependencies = 5;
 }
 
 message AcceptOk {
@@ -153,7 +162,7 @@ message Commit {
   required Instance instance = 1;
   required CommandOrNoop command_or_noop = 2;
   required int32 sequence_number = 3;
-  repeated Instance dependencies = 4;
+  required InstancePrefixSetProto dependencies = 4;
 }
 
 message ClientReply {
@@ -196,7 +205,7 @@ message PrepareOk {
   required CommandStatus status = 5;
   optional CommandOrNoop command_or_noop = 6;
   optional int32 sequence_number = 7;
-  repeated Instance dependencies = 8;
+  optional InstancePrefixSetProto dependencies = 8;
 }
 
 message Nack {

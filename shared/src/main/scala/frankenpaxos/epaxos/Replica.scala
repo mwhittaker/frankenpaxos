@@ -62,9 +62,19 @@ case class ReplicaOptions(
     // executed, the graph is executed.
     executeGraphBatchSize: Int,
     executeGraphTimerPeriod: java.time.Duration,
+    // numBlockers argument to DependencyGraph#execute. -1 is None.
+    numBlockers: Int,
     // If true, the replica records how long various things take to do and
     // reports them using the `epaxos_replica_requests_latency` metric.
-    measureLatencies: Boolean
+    measureLatencies: Boolean,
+    // If topKDependencies is equal to k for some k > 0, then a dependency
+    // service node only returns the top-k dependencies for every leader.
+    topKDependencies: Int,
+    // If `unsafeReturnNoDependencies` is true, replicas return no dependencies
+    // for every command. As the name suggests, this is unsafe and breaks the
+    // protocol. It should be used only for performance debugging and
+    // evaluation.
+    unsafeReturnNoDependencies: Boolean
 )
 
 @JSExportAll
@@ -80,7 +90,10 @@ object ReplicaOptions {
     unsafeSkipGraphExecution = false,
     executeGraphBatchSize = 1,
     executeGraphTimerPeriod = java.time.Duration.ofSeconds(1),
-    measureLatencies = true
+    numBlockers = -1,
+    measureLatencies = true,
+    topKDependencies = 1,
+    unsafeReturnNoDependencies = false
   )
 }
 
@@ -184,6 +197,18 @@ class ReplicaMetrics(collectors: Collectors) {
     .name("epaxos_replica_dependencies")
     .help("The number of dependencies that a command has.")
     .register()
+
+  val uncompactedDependencies: Summary = collectors.summary
+    .build()
+    .name("epaxos_replica_uncompacted_dependencies")
+    .help("The number of uncompacted dependencies that a command has.")
+    .register()
+
+  val recoverInstanceTimers: Gauge = collectors.gauge
+    .build()
+    .name("epaxos_replica_recover_instance_timers")
+    .help("The number of recover instance timers that a replica has.")
+    .register()
 }
 
 // Note that there are a couple of types (e.g., CmdLogEntry, LeaderState) that
@@ -238,7 +263,7 @@ object Replica {
   case class CommandTriple(
       commandOrNoop: CommandOrNoop,
       sequenceNumber: Int,
-      dependencies: Set[Instance]
+      dependencies: InstancePrefixSet
   )
 
   // The core data structure of every EPaxos replica, the cmd log, records
@@ -372,11 +397,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // An empty dependency graph. This is a constructor argument so that
     // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
     // Public for the JS visualizations.
-    val dependencyGraph: DependencyGraph[
-      Instance,
-      Int,
-      FakeCompactSet[Instance]
-    ] = new JgraphtDependencyGraph(new FakeCompactSet[Instance]()),
+    val dependencyGraph: DependencyGraph[Instance, Int, InstancePrefixSet],
     options: ReplicaOptions = ReplicaOptions.default,
     metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
@@ -476,10 +497,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val leaderStates = mutable.Map[Instance, LeaderState]()
 
-  // An index used to efficiently compute dependencies and sequence numbers.
-  // Note that noops are not entered into the conflict index.
+  // An index used to efficiently compute dependencies.
   @JSExport
-  protected val conflictIndex = stateMachine.conflictIndex[Instance]()
+  protected val conflictIndex = stateMachine.topKConflictIndex[Instance](
+    options.topKDependencies,
+    config.replicaAddresses.size,
+    InstanceHelpers.like
+  )
 
   // If a replica commits a command in instance I with a dependency on
   // uncommitted instance J, then the replica sets a timer to recover instance
@@ -537,19 +561,41 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     options.thriftySystem.choose(delays, n).map(otherReplicasByAddress(_))
   }
 
+  // Note that in Basic EPaxos, we're supposed to compute sequence numbers.
+  // However, when you're returning only the top k dependencies, it becomes
+  // impossible to compute sequence numbers. They are not really needed though,
+  // so we do without them.
   private def computeSequenceNumberAndDependencies(
       instance: Instance,
       commandOrNoop: CommandOrNoop
-  ): (Int, Set[Instance]) = {
-    val dependencies = commandOrNoop
-      .bytes()
-      .map(conflictIndex.getConflicts(_) - instance)
-      .getOrElse(Set[Instance]())
-    val sequenceNumber =
-      (dependencies.flatMap(instanceSequenceNumber) + 0).max + 1
+  ): (Int, InstancePrefixSet) = {
+    import CommandOrNoop.Value
+    val dependencies =
+      commandOrNoop.value match {
+        case Value.Command(command) =>
+          val bytes = command.command.toByteArray
+          if (options.topKDependencies == 1) {
+            val dependencies = InstancePrefixSet.fromTopOne(
+              conflictIndex.getTopOneConflicts(bytes)
+            )
+            dependencies.subtractOne(instance)
+            dependencies
+          } else {
+            val dependencies =
+              InstancePrefixSet.fromTopK(conflictIndex.getTopKConflicts(bytes))
+            dependencies.subtractOne(instance)
+            dependencies
+          }
 
+        case Value.Noop(noop) =>
+          InstancePrefixSet(config.replicaAddresses.size)
+
+        case Value.Empty =>
+          logger.fatal("Empty CommandOrNoop.")
+      }
     metrics.dependencies.observe(dependencies.size)
-    (sequenceNumber, dependencies)
+    metrics.uncompactedDependencies.observe(dependencies.uncompactedSize)
+    (0, dependencies)
   }
 
   private def updateConflictIndex(
@@ -558,7 +604,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     commandOrNoop.bytes() match {
       case Some(bytes) => conflictIndex.put(instance, bytes)
-      case None        => conflictIndex.remove(instance)
+      case None        =>
+      // In Basic EPaxos here, we'd remove the instance from the conflict
+      // index. However, fast conflict indexes don't remove easily. So, we'll
+      // have more dependencies than strictly necessary, but that's okay.
     }
   }
 
@@ -636,7 +685,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       ballot = ballot,
       voteBallot = ballot,
       triple = CommandTriple(
-        commandOrNoop,
+        commandOrNoop = commandOrNoop,
         sequenceNumber = sequenceNumber,
         dependencies = dependencies
       )
@@ -644,12 +693,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     updateConflictIndex(instance, commandOrNoop)
 
     // Send PreAccept messages to other replicas in a fast quorum.
+    val dependenciesProto = dependencies.toProto()
     val preAccept = PreAccept(
       instance = instance,
       ballot = ballot,
       commandOrNoop = commandOrNoop,
       sequenceNumber = sequenceNumber,
-      dependencies = dependencies.toSeq
+      dependencies = dependenciesProto
     )
     thriftyOtherReplicas(config.fastQuorumSize - 1)
       .foreach(_.send(ReplicaInbound().withPreAccept(preAccept)))
@@ -668,7 +718,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           ballot = ballot,
           replicaIndex = index,
           sequenceNumber = sequenceNumber,
-          dependencies = dependencies.toSeq
+          dependencies = dependenciesProto
         )
       ),
       avoidFastPath = avoidFastPath,
@@ -717,7 +767,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       ballot = ballot,
       commandOrNoop = triple.commandOrNoop,
       sequenceNumber = triple.sequenceNumber,
-      dependencies = triple.dependencies.toSeq
+      dependencies = triple.dependencies.toProto()
     )
     thriftyOtherReplicas(config.slowQuorumSize - 1)
       .foreach(_.send(ReplicaInbound().withAccept(accept)))
@@ -750,8 +800,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     logger.check(preAccepting.responses.size >= config.slowQuorumSize)
     val preAcceptOks: Set[PreAcceptOk] = preAccepting.responses.values.toSet
     val sequenceNumber: Int = preAcceptOks.map(_.sequenceNumber).max
-    val dependencies: Set[Instance] =
-      preAcceptOks.map(_.dependencies.to[Set]).flatten
+    val dependencies = InstancePrefixSet(config.replicaAddresses.size)
+    for (preAcceptOk <- preAcceptOks) {
+      dependencies.addAll(InstancePrefixSet.fromProto(preAcceptOk.dependencies))
+    }
     transitionToAcceptPhase(
       instance,
       preAccepting.ballot,
@@ -786,23 +838,20 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               instance = instance,
               commandOrNoop = triple.commandOrNoop,
               sequenceNumber = triple.sequenceNumber,
-              dependencies = triple.dependencies.toSeq
+              dependencies = triple.dependencies.toProto()
             )
           )
         )
       }
     }
 
-    // Stop any recovery timer for the current instance, and start recovery
-    // timers for any uncommitted instances on which we depend.
-    recoverInstanceTimers.get(instance).foreach(_.stop())
-    recoverInstanceTimers -= instance
-    for {
-      i <- triple.dependencies
-      if !isCommitted(i)
-      if !recoverInstanceTimers.contains(i)
-    } {
-      recoverInstanceTimers(i) = makeRecoverInstanceTimer(i)
+    // Stop any recovery timer for the current instance.
+    recoverInstanceTimers.get(instance) match {
+      case Some(timer) =>
+        timer.stop()
+        recoverInstanceTimers -= instance
+      case None =>
+      // Do nothing.
     }
 
     // If we're skipping the graph, execute the command right away. Otherwise,
@@ -812,11 +861,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       executeCommand(instance, triple.commandOrNoop)
     } else {
       timed("commit/dependencyGraph.commit") {
-        dependencyGraph.commit(
-          instance,
-          triple.sequenceNumber,
-          new FakeCompactSet[Instance](triple.dependencies)
-        )
+        dependencyGraph.commit(instance,
+                               triple.sequenceNumber,
+                               triple.dependencies)
       }
       numPendingCommittedCommands += 1
       if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
@@ -827,16 +874,27 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private val numBlockers =
+    if (options.numBlockers == -1) None else Some(options.numBlockers)
+  private val executables = mutable.Buffer[Instance]()
+  private val blockers = mutable.Set[Instance]()
   private def execute(): Unit = {
     // TODO(mwhittaker): Pass numBlockers in as option.
     // TODO(mwhittaker): Do something with blockers.
-    val (executable, blockers) = timed("execute/dependencyGraph.execute") {
-      dependencyGraph.execute(numBlockers = None)
+    timed("execute/dependencyGraph.appendExecute") {
+      dependencyGraph.appendExecute(numBlockers, executables, blockers)
     }
     metrics.executeGraphTotal.inc()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
-    for (i <- executable) {
+    for (i <- blockers) {
+      if (!recoverInstanceTimers.contains(i)) {
+        recoverInstanceTimers(i) = makeRecoverInstanceTimer(i)
+      }
+    }
+    metrics.recoverInstanceTimers.set(recoverInstanceTimers.size)
+
+    for (i <- executables) {
       cmdLog.get(i) match {
         case None | Some(_: NoCommandEntry) | Some(_: PreAcceptedEntry) |
             Some(_: AcceptedEntry) =>
@@ -851,6 +909,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           }
       }
     }
+
+    // Clear the fields.
+    executables.clear()
+    blockers.clear()
   }
 
   private def executeCommand(
@@ -1132,11 +1194,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         if (preAccept.ballot == voteBallot) {
           replica.send(
             ReplicaInbound().withPreAcceptOk(
-              PreAcceptOk(instance = preAccept.instance,
-                          ballot = preAccept.ballot,
-                          replicaIndex = index,
-                          sequenceNumber = triple.sequenceNumber,
-                          dependencies = triple.dependencies.toSeq)
+              PreAcceptOk(
+                instance = preAccept.instance,
+                ballot = preAccept.ballot,
+                replicaIndex = index,
+                sequenceNumber = triple.sequenceNumber,
+                dependencies = triple.dependencies.toProto()
+              )
             )
           )
           return
@@ -1162,7 +1226,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             Commit(instance = preAccept.instance,
                    commandOrNoop = triple.commandOrNoop,
                    sequenceNumber = triple.sequenceNumber,
-                   dependencies = triple.dependencies.toSeq)
+                   dependencies = triple.dependencies.toProto())
           )
         )
         return
@@ -1189,7 +1253,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       preAccept.commandOrNoop
     )
     sequenceNumber = Math.max(sequenceNumber, preAccept.sequenceNumber)
-    dependencies = dependencies.union(preAccept.dependencies.toSet)
+    dependencies.addAll(InstancePrefixSet.fromProto(preAccept.dependencies))
 
     // Update the command log.
     cmdLog.put(
@@ -1206,9 +1270,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     )
 
     // Update the conflict index.
-    preAccept.commandOrNoop
-      .bytes()
-      .foreach(conflictIndex.put(preAccept.instance, _))
+    updateConflictIndex(preAccept.instance, preAccept.commandOrNoop)
 
     // Send back our response.
     val leader = chan[Replica[Transport]](src, Replica.serializer)
@@ -1219,7 +1281,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           ballot = preAccept.ballot,
           replicaIndex = index,
           sequenceNumber = sequenceNumber,
-          dependencies = dependencies.toSeq
+          dependencies = dependencies.toProto()
         )
       )
     )
@@ -1316,13 +1378,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           // We extract all (seq, deps) pairs in the PreAcceptOks, excluding our
           // own. If any appears n-2 times or more, we're good to take the fast
           // path.
-          val seqDeps: Seq[(Int, Set[Instance])] =
+          val seqDeps: Seq[(Int, InstancePrefixSet)] =
             timed("handlePreAcceptOk/collect respones") {
               responses
                 .filterKeys(_ != index)
                 .values
                 .to[Seq]
-                .map(p => (p.sequenceNumber, p.dependencies.toSet))
+                .map(
+                  p =>
+                    (p.sequenceNumber,
+                     InstancePrefixSet.fromProto(p.dependencies))
+                )
             }
           val candidates = timed("handlePreAcceptOk/popularItems") {
             Util.popularItems(seqDeps, config.fastQuorumSize - 1)
@@ -1401,7 +1467,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             Commit(instance = accept.instance,
                    commandOrNoop = triple.commandOrNoop,
                    sequenceNumber = triple.sequenceNumber,
-                   dependencies = triple.dependencies.toSeq)
+                   dependencies = triple.dependencies.toProto())
           )
         )
         return
@@ -1427,9 +1493,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     cmdLog(accept.instance) = AcceptedEntry(
       ballot = accept.ballot,
       voteBallot = accept.ballot,
-      triple = CommandTriple(commandOrNoop = accept.commandOrNoop,
-                             sequenceNumber = accept.sequenceNumber,
-                             dependencies = accept.dependencies.toSet)
+      triple = CommandTriple(
+        commandOrNoop = accept.commandOrNoop,
+        sequenceNumber = accept.sequenceNumber,
+        dependencies = InstancePrefixSet.fromProto(accept.dependencies)
+      )
     )
     updateConflictIndex(accept.instance, accept.commandOrNoop)
 
@@ -1498,19 +1566,59 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private def handleCommit(src: Transport#Address, c: Commit): Unit = {
     commit(
       c.instance,
-      CommandTriple(c.commandOrNoop, c.sequenceNumber, c.dependencies.toSet),
+      CommandTriple(c.commandOrNoop,
+                    c.sequenceNumber,
+                    InstancePrefixSet.fromProto(c.dependencies)),
       informOthers = false
     )
   }
 
   private def handleNack(src: Transport#Address, nack: Nack): Unit = {
-    // TODO(mwhittaker): Check that the nack is not out of date.
+    largestBallot = BallotHelpers.max(largestBallot, nack.largestBallot)
+
+    leaderStates.get(nack.instance) match {
+      case None =>
+        logger.debug(
+          s"Replica received a nack of ballot ${nack.largestBallot} for " +
+            s"instance ${nack.instance}, but is not currently leading the " +
+            s"instance."
+        )
+        return
+
+      case Some(preAccepting: PreAccepting) =>
+        if (preAccepting.ballot >= nack.largestBallot) {
+          logger.debug(
+            s"Replica received a nack of ballot ${nack.largestBallot} for " +
+              s"instance ${nack.instance}, but is currently preAccepting the " +
+              s"instance in ballot ${preAccepting.ballot}."
+          )
+          return
+        }
+
+      case Some(accepting: Accepting) =>
+        if (accepting.ballot >= nack.largestBallot) {
+          logger.debug(
+            s"Replica received a nack of ballot ${nack.largestBallot} for " +
+              s"instance ${nack.instance}, but is currently accepting the " +
+              s"instance in ballot ${accepting.ballot}."
+          )
+          return
+        }
+
+      case Some(preparing: Preparing) =>
+        if (preparing.ballot >= nack.largestBallot) {
+          logger.debug(
+            s"Replica received a nack of ballot ${nack.largestBallot} for " +
+              s"instance ${nack.instance}, but is currently preparing the " +
+              s"instance in ballot ${preparing.ballot}."
+          )
+          return
+        }
+    }
 
     // If we get a Nack, it's possible there's another replica trying to
     // recover this instance. To avoid dueling replicas, we wait a bit to
     // recover.
-    largestBallot = BallotHelpers.max(largestBallot, nack.largestBallot)
-
     recoverInstanceTimers.get(nack.instance) match {
       case Some(timer) => timer.reset()
       case None =>
@@ -1553,7 +1661,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               status = CommandStatus.NotSeen,
               commandOrNoop = None,
               sequenceNumber = None,
-              dependencies = Seq()
+              dependencies = None
             )
           )
         )
@@ -1579,7 +1687,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               status = CommandStatus.NotSeen,
               commandOrNoop = None,
               sequenceNumber = None,
-              dependencies = Seq()
+              dependencies = None
             )
           )
         )
@@ -1603,7 +1711,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               status = CommandStatus.PreAccepted,
               commandOrNoop = Some(triple.commandOrNoop),
               sequenceNumber = Some(triple.sequenceNumber),
-              dependencies = triple.dependencies.toSeq
+              dependencies = Some(triple.dependencies.toProto())
             )
           )
         )
@@ -1627,7 +1735,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               status = CommandStatus.Accepted,
               commandOrNoop = Some(triple.commandOrNoop),
               sequenceNumber = Some(triple.sequenceNumber),
-              dependencies = triple.dependencies.toSeq
+              dependencies = Some(triple.dependencies.toProto())
             )
           )
         )
@@ -1641,7 +1749,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             Commit(instance = prepare.instance,
                    commandOrNoop = triple.commandOrNoop,
                    sequenceNumber = triple.sequenceNumber,
-                   dependencies = triple.dependencies.toSeq)
+                   dependencies = triple.dependencies.toProto())
           )
         )
     }
@@ -1703,11 +1811,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         // response in a classic round during Fast Paxos.
         prepareOks.find(_.status == Some(CommandStatus.Accepted)) match {
           case Some(accepted) =>
-            transitionToAcceptPhase(prepareOk.instance,
-                                    ballot,
-                                    CommandTriple(accepted.commandOrNoop.get,
-                                                  accepted.sequenceNumber.get,
-                                                  accepted.dependencies.toSet))
+            transitionToAcceptPhase(
+              prepareOk.instance,
+              ballot,
+              CommandTriple(
+                accepted.commandOrNoop.get,
+                accepted.sequenceNumber.get,
+                InstancePrefixSet.fromProto(accepted.dependencies.get)
+              )
+            )
             return
 
           case None =>
@@ -1727,7 +1839,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               p =>
                 CommandTriple(p.commandOrNoop.get,
                               p.sequenceNumber.get,
-                              p.dependencies.toSet)
+                              InstancePrefixSet.fromProto(p.dependencies.get))
             )
         val candidates =
           Util.popularItems(preAcceptsInDefaultBallotNotFromLeader, config.f)

@@ -4,8 +4,9 @@ import InstanceHelpers.instanceOrdering
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
-import frankenpaxos.compact.FakeCompactSet
-import frankenpaxos.depgraph.ScalaGraphDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraphMetrics
+import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.statemachine.Register
 import scala.scalajs.js.annotation._
@@ -49,7 +50,8 @@ class EPaxos {
   val (client3logger, client3) = clients(2)
 
   // Replicas.
-  val replicas = for (i <- 1 to 5) yield {
+  val numReplicas = 5
+  val replicas = for (i <- 1 to numReplicas) yield {
     val logger = new JsLogger()
     val address = JsTransportAddress(s"Replica $i")
     val options = ReplicaOptions.default.copy(
@@ -68,7 +70,10 @@ class EPaxos {
       logger,
       config,
       new Register(),
-      new ScalaGraphDependencyGraph(new FakeCompactSet()),
+      new TarjanDependencyGraph(
+        InstancePrefixSet(numReplicas),
+        new TarjanDependencyGraphMetrics(FakeCollectors)
+      ),
       options,
       new ReplicaMetrics(FakeCollectors)
     )

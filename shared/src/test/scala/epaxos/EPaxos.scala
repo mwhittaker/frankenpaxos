@@ -1,8 +1,8 @@
 package frankenpaxos.epaxos
 
 import InstanceHelpers.instanceOrdering
-import frankenpaxos.compact.FakeCompactSet
-import frankenpaxos.depgraph.JgraphtDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraph
+import frankenpaxos.depgraph.TarjanDependencyGraphMetrics
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator.FakeLogger
 import frankenpaxos.simulator.FakeTransport
@@ -51,7 +51,10 @@ class EPaxos(val f: Int) {
         logger,
         config,
         stateMachine = new KeyValueStore(),
-        dependencyGraph = new JgraphtDependencyGraph(new FakeCompactSet()),
+        dependencyGraph = new TarjanDependencyGraph(
+          InstancePrefixSet(numReplicas),
+          new TarjanDependencyGraphMetrics(FakeCollectors)
+        ),
         options = ReplicaOptions.default,
         metrics = new ReplicaMetrics(FakeCollectors)
       )

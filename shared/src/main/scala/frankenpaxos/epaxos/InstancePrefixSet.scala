@@ -3,6 +3,8 @@ package frankenpaxos.epaxos
 import frankenpaxos.compact.CompactSet
 import frankenpaxos.compact.IntPrefixSet
 import frankenpaxos.util
+import frankenpaxos.util.TopK
+import frankenpaxos.util.TopOne
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -12,6 +14,43 @@ object InstancePrefixSet {
   def apply(numReplicas: Int): InstancePrefixSet = {
     new InstancePrefixSet(numReplicas,
                           mutable.Buffer.fill(numReplicas)(IntPrefixSet()))
+  }
+
+  def fromWatermarks(watermarks: mutable.Buffer[Int]): InstancePrefixSet = {
+    val intPrefixSets = mutable.Buffer[IntPrefixSet]()
+    for (watermark <- watermarks) {
+      intPrefixSets += IntPrefixSet.fromWatermark(watermark)
+    }
+    new InstancePrefixSet(watermarks.size, intPrefixSets)
+  }
+
+  def fromTopOne(topOne: TopOne[Instance]): InstancePrefixSet =
+    InstancePrefixSet.fromWatermarks(topOne.get())
+
+  def fromTopK(topK: TopK[Instance]): InstancePrefixSet = {
+    val sortedSets = topK.get()
+    val numLeaders = sortedSets.size
+    val intPrefixSets = mutable.Buffer[IntPrefixSet]()
+    for (sortedSet <- sortedSets) {
+      if (sortedSet.size == 0) {
+        intPrefixSets += IntPrefixSet()
+      } else if (sortedSet.size == 1) {
+        intPrefixSets += IntPrefixSet.fromWatermark(sortedSet.head + 1)
+      } else {
+        intPrefixSets += IntPrefixSet.fromWatermarkAndMutableSet(
+          sortedSet.head + 1,
+          sortedSet.drop(1).to[mutable.Set]
+        )
+      }
+    }
+    new InstancePrefixSet(numLeaders, intPrefixSets)
+  }
+
+  def fromProto(proto: InstancePrefixSetProto): InstancePrefixSet = {
+    new InstancePrefixSet(
+      proto.numReplicas,
+      proto.intPrefixSet.map(IntPrefixSet.fromProto).to[mutable.Buffer]
+    )
   }
 }
 
@@ -23,6 +62,18 @@ class InstancePrefixSet private (
   override type T = Instance
 
   override def toString(): String = intPrefixSets.toString()
+
+  private def toTuple(): (Int, mutable.Buffer[IntPrefixSet]) =
+    (numReplicas, intPrefixSets)
+
+  override def equals(other: Any): Boolean = {
+    other match {
+      case other: InstancePrefixSet => toTuple() == other.toTuple()
+      case _                        => false
+    }
+  }
+
+  override def hashCode: Int = toTuple().hashCode
 
   override def add(instance: Instance): Boolean =
     intPrefixSets(instance.replicaIndex).add(instance.instanceNumber)
@@ -101,6 +152,11 @@ class InstancePrefixSet private (
       } yield
         Instance(replicaIndex = replicaIndex, instanceNumber = instanceNumber)
     }.toSet
+  }
+
+  def toProto(): InstancePrefixSetProto = {
+    InstancePrefixSetProto(numReplicas = numReplicas,
+                           intPrefixSet = intPrefixSets.map(_.toProto))
   }
 
   def getWatermark(): Seq[Int] =
