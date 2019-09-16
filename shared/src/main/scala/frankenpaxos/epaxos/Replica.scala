@@ -398,7 +398,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // ScalaGraphDependencyGraph can be passed in for the JS visualizations.
     // Public for the JS visualizations.
     val dependencyGraph: DependencyGraph[Instance, Int, InstancePrefixSet],
-    options: ReplicaOptions = ReplicaOptions.default,
+    @JSExport
+    var options: ReplicaOptions = ReplicaOptions.default,
     metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   import Replica._

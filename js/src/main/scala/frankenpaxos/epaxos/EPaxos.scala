@@ -8,7 +8,7 @@ import frankenpaxos.depgraph.TarjanDependencyGraph
 import frankenpaxos.depgraph.TarjanDependencyGraphMetrics
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.monitoring.FakeCollectors
-import frankenpaxos.statemachine.Register
+import frankenpaxos.statemachine.AppendLog
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -69,7 +69,7 @@ class EPaxos {
       transport,
       logger,
       config,
-      new Register(),
+      new AppendLog(),
       new TarjanDependencyGraph(
         InstancePrefixSet(numReplicas),
         new TarjanDependencyGraphMetrics(FakeCollectors)

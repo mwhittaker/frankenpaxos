@@ -9,8 +9,6 @@ let command_triple = {
       <fp-field :name="'sequenceNumber'"
                 :value="triple.sequenceNumber"></fp-field>
       <fp-field :name="'dependencies'" :value="triple.dependencies">
-        <frankenpaxos-set :set="triple.dependencies">
-        </frankenpaxos-set>
       </fp-field>
     </fp-object>
   `,
@@ -28,8 +26,6 @@ let preaccept_ok = {
       <fp-field :name="'sequenceNumber'"
                 :value="preaccept_ok.sequenceNumber"></fp-field>
       <fp-field :name="'dependencies'" :value="preaccept_ok.dependencies">
-        <frankenpaxos-seq :seq="preaccept_ok.dependencies">
-        </frankenpaxos-seq>
       </fp-field>
     </fp-object>
   `,
@@ -65,8 +61,6 @@ let prepare_ok = {
       <fp-field :name="'sequenceNumber'"
                 :value="prepare_ok.sequenceNumber"></fp-field>
       <fp-field :name="'dependencies'" :value="prepare_ok.dependencies">
-        <frankenpaxos-seq :seq="prepare_ok.dependencies">
-        </frankenpaxos-seq>
       </fp-field>
     </fp-object>
   `,
@@ -136,62 +130,57 @@ let replica_info = {
     };
   },
 
-  methods: {
-    instance_to_string: function(instance) {
-      return instance.replicaIndex + "." + instance.instanceNumber;
-    },
-
-    nodes: function() {
-      let ns = this.JsUtils.setToJs(this.node.actor.dependencyGraph.nodes);
-      return ns.map(instance => {
-        return {
-          id: this.instance_to_string(instance),
-          label: this.instance_to_string(instance),
-        };
-      });
-    },
-
-    edges: function() {
-      let es = this.JsUtils.setToJs(this.node.actor.dependencyGraph.edges);
-      es = es.map(t => this.JsUtils.tupleToJs(t));
-      es = es.map(t => {
-        return {
-          from: this.instance_to_string(t[0]),
-          to: this.instance_to_string(t[1]),
-        };
-      });
-      return es;
-    },
-  },
-
   template: `
     <div>
-      <div>nextAvailableInstance = {{node.actor.nextAvailableInstance}}</div>
-      <div>largestBallot = {{node.actor.largestBallot}}</div>
-      <div>stateMachine = {{node.actor.stateMachine}}</div>
+      <div>
+        nextAvailableInstance =
+        {{node.actor.nextAvailableInstance}}
+      </div>
+
+      <div>
+        largestBallot =
+        {{node.actor.largestBallot}}
+      </div>
+
       <div>
         numPendingCommittedCommands =
         {{node.actor.numPendingCommittedCommands}}
       </div>
 
       <div>
-        dependencyGraph =
-        <frankenpaxos-graph
-          style="height: 200px; border: 1pt solid black;"
-          :nodes="nodes()"
-          :edges="edges()"
-          :options="options">
-        </frankenpaxos-graph>
+        stateMachine =
+        {{node.actor.stateMachine}}
       </div>
 
-      <!-- recoveryInstanceTimers -->
+      <div>
+        dependencyGraph =
+        <frankenpaxos-tarjan :value="node.actor.dependencyGraph">
+        </frankenpaxos-tarjan>
+      </div>
+
       <div>
         recoverInstanceTimers =
         <frankenpaxos-map :map="node.actor.recoverInstanceTimers">
         </frankenpaxos-map>
       </div>
 
-      <!-- cmdLog -->
+      <div>
+        conflictIndex =
+        <fp-object>
+          <fp-field :name="'topOne'"
+                    v-if="node.actor.options.topKDependencies == 1">
+            <frankenpaxos-top-one
+              :value="node.actor.conflictIndex.topOne">
+            </frankenpaxos-top-one>
+          </fp-field>
+          <fp-field :name="'topK'" v-else>
+            <frankenpaxos-top-k
+              :value="node.actor.conflictIndex.topK">
+            </frankenpaxos-top-k>
+          </fp-field>
+        </fp-object>
+      </div>
+
       <div>
         cmdLog =
 
