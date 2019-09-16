@@ -38,6 +38,9 @@ class ReplicaOptions(NamedTuple):
     execute_graph_batch_size: int = 1
     execute_graph_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
+    num_blockers: int = 1
+    top_k_dependencies: int = 1
+    unsafe_return_no_dependencies: bool = False
 
 
 class ClientOptions(NamedTuple):
@@ -311,6 +314,14 @@ class EPaxosSuite(benchmark.Suite[Input, Output]):
                         input.replica_options
                              .execute_graph_timer_period
                              .total_seconds()),
+                    '--options.numBlockers',
+                        str(input.replica_options.num_blockers),
+                    '--options.topKDependencies',
+                        str(input.replica_options.top_k_dependencies),
+                    '--options.unsafeReturnNoDependencies',
+                        "true"
+                        if input.replica_options.unsafe_return_no_dependencies
+                        else "false",
                 ],
             )
             replica_procs.append(proc)
