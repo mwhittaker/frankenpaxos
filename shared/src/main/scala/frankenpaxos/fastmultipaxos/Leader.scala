@@ -223,6 +223,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private val acceptors: Seq[Chan[Acceptor[Transport]]] =
     acceptorsByAddress.values.toSeq
 
+  private val fakeDelays: Map[Transport#Address, java.time.Duration] = {
+    for (a <- config.acceptorAddresses)
+      yield a -> java.time.Duration.ofSeconds(0)
+  }.toMap
+
   // The current round. Initially, the leader that owns round 0 is the active
   // leader, and all other leaders are inactive.
   @JSExport
@@ -444,14 +449,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // thriftyAcceptors(min) uses `options.thriftySystem` to thriftily select at
   // least `min` acceptors.
-  def thriftyAcceptors(min: Int): Set[Chan[Acceptor[Transport]]] = {
-    // The addresses returned by the heartbeat node are heartbeat addresses.
-    // We have to transform them into acceptor addresses.
-    options.thriftySystem
-      .choose(heartbeat.unsafeNetworkDelay, min)
-      .map(config.acceptorHeartbeatAddresses.indexOf(_))
-      .map(config.acceptorAddresses(_))
-      .map(acceptorsByAddress(_))
+  private def thriftyAcceptors(min: Int): Set[Chan[Acceptor[Transport]]] = {
+    // TODO(mwhittaker): If we're using closest thrifty system, then we want to
+    // do this. Otherwise, for random, it's too slow.
+    // // The addresses returned by the heartbeat node are heartbeat addresses.
+    // // We have to transform them into acceptor addresses.
+    // timed("thriftyAcceptors") {
+    //   options.thriftySystem
+    //     .choose(heartbeat.unsafeNetworkDelay, min)
+    //     .map(config.acceptorHeartbeatAddresses.indexOf(_))
+    //     .map(config.acceptorAddresses(_))
+    //     .map(acceptorsByAddress(_))
+    // }
+    options.thriftySystem.choose(fakeDelays, min).map(acceptorsByAddress(_))
   }
 
   // Send Phase 1a messages to the acceptors. If thrifty is true, we send with
@@ -597,14 +607,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Ignore responses for entries that have already been chosen.
         if (log.contains(phase2b.slot)) {
-          // Without thriftiness, this is the normal case, so it prints a LOT.
-          // So, we comment it out.
-          //
-          // leaderLogger.debug(
-          //   s"A leader received a phase 2b response for slot " +
-          //     s"${phase2b.slot} from $src but a value has already been " +
-          //     s"chosen in this slot."
-          // )
+          leaderLogger.debug(
+            s"A leader received a phase 2b response for slot " +
+              s"${phase2b.slot} from $src but a value has already been " +
+              s"chosen in this slot."
+          )
           return
         }
 
@@ -942,6 +949,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.ProposeRequest(r)    => "ProposeRequest"
         case Request.Phase1B(r)           => "Phase1b"
         case Request.Phase1BNack(r)       => "Phase1bNack"
+        case Request.Phase2B(r)           => "Phase2b"
         case Request.Phase2BBuffer(r)     => "Phase2bBuffer"
         case Request.ValueChosenBuffer(r) => "ValueChosenBuffer"
         case Request.Empty =>
@@ -954,6 +962,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.ProposeRequest(r)    => handleProposeRequest(src, r)
         case Request.Phase1B(r)           => handlePhase1b(src, r)
         case Request.Phase1BNack(r)       => handlePhase1bNack(src, r)
+        case Request.Phase2B(r)           => handlePhase2b(src, r)
         case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
         case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
         case Request.Empty =>
@@ -970,32 +979,34 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       request: ProposeRequest
   ): Unit = {
     val client = chan[Client[Transport]](src, Client.serializer)
-    // If we've cached the result of this proposed command in the client table,
-    // then we can reply to the client directly. Note that only the leader
-    // replies to the client since ProposeReplies include the round of the
-    // leader, and only the leader knows this.
-    clientTable.get((src, request.command.clientPseudonym)) match {
-      case Some((clientId, result)) =>
-        if (request.command.clientId == clientId && state != Inactive) {
-          leaderLogger.debug(
-            s"The latest command for client $src pseudonym " +
-              s"${request.command.clientPseudonym} (i.e., command $clientId)" +
-              s"was found in the client table."
-          )
-          client.send(
-            ClientInbound().withProposeReply(
-              ProposeReply(round = round,
-                           clientPseudonym = request.command.clientPseudonym,
-                           clientId = clientId,
-                           result = ByteString.copyFrom(result))
+    timed("ProposeRequest/check client table") {
+      // If we've cached the result of this proposed command in the client
+      // table, then we can reply to the client directly. Note that only the
+      // leader replies to the client since ProposeReplies include the round of
+      // the leader, and only the leader knows this.
+      clientTable.get((src, request.command.clientPseudonym)) match {
+        case Some((clientId, result)) =>
+          if (request.command.clientId == clientId && state != Inactive) {
+            leaderLogger.debug(
+              s"The latest command for client $src pseudonym " +
+                s"${request.command.clientPseudonym} (i.e., command " +
+                s"$clientId) was found in the client table."
             )
-          )
-          return
-        } else if (request.command.clientId < clientId) {
-          // Ignore out of date client requests.
-          return
-        }
-      case None =>
+            client.send(
+              ClientInbound().withProposeReply(
+                ProposeReply(round = round,
+                             clientPseudonym = request.command.clientPseudonym,
+                             clientId = clientId,
+                             result = ByteString.copyFrom(result))
+              )
+            )
+            return
+          } else if (request.command.clientId < clientId) {
+            // Ignore out of date client requests.
+            return
+          }
+        case None =>
+      }
     }
 
     state match {
@@ -1037,14 +1048,28 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
-            phase2aBuffer += Phase2a(slot = nextSlot, round = round)
-              .withCommand(request.command)
             pendingEntries(nextSlot) = ECommand(request.command)
             phase2bs(nextSlot) = mutable.Map()
             nextSlot += 1
-            if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
-              metrics.phase2aBufferFullTotal.inc()
-              flushPhase2aBuffer(thrifty = true)
+
+            if (options.phase2aMaxBufferSize == 1) {
+              thriftyAcceptors(quorumSize(round)).foreach(
+                _.send(
+                  AcceptorInbound().withPhase2A(
+                    Phase2a(slot = nextSlot, round = round)
+                      .withCommand(request.command)
+                  )
+                )
+              )
+            } else {
+              phase2aBuffer += Phase2a(slot = nextSlot, round = round)
+                .withCommand(request.command)
+              if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
+                metrics.phase2aBufferFullTotal.inc()
+                timed("ProposeRequest/flushPhase2aBuffer") {
+                  flushPhase2aBuffer(thrifty = true)
+                }
+              }
             }
 
           case FastRound =>
@@ -1233,6 +1258,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           leaderChange(address, nack.round)
         }
     }
+  }
+
+  private def handlePhase2b(
+      src: Transport#Address,
+      phase2b: Phase2b
+  ): Unit = {
+    processPhase2b(src, phase2b)
   }
 
   private def handlePhase2bBuffer(

@@ -54,7 +54,7 @@ class FastMultiPaxos(
   // Leaders.
   val leaders = for (i <- 1 to numLeaders) yield {
     val options = LeaderOptions.default.copy(
-      thriftySystem = ThriftySystem.Random,
+      thriftySystem = ThriftySystem.NotThrifty,
       phase2aMaxBufferSize = 2,
       valueChosenMaxBufferSize = 2
     )

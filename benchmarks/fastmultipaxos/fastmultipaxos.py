@@ -7,7 +7,7 @@ from .. import proto_util
 from .. import util
 from .. import workload
 from ..workload import Workload
-from typing import Any, Callable, Dict, List, NamedTuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional
 import argparse
 import csv
 import datetime
@@ -79,12 +79,20 @@ class Input(NamedTuple):
     f: int
     # The number of benchmark client processes launched.
     num_client_procs: int
+    # The number of warmup clients run on each benchmark client process.
+    num_warmup_clients_per_proc: int
     # The number of clients run on each benchmark client process.
     num_clients_per_proc: int
     # The type of round system used by the protocol.
     round_system_type: RoundSystemType
 
     # Benchmark parameters. ####################################################
+    # The (rough) duration of the benchmark warmup.
+    warmup_duration: datetime.timedelta
+    # Warmup timeout.
+    warmup_timeout: datetime.timedelta
+    # Warmup sleep time.
+    warmup_sleep: datetime.timedelta
     # The (rough) duration of the benchmark.
     duration_seconds: float
     # Global timeout.
@@ -182,10 +190,12 @@ class FastMultiPaxosNet(object):
 class RemoteFastMultiPaxosNet(FastMultiPaxosNet):
     def __init__(self,
                  addresses: List[str],
+                 key_filename: Optional[str],
                  f: int,
                  rs_type: RoundSystemType,
                  num_client_procs: int) -> None:
         assert len(addresses) > 0
+        self._key_filename = key_filename
         self._f = f
         self._rs_type = rs_type
         self._num_client_procs = num_client_procs
@@ -194,7 +204,10 @@ class RemoteFastMultiPaxosNet(FastMultiPaxosNet):
     def _make_host(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
-        client.connect(address)
+        if self._key_filename:
+            client.connect(address, key_filename=self._key_filename)
+        else:
+            client.connect(address)
         return host.RemoteHost(client)
 
     class _Placement(NamedTuple):
@@ -210,6 +223,7 @@ class RemoteFastMultiPaxosNet(FastMultiPaxosNet):
         def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
             return [host.Endpoint(h, next(ports)) for h in hosts]
 
+        f = self._f
         if len(self._hosts) == 1:
             return self._Placement(
                 clients = portify(self._hosts * self._num_client_procs),
@@ -218,6 +232,18 @@ class RemoteFastMultiPaxosNet(FastMultiPaxosNet):
                 leader_heartbeats = portify(self._hosts * (self.f() + 1)),
                 acceptors = portify(self._hosts * (2*self.f() + 1)),
                 acceptor_heartbeats = portify(self._hosts * (2*self.f() + 1)),
+            )
+        elif len(self._hosts) > (f + 1) + (2*f + 1):
+            return self._Placement(
+                leaders = portify(self._hosts[:f+1]),
+                leader_elections = portify(self._hosts[:f+1]),
+                leader_heartbeats = portify(self._hosts[:f+1]),
+                acceptors = portify(self._hosts[f+1:(f+1)+(2*f+1)]),
+                acceptor_heartbeats = portify(self._hosts[f+1:(f+1)+(2*f+1)]),
+                clients = portify(list(itertools.islice(
+                    itertools.cycle(self._hosts[(f+1)+(2*f+1):]),
+                                    self._num_client_procs))
+                )
             )
         else:
             raise NotImplementedError()
@@ -336,6 +362,7 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
         if args['address'] is not None:
             return RemoteFastMultiPaxosNet(
                         args['address'],
+                        args['identity_file'],
                         f=input.f,
                         rs_type=input.round_system_type,
                         num_client_procs=input.num_client_procs)
@@ -483,7 +510,6 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
                 host=client.host,
                 label=f'client_{i}',
                 cmd = [
-                    'timeout', f'{input.timeout_seconds}s',
                     'java',
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.fastmultipaxos.BenchmarkClientMain',
@@ -495,6 +521,14 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     '--config', config_filename,
                     '--options.reproposePeriod',
                         f'{input.client.repropose_period_ms}ms',
+                    '--warmup_duration',
+                        f'{input.warmup_duration.total_seconds()}s',
+                    '--warmup_timeout',
+                        f'{input.warmup_timeout.total_seconds()}s',
+                    '--warmup_sleep',
+                        f'{input.warmup_sleep.total_seconds()}s',
+                    '--num_warmup_clients',
+                        f'{input.num_warmup_clients_per_proc}',
                     '--duration', f'{input.duration_seconds}s',
                     '--timeout', f'{input.timeout_seconds}s',
                     '--num_clients', f'{input.num_clients_per_proc}',

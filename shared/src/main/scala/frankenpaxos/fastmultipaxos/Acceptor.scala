@@ -342,6 +342,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     val label = inbound.request match {
       case Request.ProposeRequest(r) => "ProposeRequest"
       case Request.Phase1A(r)        => "Phase1A"
+      case Request.Phase2A(r)        => "Phase2A"
       case Request.Phase2ABuffer(r)  => "Phase2ABuffer"
       case Request.Empty =>
         logger.fatal("Empty AcceptorInbound encountered.")
@@ -353,6 +354,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       inbound.request match {
         case Request.ProposeRequest(r) => handleProposeRequest(src, r)
         case Request.Phase1A(r)        => handlePhase1a(src, r)
+        case Request.Phase2A(r)        => handlePhase2a(src, r)
         case Request.Phase2ABuffer(r)  => handlePhase2aBuffer(src, r)
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
@@ -365,8 +367,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       proposeRequest: ProposeRequest
   ): Unit = {
-    metrics.requestsTotal.labels("ProposeRequest").inc()
-
     // If the wait period and wait stagger are both 0, then we don't bother
     // fiddling with a timer. We process the propose request immediately.
     if (options.waitPeriod == java.time.Duration.ofSeconds(0) &&
@@ -388,13 +388,11 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase1a(src: Transport#Address, phase1a: Phase1a): Unit = {
-    metrics.requestsTotal.labels("Phase1a").inc()
-
     // Ignore messages from previous rounds.
     // TODO(mwhittaker): If phase1a.round == round, we should reply to the
     // leader since it's retrying its phase1as.
     if (phase1a.round <= round) {
-      logger.info(
+      logger.debug(
         s"An acceptor received a phase 1a message for round " +
           s"${phase1a.round} but is in round $round."
       )
@@ -432,12 +430,23 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     )
   }
 
+  private def handlePhase2a(
+      src: Transport#Address,
+      phase2a: Phase2a
+  ): Unit = {
+    processPhase2a(phase2a) match {
+      case None => // TODO(mwhittaker): Add phase 2 nack.
+      case Some(phase2b) =>
+        val leader = leaders(config.roundSystem.leader(round))
+        leader.send(LeaderInbound().withPhase2B(phase2b))
+    }
+  }
+
   private def handlePhase2aBuffer(
       src: Transport#Address,
       phase2aBuffer: Phase2aBuffer
   ): Unit = {
     // TODO(mwhittaker): Add phase 2 nack.
-    metrics.requestsTotal.labels("Phase2aBuffer").inc()
     val buffer = Phase2bBuffer(phase2aBuffer.phase2A.flatMap(processPhase2a))
     val leader = leaders(config.roundSystem.leader(round))
     leader.send(LeaderInbound().withPhase2BBuffer(buffer))

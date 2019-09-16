@@ -15,6 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
+  "iteration": 1568649542338,
   "links": [],
   "panels": [
     {
@@ -33,6 +34,195 @@
         "y": 0
       },
       "id": 2,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "$function($metric{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Misc",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 13,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fast_multipaxos_acceptor_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(fast_multipaxos_acceptor_requests_latency_count{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(fast_multipaxos_leader_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(fast_multipaxos_leader_requests_latency_count{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Latency",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 12,
       "legend": {
         "alignAsTable": false,
         "avg": false,
@@ -128,7 +318,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 21
       },
       "id": 9,
       "legend": {
@@ -224,7 +414,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 28
       },
       "id": 6,
       "legend": {
@@ -331,7 +521,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 35
       },
       "id": 4,
       "legend": {
@@ -438,7 +628,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 43
       },
       "id": 5,
       "legend": {
@@ -533,7 +723,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 50
       },
       "id": 10,
       "legend": {
@@ -645,7 +835,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 57
       },
       "id": 11,
       "legend": {
@@ -741,7 +931,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 64
       },
       "id": 7,
       "legend": {
@@ -834,7 +1024,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 72
       },
       "id": 8,
       "legend": {
@@ -915,11 +1105,416 @@
   "style": "dark",
   "tags": [],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "allValue": null,
+        "current": {
+          "tags": [],
+          "text": "jvm_gc_collection_seconds_sum",
+          "value": "jvm_gc_collection_seconds_sum"
+        },
+        "datasource": "Prometheus",
+        "definition": "metrics(.*)",
+        "hide": 0,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "metric",
+        "options": [
+          {
+            "selected": false,
+            "text": "fast_multipaxos_acceptor_batches_total",
+            "value": "fast_multipaxos_acceptor_batches_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_acceptor_propose_requests_in_batches_total",
+            "value": "fast_multipaxos_acceptor_propose_requests_in_batches_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_acceptor_requests_latency_count",
+            "value": "fast_multipaxos_acceptor_requests_latency_count"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_acceptor_requests_latency_sum",
+            "value": "fast_multipaxos_acceptor_requests_latency_sum"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_acceptor_requests_total",
+            "value": "fast_multipaxos_acceptor_requests_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_client_repropose_total",
+            "value": "fast_multipaxos_client_repropose_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_client_responses_total",
+            "value": "fast_multipaxos_client_responses_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_client_unpending_responses_total",
+            "value": "fast_multipaxos_client_unpending_responses_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_chosen_commands_total",
+            "value": "fast_multipaxos_leader_chosen_commands_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_chosen_watermark",
+            "value": "fast_multipaxos_leader_chosen_watermark"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_executed_commands_total",
+            "value": "fast_multipaxos_leader_executed_commands_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_executed_noops_total",
+            "value": "fast_multipaxos_leader_executed_noops_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_leader_changes_total",
+            "value": "fast_multipaxos_leader_leader_changes_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_next_slot",
+            "value": "fast_multipaxos_leader_next_slot"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_phase2a_buffer_flush_total",
+            "value": "fast_multipaxos_leader_phase2a_buffer_flush_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_phase2a_buffer_full_total",
+            "value": "fast_multipaxos_leader_phase2a_buffer_full_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_repeated_commands_total",
+            "value": "fast_multipaxos_leader_repeated_commands_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_requests_latency_count",
+            "value": "fast_multipaxos_leader_requests_latency_count"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_requests_latency_sum",
+            "value": "fast_multipaxos_leader_requests_latency_sum"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_requests_total",
+            "value": "fast_multipaxos_leader_requests_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_resend_phase1as_total",
+            "value": "fast_multipaxos_leader_resend_phase1as_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_resend_phase2as_total",
+            "value": "fast_multipaxos_leader_resend_phase2as_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_stuck_total",
+            "value": "fast_multipaxos_leader_stuck_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_value_chosen_buffer_flush_total",
+            "value": "fast_multipaxos_leader_value_chosen_buffer_flush_total"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader_value_chosen_buffer_full_total",
+            "value": "fast_multipaxos_leader_value_chosen_buffer_full_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_buffer_pool_capacity_bytes",
+            "value": "jvm_buffer_pool_capacity_bytes"
+          },
+          {
+            "selected": false,
+            "text": "jvm_buffer_pool_used_buffers",
+            "value": "jvm_buffer_pool_used_buffers"
+          },
+          {
+            "selected": false,
+            "text": "jvm_buffer_pool_used_bytes",
+            "value": "jvm_buffer_pool_used_bytes"
+          },
+          {
+            "selected": false,
+            "text": "jvm_classes_loaded",
+            "value": "jvm_classes_loaded"
+          },
+          {
+            "selected": false,
+            "text": "jvm_classes_loaded_total",
+            "value": "jvm_classes_loaded_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_classes_unloaded_total",
+            "value": "jvm_classes_unloaded_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_gc_collection_seconds_count",
+            "value": "jvm_gc_collection_seconds_count"
+          },
+          {
+            "selected": true,
+            "text": "jvm_gc_collection_seconds_sum",
+            "value": "jvm_gc_collection_seconds_sum"
+          },
+          {
+            "selected": false,
+            "text": "jvm_info",
+            "value": "jvm_info"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_committed",
+            "value": "jvm_memory_bytes_committed"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_init",
+            "value": "jvm_memory_bytes_init"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_max",
+            "value": "jvm_memory_bytes_max"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_used",
+            "value": "jvm_memory_bytes_used"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_allocated_bytes_total",
+            "value": "jvm_memory_pool_allocated_bytes_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_committed",
+            "value": "jvm_memory_pool_bytes_committed"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_init",
+            "value": "jvm_memory_pool_bytes_init"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_max",
+            "value": "jvm_memory_pool_bytes_max"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_used",
+            "value": "jvm_memory_pool_bytes_used"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_current",
+            "value": "jvm_threads_current"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_daemon",
+            "value": "jvm_threads_daemon"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_deadlocked",
+            "value": "jvm_threads_deadlocked"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_deadlocked_monitor",
+            "value": "jvm_threads_deadlocked_monitor"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_peak",
+            "value": "jvm_threads_peak"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_started_total",
+            "value": "jvm_threads_started_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_state",
+            "value": "jvm_threads_state"
+          },
+          {
+            "selected": false,
+            "text": "process_cpu_seconds_total",
+            "value": "process_cpu_seconds_total"
+          },
+          {
+            "selected": false,
+            "text": "process_max_fds",
+            "value": "process_max_fds"
+          },
+          {
+            "selected": false,
+            "text": "process_open_fds",
+            "value": "process_open_fds"
+          },
+          {
+            "selected": false,
+            "text": "process_resident_memory_bytes",
+            "value": "process_resident_memory_bytes"
+          },
+          {
+            "selected": false,
+            "text": "process_start_time_seconds",
+            "value": "process_start_time_seconds"
+          },
+          {
+            "selected": false,
+            "text": "process_virtual_memory_bytes",
+            "value": "process_virtual_memory_bytes"
+          },
+          {
+            "selected": false,
+            "text": "scrape_duration_seconds",
+            "value": "scrape_duration_seconds"
+          },
+          {
+            "selected": false,
+            "text": "scrape_samples_post_metric_relabeling",
+            "value": "scrape_samples_post_metric_relabeling"
+          },
+          {
+            "selected": false,
+            "text": "scrape_samples_scraped",
+            "value": "scrape_samples_scraped"
+          },
+          {
+            "selected": false,
+            "text": "up",
+            "value": "up"
+          }
+        ],
+        "query": "metrics(.*)",
+        "refresh": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "tags": [],
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": "Prometheus",
+        "definition": "label_values(job)",
+        "hide": 0,
+        "includeAll": true,
+        "label": null,
+        "multi": true,
+        "name": "job",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_acceptor",
+            "value": "fast_multipaxos_acceptor"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_client",
+            "value": "fast_multipaxos_client"
+          },
+          {
+            "selected": false,
+            "text": "fast_multipaxos_leader",
+            "value": "fast_multipaxos_leader"
+          }
+        ],
+        "query": "label_values(job)",
+        "refresh": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "tags": [],
+          "text": "avg_over_time",
+          "value": "avg_over_time"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "function",
+        "options": [
+          {
+            "selected": false,
+            "text": "rate",
+            "value": "rate"
+          },
+          {
+            "selected": true,
+            "text": "avg_over_time",
+            "value": "avg_over_time"
+          }
+        ],
+        "query": "rate, avg_over_time",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
   },
   "time": {
-    "from": "2019-05-02T23:20:38.677Z",
-    "to": "2019-05-02T23:20:56.291Z"
+    "from": "2019-09-16T15:53:04.765Z",
+    "to": "2019-09-16T15:54:01.921Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -949,5 +1544,5 @@
   "timezone": "",
   "title": "Fast MultiPaxos",
   "uid": "EF92KDRZk",
-  "version": 5
+  "version": 1
 }

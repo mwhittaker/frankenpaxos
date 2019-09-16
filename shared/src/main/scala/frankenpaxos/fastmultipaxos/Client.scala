@@ -70,7 +70,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     logger: Logger,
     config: Config[Transport],
     options: ClientOptions = ClientOptions.default,
-    metrics: ClientMetrics = new ClientMetrics(PrometheusCollectors)
+    metrics: ClientMetrics = new ClientMetrics(PrometheusCollectors),
+    seed: Long = System.currentTimeMillis()
 ) extends Actor(address, transport, logger) {
   // Fields ////////////////////////////////////////////////////////////////////
   override type InboundMessage = ClientInbound
@@ -157,7 +158,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           promise.success(proposeReply.result.toByteArray())
           metrics.responsesTotal.inc()
         } else {
-          logger.warn(
+          logger.debug(
             s"Received a reply for unpending command with pseudonym " +
               s"${proposeReply.clientPseudonym} and id ${proposeReply.clientId}."
           )
@@ -165,7 +166,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         }
 
       case None =>
-        logger.warn(
+        logger.debug(
           s"Received a reply for unpending command with pseudonym " +
             s"${proposeReply.clientPseudonym} and id ${proposeReply.clientId}."
         )
