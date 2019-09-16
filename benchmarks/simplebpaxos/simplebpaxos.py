@@ -3,6 +3,7 @@ from .. import host
 from .. import parser_util
 from .. import pd_util
 from .. import perf_util
+from .. import placement
 from .. import proc
 from .. import prometheus
 from .. import proto_util
@@ -15,6 +16,7 @@ import csv
 import datetime
 import enum
 import itertools
+import json
 import mininet
 import mininet.net
 import os
@@ -197,19 +199,20 @@ class SimpleBPaxosNet(object):
 
 class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
     def __init__(self,
-                 addresses: List[str],
+                 placement_file: str,
                  key_filename: Optional[str],
                  f: int,
                  num_client_procs: int,
                  num_leaders: int) -> None:
-        assert len(addresses) > 0
         self._key_filename = key_filename
         self._f = f
         self._num_client_procs = num_client_procs
         self._num_leaders = num_leaders
-        self._hosts = [self._make_host(a) for a in addresses]
+        with open(placement_file, 'r') as pf:
+            p = placement.Placement(json.load(pf), self._connect)
+            self._placement = p.f(f)
 
-    def _make_host(self, address: str) -> host.Host:
+    def _connect(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
         if self._key_filename:
@@ -226,67 +229,40 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
         acceptors: List[host.Endpoint]
         replicas: List[host.Endpoint]
 
-    def _placement(self) -> '_Placement':
+    def _get_placement(self) -> '_Placement':
         ports = itertools.count(10000, 100)
         def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
             return [host.Endpoint(h, next(ports)) for h in hosts]
 
-        if len(self._hosts) == 1:
-            return self._Placement(
-                clients = portify(self._hosts * self._num_client_procs),
-                leaders = portify(self._hosts * self._num_leaders),
-                proposers = portify(self._hosts * self._num_leaders),
-                dep_service_nodes = portify(self._hosts * (2*self.f()+1)),
-                acceptors = portify(self._hosts * (2*self.f()+1)),
-                replicas = portify(self._hosts * (self.f()+1)),
-            )
-        elif len(self._hosts) == 4:
-            return self._Placement(
-                clients = portify([self._hosts[0]] * self._num_client_procs),
-                leaders = portify([self._hosts[1]] * self._num_leaders),
-                proposers = portify([self._hosts[1]] * self._num_leaders),
-                dep_service_nodes = portify([self._hosts[2]] * (2*self.f()+1)),
-                acceptors = portify([self._hosts[2]] * (2*self.f()+1)),
-                replicas = portify([self._hosts[3]] * (self.f()+1)),
-            )
-        elif self.f() == 1 and len(self._hosts) > 9:
-            return self._Placement(
-                clients = portify([self._hosts[0]] * self._num_client_procs),
-                dep_service_nodes = portify(self._hosts[1:4]),
-                acceptors = portify(self._hosts[4:7]),
-                replicas = portify(self._hosts[7:9]),
-                leaders = portify(list(
-                    itertools.islice(itertools.cycle(self._hosts[9:]),
-                                     self._num_leaders)
-                )),
-                proposers = portify(list(
-                    itertools.islice(itertools.cycle(self._hosts[9:]),
-                                     self._num_leaders)
-                )),
-            )
-        else:
-            raise NotImplementedError()
+        return self._Placement(
+            clients = portify(self._placement['clients']),
+            leaders = portify(self._placement['leaders']),
+            proposers = portify(self._placement['proposers']),
+            dep_service_nodes = portify(self._placement['dep_service_nodes']),
+            acceptors = portify(self._placement['acceptors']),
+            replicas = portify(self._placement['replicas']),
+        )
 
     def f(self) -> int:
         return self._f
 
     def clients(self) -> List[host.Endpoint]:
-        return self._placement().clients
+        return self._get_placement().clients
 
     def leaders(self) -> List[host.Endpoint]:
-        return self._placement().leaders
+        return self._get_placement().leaders
 
     def proposers(self) -> List[host.Endpoint]:
-        return self._placement().proposers
+        return self._get_placement().proposers
 
     def dep_service_nodes(self) -> List[host.Endpoint]:
-        return self._placement().dep_service_nodes
+        return self._get_placement().dep_service_nodes
 
     def acceptors(self) -> List[host.Endpoint]:
-        return self._placement().acceptors
+        return self._get_placement().acceptors
 
     def replicas(self) -> List[host.Endpoint]:
-        return self._placement().replicas
+        return self._get_placement().replicas
 
 
 class SimpleBPaxosMininet(SimpleBPaxosNet):
@@ -380,9 +356,9 @@ class SingleSwitchMininet(SimpleBPaxosMininet):
 # Suite ########################################################################
 class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
     def make_net(self, args: Dict[Any, Any], input: Input) -> SimpleBPaxosNet:
-        if args['address'] is not None:
+        if args['placement'] is not None:
             return RemoteSimpleBPaxosNet(
-                        args['address'],
+                        args['placement'],
                         args['identity_file'],
                         f=input.f,
                         num_client_procs=input.num_client_procs,
