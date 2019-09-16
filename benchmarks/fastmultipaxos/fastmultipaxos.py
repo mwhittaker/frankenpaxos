@@ -113,6 +113,7 @@ class Input(NamedTuple):
 
     # Acceptor options. ########################################################
     acceptor: AcceptorOptions = AcceptorOptions()
+    acceptor_log_level: str = 'debug'
 
     # Leader options. ##########################################################
     leader: LeaderOptions = LeaderOptions()
@@ -120,6 +121,7 @@ class Input(NamedTuple):
 
     # Client options. ##########################################################
     client: ClientOptions = ClientOptions()
+    client_log_level: str = 'debug'
 
 
 Output = benchmark.RecorderOutput
@@ -390,18 +392,35 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
                            proto_util.message_to_pbtext(net.config()))
         bench.log('Config file config.pbtxt written.')
 
+        # If we're monitoring the code, run garbage collection verbosely.
+        java = ['java']
+        if input.monitored:
+            java += [
+                '-verbose:gc',
+                '-XX:-PrintGC',
+                '-XX:+PrintHeapAtGC',
+                '-XX:+PrintGCDetails',
+                '-XX:+PrintGCTimeStamps',
+                '-XX:+PrintGCDateStamps',
+            ]
+        # Increase the heap size.
+        # TODO(mwhittaker): Right now, not much thought has been put into the
+        # heap size. Think more carefully about this. We may want, for example,
+        # to increase the size of the young generation.
+        java += ['-Xms32G', '-Xmx32G']
+
         # Launch acceptors.
         acceptor_procs = []
         for (i, acceptor) in enumerate(net.acceptors()):
             proc = bench.popen(
                 host=acceptor.host,
                 label=f'acceptor_{i}',
-                cmd = [
-                    'java',
+                cmd = java + [
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.fastmultipaxos.AcceptorMain',
                     '--index', str(i),
                     '--config', config_filename,
+                    '--log_level', input.acceptor_log_level,
                     '--prometheus_host', acceptor.host.ip(),
                     '--prometheus_port',
                         str(acceptor.port + 1) if input.monitored else '-1',
@@ -420,8 +439,7 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
             proc = bench.popen(
                 host=leader.host,
                 label=f'leader_{i}',
-                cmd = [
-                    'java',
+                cmd = java + [
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.fastmultipaxos.LeaderMain',
                     '--index', str(i),
@@ -509,8 +527,7 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
             proc = bench.popen(
                 host=client.host,
                 label=f'client_{i}',
-                cmd = [
-                    'java',
+                cmd = java + [
                     '-cp', os.path.abspath(args['jar']),
                     'frankenpaxos.fastmultipaxos.BenchmarkClientMain',
                     '--host', client.host.ip(),
@@ -519,6 +536,7 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     '--prometheus_port',
                         str(client.port + 1) if input.monitored else '-1',
                     '--config', config_filename,
+                    '--log_level', input.client_log_level,
                     '--options.reproposePeriod',
                         f'{input.client.repropose_period_ms}ms',
                     '--warmup_duration',

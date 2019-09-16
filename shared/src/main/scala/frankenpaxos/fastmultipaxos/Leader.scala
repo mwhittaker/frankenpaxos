@@ -453,9 +453,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   def quorumSize(round: Round): Int = {
-    config.roundSystem.roundType(round) match {
-      case FastRound    => config.fastQuorumSize
-      case ClassicRound => config.classicQuorumSize
+    timed("quorumSize") {
+      config.roundSystem.roundType(round) match {
+        case FastRound    => config.fastQuorumSize
+        case ClassicRound => config.classicQuorumSize
+      }
     }
   }
 
@@ -473,7 +475,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     //     .map(config.acceptorAddresses(_))
     //     .map(acceptorsByAddress(_))
     // }
-    options.thriftySystem.choose(fakeDelays, min).map(acceptorsByAddress(_))
+    timed("thriftyAcceptors") {
+      options.thriftySystem.choose(fakeDelays, min).map(acceptorsByAddress(_))
+    }
   }
 
   // Send Phase 1a messages to the acceptors. If thrifty is true, we send with
@@ -582,7 +586,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             s"from $src but is inactive."
         )
 
-      case Phase1(_, _, _) =>
+      case _: Phase1[_] =>
         leaderLogger.debug(
           s"A leader received a phase 2b response in round ${phase2b.round} " +
             s"from $src but is in phase 1 of round $round."
@@ -599,12 +603,24 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           log(phase2b.slot) = entry
           pendingEntries -= phase2b.slot
           phase2bs -= phase2b.slot
-          executeLog()
+          timed("processPhase2b/executeLog") { executeLog() }
 
-          valueChosenBuffer += toValueChosen(phase2b.slot, entry)
-          if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
-            metrics.valueChosenBufferFullTotal.inc()
-            flushValueChosenBuffer()
+          if (options.valueChosenMaxBufferSize == 1) {
+            timed("processPhase2b/notify others") {
+              val message =
+                LeaderInbound().withValueChosen(
+                  toValueChosen(phase2b.slot, entry)
+                )
+              otherLeaders.foreach(_.send(message))
+            }
+          } else {
+            timed("processPhase2b/notify others buffered") {
+              valueChosenBuffer += toValueChosen(phase2b.slot, entry)
+              if (valueChosenBuffer.size >= options.valueChosenMaxBufferSize) {
+                metrics.valueChosenBufferFullTotal.inc()
+                flushValueChosenBuffer()
+              }
+            }
           }
         }
 
@@ -628,14 +644,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Wait for sufficiently many phase2b replies.
-        phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
-        phase2bs(phase2b.slot).put(phase2b.acceptorId, phase2b)
-        phase2bChosenInSlot(phase2, phase2b.slot) match {
+        val phase2bsInSlot =
+          phase2bs.getOrElseUpdate(phase2b.slot, mutable.Map())
+        phase2bsInSlot.put(phase2b.acceptorId, phase2b)
+        phase2bChosenInSlot(phase2, phase2bsInSlot, phase2b.slot) match {
           case NothingReadyYet =>
           // Don't do anything.
 
           case ClassicReady(entry) =>
-            choose(entry)
+            timed("processPhase2b/ClassicReady choose") { choose(entry) }
             metrics.chosenCommandsTotal.labels("classic").inc()
 
           case FastReady(entry) =>
@@ -674,34 +691,32 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // TODO(mwhittaker): Document.
   private def phase2bChosenInSlot(
       phase2: Phase2[Transport],
+      phase2bsInSlot: mutable.Map[AcceptorId, Phase2b],
       slot: Slot
   ): Phase2bVoteResult = {
-    val Phase2(pendingEntries, phase2bs, _, _, _, _, _) = phase2
+    val Phase2(pendingEntries, _, _, _, _, _, _) = phase2
 
     config.roundSystem.roundType(round) match {
       case ClassicRound =>
-        if (phase2bs
-              .getOrElse(slot, mutable.Map())
-              .size >= config.classicQuorumSize) {
+        if (phase2bsInSlot.size >= config.classicQuorumSize) {
           ClassicReady(pendingEntries(slot))
         } else {
           NothingReadyYet
         }
 
       case FastRound =>
-        phase2bs.getOrElseUpdate(slot, mutable.Map())
-        if (phase2bs(slot).size < config.classicQuorumSize) {
+        if (phase2bsInSlot.size < config.classicQuorumSize) {
           return NothingReadyYet
         }
 
-        val voteValueCounts = Util.histogram(phase2bs(slot).values.map(_.vote))
+        val voteValueCounts = Util.histogram(phase2bsInSlot.values.map(_.vote))
 
         // We've heard from `phase2bs(slot).size` acceptors. This means there
         // are `votesLeft = config.n - phase2bs(slot).size` acceptors left. In
         // order for a value to be choosable, it must be able to reach a fast
         // quorum of votes if all the `votesLeft` acceptors vote for it. If no
         // such value exists, no value can be chosen.
-        val votesLeft = config.n - phase2bs(slot).size
+        val votesLeft = config.n - phase2bsInSlot.size
         if (!voteValueCounts.exists({
               case (_, count) => count + votesLeft >= config.fastQuorumSize
             })) {
@@ -906,10 +921,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   def executeLog(): Unit = {
-    while (log.contains(chosenWatermark)) {
-      log(chosenWatermark) match {
-        case ECommand(
-            Command(clientAddressBytes, clientPseudonym, clientId, command)
+    while (true) {
+      log.get(chosenWatermark) match {
+        case None =>
+          return
+        case Some(
+            ECommand(
+              Command(clientAddressBytes, clientPseudonym, clientId, command)
+            )
             ) =>
           val clientAddress = transport.addressSerializer.fromBytes(
             clientAddressBytes.toByteArray()
@@ -945,7 +964,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           } else {
             metrics.repeatedCommandsTotal.inc()
           }
-        case ENoop =>
+        case Some(ENoop) =>
           // Do nothing.
           metrics.executedNoopsTotal.inc()
       }
@@ -963,6 +982,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Phase1BNack(r)       => "Phase1bNack"
         case Request.Phase2B(r)           => "Phase2b"
         case Request.Phase2BBuffer(r)     => "Phase2bBuffer"
+        case Request.ValueChosen(r)       => "ValueChosen"
         case Request.ValueChosenBuffer(r) => "ValueChosenBuffer"
         case Request.Empty =>
           leaderLogger.fatal("Empty LeaderInbound encountered.")
@@ -976,6 +996,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Phase1BNack(r)       => handlePhase1bNack(src, r)
         case Request.Phase2B(r)           => handlePhase2b(src, r)
         case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
+        case Request.ValueChosen(r)       => handleValueChosen(src, r)
         case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
         case Request.Empty =>
           leaderLogger.fatal("Empty LeaderInbound encountered.")
@@ -1061,14 +1082,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
             if (options.phase2aMaxBufferSize == 1) {
-              thriftyAcceptors(quorumSize(round)).foreach(
-                _.send(
-                  AcceptorInbound().withPhase2A(
-                    Phase2a(slot = nextSlot, round = round)
-                      .withCommand(request.command)
-                  )
+              val message = timed("ProposeRequest/construct Phase2a") {
+                AcceptorInbound().withPhase2A(
+                  Phase2a(slot = nextSlot, round = round)
+                    .withCommand(request.command)
                 )
-              )
+              }
+              timed("ProposeRequest/send Phase2a") {
+                thriftyAcceptors(quorumSize(round)).foreach(_.send(message))
+              }
             } else {
               phase2aBuffer += Phase2a(slot = nextSlot, round = round)
                 .withCommand(request.command)
@@ -1286,6 +1308,20 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     for (phase2b <- phase2bBuffer.phase2B) {
       processPhase2b(src, phase2b)
     }
+  }
+
+  private def handleValueChosen(
+      src: Transport#Address,
+      valueChosen: ValueChosen
+  ): Unit = {
+    val entry = valueChosen.value match {
+      case ValueChosen.Value.Command(command) => ECommand(command)
+      case ValueChosen.Value.Noop(_)          => ENoop
+      case ValueChosen.Value.Empty =>
+        leaderLogger.fatal("Empty ValueChosen.Vote")
+    }
+    log(valueChosen.slot) = entry
+    executeLog()
   }
 
   private def handleValueChosenBuffer(

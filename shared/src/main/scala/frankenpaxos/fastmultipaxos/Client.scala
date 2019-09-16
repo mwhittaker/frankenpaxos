@@ -44,6 +44,12 @@ object ClientOptions {
 
 @JSExportAll
 class ClientMetrics(collectors: Collectors) {
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("fast_multipaxos_client_requests_total")
+    .help("Total number of client requests sent to consensus.")
+    .register()
+
   val responsesTotal: Counter = collectors.counter
     .build()
     .name("fast_multipaxos_client_responses_total")
@@ -243,7 +249,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     t
   }
 
-  private def _propose(
+  private def proposeImpl(
       pseudonym: Pseudonym,
       command: Array[Byte],
       promise: Promise[Array[Byte]]
@@ -264,6 +270,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         val id = ids.getOrElse(pseudonym, 0)
         val pendingCommand = PendingCommand(pseudonym, id, command, promise)
         sendProposeRequest(pendingCommand)
+        metrics.requestsTotal.inc()
 
         // Update our metadata.
         pendingCommands(pseudonym) = pendingCommand
@@ -281,7 +288,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   ): Future[Array[Byte]] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => _propose(pseudonym, command, promise)
+      () => proposeImpl(pseudonym, command, promise)
     )
     promise.future
   }
@@ -289,7 +296,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   def propose(pseudonym: Pseudonym, command: String): Future[String] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => _propose(pseudonym, command.getBytes(), promise)
+      () => proposeImpl(pseudonym, command.getBytes(), promise)
     )
     promise.future.map(new String(_))(
       concurrent.ExecutionContext.Implicits.global

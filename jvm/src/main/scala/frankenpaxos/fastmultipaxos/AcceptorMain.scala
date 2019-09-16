@@ -1,6 +1,7 @@
 package frankenpaxos.fastmultipaxos
 
 import frankenpaxos.Actor
+import frankenpaxos.LogLevel
 import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
@@ -14,6 +15,7 @@ object AcceptorMain extends App {
       // Basic flags.
       index: Int = -1,
       paxosConfigFile: File = new File("."),
+      logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
@@ -30,6 +32,8 @@ object AcceptorMain extends App {
     opt[File]('c', "config")
       .required()
       .action((x, f) => f.copy(paxosConfigFile = x))
+
+    opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
@@ -63,7 +67,7 @@ object AcceptorMain extends App {
     case None        => ???
   }
 
-  val logger = new PrintLogger()
+  val logger = new PrintLogger(flags.logLevel)
   val transport = new NettyTcpTransport(logger)
   val config = ConfigUtil.fromFile(flags.paxosConfigFile.getAbsolutePath())
   val address = config.acceptorAddresses(flags.index)

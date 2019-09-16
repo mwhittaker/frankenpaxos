@@ -180,7 +180,8 @@ message LeaderInbound {
     Phase1bNack phase1b_nack = 3;
     Phase2b phase2b = 4;
     Phase2bBuffer phase2b_buffer = 5;
-    ValueChosenBuffer value_chosen_buffer = 6;
+    ValueChosen value_chosen = 6;
+    ValueChosenBuffer value_chosen_buffer = 7;
   }
 }
 

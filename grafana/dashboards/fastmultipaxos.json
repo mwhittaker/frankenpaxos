@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1568649542338,
+  "iteration": 1568667810682,
   "links": [],
   "panels": [
     {
@@ -451,7 +451,7 @@
           "expr": "sum(rate(fast_multipaxos_client_responses_total[1s]))",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "Reponse Sum",
+          "legendFormat": "Total Reponse",
           "refId": "B"
         },
         {
@@ -467,6 +467,20 @@
           "intervalFactor": 1,
           "legendFormat": "Unpending Reponse Sum",
           "refId": "D"
+        },
+        {
+          "expr": "rate(fast_multipaxos_client_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Request {{instance}}",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(fast_multipaxos_client_requests_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Requests",
+          "refId": "F"
         }
       ],
       "thresholds": [],
@@ -1437,9 +1451,9 @@
         "allValue": null,
         "current": {
           "tags": [],
-          "text": "All",
+          "text": "fast_multipaxos_leader",
           "value": [
-            "$__all"
+            "fast_multipaxos_leader"
           ]
         },
         "datasource": "Prometheus",
@@ -1451,7 +1465,7 @@
         "name": "job",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": "All",
             "value": "$__all"
           },
@@ -1466,7 +1480,7 @@
             "value": "fast_multipaxos_client"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "fast_multipaxos_leader",
             "value": "fast_multipaxos_leader"
           }
@@ -1513,8 +1527,8 @@
     ]
   },
   "time": {
-    "from": "2019-09-16T15:53:04.765Z",
-    "to": "2019-09-16T15:54:01.921Z"
+    "from": "2019-09-16T21:01:54.037Z",
+    "to": "2019-09-16T21:03:33.317Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1544,5 +1558,5 @@
   "timezone": "",
   "title": "Fast MultiPaxos",
   "uid": "EF92KDRZk",
-  "version": 1
+  "version": 2
 }
