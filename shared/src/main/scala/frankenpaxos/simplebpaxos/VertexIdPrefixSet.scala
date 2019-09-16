@@ -226,4 +226,7 @@ class VertexIdPrefixSet private (
 
   def getWatermark(): Seq[Int] =
     intPrefixSets.map(_.getWatermark)
+
+  override def leaderIndexWatermark(leaderIndex: Int): Int =
+    intPrefixSets(leaderIndex).getWatermark()
 }
