@@ -175,9 +175,62 @@ class LeaderMetrics(collectors: Collectors) {
 object Leader {
   val serializer = LeaderInboundSerializer
 
+  type AcceptorId = Int
+  type Round = Int
+  type Slot = Int
+  type ClientPseudonym = Int
+  type ClientId = Int
+
+  @JSExportAll
   sealed trait Entry
   case class ECommand(command: Command) extends Entry
   object ENoop extends Entry
+
+  // The state of the leader.
+  @JSExportAll
+  sealed trait State[Transport <: frankenpaxos.Transport[Transport]]
+
+  // This leader is not the active leader.
+  @JSExportAll
+  case class Inactive[Transport <: frankenpaxos.Transport[Transport]]()
+      extends State[Transport]
+
+  // This leader is executing phase 1.
+  @JSExportAll
+  case class Phase1[Transport <: frankenpaxos.Transport[Transport]](
+      // Phase 1b responses.
+      phase1bs: mutable.Map[AcceptorId, Phase1b],
+      // Pending proposals. When a leader receives a proposal during phase 1,
+      // it buffers the proposal and replays it once it enters phase 2.
+      pendingProposals: mutable.Buffer[(Transport#Address, ProposeRequest)],
+      // A timer to resend phase 1as.
+      resendPhase1as: Transport#Timer
+  ) extends State[Transport]
+
+  // This leader has finished executing phase 1 and is now executing phase 2.
+  @JSExportAll
+  case class Phase2[Transport <: frankenpaxos.Transport[Transport]](
+      // In a classic round, leaders receive commands from clients and relay
+      // them on to acceptors. pendingEntries stores these commands that are
+      // pending votes. Note that during a fast round, a leader may not have a
+      // pending command for a slot, even though it does have phase 2bs for it.
+      pendingEntries: mutable.SortedMap[Slot, Entry],
+      // For each slot, the set of phase 2b messages for that slot. In a
+      // classic round, all the phase 2b messages will be for the same command.
+      // In a fast round, they do not necessarily have to be.
+      phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]],
+      // A timer to resend all pending phase 2a messages.
+      resendPhase2as: Transport#Timer,
+      // A set of buffered phase 2a messages.
+      phase2aBuffer: mutable.Buffer[Phase2a],
+      // A timer to flush the buffer of phase 2a messages.
+      phase2aBufferFlushTimer: Transport#Timer,
+      // A set of buffered value chosen messages.
+      valueChosenBuffer: mutable.Buffer[ValueChosen],
+      // A timer to flush the buffer of value chosen messages.
+      valueChosenBufferFlushTimer: Transport#Timer
+  ) extends State[Transport]
+
 }
 
 @JSExportAll
@@ -196,12 +249,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = LeaderInbound
   override val serializer = LeaderInboundSerializer
-
-  type AcceptorId = Int
-  type Round = Int
-  type Slot = Int
-  type ClientPseudonym = Int
-  type ClientId = Int
 
   // Fields ////////////////////////////////////////////////////////////////////
   // Sanity check the Paxos configuration and compute the leader's id.
@@ -305,26 +352,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       options = options.heartbeatOptions
     )
 
-  // The state of the leader.
-  @JSExportAll
-  sealed trait State
-
-  // This leader is not the active leader.
-  @JSExportAll
-  case object Inactive extends State
-
-  // This leader is executing phase 1.
-  @JSExportAll
-  case class Phase1(
-      // Phase 1b responses.
-      phase1bs: mutable.Map[AcceptorId, Phase1b],
-      // Pending proposals. When a leader receives a proposal during phase 1,
-      // it buffers the proposal and replays it once it enters phase 2.
-      pendingProposals: mutable.Buffer[(Transport#Address, ProposeRequest)],
-      // A timer to resend phase 1as.
-      resendPhase1as: Transport#Timer
-  ) extends State
-
   private val resendPhase1asTimer: Transport#Timer = timer(
     "resendPhase1as",
     options.resendPhase1asTimerPeriod,
@@ -335,67 +362,42 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   )
 
-  // This leader has finished executing phase 1 and is now executing phase 2.
-  @JSExportAll
-  case class Phase2(
-      // In a classic round, leaders receive commands from clients and relay
-      // them on to acceptors. pendingEntries stores these commands that are
-      // pending votes. Note that during a fast round, a leader may not have a
-      // pending command for a slot, even though it does have phase 2bs for it.
-      pendingEntries: mutable.SortedMap[Slot, Entry],
-      // For each slot, the set of phase 2b messages for that slot. In a
-      // classic round, all the phase 2b messages will be for the same command.
-      // In a fast round, they do not necessarily have to be.
-      phase2bs: mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]],
-      // A timer to resend all pending phase 2a messages.
-      resendPhase2as: Transport#Timer,
-      // A set of buffered phase 2a messages.
-      phase2aBuffer: mutable.Buffer[Phase2a],
-      // A timer to flush the buffer of phase 2a messages.
-      phase2aBufferFlushTimer: Transport#Timer,
-      // A set of buffered value chosen messages.
-      valueChosenBuffer: mutable.Buffer[ValueChosen],
-      // A timer to flush the buffer of value chosen messages.
-      valueChosenBufferFlushTimer: Transport#Timer
-  ) extends State
+  private val resendPhase2asTimer: Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      "resendPhase2as",
+      options.resendPhase2asTimerPeriod,
+      () => {
+        resendPhase2as()
+        t.start()
+        metrics.resendPhase2asTotal.inc()
+      }
+    )
+    t
+  }
 
-  private val resendPhase2asTimer: Transport#Timer = timer(
-    "resendPhase2as",
-    options.resendPhase2asTimerPeriod,
-    () => {
-      resendPhase2as()
-      resendPhase2asTimer.start()
-      metrics.resendPhase2asTotal.inc()
-    }
-  )
+  private val phase2aBufferFlushTimer: Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      "phase2aBufferFlush",
+      options.phase2aBufferFlushPeriod,
+      () => {
+        flushPhase2aBuffer(thrifty = true)
+        metrics.phase2aBufferFlushTotal.inc()
+      }
+    )
+    t
+  }
 
-  private val phase2aBufferFlushTimer: Transport#Timer = timer(
-    "phase2aBufferFlush",
-    options.phase2aBufferFlushPeriod,
-    () => {
-      flushPhase2aBuffer(thrifty = true)
-      metrics.phase2aBufferFlushTotal.inc()
-    }
-  )
-
-  private val valueChosenBufferFlushTimer: Transport#Timer = timer(
-    "valueChosenBufferFlush",
-    options.valueChosenBufferFlushPeriod,
-    () => {
-      flushValueChosenBuffer()
-      metrics.valueChosenBufferFlushTotal.inc()
-    }
-  )
-
-  @JSExport
-  protected var state: State =
-    if (round == 0) {
-      sendPhase1as(thrifty = true)
-      resendPhase1asTimer.start()
-      Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
-    } else {
-      Inactive
-    }
+  private val valueChosenBufferFlushTimer: Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      "valueChosenBufferFlush",
+      options.valueChosenBufferFlushPeriod,
+      () => {
+        flushValueChosenBuffer()
+        metrics.valueChosenBufferFlushTotal.inc()
+      }
+    )
+    t
+  }
 
   // Custom logger.
   val leaderLogger = new Logger(frankenpaxos.LogDebug) {
@@ -403,7 +405,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       val stateString = state match {
         case Phase1(_, _, _)             => "Phase 1"
         case Phase2(_, _, _, _, _, _, _) => "Phase 2"
-        case Inactive                    => "Inactive"
+        case Inactive()                  => "Inactive"
       }
       s"[$stateString, round=$round] " + s
     }
@@ -424,6 +426,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       logger.debug(withInfo(message))
 
   }
+
+  @JSExport
+  protected var state: State[Transport] =
+    if (round == 0) {
+      sendPhase1as(thrifty = true)
+      resendPhase1asTimer.start()
+      Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
+    } else {
+      Inactive()
+    }
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -564,7 +576,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     state match {
-      case Inactive =>
+      case Inactive() =>
         leaderLogger.debug(
           s"A leader received a phase 2b response in round ${phase2b.round} " +
             s"from $src but is inactive."
@@ -661,7 +673,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // TODO(mwhittaker): Document.
   private def phase2bChosenInSlot(
-      phase2: Phase2,
+      phase2: Phase2[Transport],
       slot: Slot
   ): Phase2bVoteResult = {
     val Phase2(pendingEntries, phase2bs, _, _, _, _, _) = phase2
@@ -711,7 +723,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   def flushPhase2aBuffer(thrifty: Boolean): Unit = {
     state match {
-      case Inactive =>
+      case Inactive() =>
         logger.fatal("Flushing phase2aBuffer while inactive.")
 
       case Phase1(_, _, _) =>
@@ -736,7 +748,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   def flushValueChosenBuffer(): Unit = {
     state match {
-      case Inactive =>
+      case Inactive() =>
         logger.fatal("Flushing valueChosenBuffer while inactive.")
 
       case Phase1(_, _, _) =>
@@ -759,7 +771,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   def resendPhase2as(): Unit = {
     state match {
-      case Inactive | Phase1(_, _, _) =>
+      case Inactive() | Phase1(_, _, _) =>
         leaderLogger.fatal("Executing resendPhase2as not in phase 2.")
 
       case Phase2(pendingEntries, phase2bs, _, phase2aBuffer, _, _, _) =>
@@ -830,7 +842,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     (state, leader == address) match {
-      case (Inactive, true) =>
+      case (Inactive(), true) =>
         // We are the new leader!
         leaderLogger.debug(
           s"Leader $address was inactive, but is now the leader."
@@ -840,7 +852,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         resendPhase1asTimer.start()
         state = Phase1(mutable.Map(), mutable.Buffer(), resendPhase1asTimer)
 
-      case (Inactive, false) =>
+      case (Inactive(), false) =>
         // Don't do anything. We're still not the leader.
         leaderLogger.debug(s"Leader $address was inactive and still is.")
 
@@ -856,7 +868,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // We are no longer the leader!
         leaderLogger.debug(s"Leader $address was the leader, but no longer is.")
         resendPhase1asTimer.stop()
-        state = Inactive
+        state = Inactive()
 
       case (Phase2(_,
                    _,
@@ -889,7 +901,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         resendPhase2asTimer.stop()
         phase2aBufferFlushTimer.stop()
         valueChosenBufferFlushTimer.stop()
-        state = Inactive
+        state = Inactive()
     }
   }
 
@@ -918,7 +930,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             // Note that only the leader replies to the client since
             // ProposeReplies include the round of the leader, and only the
             // leader knows this.
-            if (state != Inactive) {
+            if (state != Inactive()) {
               val client =
                 chan[Client[Transport]](clientAddress, Client.serializer)
               client.send(
@@ -986,7 +998,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // the leader, and only the leader knows this.
       clientTable.get((src, request.command.clientPseudonym)) match {
         case Some((clientId, result)) =>
-          if (request.command.clientId == clientId && state != Inactive) {
+          if (request.command.clientId == clientId && state != Inactive()) {
             leaderLogger.debug(
               s"The latest command for client $src pseudonym " +
                 s"${request.command.clientPseudonym} (i.e., command " +
@@ -1010,7 +1022,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     state match {
-      case Inactive =>
+      case Inactive() =>
         leaderLogger.debug(
           s"Leader received propose request from $src but is inactive."
         )
@@ -1048,10 +1060,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         config.roundSystem.roundType(round) match {
           case ClassicRound =>
-            pendingEntries(nextSlot) = ECommand(request.command)
-            phase2bs(nextSlot) = mutable.Map()
-            nextSlot += 1
-
             if (options.phase2aMaxBufferSize == 1) {
               thriftyAcceptors(quorumSize(round)).foreach(
                 _.send(
@@ -1072,6 +1080,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               }
             }
 
+            pendingEntries(nextSlot) = ECommand(request.command)
+            phase2bs(nextSlot) = mutable.Map()
+            nextSlot += 1
+
           case FastRound =>
             // If we're in a fast round, and the client knows we're in a fast
             // round (because request.round == round), then the client should
@@ -1091,12 +1103,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       request: Phase1b
   ): Unit = {
     state match {
-      case Inactive =>
+      case _: Inactive[_] =>
         leaderLogger.debug(
           s"Leader received phase 1b from $src, but is inactive."
         )
 
-      case _: Phase2 =>
+      case _: Phase2[_] =>
         leaderLogger.debug(
           s"Leader received phase 1b from $src, but is in phase 2b in " +
             s"round $round."
@@ -1242,7 +1254,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       nack: Phase1bNack
   ): Unit = {
     state match {
-      case Inactive | Phase2(_, _, _, _, _, _, _) =>
+      case Inactive() | _: Phase2[_] =>
         leaderLogger.debug(
           s"Leader received phase 1b nack from $src, but is not in phase 1."
         )

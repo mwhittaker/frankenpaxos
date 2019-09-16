@@ -68,48 +68,28 @@ let leader_info = {
 
   template: `
     <div>
-      <div><strong>round</strong>: {{node.actor.round}}</div>
-      <div><strong>chosenWatermark</strong>: {{node.actor.chosenWatermark}}</div>
-      <div><strong>nextSlot</strong>: {{node.actor.nextSlot}}</div>
-      <div><strong>stateMachine</strong>: {{node.actor.stateMachine}}</div>
-      <div><strong>clientTable</strong>:
-           <frankenpaxos-map :map=node.actor.clientTable></frankenpaxos-map>
-      </div>
-      <div><strong>state</strong>: {{node.actor.state}}</div>
       <div>
-        <strong>phase1bs</strong>:
-        <frankenpaxos-map :map=node.actor.state.phase1bs></frankenpaxos-map>
+        round = {{node.actor.round}}
       </div>
       <div>
-        <strong>pendingProposals</strong>:
-        <frankenpaxos-seq :seq=node.actor.state.pendingProposals>
-        </frankenpaxos-seq>
+        chosenWatermark = {{node.actor.chosenWatermark}}
       </div>
       <div>
-        <strong>pendingEntries</strong>:
-        <frankenpaxos-map :map=node.actor.state.pendingEntries>
-        </frankenpaxos-map>
+        nextSlot = {{node.actor.nextSlot}}
       </div>
       <div>
-        <strong>phase2bs</strong>:
-        <frankenpaxos-map :map=node.actor.state.phase2bs v-slot="slotProps">
-          <frankenpaxos-map :map="slotProps.value">
-          </frankenpaxos-map>
-        </frankenpaxos-map>
+        stateMachine = {{node.actor.stateMachine}}
       </div>
       <div>
-        <strong>phase2aBuffer</strong>:
-        <frankenpaxos-seq :seq=node.actor.state.phase2aBuffer>
-        </frankenpaxos-seq>
+        clientTable =
+        <frankenpaxos-map :map="node.actor.clientTable"></frankenpaxos-map>
       </div>
       <div>
-        <strong>valueChosenBuffer</strong>:
-        <frankenpaxos-seq :seq=node.actor.state.valueChosenBuffer>
-        </frankenpaxos-seq>
-      </div>
-      <div>
-        <strong>log</strong>:
+        log:
         <frankenpaxos-map :map=node.actor.log></frankenpaxos-map>
+      </div>
+      <div>
+        state = {{node.actor.state}}
       </div>
     </div>
   `,

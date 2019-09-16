@@ -9,6 +9,7 @@ import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.statemachine.AppendLog
+import frankenpaxos.thrifty.ThriftySystem
 import scala.collection.mutable
 import scala.scalajs.js.annotation._
 
@@ -43,7 +44,7 @@ class FastMultiPaxos {
       JsTransportAddress("Acceptor Heartbeat 2"),
       JsTransportAddress("Acceptor Heartbeat 3")
     ),
-    roundSystem = new RoundSystem.MixedRoundRobin(2)
+    roundSystem = new RoundSystem.ClassicRoundRobin(2)
   )
 
   // Clients.
@@ -64,18 +65,23 @@ class FastMultiPaxos {
 
   // Leaders.
   val leaderOptions = LeaderOptions.default.copy(
-    phase2aMaxBufferSize = 3,
-    phase2aBufferFlushPeriod = java.time.Duration.ofSeconds(5),
+    thriftySystem = ThriftySystem.NotThrifty,
+    phase2aMaxBufferSize = 1,
+    phase2aBufferFlushPeriod = java.time.Duration.ofSeconds(600),
+    valueChosenMaxBufferSize = 1,
+    valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(600),
+    resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(600),
+    resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(600),
     leaderElectionOptions = LeaderElectionOptions.default.copy(
-      pingPeriod = java.time.Duration.ofSeconds(30),
-      noPingTimeoutMin = java.time.Duration.ofSeconds(60),
-      noPingTimeoutMax = java.time.Duration.ofSeconds(65),
-      notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(30),
-      notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(32)
+      pingPeriod = java.time.Duration.ofSeconds(600),
+      noPingTimeoutMin = java.time.Duration.ofSeconds(600),
+      noPingTimeoutMax = java.time.Duration.ofSeconds(1200),
+      notEnoughVotesTimeoutMin = java.time.Duration.ofSeconds(600),
+      notEnoughVotesTimeoutMax = java.time.Duration.ofSeconds(1200)
     ),
     heartbeatOptions = HeartbeatOptions.default.copy(
-      failPeriod = java.time.Duration.ofSeconds(30),
-      successPeriod = java.time.Duration.ofSeconds(60)
+      failPeriod = java.time.Duration.ofSeconds(600),
+      successPeriod = java.time.Duration.ofSeconds(600)
     )
   )
   val leaders = for (i <- 1 to 2) yield {
@@ -93,8 +99,8 @@ class FastMultiPaxos {
 
   // Acceptors.
   val acceptorOptions = AcceptorOptions(
-    waitPeriod = java.time.Duration.ofMillis(500),
-    waitStagger = java.time.Duration.ofMillis(500),
+    waitPeriod = java.time.Duration.ofMillis(0),
+    waitStagger = java.time.Duration.ofMillis(0),
     measureLatencies = true
   )
   val acceptors = for (i <- 1 to 3) yield {
