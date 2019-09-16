@@ -14,6 +14,7 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.ClassicRound
 import frankenpaxos.roundsystem.FastRound
 import frankenpaxos.roundsystem.RoundSystem
@@ -44,7 +45,8 @@ case class LeaderOptions(
     valueChosenMaxBufferSize: Int,
     valueChosenBufferFlushPeriod: java.time.Duration,
     leaderElectionOptions: LeaderElectionOptions,
-    heartbeatOptions: HeartbeatOptions
+    heartbeatOptions: HeartbeatOptions,
+    measureLatencies: Boolean
 )
 
 @JSExportAll
@@ -58,7 +60,8 @@ object LeaderOptions {
     valueChosenMaxBufferSize = 100,
     valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5),
     leaderElectionOptions = LeaderElectionOptions.default,
-    heartbeatOptions = HeartbeatOptions.default
+    heartbeatOptions = HeartbeatOptions.default,
+    measureLatencies = true
   )
 }
 
@@ -69,6 +72,13 @@ class LeaderMetrics(collectors: Collectors) {
     .name("fast_multipaxos_leader_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
+    .register()
+
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("fast_multipaxos_leader_requests_latency")
+    .labelNames("type")
+    .help("Latency (in milliseconds) of a request.")
     .register()
 
   val executedCommandsTotal: Counter = collectors.counter
@@ -410,331 +420,21 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   }
 
-  // Handlers //////////////////////////////////////////////////////////////////
-  override def receive(src: Transport#Address, inbound: InboundMessage) = {
-    import LeaderInbound.Request
-    inbound.request match {
-      case Request.ProposeRequest(r)    => handleProposeRequest(src, r)
-      case Request.Phase1B(r)           => handlePhase1b(src, r)
-      case Request.Phase1BNack(r)       => handlePhase1bNack(src, r)
-      case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
-      case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
-      case Request.Empty =>
-        leaderLogger.fatal("Empty LeaderInbound encountered.")
-    }
-
-    metrics.chosenWatermark.set(chosenWatermark)
-    metrics.nextSlot.set(nextSlot)
-  }
-
-  private def handleProposeRequest(
-      src: Transport#Address,
-      request: ProposeRequest
-  ): Unit = {
-    metrics.requestsTotal.labels("ProposeRequest").inc()
-    val client = chan[Client[Transport]](src, Client.serializer)
-
-    // TODO(mwhittaker): Ignore requests that are older than the current id
-    // stored in the client table.
-
-    // If we've cached the result of this proposed command in the client table,
-    // then we can reply to the client directly. Note that only the leader
-    // replies to the client since ProposeReplies include the round of the
-    // leader, and only the leader knows this.
-    clientTable.get((src, request.command.clientPseudonym)) match {
-      case Some((clientId, result)) =>
-        if (request.command.clientId == clientId && state != Inactive) {
-          leaderLogger.debug(
-            s"The latest command for client $src pseudonym " +
-              s"${request.command.clientPseudonym} (i.e., command $clientId)" +
-              s"was found in the client table."
-          )
-          client.send(
-            ClientInbound().withProposeReply(
-              ProposeReply(round = round,
-                           clientPseudonym = request.command.clientPseudonym,
-                           clientId = clientId,
-                           result = ByteString.copyFrom(result))
-            )
-          )
-          return
-        }
-      case None =>
-    }
-
-    state match {
-      case Inactive =>
-        leaderLogger.debug(
-          s"Leader received propose request from $src but is inactive."
-        )
-
-      case Phase1(_, pendingProposals, _) =>
-        if (request.round != round) {
-          // We don't want to process requests from out of date clients.
-          leaderLogger.debug(
-            s"Leader received a propose request from $src in round " +
-              s"${request.round}, but is in round $round. Sending leader info."
-          )
-          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
-        } else {
-          // We buffer all pending proposals in phase 1 and process them later
-          // when we enter phase 2.
-          pendingProposals += ((src, request))
-        }
-
-      case Phase2(pendingEntries,
-                  phase2bs,
-                  _,
-                  phase2aBuffer,
-                  phase2aBufferFlushTimer,
-                  _,
-                  _) =>
-        if (request.round != round) {
-          // We don't want to process requests from out of date clients.
-          leaderLogger.debug(
-            s"Leader received a propose request from $src in round " +
-              s"${request.round}, but is in round $round. Sending leader info."
-          )
-          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
-          return
-        }
-
-        config.roundSystem.roundType(round) match {
-          case ClassicRound =>
-            phase2aBuffer += Phase2a(slot = nextSlot, round = round)
-              .withCommand(request.command)
-            pendingEntries(nextSlot) = ECommand(request.command)
-            phase2bs(nextSlot) = mutable.Map()
-            nextSlot += 1
-            if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
-              metrics.phase2aBufferFullTotal.inc()
-              flushPhase2aBuffer(thrifty = true)
-            }
-
-          case FastRound =>
-            // If we're in a fast round, and the client knows we're in a fast
-            // round (because request.round == round), then the client should
-            // not be sending the leader any requests. It only does so if there
-            // was a failure. In this case, we change to a higher round.
-            leaderLogger.debug(
-              s"Leader received a client request from $src during a fast " +
-                s"round. We are increasing our round."
-            )
-            leaderChange(address, round)
-        }
+  // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    if (options.measureLatencies) {
+      val startNanos = System.nanoTime
+      val x = e
+      val stopNanos = System.nanoTime
+      metrics.requestsLatency
+        .labels(label)
+        .observe((stopNanos - startNanos).toDouble / 1000000)
+      x
+    } else {
+      e
     }
   }
 
-  private def handlePhase1b(
-      src: Transport#Address,
-      request: Phase1b
-  ): Unit = {
-    metrics.requestsTotal.labels("Phase1b").inc()
-    state match {
-      case Inactive =>
-        leaderLogger.debug(
-          s"Leader received phase 1b from $src, but is inactive."
-        )
-
-      case Phase2(_, _, _, _, _, _, _) =>
-        leaderLogger.debug(
-          s"Leader received phase 1b from $src, but is in phase 2b in " +
-            s"round $round."
-        )
-
-      case Phase1(phase1bs, pendingProposals, resendPhase1as) =>
-        if (request.round != round) {
-          leaderLogger.debug(
-            s"Leader received phase 1b from $src in round ${request.round}, " +
-              s"but is in round $round."
-          )
-          return
-        }
-
-        // Wait until we receive a quorum of phase 1bs.
-        phase1bs(request.acceptorId) = request
-        if (phase1bs.size < config.classicQuorumSize) {
-          return
-        }
-
-        // If we do have a quorum of phase 1bs, then we transition to phase 2.
-        resendPhase1as.stop()
-
-        // `phase1bs` maps each acceptor to a list of phase1b votes. We index
-        // each of these lists by slot.
-        type VotesBySlot = SortedMap[Slot, Phase1bVote]
-        val votes: collection.Map[AcceptorId, VotesBySlot] =
-          phase1bs.mapValues((phase1b) => {
-            phase1b.vote.map(vote => vote.slot -> vote)(breakOut): VotesBySlot
-          })
-
-        // The leader's log contains chosen entries for some slots, and the
-        // acceptors have voted for some slots. This looks something like this:
-        //
-        //                                     chosenWatermark
-        //                                    /                   endSlot
-        //                                   /                   /
-        //                      0   1   2   3   4   5   6   7   8   9
-        //                    +---+---+---+---+---+---+---+---+---+---+
-        //               log: | x | x | x |   |   | x |   |   | x |   |
-        //                    +---+---+---+---+---+---+---+---+---+---+
-        //   acceptor 0 vote:               x   x
-        //   acceptor 1 vote:                   x       x
-        //   acceptor 2 vote:               x       x   x
-        //
-        // The leader does not want gaps in the log, so it attempts to choose
-        // as many slots as possible to remove the gaps. In the example above,
-        // the leader would propose in slots 3, 4, 6, and 7. Letting endSlot =
-        // 8, these are the unchosen slots in the range [chosenWatermark,
-        // endSlot].
-        //
-        // In the example above, endSlot is 8 because it is the largest chosen
-        // slot. However, in the example below, it is 9 because an acceptor has
-        // voted in slot 9. Thus, we let endSlot be the larger of (a) the
-        // largest chosen slot and (b) the largest slot with a phase1b vote.
-        //
-        //                                     chosenWatermark
-        //                                    /                       endSlot
-        //                                   /                       /
-        //                      0   1   2   3   4   5   6   7   8   9
-        //                    +---+---+---+---+---+---+---+---+---+---+
-        //               log: | x | x | x |   |   | x |   |   | x |   |
-        //                    +---+---+---+---+---+---+---+---+---+---+
-        //   acceptor 0 vote:               x   x                   x
-        //   acceptor 1 vote:                   x       x   x
-        //   acceptor 2 vote:               x       x   x           x
-        val endSlot: Int = math.max(
-          votes
-            .map({ case (a, vs) => if (vs.size == 0) -1 else vs.lastKey })
-            .max,
-          if (log.size == 0) -1 else log.lastKey
-        )
-
-        val pendingEntries = mutable.SortedMap[Slot, Entry]()
-        val phase2bs =
-          mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]]()
-        val phase2aBuffer = mutable.Buffer[Phase2a]()
-
-        // For every unchosen slot between the chosenWatermark and endSlot,
-        // choose a value to propose and propose it. We also collect a set of
-        // other commands to propose and propose them later.
-        val proposedCommands = mutable.Set[Command]()
-        val yetToProposeCommands = mutable.Set[Command]()
-        for (slot <- chosenWatermark to endSlot) {
-          val (proposal, commands) = chooseProposal(votes, slot)
-          yetToProposeCommands ++= commands
-
-          val phase2a = proposal match {
-            case ECommand(command) =>
-              proposedCommands += command
-              Phase2a(slot = slot, round = round).withCommand(command)
-            case ENoop =>
-              Phase2a(slot = slot, round = round).withNoop(Noop())
-          }
-          phase2aBuffer += phase2a
-          pendingEntries(slot) = proposal
-          phase2bs(slot) = mutable.Map[AcceptorId, Phase2b]()
-        }
-
-        state = Phase2(pendingEntries,
-                       phase2bs,
-                       resendPhase2asTimer,
-                       phase2aBuffer,
-                       phase2aBufferFlushTimer,
-                       mutable.Buffer[ValueChosen](),
-                       valueChosenBufferFlushTimer)
-        resendPhase2asTimer.start()
-        phase2aBufferFlushTimer.start()
-        valueChosenBufferFlushTimer.start()
-
-        // Replay the pending proposals.
-        nextSlot = endSlot + 1
-        for ((_, proposal) <- pendingProposals) {
-          phase2aBuffer += Phase2a(slot = nextSlot, round = round)
-            .withCommand(proposal.command)
-          pendingEntries(nextSlot) = ECommand(proposal.command)
-          phase2bs(nextSlot) = mutable.Map()
-          nextSlot += 1
-        }
-
-        // Replay the safe to propose values that we haven't just proposed.
-        for (command <- yetToProposeCommands.diff(proposedCommands)) {
-          phase2aBuffer += Phase2a(slot = nextSlot, round = round)
-            .withCommand(command)
-          pendingEntries(nextSlot) = ECommand(command)
-          phase2bs(nextSlot) = mutable.Map()
-          nextSlot += 1
-        }
-
-        // If this is a fast round, send a suffix of anys.
-        if (config.roundSystem.roundType(round) == FastRound) {
-          phase2aBuffer +=
-            Phase2a(slot = nextSlot, round = round)
-              .withAnySuffix(AnyValSuffix())
-        }
-
-        flushPhase2aBuffer(thrifty = true)
-    }
-  }
-
-  private def handlePhase1bNack(
-      src: Transport#Address,
-      nack: Phase1bNack
-  ): Unit = {
-    metrics.requestsTotal.labels("Phase1bNack").inc()
-    state match {
-      case Inactive | Phase2(_, _, _, _, _, _, _) =>
-        leaderLogger.debug(
-          s"Leader received phase 1b nack from $src, but is not in phase 1."
-        )
-
-      case Phase1(_, _, _) =>
-        if (nack.round > round) {
-          leaderLogger.debug(
-            s"Leader running phase 1 in round $round got nack in round " +
-              s"${nack.round} from $src. Increasing round."
-          )
-          // TODO(mwhittaker): Check that the nack is not out of date.
-          // TODO(mwhittaker): Change to a round that we own!
-          leaderChange(address, nack.round)
-        }
-    }
-  }
-
-  private def handlePhase2bBuffer(
-      src: Transport#Address,
-      phase2bBuffer: Phase2bBuffer
-  ): Unit = {
-    metrics.requestsTotal.labels("Phase2bBuffer").inc()
-    for (phase2b <- phase2bBuffer.phase2B) {
-      processPhase2b(src, phase2b)
-    }
-  }
-
-  private def handleValueChosenBuffer(
-      src: Transport#Address,
-      valueChosenBuffer: ValueChosenBuffer
-  ): Unit = {
-    metrics.requestsTotal.labels("ValueChosenBuffer").inc()
-    for (valueChosen <- valueChosenBuffer.valueChosen) {
-      val entry = valueChosen.value match {
-        case ValueChosen.Value.Command(command) => ECommand(command)
-        case ValueChosen.Value.Noop(_)          => ENoop
-        case ValueChosen.Value.Empty =>
-          leaderLogger.fatal("Empty ValueChosen.Vote")
-      }
-
-      log.get(valueChosen.slot) match {
-        case Some(existingEntry) =>
-          leaderLogger.checkEq(entry, existingEntry)
-        case None =>
-          log(valueChosen.slot) = entry
-      }
-    }
-    executeLog()
-  }
-
-  // Methods ///////////////////////////////////////////////////////////////////
   def quorumSize(round: Round): Int = {
     config.roundSystem.roundType(round) match {
       case FastRound    => config.fastQuorumSize
@@ -1232,5 +932,337 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       }
       chosenWatermark += 1
     }
+  }
+
+  // Handlers //////////////////////////////////////////////////////////////////
+  override def receive(src: Transport#Address, inbound: InboundMessage) = {
+    import LeaderInbound.Request
+    val label =
+      inbound.request match {
+        case Request.ProposeRequest(r)    => "ProposeRequest"
+        case Request.Phase1B(r)           => "Phase1b"
+        case Request.Phase1BNack(r)       => "Phase1bNack"
+        case Request.Phase2BBuffer(r)     => "Phase2bBuffer"
+        case Request.ValueChosenBuffer(r) => "ValueChosenBuffer"
+        case Request.Empty =>
+          leaderLogger.fatal("Empty LeaderInbound encountered.")
+      }
+    metrics.requestsTotal.labels(label).inc()
+
+    timed(label) {
+      inbound.request match {
+        case Request.ProposeRequest(r)    => handleProposeRequest(src, r)
+        case Request.Phase1B(r)           => handlePhase1b(src, r)
+        case Request.Phase1BNack(r)       => handlePhase1bNack(src, r)
+        case Request.Phase2BBuffer(r)     => handlePhase2bBuffer(src, r)
+        case Request.ValueChosenBuffer(r) => handleValueChosenBuffer(src, r)
+        case Request.Empty =>
+          leaderLogger.fatal("Empty LeaderInbound encountered.")
+      }
+    }
+
+    metrics.chosenWatermark.set(chosenWatermark)
+    metrics.nextSlot.set(nextSlot)
+  }
+
+  private def handleProposeRequest(
+      src: Transport#Address,
+      request: ProposeRequest
+  ): Unit = {
+    val client = chan[Client[Transport]](src, Client.serializer)
+    // If we've cached the result of this proposed command in the client table,
+    // then we can reply to the client directly. Note that only the leader
+    // replies to the client since ProposeReplies include the round of the
+    // leader, and only the leader knows this.
+    clientTable.get((src, request.command.clientPseudonym)) match {
+      case Some((clientId, result)) =>
+        if (request.command.clientId == clientId && state != Inactive) {
+          leaderLogger.debug(
+            s"The latest command for client $src pseudonym " +
+              s"${request.command.clientPseudonym} (i.e., command $clientId)" +
+              s"was found in the client table."
+          )
+          client.send(
+            ClientInbound().withProposeReply(
+              ProposeReply(round = round,
+                           clientPseudonym = request.command.clientPseudonym,
+                           clientId = clientId,
+                           result = ByteString.copyFrom(result))
+            )
+          )
+          return
+        } else if (request.command.clientId < clientId) {
+          // Ignore out of date client requests.
+          return
+        }
+      case None =>
+    }
+
+    state match {
+      case Inactive =>
+        leaderLogger.debug(
+          s"Leader received propose request from $src but is inactive."
+        )
+
+      case Phase1(_, pendingProposals, _) =>
+        if (request.round != round) {
+          // We don't want to process requests from out of date clients.
+          leaderLogger.debug(
+            s"Leader received a propose request from $src in round " +
+              s"${request.round}, but is in round $round. Sending leader info."
+          )
+          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
+        } else {
+          // We buffer all pending proposals in phase 1 and process them later
+          // when we enter phase 2.
+          pendingProposals += ((src, request))
+        }
+
+      case Phase2(pendingEntries,
+                  phase2bs,
+                  _,
+                  phase2aBuffer,
+                  phase2aBufferFlushTimer,
+                  _,
+                  _) =>
+        if (request.round != round) {
+          // We don't want to process requests from out of date clients.
+          leaderLogger.debug(
+            s"Leader received a propose request from $src in round " +
+              s"${request.round}, but is in round $round. Sending leader info."
+          )
+          client.send(ClientInbound().withLeaderInfo(LeaderInfo(round)))
+          return
+        }
+
+        config.roundSystem.roundType(round) match {
+          case ClassicRound =>
+            phase2aBuffer += Phase2a(slot = nextSlot, round = round)
+              .withCommand(request.command)
+            pendingEntries(nextSlot) = ECommand(request.command)
+            phase2bs(nextSlot) = mutable.Map()
+            nextSlot += 1
+            if (phase2aBuffer.size >= options.phase2aMaxBufferSize) {
+              metrics.phase2aBufferFullTotal.inc()
+              flushPhase2aBuffer(thrifty = true)
+            }
+
+          case FastRound =>
+            // If we're in a fast round, and the client knows we're in a fast
+            // round (because request.round == round), then the client should
+            // not be sending the leader any requests. It only does so if there
+            // was a failure. In this case, we change to a higher round.
+            leaderLogger.debug(
+              s"Leader received a client request from $src during a fast " +
+                s"round. We are increasing our round."
+            )
+            leaderChange(address, round)
+        }
+    }
+  }
+
+  private def handlePhase1b(
+      src: Transport#Address,
+      request: Phase1b
+  ): Unit = {
+    state match {
+      case Inactive =>
+        leaderLogger.debug(
+          s"Leader received phase 1b from $src, but is inactive."
+        )
+
+      case _: Phase2 =>
+        leaderLogger.debug(
+          s"Leader received phase 1b from $src, but is in phase 2b in " +
+            s"round $round."
+        )
+
+      case Phase1(phase1bs, pendingProposals, resendPhase1as) =>
+        if (request.round != round) {
+          leaderLogger.debug(
+            s"Leader received phase 1b from $src in round ${request.round}, " +
+              s"but is in round $round."
+          )
+          return
+        }
+
+        // Wait until we receive a quorum of phase 1bs.
+        phase1bs(request.acceptorId) = request
+        if (phase1bs.size < config.classicQuorumSize) {
+          return
+        }
+
+        // If we do have a quorum of phase 1bs, then we transition to phase 2.
+        resendPhase1as.stop()
+
+        // `phase1bs` maps each acceptor to a list of phase1b votes. We index
+        // each of these lists by slot.
+        type VotesBySlot = SortedMap[Slot, Phase1bVote]
+        val votes: collection.Map[AcceptorId, VotesBySlot] =
+          phase1bs.mapValues((phase1b) => {
+            phase1b.vote.map(vote => vote.slot -> vote)(breakOut): VotesBySlot
+          })
+
+        // The leader's log contains chosen entries for some slots, and the
+        // acceptors have voted for some slots. This looks something like this:
+        //
+        //                                     chosenWatermark
+        //                                    /                   endSlot
+        //                                   /                   /
+        //                      0   1   2   3   4   5   6   7   8   9
+        //                    +---+---+---+---+---+---+---+---+---+---+
+        //               log: | x | x | x |   |   | x |   |   | x |   |
+        //                    +---+---+---+---+---+---+---+---+---+---+
+        //   acceptor 0 vote:               x   x
+        //   acceptor 1 vote:                   x       x
+        //   acceptor 2 vote:               x       x   x
+        //
+        // The leader does not want gaps in the log, so it attempts to choose
+        // as many slots as possible to remove the gaps. In the example above,
+        // the leader would propose in slots 3, 4, 6, and 7. Letting endSlot =
+        // 8, these are the unchosen slots in the range [chosenWatermark,
+        // endSlot].
+        //
+        // In the example above, endSlot is 8 because it is the largest chosen
+        // slot. However, in the example below, it is 9 because an acceptor has
+        // voted in slot 9. Thus, we let endSlot be the larger of (a) the
+        // largest chosen slot and (b) the largest slot with a phase1b vote.
+        //
+        //                                     chosenWatermark
+        //                                    /                       endSlot
+        //                                   /                       /
+        //                      0   1   2   3   4   5   6   7   8   9
+        //                    +---+---+---+---+---+---+---+---+---+---+
+        //               log: | x | x | x |   |   | x |   |   | x |   |
+        //                    +---+---+---+---+---+---+---+---+---+---+
+        //   acceptor 0 vote:               x   x                   x
+        //   acceptor 1 vote:                   x       x   x
+        //   acceptor 2 vote:               x       x   x           x
+        val endSlot: Int = math.max(
+          votes
+            .map({ case (a, vs) => if (vs.size == 0) -1 else vs.lastKey })
+            .max,
+          if (log.size == 0) -1 else log.lastKey
+        )
+
+        val pendingEntries = mutable.SortedMap[Slot, Entry]()
+        val phase2bs =
+          mutable.SortedMap[Slot, mutable.Map[AcceptorId, Phase2b]]()
+        val phase2aBuffer = mutable.Buffer[Phase2a]()
+
+        // For every unchosen slot between the chosenWatermark and endSlot,
+        // choose a value to propose and propose it. We also collect a set of
+        // other commands to propose and propose them later.
+        val proposedCommands = mutable.Set[Command]()
+        val yetToProposeCommands = mutable.Set[Command]()
+        for (slot <- chosenWatermark to endSlot) {
+          val (proposal, commands) = chooseProposal(votes, slot)
+          yetToProposeCommands ++= commands
+
+          val phase2a = proposal match {
+            case ECommand(command) =>
+              proposedCommands += command
+              Phase2a(slot = slot, round = round).withCommand(command)
+            case ENoop =>
+              Phase2a(slot = slot, round = round).withNoop(Noop())
+          }
+          phase2aBuffer += phase2a
+          pendingEntries(slot) = proposal
+          phase2bs(slot) = mutable.Map[AcceptorId, Phase2b]()
+        }
+
+        state = Phase2(pendingEntries,
+                       phase2bs,
+                       resendPhase2asTimer,
+                       phase2aBuffer,
+                       phase2aBufferFlushTimer,
+                       mutable.Buffer[ValueChosen](),
+                       valueChosenBufferFlushTimer)
+        resendPhase2asTimer.start()
+        phase2aBufferFlushTimer.start()
+        valueChosenBufferFlushTimer.start()
+
+        // Replay the pending proposals.
+        nextSlot = endSlot + 1
+        for ((_, proposal) <- pendingProposals) {
+          phase2aBuffer += Phase2a(slot = nextSlot, round = round)
+            .withCommand(proposal.command)
+          pendingEntries(nextSlot) = ECommand(proposal.command)
+          phase2bs(nextSlot) = mutable.Map()
+          nextSlot += 1
+        }
+
+        // Replay the safe to propose values that we haven't just proposed.
+        for (command <- yetToProposeCommands.diff(proposedCommands)) {
+          phase2aBuffer += Phase2a(slot = nextSlot, round = round)
+            .withCommand(command)
+          pendingEntries(nextSlot) = ECommand(command)
+          phase2bs(nextSlot) = mutable.Map()
+          nextSlot += 1
+        }
+
+        // If this is a fast round, send a suffix of anys.
+        if (config.roundSystem.roundType(round) == FastRound) {
+          phase2aBuffer +=
+            Phase2a(slot = nextSlot, round = round)
+              .withAnySuffix(AnyValSuffix())
+        }
+
+        flushPhase2aBuffer(thrifty = true)
+    }
+  }
+
+  private def handlePhase1bNack(
+      src: Transport#Address,
+      nack: Phase1bNack
+  ): Unit = {
+    state match {
+      case Inactive | Phase2(_, _, _, _, _, _, _) =>
+        leaderLogger.debug(
+          s"Leader received phase 1b nack from $src, but is not in phase 1."
+        )
+
+      case Phase1(_, _, _) =>
+        if (nack.round > round) {
+          leaderLogger.debug(
+            s"Leader running phase 1 in round $round got nack in round " +
+              s"${nack.round} from $src. Increasing round."
+          )
+          // TODO(mwhittaker): Check that the nack is not out of date.
+          // TODO(mwhittaker): Change to a round that we own!
+          leaderChange(address, nack.round)
+        }
+    }
+  }
+
+  private def handlePhase2bBuffer(
+      src: Transport#Address,
+      phase2bBuffer: Phase2bBuffer
+  ): Unit = {
+    for (phase2b <- phase2bBuffer.phase2B) {
+      processPhase2b(src, phase2b)
+    }
+  }
+
+  private def handleValueChosenBuffer(
+      src: Transport#Address,
+      valueChosenBuffer: ValueChosenBuffer
+  ): Unit = {
+    for (valueChosen <- valueChosenBuffer.valueChosen) {
+      val entry = valueChosen.value match {
+        case ValueChosen.Value.Command(command) => ECommand(command)
+        case ValueChosen.Value.Noop(_)          => ENoop
+        case ValueChosen.Value.Empty =>
+          leaderLogger.fatal("Empty ValueChosen.Vote")
+      }
+
+      log.get(valueChosen.slot) match {
+        case Some(existingEntry) =>
+          leaderLogger.checkEq(entry, existingEntry)
+        case None =>
+          log(valueChosen.slot) = entry
+      }
+    }
+    executeLog()
   }
 }

@@ -27,6 +27,7 @@ option (scalapb.options) = {
   flat_package: true
 };
 
+// Helper messages. ////////////////////////////////////////////////////////////
 // A special noop command that does not affect the state machine.
 message Noop {}
 
@@ -59,6 +60,7 @@ message Command {
   required bytes command = 4;
 }
 
+// Protocol messages. //////////////////////////////////////////////////////////
 message ProposeRequest {
   // When a client proposes a command, it includes the round that it thinks the
   // leader is currently in.
@@ -163,6 +165,7 @@ message ValueChosenBuffer {
   repeated ValueChosen value_chosen = 1;
 }
 
+// Inbound messages. ///////////////////////////////////////////////////////////
 message ClientInbound {
   oneof request {
     LeaderInfo leader_info = 1;

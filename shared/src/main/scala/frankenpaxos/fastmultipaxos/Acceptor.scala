@@ -10,6 +10,7 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.RoundSystem
 import scala.scalajs.js.annotation._
 
@@ -33,6 +34,13 @@ class AcceptorMetrics(collectors: Collectors) {
     .name("fast_multipaxos_acceptor_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
+    .register()
+
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("fast_multipaxos_acceptor_requests_latency")
+    .labelNames("type")
+    .help("Latency (in milliseconds) of a request.")
     .register()
 
   val batchesTotal: Counter = collectors.counter
@@ -67,14 +75,16 @@ case class AcceptorOptions(
     // TODO(mwhittaker): Is there a smarter way to reduce the number of
     // conflicts?
     waitPeriod: java.time.Duration,
-    waitStagger: java.time.Duration
+    waitStagger: java.time.Duration,
+    measureLatencies: Boolean
 )
 
 @JSExportAll
 object AcceptorOptions {
   val default = AcceptorOptions(
-    waitPeriod = java.time.Duration.ofMillis(25),
-    waitStagger = java.time.Duration.ofMillis(25)
+    waitPeriod = java.time.Duration.ofMillis(0),
+    waitStagger = java.time.Duration.ofMillis(0),
+    measureLatencies = true
   )
 }
 
@@ -103,10 +113,10 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   protected var round: Int = -1
 
   // Channels to the leaders.
-  private val leaders: Map[Int, Chan[Leader[Transport]]] = {
-    for ((leaderAddress, i) <- config.leaderAddresses.zipWithIndex)
-      yield i -> chan[Leader[Transport]](leaderAddress, Leader.serializer)
-  }.toMap
+  private val leaders: mutable.Buffer[Chan[Leader[Transport]]] = {
+    for (leaderAddress <- config.leaderAddresses)
+      yield chan[Leader[Transport]](leaderAddress, Leader.serializer)
+  }.toBuffer
 
   // Every acceptor runs a heartbeat participant to inform the leaders that it
   // is still alive.
@@ -136,12 +146,12 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         options.waitStagger == java.time.Duration.ofSeconds(0)) {
       None
     } else {
-      val t = timer(
+      lazy val t: Transport#Timer = timer(
         "processBufferedProposeRequests",
         options.waitPeriod,
         () => {
           processBufferedProposeRequests()
-          processBufferedProposeRequestsTimer.get.start()
+          t.start()
         }
       )
       t.start()
@@ -174,100 +184,21 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var nextSlot = 0;
 
-  // Handlers //////////////////////////////////////////////////////////////////
-  override def receive(src: Transport#Address, inbound: InboundMessage) = {
-    import AcceptorInbound.Request
-    inbound.request match {
-      case Request.ProposeRequest(r) => handleProposeRequest(src, r)
-      case Request.Phase1A(r)        => handlePhase1a(src, r)
-      case Request.Phase2ABuffer(r)  => handlePhase2aBuffer(src, r)
-      case Request.Empty => {
-        logger.fatal("Empty AcceptorInbound encountered.")
-      }
-    }
-  }
-
-  private def handleProposeRequest(
-      src: Transport#Address,
-      proposeRequest: ProposeRequest
-  ): Unit = {
-    metrics.requestsTotal.labels("ProposeRequest").inc()
-
-    // If the wait period and wait stagger are both 0, then we don't bother
-    // fiddling with a timer. We process the propose request immediately.
-    if (options.waitPeriod == java.time.Duration.ofSeconds(0) &&
-        options.waitStagger == java.time.Duration.ofSeconds(0)) {
-      processProposeRequest(src, proposeRequest) match {
-        case Some(phase2b) =>
-          val leader = leaders(config.roundSystem.leader(round))
-          leader.send(
-            LeaderInbound().withPhase2BBuffer(Phase2bBuffer(Seq(phase2b)))
-          )
-
-        case None =>
-        // Do nothing.
-      }
+  // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    if (options.measureLatencies) {
+      val startNanos = System.nanoTime
+      val x = e
+      val stopNanos = System.nanoTime
+      metrics.requestsLatency
+        .labels(label)
+        .observe((stopNanos - startNanos).toDouble / 1000000)
+      x
     } else {
-      val t = (System.nanoTime(), src, proposeRequest)
-      bufferedProposeRequests += t
+      e
     }
   }
 
-  private def handlePhase1a(src: Transport#Address, phase1a: Phase1a): Unit = {
-    metrics.requestsTotal.labels("Phase1a").inc()
-
-    // Ignore messages from previous rounds.
-    if (phase1a.round <= round) {
-      logger.info(
-        s"An acceptor received a phase 1a message for round " +
-          s"${phase1a.round} but is in round $round."
-      )
-      val leader = chan[Leader[Transport]](src, Leader.serializer)
-      leader.send(
-        LeaderInbound().withPhase1BNack(
-          Phase1bNack(acceptorId = acceptorId, round = round)
-        )
-      )
-      return
-    }
-
-    // Bump our round and send the leader all of our votes. Note that we
-    // exclude votes below the chosen watermark and votes for slots that the
-    // leader knows are chosen. We also make sure not to return votes for slots
-    // that we haven't actually voted in.
-    round = phase1a.round
-    val votes = log
-      .prefix()
-      .iteratorFrom(phase1a.chosenWatermark)
-      .filter({ case (slot, _) => !phase1a.chosenSlot.contains(slot) })
-      .flatMap({
-        case (s, Entry(vr, VVCommand(command), _)) =>
-          Some(Phase1bVote(slot = s, voteRound = vr).withCommand(command))
-        case (s, Entry(vr, VVNoop, _)) =>
-          Some(Phase1bVote(slot = s, voteRound = vr).withNoop(Noop()))
-        case (_, Entry(_, VVNothing, _)) =>
-          None
-      })
-    val leader = leaders(config.roundSystem.leader(round))
-    leader.send(
-      LeaderInbound().withPhase1B(
-        Phase1b(acceptorId = acceptorId, round = round, vote = votes.to[Seq])
-      )
-    )
-  }
-
-  private def handlePhase2aBuffer(
-      src: Transport#Address,
-      phase2aBuffer: Phase2aBuffer
-  ): Unit = {
-    // TODO(mwhittaker): Add phase 2 nack.
-    metrics.requestsTotal.labels("Phase2aBuffer").inc()
-    val buffer = Phase2bBuffer(phase2aBuffer.phase2A.flatMap(processPhase2a))
-    val leader = leaders(config.roundSystem.leader(round))
-    leader.send(LeaderInbound().withPhase2BBuffer(buffer))
-  }
-
-  // Methods ///////////////////////////////////////////////////////////////////
   private def processBufferedProposeRequests(): Unit = {
     val cutoff = System.nanoTime() - options.waitStagger.toNanos()
     val batch = bufferedProposeRequests.takeWhile({
@@ -403,5 +334,112 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       case Phase2a.Value.Empty =>
         logger.fatal("Empty Phase2a value.")
     }
+  }
+
+  // Handlers //////////////////////////////////////////////////////////////////
+  override def receive(src: Transport#Address, inbound: InboundMessage) = {
+    import AcceptorInbound.Request
+    val label = inbound.request match {
+      case Request.ProposeRequest(r) => "ProposeRequest"
+      case Request.Phase1A(r)        => "Phase1A"
+      case Request.Phase2ABuffer(r)  => "Phase2ABuffer"
+      case Request.Empty =>
+        logger.fatal("Empty AcceptorInbound encountered.")
+
+    }
+    metrics.requestsTotal.labels(label).inc()
+
+    timed(label) {
+      inbound.request match {
+        case Request.ProposeRequest(r) => handleProposeRequest(src, r)
+        case Request.Phase1A(r)        => handlePhase1a(src, r)
+        case Request.Phase2ABuffer(r)  => handlePhase2aBuffer(src, r)
+        case Request.Empty =>
+          logger.fatal("Empty AcceptorInbound encountered.")
+
+      }
+    }
+  }
+
+  private def handleProposeRequest(
+      src: Transport#Address,
+      proposeRequest: ProposeRequest
+  ): Unit = {
+    metrics.requestsTotal.labels("ProposeRequest").inc()
+
+    // If the wait period and wait stagger are both 0, then we don't bother
+    // fiddling with a timer. We process the propose request immediately.
+    if (options.waitPeriod == java.time.Duration.ofSeconds(0) &&
+        options.waitStagger == java.time.Duration.ofSeconds(0)) {
+      processProposeRequest(src, proposeRequest) match {
+        case Some(phase2b) =>
+          val leader = leaders(config.roundSystem.leader(round))
+          leader.send(
+            LeaderInbound().withPhase2BBuffer(Phase2bBuffer(Seq(phase2b)))
+          )
+
+        case None =>
+        // Do nothing.
+      }
+    } else {
+      val t = (System.nanoTime(), src, proposeRequest)
+      bufferedProposeRequests += t
+    }
+  }
+
+  private def handlePhase1a(src: Transport#Address, phase1a: Phase1a): Unit = {
+    metrics.requestsTotal.labels("Phase1a").inc()
+
+    // Ignore messages from previous rounds.
+    // TODO(mwhittaker): If phase1a.round == round, we should reply to the
+    // leader since it's retrying its phase1as.
+    if (phase1a.round <= round) {
+      logger.info(
+        s"An acceptor received a phase 1a message for round " +
+          s"${phase1a.round} but is in round $round."
+      )
+      val leader = chan[Leader[Transport]](src, Leader.serializer)
+      leader.send(
+        LeaderInbound().withPhase1BNack(
+          Phase1bNack(acceptorId = acceptorId, round = round)
+        )
+      )
+      return
+    }
+
+    // Bump our round and send the leader all of our votes. Note that we
+    // exclude votes below the chosen watermark and votes for slots that the
+    // leader knows are chosen. We also make sure not to return votes for slots
+    // that we haven't actually voted in.
+    round = phase1a.round
+    val votes = log
+      .prefix()
+      .iteratorFrom(phase1a.chosenWatermark)
+      .filter({ case (slot, _) => !phase1a.chosenSlot.contains(slot) })
+      .flatMap({
+        case (s, Entry(vr, VVCommand(command), _)) =>
+          Some(Phase1bVote(slot = s, voteRound = vr).withCommand(command))
+        case (s, Entry(vr, VVNoop, _)) =>
+          Some(Phase1bVote(slot = s, voteRound = vr).withNoop(Noop()))
+        case (_, Entry(_, VVNothing, _)) =>
+          None
+      })
+    val leader = leaders(config.roundSystem.leader(round))
+    leader.send(
+      LeaderInbound().withPhase1B(
+        Phase1b(acceptorId = acceptorId, round = round, vote = votes.toSeq)
+      )
+    )
+  }
+
+  private def handlePhase2aBuffer(
+      src: Transport#Address,
+      phase2aBuffer: Phase2aBuffer
+  ): Unit = {
+    // TODO(mwhittaker): Add phase 2 nack.
+    metrics.requestsTotal.labels("Phase2aBuffer").inc()
+    val buffer = Phase2bBuffer(phase2aBuffer.phase2A.flatMap(processPhase2a))
+    val leader = leaders(config.roundSystem.leader(round))
+    leader.send(LeaderInbound().withPhase2BBuffer(buffer))
   }
 }

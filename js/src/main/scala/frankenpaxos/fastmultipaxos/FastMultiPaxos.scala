@@ -94,7 +94,8 @@ class FastMultiPaxos {
   // Acceptors.
   val acceptorOptions = AcceptorOptions(
     waitPeriod = java.time.Duration.ofMillis(500),
-    waitStagger = java.time.Duration.ofMillis(500)
+    waitStagger = java.time.Duration.ofMillis(500),
+    measureLatencies = true
   )
   val acceptors = for (i <- 1 to 3) yield {
     val logger = new JsLogger()
