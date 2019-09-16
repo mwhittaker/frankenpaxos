@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1568415403397,
+  "iteration": 1568507804066,
   "links": [],
   "panels": [
     {
@@ -199,6 +199,14 @@
           "intervalFactor": 1,
           "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
           "refId": "F"
+        },
+        {
+          "expr": "rate(zigzag_tarjan_latency_sum{job=~\"$job\"}[1s])\n/ rate(zigzag_tarjan_latency_count{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "G"
         }
       ],
       "thresholds": [],
@@ -2302,8 +2310,8 @@
     ]
   },
   "time": {
-    "from": "2019-09-13T22:48:54.556Z",
-    "to": "2019-09-13T22:49:59.717Z"
+    "from": "2019-09-15T00:34:44.151Z",
+    "to": "2019-09-15T00:35:31.379Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -2333,5 +2341,5 @@
   "timezone": "",
   "title": "Simple GC BPaxos",
   "uid": "fz4gS_KWk",
-  "version": 4
+  "version": 5
 }
