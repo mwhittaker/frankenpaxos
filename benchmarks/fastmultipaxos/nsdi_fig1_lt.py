@@ -71,6 +71,7 @@ def _main(args) -> None:
                 for (num_client_procs, num_clients_per_proc) in
                     [
                         (1, 1),
+                        (1, 10),
                         (5, 10),
                         (5, 20),
                         (6, 50),
