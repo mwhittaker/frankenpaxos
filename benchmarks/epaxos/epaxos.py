@@ -1,6 +1,7 @@
 from .. import benchmark
 from .. import host
 from .. import parser_util
+from .. import placement
 from .. import prometheus
 from .. import proto_util
 from .. import util
@@ -11,6 +12,7 @@ import argparse
 import csv
 import datetime
 import itertools
+import json
 import mininet
 import mininet.net
 import os
@@ -131,17 +133,18 @@ class EPaxosNet(object):
 
 class RemoteEPaxosNet(EPaxosNet):
     def __init__(self,
-                 addresses: List[str],
+                 placement_file: str,
                  key_filename: Optional[str],
                  f: int,
                  num_client_procs: int) -> None:
-        assert len(addresses) > 0
         self._key_filename = key_filename
         self._f = f
         self._num_client_procs = num_client_procs
-        self._hosts = [self._make_host(a) for a in addresses]
+        with open(placement_file, 'r') as pf:
+            p = placement.Placement(json.load(pf), self._connect)
+            self._placement = p.f(f)
 
-    def _make_host(self, address: str) -> host.Host:
+    def _connect(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
         if self._key_filename:
@@ -154,31 +157,27 @@ class RemoteEPaxosNet(EPaxosNet):
         clients: List[host.Endpoint]
         replicas: List[host.Endpoint]
 
-    def _placement(self) -> '_Placement':
+    def _get_placement(self) -> '_Placement':
         ports = itertools.count(10000, 100)
         def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
             return [host.Endpoint(h, next(ports)) for h in hosts]
 
-        if len(self._hosts) == 1:
-            return self._Placement(
-                clients = portify(self._hosts * self._num_client_procs),
-                replicas = portify(self._hosts * (2*self.f() + 1)),
-            )
-        else:
-            return self._Placement(
-                clients = portify([self._hosts[0]] * self._num_client_procs),
-                replicas = portify(list(itertools.islice(
-                    itertools.cycle(self._hosts[1:]), 2*self.f() + 1))),
-            )
+        return self._Placement(
+            clients = portify(list(
+                itertools.islice(itertools.cycle(self._placement['clients']),
+                                 self._num_client_procs)
+            )),
+            replicas = portify(self._placement['replicas']),
+        )
 
     def f(self) -> int:
         return self._f
 
     def clients(self) -> List[host.Endpoint]:
-        return self._placement().clients
+        return self._get_placement().clients
 
     def replicas(self) -> List[host.Endpoint]:
-        return self._placement().replicas
+        return self._get_placement().replicas
 
 
 class EPaxosMininet(EPaxosNet):
@@ -235,9 +234,9 @@ class SingleSwitchMininet(EPaxosMininet):
 
 class EPaxosSuite(benchmark.Suite[Input, Output]):
     def make_net(self, args: Dict[Any, Any], input: Input) -> EPaxosNet:
-        if args['address'] is not None:
+        if args['placement'] is not None:
             return RemoteEPaxosNet(
-                        args['address'],
+                        args['placement'],
                         args['identity_file'],
                         f=input.f,
                         num_client_procs=input.num_client_procs)
