@@ -10,7 +10,7 @@ def _main(args) -> None:
         def inputs(self) -> Collection[Input]:
             return [
                 Input(
-                    f = 1,
+                    f = f,
                     num_client_procs = num_client_procs,
                     num_warmup_clients_per_proc = 50,
                     num_clients_per_proc = num_clients_per_proc,
