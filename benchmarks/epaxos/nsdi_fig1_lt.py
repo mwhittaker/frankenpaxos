@@ -57,7 +57,7 @@ def main(args) -> None:
                 )
                 # for f in [1, 2, 3]
                 for f in [1, 2]
-                for conflict_rate in [0.0, 0.02, 0.1, 0.20]
+                for conflict_rate in [0.0, 0.02, 0.1]
                 for load in [
                     workload.BernoulliSingleKeyWorkload(
                         conflict_rate = conflict_rate,

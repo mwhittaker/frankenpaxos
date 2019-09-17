@@ -2,7 +2,7 @@ from .simplebpaxos import *
 
 
 def main(args) -> None:
-    class NsdiFig1LtSimpleBPaxosSuite(SimpleBPaxosSuite):
+    class OneoffSimpleBPaxosSuite(SimpleBPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -13,27 +13,25 @@ def main(args) -> None:
                     num_client_procs = num_client_procs,
                     num_warmup_clients_per_proc = 50,
                     num_clients_per_proc = num_clients_per_proc,
-                    num_leaders = num_leaders,
-                    warmup_duration = datetime.timedelta(seconds=5),
-                    warmup_timeout = datetime.timedelta(seconds=10),
+                    num_leaders = 5,
+                    warmup_duration = datetime.timedelta(seconds=15),
+                    warmup_timeout = datetime.timedelta(seconds=20),
                     warmup_sleep = datetime.timedelta(seconds=5),
                     duration = datetime.timedelta(seconds=15),
                     timeout = datetime.timedelta(seconds=20),
                     client_lag = datetime.timedelta(seconds=5),
-                    state_machine = 'KeyValueStore',
-                    workload = load,
+                    state_machine = state_machine,
+                    workload = wl,
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     leader_options = LeaderOptions(
-                        thrifty_system = 'NotThrifty',
                         resend_dependency_requests_timer_period = \
                             datetime.timedelta(seconds=600)
                     ),
                     leader_log_level = args.log_level,
                     proposer_options = ProposerOptions(
-                        thrifty_system = 'Random',
                         resend_phase1as_timer_period = \
                             datetime.timedelta(seconds=600),
                         resend_phase2as_timer_period = \
@@ -42,6 +40,7 @@ def main(args) -> None:
                     proposer_log_level = args.log_level,
                     dep_service_node_options = DepServiceNodeOptions(
                         top_k_dependencies = 1,
+                        unsafe_return_no_dependencies = unsafe_return_no_dependencies,
                     ),
                     dep_service_node_log_level = args.log_level,
                     acceptor_options = AcceptorOptions(),
@@ -50,10 +49,11 @@ def main(args) -> None:
                         recover_vertex_timer_min_period = \
                             datetime.timedelta(seconds=600),
                         recover_vertex_timer_max_period = \
-                            datetime.timedelta(seconds=1200),
-                        execute_graph_batch_size = execute_graph_batch_size,
+                            datetime.timedelta(seconds=600),
+                        execute_graph_batch_size = 100,
                         execute_graph_timer_period = \
                             datetime.timedelta(seconds=1),
+                        unsafe_skip_graph_execution = unsafe_skip_graph_execution,
                         num_blockers = 1,
                     ),
                     replica_zigzag_options = ZigzagOptions(
@@ -66,55 +66,43 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                # for f in [1, 2, 3]
-                for f in [1, 2]
-                for conflict_rate in [0.0, 0.02, 0.1]
-                for load in [
-                    workload.BernoulliSingleKeyWorkload(
-                        conflict_rate = conflict_rate,
-                        size_mean = 8,
-                        size_std = 0,
-                    )
+                for f in [1]
+                for (unsafe_return_no_dependencies, unsafe_skip_graph_execution) in [
+                    (False, False)
                 ]
-                for num_leaders in (
-                    [5] if f == 1 else
-                    [10] if f == 2 else
-                    [15] if f == 3 else
-                    []
-                )
+                for (state_machine, wl) in [
+                    (
+                        'KeyValueStore',
+                         workload.UniformSingleKeyWorkload(
+                             num_keys = 10000,
+                             size_mean = 1,
+                             size_std = 0,
+                         ),
+                    ),
+                    # (
+                    #     'Noop',
+                    #      workload.StringWorkload(
+                    #          size_mean = 1,
+                    #          size_std = 0,
+                    #      ),
+                    # ),
+                ]
                 for (num_client_procs, num_clients_per_proc) in
-                    [
-                        (1, 1),
-                        (1, 10),
-                        (5, 10),
-                        (5, 20),
-                        (6, 50),
-                        (6, 100),
-                        (12, 100),
-                    ]
-                for execute_graph_batch_size in (
-                    [1] if num_client_procs * num_clients_per_proc == 1 else
-                    [100] if num_client_procs * num_clients_per_proc > 100 else
-                    [int(num_client_procs * num_clients_per_proc / 2)]
-                )
-            ] * 3
+                    [(6, 100)]
+            ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
-                'workload': input.workload,
-                'num_leaders': input.num_leaders,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
-                'execute_graph_batch_size':
-                    input.replica_options.execute_graph_batch_size,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = NsdiFig1LtSimpleBPaxosSuite()
+    suite = OneoffSimpleBPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'simplebpaxos_nsdi_fig_1_lt') as dir:
+                                  'simplebpaxos_oneoff') as dir:
         suite.run_suite(dir)
 
 

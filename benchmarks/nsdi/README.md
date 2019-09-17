@@ -1,0 +1,11 @@
+# Figure 1: Latency throughput curves
+- MultiPaxos
+    - IOMWQWXVVV
+- EPaxos
+    - EYIQEBJYDM
+    - OBQVYFEXUH
+- BPaxos
+    - GWPNAUZJHD
+    - HPPMOTJYLU
+    - IGUXOODUZV
+    - SBFTZAJUFU

@@ -56,9 +56,11 @@ def main(args) -> None:
         bpaxos_df[bpaxos_df['f'] == 1],
     )
     make_figure(
-        args.outputf1,
+        args.outputf2,
         multipaxos_df[multipaxos_df['f'] == 2],
-        epaxos_df[epaxos_df['f'] == 2],
+        # EPaxos at conflict rate 0.1 is super noisy, so we remove it.
+        epaxos_df[(epaxos_df['f'] == 2) &
+                  (epaxos_df['workload.conflict_rate'] != 0.1)],
         bpaxos_df[bpaxos_df['f'] == 2],
     )
 
