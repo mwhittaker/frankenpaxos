@@ -1,9 +1,8 @@
-from ..simplebpaxos import simplebpaxos
-from .superbpaxos import *
+from .simplebpaxos import *
 
 
 def main(args) -> None:
-    class NsdiFig2AblationSuperBPaxosSuite(SuperBPaxosSuite):
+    class NsdiFig2AblationSimpleBPaxosSuite(SimpleBPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -31,13 +30,13 @@ def main(args) -> None:
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
-                    leader_options = simplebpaxos.LeaderOptions(
+                    leader_options = LeaderOptions(
                         thrifty_system = 'NotThrifty',
                         resend_dependency_requests_timer_period = \
                             datetime.timedelta(seconds=600)
                     ),
                     leader_log_level = args.log_level,
-                    proposer_options = simplebpaxos.ProposerOptions(
+                    proposer_options = ProposerOptions(
                         thrifty_system = 'Random',
                         resend_phase1as_timer_period = \
                             datetime.timedelta(seconds=600),
@@ -45,14 +44,13 @@ def main(args) -> None:
                             datetime.timedelta(seconds=600),
                     ),
                     proposer_log_level = args.log_level,
-                    dep_service_node_options = \
-                        simplebpaxos.DepServiceNodeOptions(
-                            top_k_dependencies = 1,
-                        ),
+                    dep_service_node_options = DepServiceNodeOptions(
+                        top_k_dependencies = 1,
+                    ),
                     dep_service_node_log_level = args.log_level,
-                    acceptor_options = simplebpaxos.AcceptorOptions(),
+                    acceptor_options = AcceptorOptions(),
                     acceptor_log_level = args.log_level,
-                    replica_options = simplebpaxos.ReplicaOptions(
+                    replica_options = ReplicaOptions(
                         recover_vertex_timer_min_period = \
                             datetime.timedelta(seconds=600),
                         recover_vertex_timer_max_period = \
@@ -62,17 +60,17 @@ def main(args) -> None:
                             datetime.timedelta(seconds=1),
                         num_blockers = 1,
                     ),
-                    replica_zigzag_options = simplebpaxos.ZigzagOptions(
+                    replica_zigzag_options = ZigzagOptions(
                         vertices_grow_size = 20000,
                         garbage_collect_every_n_commands = 20000,
                     ),
                     replica_log_level = args.log_level,
-                    client_options = simplebpaxos.ClientOptions(
+                    client_options = ClientOptions(
                         repropose_period = datetime.timedelta(seconds=600),
                     ),
                     client_log_level = args.log_level,
                 )
-                for num_leaders in [3]
+                for num_leaders in [2, 3, 4, 5, 6, 7]
                 for (num_client_procs, num_clients_per_proc) in
                     [(1, 1), (6, 200)]
                 for execute_graph_batch_size in (
@@ -94,9 +92,9 @@ def main(args) -> None:
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = NsdiFig2AblationSuperBPaxosSuite()
+    suite = NsdiFig2AblationSimpleBPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'superbpaxos_nsdi_fig_2_ablation') as dir:
+                                  'simplebpaxos_nsdi_fig_2_ablation') as dir:
         suite.run_suite(dir)
 
 
