@@ -21,24 +21,28 @@ def main(args) -> None:
                     timeout = datetime.timedelta(seconds=20),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
-                    workload = workload,
+                    workload = load,
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     leader_options = LeaderOptions(
+                        thrifty_system = 'NotThrifty',
                         resend_dependency_requests_timer_period = \
                             datetime.timedelta(seconds=600)
                     ),
                     leader_log_level = args.log_level,
                     proposer_options = ProposerOptions(
+                        thrifty_system = 'Random',
                         resend_phase1as_timer_period = \
                             datetime.timedelta(seconds=600),
                         resend_phase2as_timer_period = \
                             datetime.timedelta(seconds=600),
                     ),
                     proposer_log_level = args.log_level,
-                    dep_service_node_options = DepServiceNodeOptions(),
+                    dep_service_node_options = DepServiceNodeOptions(
+                        top_k_dependencies = 1,
+                    ),
                     dep_service_node_log_level = args.log_level,
                     acceptor_options = AcceptorOptions(),
                     acceptor_log_level = args.log_level,
@@ -49,7 +53,8 @@ def main(args) -> None:
                             datetime.timedelta(seconds=1200),
                         execute_graph_batch_size = execute_graph_batch_size,
                         execute_graph_timer_period = \
-                            datetime.timedelta(seconds=1)
+                            datetime.timedelta(seconds=1),
+                        num_blockers = 1,
                     ),
                     replica_zigzag_options = ZigzagOptions(
                         vertices_grow_size = 20000,
@@ -61,9 +66,10 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for f in [1, 2, 3]
+                # for f in [1, 2, 3]
+                for f in [1, 2]
                 for conflict_rate in [0.0, 0.02, 0.25, 0.50]
-                for workload in [
+                for load in [
                     workload.BernoulliSingleKeyWorkload(
                         conflict_rate = conflict_rate,
                         size_mean = 8,
@@ -83,7 +89,6 @@ def main(args) -> None:
                         (6, 10),
                         (6, 100),
                         (6, 1000),
-                        (12, 1000),
                     ]
                 for execute_graph_batch_size in (
                     [1] if num_client_procs * num_clients_per_proc == 1 else
@@ -99,6 +104,8 @@ def main(args) -> None:
                 'num_leaders': input.num_leaders,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
+                'execute_graph_batch_size':
+                    input.replica_options.execute_graph_batch_size,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })

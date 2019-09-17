@@ -235,9 +235,18 @@ class RemoteSimpleBPaxosNet(SimpleBPaxosNet):
             return [host.Endpoint(h, next(ports)) for h in hosts]
 
         return self._Placement(
-            clients = portify(self._placement['clients']),
-            leaders = portify(self._placement['leaders']),
-            proposers = portify(self._placement['proposers']),
+            clients = portify(list(
+                itertools.islice(itertools.cycle(self._placement['clients']),
+                                 self._num_client_procs)
+            )),
+            leaders = portify(list(
+                itertools.islice(itertools.cycle(self._placement['leaders']),
+                                 self._num_leaders)
+            )),
+            proposers = portify(list(
+                itertools.islice(itertools.cycle(self._placement['proposers']),
+                                 self._num_leaders)
+            )),
             dep_service_nodes = portify(self._placement['dep_service_nodes']),
             acceptors = portify(self._placement['acceptors']),
             replicas = portify(self._placement['replicas']),

@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Any, Dict, List, NamedTuple, Tuple, Union
 
 # A scalar protobuf value.
-Scalar = Union[str, int, Enum]
+Scalar = Union[str, int, float, Enum]
 
 # A protobuf value. Either a scalar, a list of scalars, or a message (Any).
 Value = Union[Scalar, List[Scalar], Any]
@@ -48,6 +48,8 @@ def message_to_pbtext(d: Message, indent: int = 0) -> str:
         if isinstance(v, str):
             strings.append(f'{k}: "{v}"')
         elif isinstance(v, int):
+            strings.append(f'{k}: {v}')
+        elif isinstance(v, float):
             strings.append(f'{k}: {v}')
         elif isinstance(v, Enum):
             strings.append(f'{k}: {v.name}')
