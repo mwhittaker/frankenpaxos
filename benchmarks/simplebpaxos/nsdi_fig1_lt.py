@@ -68,7 +68,7 @@ def main(args) -> None:
                 )
                 # for f in [1, 2, 3]
                 for f in [1, 2]
-                for conflict_rate in [0.0, 0.02, 0.25, 0.50]
+                for conflict_rate in [0.0, 0.02, 0.1, 0.20]
                 for load in [
                     workload.BernoulliSingleKeyWorkload(
                         conflict_rate = conflict_rate,
@@ -85,10 +85,11 @@ def main(args) -> None:
                 for (num_client_procs, num_clients_per_proc) in
                     [
                         (1, 1),
-                        (3, 10),
-                        (6, 10),
+                        (5, 10),
+                        (5, 20),
+                        (6, 50),
                         (6, 100),
-                        (6, 1000),
+                        (12, 100),
                     ]
                 for execute_graph_batch_size in (
                     [1] if num_client_procs * num_clients_per_proc == 1 else
