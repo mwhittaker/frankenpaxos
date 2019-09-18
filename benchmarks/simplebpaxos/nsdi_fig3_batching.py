@@ -2,7 +2,7 @@ from .simplebpaxos import *
 
 
 def main(args) -> None:
-    class NsdiFig3WanSimpleBPaxosSuite(SimpleBPaxosSuite):
+    class NsdiFig3BatchingSimpleBPaxosSuite(SimpleBPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -11,21 +11,17 @@ def main(args) -> None:
                 Input(
                     f = 1,
                     num_client_procs = num_client_procs,
-                    num_warmup_clients_per_proc = 50,
+                    num_warmup_clients_per_proc = 1,
                     num_clients_per_proc = num_clients_per_proc,
                     num_leaders = num_leaders,
-                    warmup_duration = datetime.timedelta(seconds=15),
-                    warmup_timeout = datetime.timedelta(seconds=20),
+                    warmup_duration = datetime.timedelta(seconds=5),
+                    warmup_timeout = datetime.timedelta(seconds=10),
                     warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=25),
-                    timeout = datetime.timedelta(seconds=30),
+                    duration = datetime.timedelta(seconds=15),
+                    timeout = datetime.timedelta(seconds=20),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
-                    workload = workload.BernoulliSingleKeyWorkload(
-                        conflict_rate = 0.0,
-                        size_mean = 8,
-                        size_std = 0,
-                    ),
+                    workload = load,
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -70,24 +66,45 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for num_leaders in [5]
-                for (num_client_procs, num_clients_per_proc) in [(1, 1)]
-                for execute_graph_batch_size in [1]
+                for conflict_rate in [0.0, 0.02, 0.1]
+                for load in [
+                    workload.BernoulliSingleKeyWorkload(
+                        conflict_rate = conflict_rate,
+                        size_mean = 8,
+                        size_std = 0,
+                    )
+                ]
+                for num_leaders in [5, 7]
+                for (num_client_procs, num_clients_per_proc) in
+                    [
+                        (1, 1),
+                        (5, 1),
+                        (10, 1),
+                        (10, 10),
+                    ]
+                for execute_graph_batch_size in (
+                    [1] if num_client_procs * num_clients_per_proc == 1 else
+                    [100] if num_client_procs * num_clients_per_proc > 100 else
+                    [int(num_client_procs * num_clients_per_proc / 2)]
+                )
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
+                'workload': input.workload,
                 'num_leaders': input.num_leaders,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
+                'execute_graph_batch_size':
+                    input.replica_options.execute_graph_batch_size,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = NsdiFig3WanSimpleBPaxosSuite()
+    suite = NsdiFig3BatchingSimpleBPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'simplebpaxos_nsdi_fig_3_wan') as dir:
+                                  'simplebpaxos_nsdi_fig_3_batching') as dir:
         suite.run_suite(dir)
 
 

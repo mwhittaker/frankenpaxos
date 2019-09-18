@@ -49,8 +49,27 @@ class BernoulliSingleKeyWorkload(NamedTuple):
             }
         }
 
+class BinomialSingleKeyWorkload(NamedTuple):
+    conflict_rate: float
+    size_mean: int
+    size_std: int
+    n: int
+    # We put the name here so that it appears in benchmark outputs.
+    name: str = 'BernoulliSingleKeyWorkload'
+
+    def to_proto(self) -> proto_util.Message:
+        return {
+            'bernoulli_single_key_workload': {
+                'conflict_rate': self.conflict_rate,
+                'size_mean': self.size_mean,
+                'size_std': self.size_std,
+                'n': self.n,
+            }
+        }
+
 Workload = Union[
     StringWorkload,
     UniformSingleKeyWorkload,
-    BernoulliSingleKeyWorkload
+    BernoulliSingleKeyWorkload,
+    BinomialSingleKeyWorkload,
 ]
