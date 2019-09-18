@@ -19,7 +19,10 @@ object KeyValueStore {
     for {
       key <- Gen.oneOf(keys)
     } yield {
-      KeyValueStoreInput().withGetRequest(GetRequest(key = Seq(key)))
+      KeyValueStoreInput(
+        batch =
+          Seq(KeyValueStoreRequest().withGetRequest(GetRequest(key = key)))
+      )
     }
   }
 
@@ -27,8 +30,12 @@ object KeyValueStore {
     for {
       (key, value) <- Gen.oneOf(keyValues)
     } yield {
-      KeyValueStoreInput().withSetRequest(
-        SetRequest(keyValue = Seq(SetKeyValuePair(key, value)))
+      KeyValueStoreInput(
+        batch = Seq(
+          KeyValueStoreRequest().withSetRequest(
+            SetRequest(key = key, value = value)
+          )
+        )
       )
     }
   }
@@ -45,32 +52,50 @@ class KeyValueStore
 
   def get(): Map[String, String] = kvs.toMap
 
-  override def typedRun(input: KeyValueStoreInput): KeyValueStoreOutput = {
-    import KeyValueStoreInput.Request
+  private def typedRun(input: KeyValueStoreRequest): KeyValueStoreReply = {
+    import KeyValueStoreRequest.Request
     input.request match {
-      case Request.GetRequest(GetRequest(keys)) =>
-        KeyValueStoreOutput().withGetReply(
-          GetReply(keys.map(k => GetKeyValuePair(k, kvs.get(k))))
-        )
+      case Request.GetRequest(GetRequest(key)) =>
+        KeyValueStoreReply().withGetReply(GetReply(kvs.get(key)))
 
-      case Request.SetRequest(SetRequest(keyValues)) =>
-        keyValues.foreach({ case SetKeyValuePair(k, v) => kvs(k) = v })
-        KeyValueStoreOutput().withSetReply(SetReply())
+      case Request.SetRequest(SetRequest(key, value)) =>
+        kvs(key) = value
+        KeyValueStoreReply().withSetReply(SetReply())
 
       case Request.Empty =>
         throw new IllegalStateException()
     }
   }
 
-  private def keys(input: KeyValueStoreInput): Set[String] = {
-    import KeyValueStoreInput.Request
-    input.request match {
-      case Request.GetRequest(GetRequest(keys)) =>
-        keys.to[Set]
-      case Request.SetRequest(SetRequest(keyValues)) =>
-        keyValues.map({ case SetKeyValuePair(k, _) => k }).to[Set]
-      case Request.Empty =>
-        throw new IllegalStateException()
+  override def typedRun(input: KeyValueStoreInput): KeyValueStoreOutput = {
+    KeyValueStoreOutput(input.batch.map(typedRun))
+  }
+
+  private def keys(
+      input: KeyValueStoreInput
+  ): (mutable.Set[String], mutable.Set[String]) = {
+    val getKeys = mutable.Set[String]()
+    val setKeys = mutable.Set[String]()
+    for (request <- input.batch) {
+      import KeyValueStoreRequest.Request
+      request.request match {
+        case Request.GetRequest(GetRequest(key)) =>
+          getKeys += key
+        case Request.SetRequest(SetRequest(key, value)) =>
+          setKeys += key
+        case Request.Empty =>
+          throw new IllegalStateException()
+      }
+    }
+    (getKeys, setKeys)
+  }
+
+  private def overlap[A](xs: mutable.Set[A], ys: mutable.Set[A]): Boolean = {
+    // Emperically faster than xs.intersect(ys).isEmpty.
+    if (xs.size < ys.size) {
+      xs.exists(ys.contains(_))
+    } else {
+      ys.exists(xs.contains(_))
     }
   }
 
@@ -78,27 +103,17 @@ class KeyValueStore
       firstCommand: KeyValueStoreInput,
       secondCommand: KeyValueStoreInput
   ): Boolean = {
-    import KeyValueStoreInput.Request
-
-    (firstCommand.request, secondCommand.request) match {
-      case (Request.GetRequest(_), Request.GetRequest(_)) =>
-        // Get requests do not conflict.
-        false
-
-      case (Request.SetRequest(_), Request.GetRequest(_)) |
-          (Request.GetRequest(_), Request.SetRequest(_)) |
-          (Request.SetRequest(_), Request.SetRequest(_)) =>
-        keys(firstCommand).intersect(keys(secondCommand)).nonEmpty
-
-      case (Request.Empty, _) | (_, Request.Empty) =>
-        throw new IllegalStateException()
-    }
+    val (firstGetKeys, firstSetKeys) = keys(firstCommand)
+    val (secondGetKeys, secondSetKeys) = keys(secondCommand)
+    overlap(firstGetKeys, secondSetKeys) ||
+    overlap(firstSetKeys, secondGetKeys) ||
+    overlap(firstSetKeys, secondSetKeys)
   }
 
   override def toBytes(): Array[Byte] =
     KeyValueStoreProto(
       kvs.iterator
-        .map({ case (k, v) => SetKeyValuePair(key = k, value = v) })
+        .map({ case (k, v) => KeyValuePair(key = k, value = v) })
         .toSeq
     ).toByteArray
 
@@ -129,7 +144,7 @@ class KeyValueStore
       private val commands = mutable.Map[CommandKey, KeyValueStoreInput]()
       private val gets = mutable.Map[String, mutable.Set[CommandKey]]()
       private val sets = mutable.Map[String, mutable.Set[CommandKey]]()
-      private val snapshots = mutable.Set[CommandKey]()
+      // TODO(mwhittaker): Update with snapshots.
 
       override def put(
           commandKey: CommandKey,
@@ -138,25 +153,24 @@ class KeyValueStore
         remove(commandKey)
         commands(commandKey) = command
 
-        import KeyValueStoreInput.Request
-        command.request match {
-          case Request.GetRequest(GetRequest(keys)) =>
-            for (key <- keys) {
+        for (request <- command.batch) {
+          import KeyValueStoreRequest.Request
+          request.request match {
+            case Request.GetRequest(GetRequest(key)) =>
               gets.getOrElseUpdate(key, mutable.Set()) += commandKey
-            }
 
-          case Request.SetRequest(SetRequest(keyValues)) =>
-            for (SetKeyValuePair(key, _) <- keyValues) {
+            case Request.SetRequest(SetRequest(key, value)) =>
               sets.getOrElseUpdate(key, mutable.Set()) += commandKey
-            }
 
-          case Request.Empty =>
-            throw new IllegalStateException()
+            case Request.Empty =>
+              throw new IllegalStateException()
+          }
         }
       }
 
       override def putSnapshot(commandKey: CommandKey): Unit =
-        snapshots += commandKey
+        // TODO(mwhittaker): Update with snapshots.
+        ???
 
       override def remove(
           commandKey: CommandKey
@@ -166,26 +180,24 @@ class KeyValueStore
             None
 
           case Some(input) => {
-            import KeyValueStoreInput.Request
-            input.request match {
-              case Request.GetRequest(GetRequest(keys)) =>
-                for (key <- keys) {
+            for (request <- input.batch) {
+              import KeyValueStoreRequest.Request
+              request.request match {
+                case Request.GetRequest(GetRequest(key)) =>
                   gets(key) -= commandKey
                   if (gets(key).isEmpty) {
                     gets -= key
                   }
-                }
 
-              case Request.SetRequest(SetRequest(keyValues)) =>
-                for (SetKeyValuePair(key, _) <- keyValues) {
+                case Request.SetRequest(SetRequest(key, value)) =>
                   sets(key) -= commandKey
                   if (sets(key).isEmpty) {
                     sets -= key
                   }
-                }
 
-              case Request.Empty =>
-                throw new IllegalStateException()
+                case Request.Empty =>
+                  throw new IllegalStateException()
+              }
             }
           }
         }
@@ -194,25 +206,16 @@ class KeyValueStore
       override def getConflicts(
           command: KeyValueStoreInput
       ): Set[CommandKey] = {
-        import KeyValueStoreInput.Request
-        val commandKeys = command.request match {
-          case Request.GetRequest(GetRequest(keys)) =>
-            val setConflicts =
-              keys.map(key => sets.getOrElse(key, mutable.Set())).flatten
-            (setConflicts ++ snapshots).toSet
-
-          case Request.SetRequest(SetRequest(keyValues)) =>
-            val keys = keyValues.map({ case SetKeyValuePair(k, v) => k })
-            val getConflicts =
-              keys.map(key => gets.getOrElse(key, mutable.Set()))
-            val setConflicts =
-              keys.map(key => sets.getOrElse(key, mutable.Set()))
-            ((getConflicts ++ setConflicts).flatten ++ snapshots).toSet
-
-          case Request.Empty =>
-            throw new IllegalStateException()
+        val conflicts = mutable.Set[CommandKey]()
+        val (getKeys, setKeys) = keys(command)
+        for (key <- getKeys) {
+          conflicts ++= sets.getOrElse(key, mutable.Set())
         }
-        commandKeys
+        for (key <- setKeys) {
+          conflicts ++= sets.getOrElse(key, mutable.Set())
+          conflicts ++= gets.getOrElse(key, mutable.Set())
+        }
+        conflicts.toSet
       }
     }
 
@@ -226,78 +229,48 @@ class KeyValueStore
         type LeaderIndex = Int
         private val gets = mutable.Map[String, TopOne[CommandKey]]()
         private val sets = mutable.Map[String, TopOne[CommandKey]]()
-        private val snapshots = new TopOne[CommandKey](numLeaders, like)
+        // TODO(mwhittaker): Update with snapshots.
 
         override def put(
             commandKey: CommandKey,
             command: KeyValueStoreInput
         ): Unit = {
-          import KeyValueStoreInput.Request
-          command.request match {
-            case Request.GetRequest(GetRequest(keys)) =>
-              for (key <- keys) {
+          for (request <- command.batch) {
+            import KeyValueStoreRequest.Request
+            request.request match {
+              case Request.GetRequest(GetRequest(key)) =>
                 gets
                   .getOrElseUpdate(key, new TopOne(numLeaders, like))
                   .put(commandKey)
-              }
 
-            case Request.SetRequest(SetRequest(keyValues)) =>
-              for (SetKeyValuePair(key, _) <- keyValues) {
+              case Request.SetRequest(SetRequest(key, value)) =>
                 sets
                   .getOrElseUpdate(key, new TopOne(numLeaders, like))
                   .put(commandKey)
-              }
 
-            case Request.Empty =>
-              throw new IllegalStateException()
+              case Request.Empty =>
+                throw new IllegalStateException()
+            }
           }
         }
 
         override def putSnapshot(commandKey: CommandKey): Unit =
-          snapshots.put(commandKey)
+          // TODO(mwhittaker): Update with snapshots.
+          ???
 
         override def getTopOneConflicts(
             command: KeyValueStoreInput
         ): TopOne[CommandKey] = {
-          import KeyValueStoreInput.Request
-          command.request match {
-            case Request.GetRequest(GetRequest(keys)) =>
-              if (keys.size == 0) {
-                snapshots
-              } else {
-                val merged = new TopOne(numLeaders, like)
-                for (key <- keys) {
-                  sets.get(key) match {
-                    case None         =>
-                    case Some(topOne) => merged.mergeEquals(topOne)
-                  }
-                }
-                merged.mergeEquals(snapshots)
-                merged
-              }
-
-            case Request.SetRequest(SetRequest(keyValues)) =>
-              if (keyValues.size == 0) {
-                snapshots
-              } else {
-                val merged = new TopOne(numLeaders, like)
-                for (SetKeyValuePair(key, _) <- keyValues) {
-                  sets.get(key) match {
-                    case None         =>
-                    case Some(topOne) => merged.mergeEquals(topOne)
-                  }
-                  gets.get(key) match {
-                    case None         =>
-                    case Some(topOne) => merged.mergeEquals(topOne)
-                  }
-                }
-                merged.mergeEquals(snapshots)
-                merged
-              }
-
-            case Request.Empty =>
-              throw new IllegalStateException()
+          val (getKeys, setKeys) = keys(command)
+          val merged = new TopOne(numLeaders, like)
+          for (key <- getKeys) {
+            sets.get(key).foreach(merged.mergeEquals(_))
           }
+          for (key <- setKeys) {
+            sets.get(key).foreach(merged.mergeEquals(_))
+            gets.get(key).foreach(merged.mergeEquals(_))
+          }
+          merged
         }
       }
     } else {
@@ -305,78 +278,48 @@ class KeyValueStore
         type LeaderIndex = Int
         private val gets = mutable.Map[String, TopK[CommandKey]]()
         private val sets = mutable.Map[String, TopK[CommandKey]]()
-        private val snapshots = new TopK[CommandKey](k, numLeaders, like)
+        // TODO(mwhittaker): Update with snapshots.
 
         override def put(
             commandKey: CommandKey,
             command: KeyValueStoreInput
         ): Unit = {
-          import KeyValueStoreInput.Request
-          command.request match {
-            case Request.GetRequest(GetRequest(keys)) =>
-              for (key <- keys) {
+          for (request <- command.batch) {
+            import KeyValueStoreRequest.Request
+            request.request match {
+              case Request.GetRequest(GetRequest(key)) =>
                 gets
                   .getOrElseUpdate(key, new TopK(k, numLeaders, like))
                   .put(commandKey)
-              }
 
-            case Request.SetRequest(SetRequest(keyValues)) =>
-              for (SetKeyValuePair(key, _) <- keyValues) {
+              case Request.SetRequest(SetRequest(key, value)) =>
                 sets
                   .getOrElseUpdate(key, new TopK(k, numLeaders, like))
                   .put(commandKey)
-              }
 
-            case Request.Empty =>
-              throw new IllegalStateException()
+              case Request.Empty =>
+                throw new IllegalStateException()
+            }
           }
         }
 
         override def putSnapshot(commandKey: CommandKey): Unit =
-          snapshots.put(commandKey)
+          // TODO(mwhittaker): Update with snapshots.
+          ???
 
         override def getTopKConflicts(
             command: KeyValueStoreInput
         ): TopK[CommandKey] = {
-          import KeyValueStoreInput.Request
-          command.request match {
-            case Request.GetRequest(GetRequest(keys)) =>
-              if (keys.size == 0) {
-                snapshots
-              } else {
-                val merged = new TopK(k, numLeaders, like)
-                for (key <- keys) {
-                  sets.get(key) match {
-                    case None       =>
-                    case Some(topK) => merged.mergeEquals(topK)
-                  }
-                }
-                merged.mergeEquals(snapshots)
-                merged
-              }
-
-            case Request.SetRequest(SetRequest(keyValues)) =>
-              if (keyValues.size == 0) {
-                snapshots
-              } else {
-                val merged = new TopK(k, numLeaders, like)
-                for (SetKeyValuePair(key, _) <- keyValues) {
-                  sets.get(key) match {
-                    case None       =>
-                    case Some(topK) => merged.mergeEquals(topK)
-                  }
-                  gets.get(key) match {
-                    case None       =>
-                    case Some(topK) => merged.mergeEquals(topK)
-                  }
-                }
-                merged.mergeEquals(snapshots)
-                merged
-              }
-
-            case Request.Empty =>
-              throw new IllegalStateException()
+          val (getKeys, setKeys) = keys(command)
+          val merged = new TopK(k, numLeaders, like)
+          for (key <- getKeys) {
+            sets.get(key).foreach(merged.mergeEquals(_))
           }
+          for (key <- setKeys) {
+            sets.get(key).foreach(merged.mergeEquals(_))
+            gets.get(key).foreach(merged.mergeEquals(_))
+          }
+          merged
         }
       }
     }

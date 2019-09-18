@@ -4,7 +4,6 @@ import frankenpaxos.compact.IntPrefixSet
 import frankenpaxos.statemachine.GetRequest
 import frankenpaxos.statemachine.KeyValueStore
 import frankenpaxos.statemachine.KeyValueStoreInput
-import frankenpaxos.statemachine.SetKeyValuePair
 import frankenpaxos.statemachine.SetRequest
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers

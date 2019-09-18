@@ -122,11 +122,16 @@ class ConflictIndexTest extends FlatSpec with Matchers {
 
   // KeyValueStore /////////////////////////////////////////////////////////////
   private def get(keys: String*): KeyValueStoreInput =
-    KeyValueStoreInput().withGetRequest(GetRequest(keys))
+    KeyValueStoreInput(
+      batch =
+        keys.map(k => KeyValueStoreRequest().withGetRequest(GetRequest(k)))
+    )
 
   private def set(keys: String*): KeyValueStoreInput =
-    KeyValueStoreInput().withSetRequest(
-      SetRequest(keys.map(key => SetKeyValuePair(key = key, value = "")))
+    KeyValueStoreInput(
+      batch = keys.map(
+        k => KeyValueStoreRequest().withSetRequest(SetRequest(k, value = ""))
+      )
     )
 
   "Key-value store conflict index" should "put and get correctly" in {
@@ -161,23 +166,25 @@ class ConflictIndexTest extends FlatSpec with Matchers {
     conflictIndex.getConflicts(set("a")) shouldBe Set()
   }
 
-  it should "getConflicts with snapshots correctly" in {
-    val kvs = new KeyValueStore()
-    val conflictIndex = kvs.typedConflictIndex[Int]()
-    conflictIndex.put(0, get("a", "b"))
-    conflictIndex.put(1, get("y", "z"))
-    conflictIndex.putSnapshot(2)
-    conflictIndex.put(3, set("z"))
-
-    conflictIndex.getConflicts(get("a")) shouldBe Set(2)
-    conflictIndex.getConflicts(get("b")) shouldBe Set(2)
-    conflictIndex.getConflicts(get("x")) shouldBe Set(2)
-    conflictIndex.getConflicts(get("y")) shouldBe Set(2)
-    conflictIndex.getConflicts(get("z")) shouldBe Set(2, 3)
-    conflictIndex.getConflicts(set("a")) shouldBe Set(0, 2)
-    conflictIndex.getConflicts(set("b")) shouldBe Set(0, 2)
-    conflictIndex.getConflicts(set("x")) shouldBe Set(2)
-    conflictIndex.getConflicts(set("y")) shouldBe Set(1, 2)
-    conflictIndex.getConflicts(set("z")) shouldBe Set(1, 2, 3)
-  }
+  // TODO(mwhittaker): Add back snapshots.
+  //
+  // it should "getConflicts with snapshots correctly" in {
+  //   val kvs = new KeyValueStore()
+  //   val conflictIndex = kvs.typedConflictIndex[Int]()
+  //   conflictIndex.put(0, get("a", "b"))
+  //   conflictIndex.put(1, get("y", "z"))
+  //   conflictIndex.putSnapshot(2)
+  //   conflictIndex.put(3, set("z"))
+  //
+  //   conflictIndex.getConflicts(get("a")) shouldBe Set(2)
+  //   conflictIndex.getConflicts(get("b")) shouldBe Set(2)
+  //   conflictIndex.getConflicts(get("x")) shouldBe Set(2)
+  //   conflictIndex.getConflicts(get("y")) shouldBe Set(2)
+  //   conflictIndex.getConflicts(get("z")) shouldBe Set(2, 3)
+  //   conflictIndex.getConflicts(set("a")) shouldBe Set(0, 2)
+  //   conflictIndex.getConflicts(set("b")) shouldBe Set(0, 2)
+  //   conflictIndex.getConflicts(set("x")) shouldBe Set(2)
+  //   conflictIndex.getConflicts(set("y")) shouldBe Set(1, 2)
+  //   conflictIndex.getConflicts(set("z")) shouldBe Set(1, 2, 3)
+  // }
 }

@@ -51,8 +51,9 @@ class StateMachineTest extends FlatSpec with Matchers with PropertyChecks {
       val kvs = new KeyValueStore()
       for ((k, v) <- keyvals) {
         kvs.typedRun(
-          KeyValueStoreInput()
-            .withSetRequest(SetRequest(Seq(SetKeyValuePair(k, v))))
+          KeyValueStoreInput(
+            batch = Seq(KeyValueStoreRequest().withSetRequest(SetRequest(k, v)))
+          )
         )
       }
       kvs.fromBytes(kvs.toBytes())

@@ -11,7 +11,6 @@ import frankenpaxos.simulator.SimulatedSystem
 import frankenpaxos.statemachine.GetRequest
 import frankenpaxos.statemachine.KeyValueStore
 import frankenpaxos.statemachine.KeyValueStoreInput
-import frankenpaxos.statemachine.SetKeyValuePair
 import frankenpaxos.statemachine.SetRequest
 import frankenpaxos.util
 import org.scalacheck

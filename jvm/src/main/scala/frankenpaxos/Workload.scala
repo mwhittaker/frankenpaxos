@@ -1,5 +1,6 @@
 package frankenpaxos
 
+import scala.collection.mutable
 import scala.util.Random
 import scala.util.parsing.combinator.RegexParsers
 
@@ -51,20 +52,24 @@ class UniformSingleKeyWorkload(
   override def get(): Array[Byte] = {
     val key = Random.nextInt(numKeys).toString()
     val command = if (Random.nextBoolean()) {
-      statemachine
-        .KeyValueStoreInput()
-        .withGetRequest(statemachine.GetRequest(key = Seq(key)))
+      statemachine.KeyValueStoreInput(
+        batch = Seq(
+          statemachine
+            .KeyValueStoreRequest()
+            .withGetRequest(statemachine.GetRequest(key = key))
+        )
+      )
     } else {
       val size =
         Math.max(0, (Random.nextGaussian() * sizeStd + sizeMean).round.toInt)
       val value = Random.nextString(size)
-      statemachine
-        .KeyValueStoreInput()
-        .withSetRequest(
-          statemachine.SetRequest(
-            keyValue = Seq(statemachine.SetKeyValuePair(key, value))
-          )
+      statemachine.KeyValueStoreInput(
+        batch = Seq(
+          statemachine
+            .KeyValueStoreRequest()
+            .withSetRequest(statemachine.SetRequest(key, value))
         )
+      )
     }
     command.toByteArray
   }
@@ -86,19 +91,55 @@ class BernoulliSingleKeyWorkload(
       var size = (Random.nextGaussian() * sizeStd + sizeMean).round.toInt
       size = Math.max(0, size)
       val value = Random.nextString(size)
-      statemachine
-        .KeyValueStoreInput()
-        .withSetRequest(
-          statemachine.SetRequest(
-            keyValue = Seq(statemachine.SetKeyValuePair("x", value))
-          )
+      statemachine.KeyValueStoreInput(
+        batch = Seq(
+          statemachine
+            .KeyValueStoreRequest()
+            .withSetRequest(statemachine.SetRequest("x", value))
         )
+      )
     } else {
-      statemachine
-        .KeyValueStoreInput()
-        .withGetRequest(statemachine.GetRequest(key = Seq("y")))
+      statemachine.KeyValueStoreInput(
+        batch = Seq(
+          statemachine
+            .KeyValueStoreRequest()
+            .withGetRequest(statemachine.GetRequest(key = "y"))
+        )
+      )
     }
     command.toByteArray
+  }
+}
+
+// A BinomialSingleKeyWorkload is a batch of BernoulliSingleKeyWorkloads.
+class BinomialSingleKeyWorkload(
+    conflictRate: Float,
+    sizeMean: Int,
+    sizeStd: Int,
+    n: Int
+) extends Workload {
+  override def toString(): String =
+    s"BinomialSingleKeyWorkload(" +
+      s"conflictRate=$conflictRate, sizeMean=$sizeMean, sizeStd=$sizeStd, n=$n)"
+
+  override def get(): Array[Byte] = {
+    val requests = mutable.Buffer[statemachine.KeyValueStoreRequest]()
+    for (_ <- 0 until n) {
+      val request = if (Random.nextFloat() <= conflictRate) {
+        var size = (Random.nextGaussian() * sizeStd + sizeMean).round.toInt
+        size = Math.max(0, size)
+        val value = Random.nextString(size)
+        statemachine
+          .KeyValueStoreRequest()
+          .withSetRequest(statemachine.SetRequest("x", value))
+
+      } else {
+        statemachine
+          .KeyValueStoreRequest()
+          .withGetRequest(statemachine.GetRequest(key = "y"))
+      }
+    }
+    statemachine.KeyValueStoreInput(batch = requests.toSeq).toByteArray
   }
 }
 
@@ -116,6 +157,11 @@ object Workload {
         new BernoulliSingleKeyWorkload(conflictRate = w.conflictRate,
                                        sizeMean = w.sizeMean,
                                        sizeStd = w.sizeStd)
+      case Value.BinomialSingleKeyWorkload(w) =>
+        new BinomialSingleKeyWorkload(conflictRate = w.conflictRate,
+                                      sizeMean = w.sizeMean,
+                                      sizeStd = w.sizeStd,
+                                      n = w.n)
       case Value.Empty =>
         throw new IllegalArgumentException("Empty WorkloadProto encountered.")
     }

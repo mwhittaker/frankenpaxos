@@ -9,44 +9,52 @@ option (scalapb.options) = {
   flat_package: true
 };
 
-message SetKeyValuePair {
+// Helpers /////////////////////////////////////////////////////////////////////
+message KeyValuePair {
   required string key = 1;
   required string value = 2;
 }
 
-message GetKeyValuePair {
-  required string key = 1;
-  optional string value = 2;
+message KeyValueStoreProto {
+  repeated KeyValuePair kv = 1;
 }
 
+// Requests ////////////////////////////////////////////////////////////////////
 message SetRequest {
-  repeated SetKeyValuePair key_value = 1;
+  required string key = 1;
+  required string value = 2;
 }
-
-message SetReply {}
 
 message GetRequest {
-  repeated string key = 1;
+  required string key = 1;
 }
 
-message GetReply {
-  repeated GetKeyValuePair key_value = 1;
-}
-
-message KeyValueStoreProto {
-  repeated SetKeyValuePair kv = 1;
-}
-
-message KeyValueStoreInput {
+message KeyValueStoreRequest {
   oneof request {
     GetRequest get_request = 1;
     SetRequest set_request = 2;
   }
 }
 
-message KeyValueStoreOutput {
+// Replies /////////////////////////////////////////////////////////////////////
+message SetReply {}
+
+message GetReply {
+  optional string value = 1;
+}
+
+message KeyValueStoreReply {
   oneof reply {
     GetReply get_reply = 1;
     SetReply set_reply = 2;
   }
+}
+
+// Input and output ////////////////////////////////////////////////////////////
+message KeyValueStoreInput {
+  repeated KeyValueStoreRequest batch = 1;
+}
+
+message KeyValueStoreOutput {
+  repeated KeyValueStoreReply batch = 2;
 }
