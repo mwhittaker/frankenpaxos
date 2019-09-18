@@ -135,7 +135,7 @@ object Replica {
 
   @JSExportAll
   case class Committed(
-      commandOrNoop: CommandOrNoop,
+      commandOrNoop: CommandBatchOrNoop,
       dependencies: VertexIdPrefixSet
   )
 }
@@ -236,7 +236,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     for (v <- executables) {
-      import CommandOrNoop.Value
+      import CommandBatchOrNoop.Value
       commands.get(v) match {
         case None =>
           logger.fatal(
@@ -256,48 +256,32 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   private def executeCommand(
       vertexId: VertexId,
-      commandOrNoop: CommandOrNoop
+      commandOrNoop: CommandBatchOrNoop
   ): Unit = {
-    import CommandOrNoop.Value
+    import CommandBatchOrNoop.Value
 
     commandOrNoop.value match {
       case Value.Empty =>
-        logger.fatal("Empty CommandOrNoop.")
+        logger.fatal("Empty CommandBatchOrNoop.")
 
       case Value.Noop(Noop()) =>
         metrics.executedNoopsTotal.inc()
 
-      case Value.Command(command) =>
-        val clientAddress = transport.addressSerializer.fromBytes(
-          command.clientAddress.toByteArray
-        )
-        val clientIdentity = (clientAddress, command.clientPseudonym)
-        clientTable.executed(clientIdentity, command.clientId) match {
-          case ClientTable.Executed(None) =>
-            // Don't execute the same command twice.
-            metrics.repeatedCommandsTotal.inc()
+      case Value.Command(batch) =>
+        for (command <- batch.batch) {
+          val clientAddress = transport.addressSerializer.fromBytes(
+            command.clientAddress.toByteArray
+          )
+          val clientIdentity = (clientAddress, command.clientPseudonym)
+          clientTable.executed(clientIdentity, command.clientId) match {
+            case ClientTable.Executed(None) =>
+              // Don't execute the same command twice.
+              metrics.repeatedCommandsTotal.inc()
 
-          case ClientTable.Executed(Some(output)) =>
-            // Don't execute the same command twice. Also, replay the output
-            // to the client.
-            metrics.repeatedCommandsTotal.inc()
-            val client =
-              chan[Client[Transport]](clientAddress, Client.serializer)
-            client.send(
-              ClientInbound().withClientReply(
-                ClientReply(clientPseudonym = command.clientPseudonym,
-                            clientId = command.clientId,
-                            result = ByteString.copyFrom(output))
-              )
-            )
-
-          case ClientTable.NotExecuted =>
-            val output = stateMachine.run(command.command.toByteArray)
-            clientTable.execute(clientIdentity, command.clientId, output)
-            metrics.executedCommandsTotal.inc()
-
-            // TODO(mwhittaker): Think harder about if this is live.
-            if (index == vertexId.leaderIndex % config.replicaAddresses.size) {
+            case ClientTable.Executed(Some(output)) =>
+              // Don't execute the same command twice. Also, replay the output
+              // to the client.
+              metrics.repeatedCommandsTotal.inc()
               val client =
                 chan[Client[Transport]](clientAddress, Client.serializer)
               client.send(
@@ -307,7 +291,25 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                               result = ByteString.copyFrom(output))
                 )
               )
-            }
+
+            case ClientTable.NotExecuted =>
+              val output = stateMachine.run(command.command.toByteArray)
+              clientTable.execute(clientIdentity, command.clientId, output)
+              metrics.executedCommandsTotal.inc()
+
+              // TODO(mwhittaker): Think harder about if this is live.
+              if (index == vertexId.leaderIndex % config.replicaAddresses.size) {
+                val client =
+                  chan[Client[Transport]](clientAddress, Client.serializer)
+                client.send(
+                  ClientInbound().withClientReply(
+                    ClientReply(clientPseudonym = command.clientPseudonym,
+                                clientId = command.clientId,
+                                result = ByteString.copyFrom(output))
+                  )
+                )
+              }
+          }
         }
     }
   }

@@ -81,18 +81,25 @@ message Command {
   required bytes command = 4;
 }
 
-message CommandOrNoop {
+message CommandBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated Command batch = 1;
+}
+
+message CommandBatchOrNoop {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
   oneof value {
-    Command command = 1;
+    CommandBatch command = 1;
     Noop noop = 2;
   }
 }
 
 message VoteValueProto {
-  required CommandOrNoop commandOrNoop = 1;
+  required CommandBatchOrNoop commandOrNoop = 1;
   required VertexIdPrefixSetProto dependencies = 2;
 }
 
@@ -114,7 +121,7 @@ message DependencyRequest {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required VertexId vertex_id = 1;
-  required Command command = 2;
+  required CommandBatch command = 2;
 }
 
 message DependencyReply {
@@ -131,7 +138,7 @@ message Propose {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required VertexId vertex_id = 1;
-  required Command command = 2;
+  required CommandBatch command = 2;
   required VertexIdPrefixSetProto dependencies = 3;
 }
 
@@ -185,7 +192,7 @@ message Commit {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required VertexId vertex_id = 1;
-  required CommandOrNoop command_or_noop = 2;
+  required CommandBatchOrNoop command_or_noop = 2;
   required VertexIdPrefixSetProto dependencies = 3;
 }
 

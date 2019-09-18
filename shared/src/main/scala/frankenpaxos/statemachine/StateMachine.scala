@@ -13,6 +13,9 @@ trait StateMachine {
   // transitions to a new state and outputs an output.
   def run(input: Array[Byte]): Array[Byte]
 
+  // Merges multiple commands into a single command.
+  def merge(inputs: Seq[Array[Byte]]): Array[Byte] = ???
+
   // `conflicts(x, y)` returns whether commands x and y conflict. Two commands
   // are said to conflict if there exists some state in which executing x and
   // then y behaves differently than executing y and then x, either producing

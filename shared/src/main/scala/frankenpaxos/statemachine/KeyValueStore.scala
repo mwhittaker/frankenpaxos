@@ -71,6 +71,12 @@ class KeyValueStore
     KeyValueStoreOutput(input.batch.map(typedRun))
   }
 
+  override def typedMerge(
+      inputs: Seq[KeyValueStoreInput]
+  ): KeyValueStoreInput = {
+    KeyValueStoreInput(batch = inputs.map(_.batch).flatten)
+  }
+
   private def keys(
       input: KeyValueStoreInput
   ): (mutable.Set[String], mutable.Set[String]) = {

@@ -13,6 +13,7 @@ trait TypedStateMachine[I, O] extends StateMachine {
   def inputSerializer: frankenpaxos.Serializer[I]
   def outputSerializer: frankenpaxos.Serializer[O]
   def typedRun(input: I): O
+  def typedMerge(inputs: Seq[I]): I
   def typedConflicts(firstCommand: I, secondCommand: I): Boolean
   def typedConflictIndex[Key](): ConflictIndex[Key, I]
   def typedTopKConflictIndex[Key](
@@ -25,6 +26,11 @@ trait TypedStateMachine[I, O] extends StateMachine {
   override def run(input: Array[Byte]): Array[Byte] = {
     val output = typedRun(inputSerializer.fromBytes(input))
     outputSerializer.toBytes(output)
+  }
+
+  override def merge(inputs: Seq[Array[Byte]]): Array[Byte] = {
+    val output = typedMerge(inputs.map(inputSerializer.fromBytes))
+    inputSerializer.toBytes(output)
   }
 
   // TODO(mwhittaker): Re-think whether this API is the one we want.

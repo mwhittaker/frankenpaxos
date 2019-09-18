@@ -45,6 +45,7 @@ class LeaderOptions(NamedTuple):
     thrifty_system: str = 'NotThrifty'
     resend_dependency_requests_timer_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
+    batch_size: int = 1
 
 
 class DepServiceNodeOptions(NamedTuple):
@@ -569,6 +570,8 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
                         '{}s'.format(input.leader_options
                                      .resend_dependency_requests_timer_period
                                      .total_seconds()),
+                    '--options.batchSize',
+                        str(input.leader_options.batch_size),
                 ],
             )
             if input.profiled:

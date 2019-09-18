@@ -107,7 +107,7 @@ object Proposer {
 
   @JSExportAll
   case class Chosen[Transport <: frankenpaxos.Transport[Transport]](
-      commandOrNoop: CommandOrNoop,
+      commandOrNoop: CommandBatchOrNoop,
       dependencies: VertexIdPrefixSetProto
   ) extends State[Transport]
 }
@@ -166,7 +166,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   private def proposeImpl(
       vertexId: VertexId,
-      commandOrNoop: CommandOrNoop,
+      commandOrNoop: CommandBatchOrNoop,
       dependencies: VertexIdPrefixSetProto
   ): Unit = {
     states.get(vertexId) match {
@@ -289,7 +289,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       propose: Propose
   ): Unit = {
     proposeImpl(propose.vertexId,
-                CommandOrNoop().withCommand(propose.command),
+                CommandBatchOrNoop().withCommand(propose.command),
                 propose.dependencies)
   }
 
@@ -491,7 +491,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         // Propose a noop.
         proposeImpl(
           recover.vertexId,
-          CommandOrNoop().withNoop(Noop()),
+          CommandBatchOrNoop().withNoop(Noop()),
           VertexIdPrefixSetProto(config.leaderAddresses.size)
         )
 

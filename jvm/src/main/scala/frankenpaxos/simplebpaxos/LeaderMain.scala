@@ -58,6 +58,8 @@ object LeaderMain extends App {
       .optionAction((x, o) => o.copy(thriftySystem = x))
     opt[java.time.Duration]("options.resendDependencyRequestsTimerPeriod")
       .optionAction((x, o) => o.copy(resendDependencyRequestsTimerPeriod = x))
+    opt[Int]("options.batchSize")
+      .optionAction((x, o) => o.copy(batchSize = x))
   }
 
   // Parse flags.

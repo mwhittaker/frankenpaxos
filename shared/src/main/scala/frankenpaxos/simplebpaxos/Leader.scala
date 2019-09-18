@@ -25,14 +25,16 @@ object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
 @JSExportAll
 case class LeaderOptions(
     thriftySystem: ThriftySystem,
-    resendDependencyRequestsTimerPeriod: java.time.Duration
+    resendDependencyRequestsTimerPeriod: java.time.Duration,
+    batchSize: Int
 )
 
 @JSExportAll
 object LeaderOptions {
   val default = LeaderOptions(
     thriftySystem = ThriftySystem.NotThrifty,
-    resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(1)
+    resendDependencyRequestsTimerPeriod = java.time.Duration.ofSeconds(1),
+    batchSize = 1
   )
 }
 
@@ -77,12 +79,12 @@ object Leader {
 
   @JSExportAll
   case class WaitingForDeps[Transport <: frankenpaxos.Transport[Transport]](
-      command: Command,
+      command: CommandBatch,
       dependencyReplies: mutable.Map[DepServiceNodeIndex, DependencyReply],
       resendDependencyRequestsTimer: Transport#Timer
   ) extends State[Transport]
 
-  // TODO(mwhittaker): Garbage collect these entries.
+// TODO(mwhittaker): Garbage collect these entries.
   @JSExportAll
   case class Proposed[Transport <: frankenpaxos.Transport[Transport]]()
       extends State[Transport]
@@ -130,6 +132,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // it a vertex id using nextVertexId and then increments nextVertexId.
   @JSExport
   protected var nextVertexId: Int = 0
+
+  private var pendingBatch = mutable.Buffer[Command]()
 
   // The state of each vertex that the leader knows about.
   val states = mutable.Map[VertexId, State[Transport]]()
@@ -197,31 +201,31 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       clientRequest: ClientRequest
   ): Unit = {
-    // TODO(mwhittaker): Think harder about repeated client commands. The
-    // leader isn't a replica, so it doesn't cache a response to an already
-    // executed command. Moreover, we don't want leaders broadcasting which
-    // commands are chosen to the other leaders. We could just have the command
-    // chosen again. Assuming repeated commands are rare, this shouldn't be a
-    // problem.
+    pendingBatch += clientRequest.command
+    if (pendingBatch.size < options.batchSize) {
+      return
+    }
 
     // Create a new vertex id for this command.
     val vertexId = VertexId(index, nextVertexId)
     nextVertexId += 1
 
     // Send a request to the dependency service.
+    val batch = CommandBatch(pendingBatch.toSeq)
     val dependencyRequest =
-      DependencyRequest(vertexId = vertexId, command = clientRequest.command)
+      DependencyRequest(vertexId = vertexId, command = batch)
     thriftyDepServiceNodes(config.quorumSize).foreach(
       _.send(DepServiceNodeInbound().withDependencyRequest(dependencyRequest))
     )
 
     // Update our state.
     states(vertexId) = WaitingForDeps(
-      command = clientRequest.command,
+      command = batch,
       dependencyReplies = mutable.Map[DepServiceNodeIndex, DependencyReply](),
       resendDependencyRequestsTimer =
         makeResendDependencyRequestsTimer(dependencyRequest)
     )
+    pendingBatch = mutable.Buffer()
   }
 
   private def handleDependencyReply(

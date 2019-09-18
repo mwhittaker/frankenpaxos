@@ -199,7 +199,8 @@ class DepServiceNode[Transport <: frankenpaxos.Transport[Transport]](
         dependencies
 
       case None =>
-        val bytes = dependencyRequest.command.command.toByteArray
+        val bytes = stateMachine
+          .merge(dependencyRequest.command.batch.map(_.command.toByteArray))
         val dependencies = if (options.topKDependencies == 1) {
           VertexIdPrefixSet.fromTopOne(
             conflictIndex.getTopOneConflicts(bytes)
