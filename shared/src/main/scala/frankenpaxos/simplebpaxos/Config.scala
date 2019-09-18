@@ -17,6 +17,6 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
       (proposerAddresses.size == leaderAddresses.size) &&
       (depServiceNodeAddresses.size == n) &&
       (acceptorAddresses.size == n) &&
-      (replicaAddresses.size == f + 1)
+      (replicaAddresses.size >= f + 1)
   }
 }

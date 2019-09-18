@@ -9,3 +9,10 @@
     - HPPMOTJYLU
     - IGUXOODUZV
     - SBFTZAJUFU
+
+# Figure 2: Ablation study
+- Super BPaxos
+    - VVPKRYUMGD
+- Simple BPaxos
+    - AIJGZASIJG
+    - CTFKGPPTCB

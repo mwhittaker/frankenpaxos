@@ -74,7 +74,7 @@ def main(args) -> None:
                 )
                 for num_leaders in [3]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1), (6, 200)]
+                    [(1, 1), (6, 100)]
                 for execute_graph_batch_size in (
                     [1] if num_client_procs * num_clients_per_proc == 1 else
                     [100] if num_client_procs * num_clients_per_proc > 100 else

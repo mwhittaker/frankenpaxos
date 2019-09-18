@@ -70,9 +70,9 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for num_leaders in [2, 3, 4, 5, 6, 7]
+                for num_leaders in [3, 4, 5, 6, 7, 8, 9, 10]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1), (6, 200)]
+                    [(1, 1), (6, 100)]
                 for execute_graph_batch_size in (
                     [1] if num_client_procs * num_clients_per_proc == 1 else
                     [100] if num_client_procs * num_clients_per_proc > 100 else
