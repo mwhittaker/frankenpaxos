@@ -214,6 +214,13 @@ message Recover {
   required VertexId vertex_id = 1;
 }
 
+message Executed {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandBatch batch = 1;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
 message LeaderInbound {
   option (scalapb.message).annotations =
@@ -222,6 +229,7 @@ message LeaderInbound {
   oneof request {
     ClientRequest client_request = 1;
     DependencyReply dependency_reply = 2;
+    Executed executed = 3;
   }
 }
 

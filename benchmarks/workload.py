@@ -55,11 +55,11 @@ class BinomialSingleKeyWorkload(NamedTuple):
     size_std: int
     n: int
     # We put the name here so that it appears in benchmark outputs.
-    name: str = 'BernoulliSingleKeyWorkload'
+    name: str = 'BinomialSingleKeyWorkload'
 
     def to_proto(self) -> proto_util.Message:
         return {
-            'bernoulli_single_key_workload': {
+            'binomial_single_key_workload': {
                 'conflict_rate': self.conflict_rate,
                 'size_mean': self.size_mean,
                 'size_std': self.size_std,

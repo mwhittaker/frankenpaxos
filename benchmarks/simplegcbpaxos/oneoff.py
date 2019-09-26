@@ -1,36 +1,35 @@
-from .simplebpaxos import *
+from .simplegcbpaxos import *
 
 
 def main(args) -> None:
-    class NsdiFig3BatchingSimpleBPaxosSuite(SimpleBPaxosSuite):
+    class OneOffSimpleGcBPaxosSuite(SimpleGcBPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
         def inputs(self) -> Collection[Input]:
             return [
                 Input(
-                    f = 1,
+                    f = f,
                     num_client_procs = num_client_procs,
-                    num_warmup_clients_per_proc = 10000,
+                    num_warmup_clients_per_proc = 50,
                     num_clients_per_proc = num_clients_per_proc,
-                    num_leaders = num_leaders,
-                    warmup_duration = datetime.timedelta(seconds=5),
-                    warmup_timeout = datetime.timedelta(seconds=10),
+                    num_leaders = 5,
+                    warmup_duration = datetime.timedelta(seconds=15),
+                    warmup_timeout = datetime.timedelta(seconds=20),
                     warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=5),
-                    timeout = datetime.timedelta(seconds=10),
+                    duration = datetime.timedelta(seconds=15),
+                    timeout = datetime.timedelta(seconds=20),
                     client_lag = datetime.timedelta(seconds=5),
-                    state_machine = 'KeyValueStore',
-                    workload = load,
+                    state_machine = state_machine,
+                    workload = wl,
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     leader_options = LeaderOptions(
-                        thrifty_system = 'NotThrifty',
+                        thrifty_system = 'Random',
                         resend_dependency_requests_timer_period = \
-                            datetime.timedelta(seconds=600),
-                        batch_size = batch_size,
+                            datetime.timedelta(seconds=600)
                     ),
                     leader_log_level = args.log_level,
                     proposer_options = ProposerOptions(
@@ -43,18 +42,27 @@ def main(args) -> None:
                     proposer_log_level = args.log_level,
                     dep_service_node_options = DepServiceNodeOptions(
                         top_k_dependencies = 1,
+                        garbage_collect_every_n_commands = 20000,
+                        unsafe_return_no_dependencies = unsafe_return_no_dependencies,
                     ),
                     dep_service_node_log_level = args.log_level,
-                    acceptor_options = AcceptorOptions(),
+                    acceptor_options = AcceptorOptions(
+                        states_grow_size = 20000,
+                    ),
                     acceptor_log_level = args.log_level,
                     replica_options = ReplicaOptions(
+                        unsafe_skip_graph_execution = unsafe_skip_graph_execution,
+                        commands_grow_size = 20000,
                         recover_vertex_timer_min_period = \
                             datetime.timedelta(seconds=600),
                         recover_vertex_timer_max_period = \
-                            datetime.timedelta(seconds=1200),
-                        execute_graph_batch_size = execute_graph_batch_size,
+                            datetime.timedelta(seconds=600),
+                        execute_graph_batch_size = 100,
                         execute_graph_timer_period = \
                             datetime.timedelta(seconds=1),
+                        send_watermark_every_n_commands = 1000,
+                        send_snapshot_every_n_commands = 5000,
+                        unsafe_dont_recover = unsafe_dont_recover,
                         num_blockers = 1,
                     ),
                     replica_zigzag_options = ZigzagOptions(
@@ -62,48 +70,52 @@ def main(args) -> None:
                         garbage_collect_every_n_commands = 20000,
                     ),
                     replica_log_level = args.log_level,
+                    garbage_collector_options = GarbageCollectorOptions(),
+                    garbage_collector_log_level = args.log_level,
                     client_options = ClientOptions(
                         repropose_period = datetime.timedelta(seconds=600),
                     ),
                     client_log_level = args.log_level,
                 )
-                for conflict_rate in [0.0]
-                for batch_size in [1000]
-                for load in [
-                    workload.BernoulliSingleKeyWorkload(
-                        conflict_rate = conflict_rate,
-                        size_mean = 8,
-                        size_std = 0,
-                    )
+                for f in [1]
+                for (state_machine, wl) in [
+                    (
+                        'KeyValueStore',
+                         workload.UniformSingleKeyWorkload(
+                             num_keys = 10000,
+                             size_mean = 1,
+                             size_std = 0,
+                         ),
+                    ),
+                    # (
+                    #     'Noop',
+                    #      workload.StringWorkload(
+                    #          size_mean = 1,
+                    #          size_std = 0,
+                    #      ),
+                    # ),
                 ]
-                for num_leaders in [9]
+                for (unsafe_dont_recover, unsafe_return_no_dependencies, unsafe_skip_graph_execution) in [
+                    # (False, True, False),
+                    (False, False, False),
+                ]
                 for (num_client_procs, num_clients_per_proc) in
-                    [
-                        (14, 10000),
-                    ]
-                for execute_graph_batch_size in [1]
-                    # [1] if num_client_procs * num_clients_per_proc == 100 else
-                    # [10] if num_client_procs * num_clients_per_proc == 1200 else
-                    # []
-                # )
-            ] * 1
+                    [(6, 100)]
+                    # [(1, 1)]
+            ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
-                'workload': input.workload,
-                'num_leaders': input.num_leaders,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
-                'execute_graph_batch_size':
-                    input.replica_options.execute_graph_batch_size,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = NsdiFig3BatchingSimpleBPaxosSuite()
+    suite = OneOffSimpleGcBPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'simplebpaxos_nsdi_fig_3_batching') as dir:
+                                  'simplegcbpaxos_oneoff') as dir:
         suite.run_suite(dir)
 
 

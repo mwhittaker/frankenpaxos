@@ -186,6 +186,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Request.DependencyReply(r) =>
         handleDependencyReply(src, r)
         "DependencyReply"
+      case Request.Executed(r) =>
+        handleExecuted(src, r)
+        "Executed"
       case Request.Empty => {
         logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -274,6 +277,26 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Update our state.
         states(dependencyReply.vertexId) = Proposed()
+    }
+  }
+
+  private def handleExecuted(
+      src: Transport#Address,
+      executed: Executed
+  ): Unit = {
+    for (command <- executed.batch.batch) {
+      val clientAddress = transport.addressSerializer.fromBytes(
+        command.clientAddress.toByteArray
+      )
+      val client =
+        chan[Client[Transport]](clientAddress, Client.serializer)
+      client.send(
+        ClientInbound().withClientReply(
+          ClientReply(clientPseudonym = command.clientPseudonym,
+                      clientId = command.clientId,
+                      result = command.command)
+        )
+      )
     }
   }
 }

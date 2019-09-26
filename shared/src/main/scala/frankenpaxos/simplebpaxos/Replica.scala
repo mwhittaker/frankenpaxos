@@ -169,6 +169,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // Random number generator.
   val rand = new Random(seed)
 
+  // Channels to the leaders.
+  private val leaders: Seq[Chan[Leader[Transport]]] =
+    for (a <- config.leaderAddresses)
+      yield chan[Leader[Transport]](a, Leader.serializer)
+
   // Channels to the proposers.
   private val proposers: Seq[Chan[Proposer[Transport]]] =
     for (a <- config.proposerAddresses)
@@ -219,12 +224,24 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    val startNanos = System.nanoTime
+    val x = e
+    val stopNanos = System.nanoTime
+    metrics.requestsLatency
+      .labels(label)
+      .observe((stopNanos - startNanos).toDouble / 1000000)
+    x
+  }
+
   private val numBlockers =
     if (options.numBlockers == -1) None else Some(options.numBlockers)
   private val executables = mutable.Buffer[VertexId]()
   private val blockers = mutable.Set[VertexId]()
   private def execute(): Unit = {
-    dependencyGraph.appendExecute(numBlockers, executables, blockers)
+    timed("execute/appendExecute") {
+      dependencyGraph.appendExecute(numBlockers, executables, blockers)
+    }
     metrics.executeGraphTotal.inc()
     metrics.dependencyGraphNumVertices.set(dependencyGraph.numVertices)
 
@@ -235,17 +252,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
 
-    for (v <- executables) {
-      import CommandBatchOrNoop.Value
-      commands.get(v) match {
-        case None =>
-          logger.fatal(
-            s"Vertex $v is ready for execution but the replica doesn't have " +
-              s"a Committed entry for it."
-          )
+    timed("execute/executeCommand loop") {
+      for (v <- executables) {
+        import CommandBatchOrNoop.Value
+        commands.get(v) match {
+          case None =>
+            logger.fatal(
+              s"Vertex $v is ready for execution but the replica doesn't have " +
+                s"a Committed entry for it."
+            )
 
-        case Some(committed: Committed) =>
-          executeCommand(v, committed.commandOrNoop)
+          case Some(committed: Committed) =>
+            executeCommand(v, committed.commandOrNoop)
+        }
       }
     }
 
@@ -260,6 +279,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import CommandBatchOrNoop.Value
 
+    val leader = leaders(rand.nextInt(leaders.size))
     commandOrNoop.value match {
       case Value.Empty =>
         logger.fatal("Empty CommandBatchOrNoop.")
@@ -268,6 +288,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         metrics.executedNoopsTotal.inc()
 
       case Value.Command(batch) =>
+        val results = mutable.Buffer[Command]()
         for (command <- batch.batch) {
           val clientAddress = transport.addressSerializer.fromBytes(
             command.clientAddress.toByteArray
@@ -282,33 +303,29 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               // Don't execute the same command twice. Also, replay the output
               // to the client.
               metrics.repeatedCommandsTotal.inc()
-              val client =
-                chan[Client[Transport]](clientAddress, Client.serializer)
-              client.send(
-                ClientInbound().withClientReply(
-                  ClientReply(clientPseudonym = command.clientPseudonym,
-                              clientId = command.clientId,
-                              result = ByteString.copyFrom(output))
-                )
-              )
+              results += command.withCommand(ByteString.copyFrom(output))
 
             case ClientTable.NotExecuted =>
-              val output = stateMachine.run(command.command.toByteArray)
+              val output =
+                timed("executeCommand/run") {
+                  stateMachine.run(command.command.toByteArray)
+                }
               clientTable.execute(clientIdentity, command.clientId, output)
               metrics.executedCommandsTotal.inc()
 
               // TODO(mwhittaker): Think harder about if this is live.
               if (index == vertexId.leaderIndex % config.replicaAddresses.size) {
-                val client =
-                  chan[Client[Transport]](clientAddress, Client.serializer)
-                client.send(
-                  ClientInbound().withClientReply(
-                    ClientReply(clientPseudonym = command.clientPseudonym,
-                                clientId = command.clientId,
-                                result = ByteString.copyFrom(output))
-                  )
-                )
+                results += command.withCommand(ByteString.copyFrom(output))
               }
+          }
+        }
+        if (results.size > 0) {
+          timed("executeCommand/send") {
+            leader.send(
+              LeaderInbound().withExecuted(
+                Executed(CommandBatch(results.toSeq))
+              )
+            )
           }
         }
     }
@@ -410,7 +427,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       dependencyGraph.commit(commit.vertexId, (), dependencies)
       numPendingCommittedCommands += 1
       if (numPendingCommittedCommands % options.executeGraphBatchSize == 0) {
-        execute()
+        timed("handleCommit/execute") { execute() }
         numPendingCommittedCommands = 0
         executeGraphTimer.foreach(_.reset())
       }
