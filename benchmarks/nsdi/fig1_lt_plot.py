@@ -7,6 +7,7 @@ matplotlib.rc('font', **font)
 from .. import parser_util
 from typing import Any, List
 import argparse
+import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -19,6 +20,7 @@ def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+markers = itertools.cycle(('x', '.', 'o', '*', '2', 's'))
 def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
     grouped = df.groupby('num_clients')
     throughput = grouped['stop_throughput_1s.p90'].agg(np.mean).sort_index()
@@ -28,7 +30,7 @@ def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
     print()
     ax.plot(throughput,
             latency,
-            '.-',
+            next(markers) + '-',
             label=label,
             linewidth=2)
 

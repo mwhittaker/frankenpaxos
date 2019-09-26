@@ -7,6 +7,7 @@ matplotlib.rc('font', **font)
 from .. import parser_util
 from typing import Any, List
 import argparse
+import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -28,15 +29,6 @@ def std_throughput(df):
 def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
     df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
     return df
-
-
-def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
-    grouped = df.groupby('num_clients')
-    ax.plot(grouped['stop_throughput_1s.p90'].agg(np.mean).sort_index(),
-            grouped['latency.median_ms'].agg(np.mean).sort_index(),
-            '.-',
-            label=label)
-
 
 def latency_figure(output_filename: str,
                    superbpaxos_df: pd.DataFrame,
@@ -73,7 +65,6 @@ def latency_figure(output_filename: str,
     ax.set_title('')
     ax.set_xlabel('')
     ax.set_ylabel('Median latency (ms)')
-    ax.legend(loc='best')
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
 
@@ -113,7 +104,6 @@ def throughput_figure(output_filename: str,
     ax.set_title('')
     ax.set_xlabel('')
     ax.set_ylabel('Throughput (commands per second)')
-    ax.legend(loc='best')
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
 
