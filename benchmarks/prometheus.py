@@ -16,13 +16,12 @@ def prometheus_config(scrape_interval_ms: int, jobs: Dict[str, List[str]]):
         'global': {
             'scrape_interval': f'{scrape_interval_ms}ms'
         },
-        'scrape_configs': [
-            {
-                'job_name': job_name,
-                'static_configs': [{'targets': addressses}],
-            }
-            for (job_name, addressses) in jobs.items()
-        ],
+        'scrape_configs': [{
+            'job_name': job_name,
+            'static_configs': [{
+                'targets': addressses
+            }],
+        } for (job_name, addressses) in jobs.items()],
     }
 
 
@@ -57,7 +56,7 @@ class PrometheusQueryer:
     """
 
     # popen is a function like Popen.
-    def __init__(self, tsdb_path: str, popen = subprocess.Popen) -> None:
+    def __init__(self, tsdb_path: str, popen=subprocess.Popen) -> None:
         # We launch prometheus with an empty configuration file.
         empty_prometheus_config = '/tmp/empty_prometheus.yml'
         with open(empty_prometheus_config, 'w') as f:
@@ -89,8 +88,7 @@ class PrometheusQueryer:
         for i in range(num_retries - 1):
             try:
                 return self._query_once(q)
-            except (ConnectionRefusedError,
-                    requests.exceptions.ConnectionError,
+            except (ConnectionRefusedError, requests.exceptions.ConnectionError,
                     ValueError):
                 time.sleep(i * 0.1)
         return self._query_once(q)
@@ -102,7 +100,10 @@ class PrometheusQueryer:
         [1]: https://prometheus.io/docs/prometheus/latest/querying/api/
         """
         r = requests.get(f'http://{self.address}/api/v1/query',
-                         params={'query': q, 'timeout': '1000s'})
+                         params={
+                             'query': q,
+                             'timeout': '1000s'
+                         })
         if r.status_code == 503:
             # Service is unavailable.
             raise ValueError(f'Query "{q}" resulted in a 503.')
@@ -122,8 +123,8 @@ class PrometheusQueryer:
                 values = [stream['value']]
 
             timestamps = [t for [t, x] in values]
-            timestamps = (pd.to_datetime(timestamps, unit='s', origin='unix')
-                            .tz_localize('UTC'))
+            timestamps = (pd.to_datetime(timestamps, unit='s',
+                                         origin='unix').tz_localize('UTC'))
             values = [x for [t, x] in values]
             s = pd.Series(values, index=timestamps)
             series[frozenset(stream['metric'].items())] = s

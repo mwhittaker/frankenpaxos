@@ -28,22 +28,19 @@ import yaml
 
 
 # Suite ########################################################################
-class SuperBPaxosSuite(benchmark.Suite[simplebpaxos.Input,
-                                       simplebpaxos.Output]):
-    def run_benchmark(self,
-                      bench: benchmark.BenchmarkDirectory,
+class SuperBPaxosSuite(benchmark.Suite[simplebpaxos.Input, simplebpaxos.Output]
+                      ):
+    def run_benchmark(self, bench: benchmark.BenchmarkDirectory,
                       args: Dict[Any, Any],
                       input: simplebpaxos.Input) -> simplebpaxos.Output:
-        net = simplebpaxos.SimpleBPaxosNet(
-                args['cluster'], args['identity_file'], input)
+        net = simplebpaxos.SimpleBPaxosNet(args['cluster'],
+                                           args['identity_file'], input)
         return self._run_benchmark(bench, args, input, net)
 
-    def _run_benchmark(self,
-                       bench: benchmark.BenchmarkDirectory,
-                       args: Dict[Any, Any],
-                       input: simplebpaxos.Input,
+    def _run_benchmark(self, bench: benchmark.BenchmarkDirectory,
+                       args: Dict[Any, Any], input: simplebpaxos.Input,
                        net: simplebpaxos.SimpleBPaxosNet
-                       ) -> simplebpaxos.Output:
+                      ) -> simplebpaxos.Output:
         # Write config file.
         config = net.config()
         config_filename = bench.abspath('config.pbtxt')
@@ -69,8 +66,8 @@ class SuperBPaxosSuite(benchmark.Suite[simplebpaxos.Input,
         java += [f'-Xms{input.jvm_heap_size}', f'-Xmx{input.jvm_heap_size}']
 
         # Launch super nodes!
-        assert (len(net.placement().leaders) ==
-                len(net.placement().dep_service_nodes))
+        assert (len(net.placement().leaders) == len(
+            net.placement().dep_service_nodes))
         assert len(net.placement().leaders) == len(net.placement().proposers)
         assert len(net.placement().leaders) == len(net.placement().acceptors)
         assert len(net.placement().leaders) == len(net.placement().replicas)
@@ -88,67 +85,69 @@ class SuperBPaxosSuite(benchmark.Suite[simplebpaxos.Input,
             p = bench.popen(
                 host=leader.host,
                 label=f'super_node_{i}',
-                cmd = java + [
-                    '-cp', os.path.abspath(args['jar']),
+                cmd=java + [
+                    '-cp',
+                    os.path.abspath(args['jar']),
                     'frankenpaxos.simplebpaxos.SuperNodeMain',
-                    '--index', str(i),
-                    '--config', config_filename,
-                    '--log_level', input.leader_log_level,
-                    '--state_machine', input.state_machine,
-                    '--prometheus_host', leader.host.ip(),
+                    '--index',
+                    str(i),
+                    '--config',
+                    config_filename,
+                    '--log_level',
+                    input.leader_log_level,
+                    '--state_machine',
+                    input.state_machine,
+                    '--prometheus_host',
+                    leader.host.ip(),
                     '--prometheus_port',
-                        str(leader.port + 1) if input.monitored else '-1',
+                    str(leader.port + 1) if input.monitored else '-1',
                     # Leader options.
                     '--leader.thriftySystem',
-                        input.leader_options.thrifty_system,
+                    input.leader_options.thrifty_system,
                     '--leader.resendDependencyRequestsTimerPeriod',
-                        '{}s'.format(input.leader_options
-                                     .resend_dependency_requests_timer_period
-                                     .total_seconds()),
+                    '{}s'.format(input.leader_options.
+                                 resend_dependency_requests_timer_period.
+                                 total_seconds()),
                     # Dependency service options.
                     '--depnode.topKDependencies',
-                        str(input.dep_service_node_options.top_k_dependencies),
+                    str(input.dep_service_node_options.top_k_dependencies),
                     '--depnode.unsafeReturnNoDependencies',
-                        str(input.dep_service_node_options
-                                 .unsafe_return_no_dependencies),
+                    str(input.dep_service_node_options.
+                        unsafe_return_no_dependencies),
                     # Proposer options.
                     '--proposer.thriftySystem',
-                        input.proposer_options.thrifty_system,
+                    input.proposer_options.thrifty_system,
                     '--proposer.resendPhase1asTimerPeriod',
-                        '{}s'.format(input.proposer_options
-                                     .resend_phase1as_timer_period
-                                     .total_seconds()),
+                    '{}s'.format(input.proposer_options.
+                                 resend_phase1as_timer_period.total_seconds()),
                     '--proposer.resendPhase2asTimerPeriod',
-                        '{}s'.format(input.proposer_options
-                                     .resend_phase2as_timer_period
-                                     .total_seconds()),
+                    '{}s'.format(input.proposer_options.
+                                 resend_phase2as_timer_period.total_seconds()),
                     # Acceptor options.
                     # Replica options.
                     '--replica.recoverVertexTimerMinPeriod',
-                        '{}s'.format(input.replica_options
-                                     .recover_vertex_timer_min_period
-                                     .total_seconds()),
+                    '{}s'.format(
+                        input.replica_options.recover_vertex_timer_min_period.
+                        total_seconds()),
                     '--replica.recoverVertexTimerMaxPeriod',
-                        '{}s'.format(input.replica_options
-                                     .recover_vertex_timer_max_period
-                                     .total_seconds()),
+                    '{}s'.format(
+                        input.replica_options.recover_vertex_timer_max_period.
+                        total_seconds()),
                     '--replica.unsafeSkipGraphExecution',
-                        "true"
-                        if input.replica_options.unsafe_skip_graph_execution
-                        else "false",
+                    "true" if input.replica_options.unsafe_skip_graph_execution
+                    else "false",
                     '--replica.executeGraphBatchSize',
-                        str(input.replica_options.execute_graph_batch_size),
+                    str(input.replica_options.execute_graph_batch_size),
                     '--replica.executeGraphTimerPeriod',
-                        '{}s'.format(input.replica_options
-                                     .execute_graph_timer_period
-                                     .total_seconds()),
+                    '{}s'.format(input.replica_options.
+                                 execute_graph_timer_period.total_seconds()),
                     '--replica.numBlockers',
-                        str(input.replica_options.num_blockers),
+                    str(input.replica_options.num_blockers),
                     '--zigzag.verticesGrowSize',
-                        str(input.replica_zigzag_options.vertices_grow_size),
+                    str(input.replica_zigzag_options.vertices_grow_size),
                     '--zigzag.garbageCollectEveryNCommands',
-                        str(input.replica_zigzag_options
-                                 .garbage_collect_every_n_commands),
+                    str(input.replica_zigzag_options.
+                        garbage_collect_every_n_commands),
                 ],
             )
             if input.profiled:
@@ -160,27 +159,37 @@ class SuperBPaxosSuite(benchmark.Suite[simplebpaxos.Input,
         # Launch Prometheus.
         if input.monitored:
             prometheus_config = prometheus.prometheus_config(
-                int(input.prometheus_scrape_interval.total_seconds() * 1000),
-                {
-                  'bpaxos_leader': [f'{e.host.ip()}:{e.port+1}'
-                                    for e in net.placement().leaders],
-                  'bpaxos_proposer': [f'{e.host.ip()}:{e.port+1}'
-                                      for e in net.placement().proposers],
-                  'bpaxos_acceptor': [f'{e.host.ip()}:{e.port+1}'
-                                      for e in net.placement().acceptors],
-                  'bpaxos_client': [f'{e.host.ip()}:{e.port+1}'
-                                    for e in net.placement().clients],
-                  'bpaxos_dep_service_node': [f'{e.host.ip()}:{e.port+1}'
-                                    for e in net.placement().dep_service_nodes],
-                  'bpaxos_replica': [f'{e.host.ip()}:{e.port+1}'
-                                     for e in net.placement().replicas],
-                }
-            )
+                int(input.prometheus_scrape_interval.total_seconds() * 1000), {
+                    'bpaxos_leader': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().leaders
+                    ],
+                    'bpaxos_proposer': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().proposers
+                    ],
+                    'bpaxos_acceptor': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().acceptors
+                    ],
+                    'bpaxos_client': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().clients
+                    ],
+                    'bpaxos_dep_service_node': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().dep_service_nodes
+                    ],
+                    'bpaxos_replica': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().replicas
+                    ],
+                })
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
             prometheus_server = bench.popen(
                 host=net.placement().clients[0].host,
                 label='prometheus',
-                cmd = [
+                cmd=[
                     'prometheus',
                     f'--config.file={bench.abspath("prometheus.yml")}',
                     f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
@@ -206,36 +215,45 @@ class SuperBPaxosSuite(benchmark.Suite[simplebpaxos.Input,
                 # TODO(mwhittaker): For now, we don't run clients with large
                 # heaps and verbose garbage collection because they are all
                 # colocated on one machine.
-                cmd = [
+                cmd=[
                     'java',
-                    '-cp', os.path.abspath(args['jar']),
+                    '-cp',
+                    os.path.abspath(args['jar']),
                     'frankenpaxos.simplebpaxos.BenchmarkClientMain',
-                    '--host', client.host.ip(),
-                    '--port', str(client.port),
-                    '--config', config_filename,
-                    '--log_level', input.client_log_level,
-                    '--prometheus_host', client.host.ip(),
+                    '--host',
+                    client.host.ip(),
+                    '--port',
+                    str(client.port),
+                    '--config',
+                    config_filename,
+                    '--log_level',
+                    input.client_log_level,
+                    '--prometheus_host',
+                    client.host.ip(),
                     '--prometheus_port',
-                        str(client.port + 1) if input.monitored else '-1',
+                    str(client.port + 1) if input.monitored else '-1',
                     '--warmup_duration',
-                        f'{input.warmup_duration.total_seconds()}s',
+                    f'{input.warmup_duration.total_seconds()}s',
                     '--warmup_timeout',
-                        f'{input.warmup_timeout.total_seconds()}s',
+                    f'{input.warmup_timeout.total_seconds()}s',
                     '--warmup_sleep',
-                        f'{input.warmup_sleep.total_seconds()}s',
+                    f'{input.warmup_sleep.total_seconds()}s',
                     '--num_warmup_clients',
-                        f'{input.num_warmup_clients_per_proc}',
-                    '--duration', f'{input.duration.total_seconds()}s',
-                    '--timeout', f'{input.timeout.total_seconds()}s',
-                    '--num_clients', f'{input.num_clients_per_proc}',
-                    '--workload', f'{workload_filename}',
-                    '--output_file_prefix', bench.abspath(f'client_{i}'),
+                    f'{input.num_warmup_clients_per_proc}',
+                    '--duration',
+                    f'{input.duration.total_seconds()}s',
+                    '--timeout',
+                    f'{input.timeout.total_seconds()}s',
+                    '--num_clients',
+                    f'{input.num_clients_per_proc}',
+                    '--workload',
+                    f'{workload_filename}',
+                    '--output_file_prefix',
+                    bench.abspath(f'client_{i}'),
                     '--options.reproposePeriod',
-                        '{}s'.format(input.client_options
-                                     .repropose_period
-                                     .total_seconds()),
-                ]
-            )
+                    '{}s'.format(
+                        input.client_options.repropose_period.total_seconds()),
+                ])
             if input.profiled:
                 p = perf_util.JavaPerfProc(bench, client.host, p, f'client_{i}')
             client_procs.append(p)
@@ -249,10 +267,12 @@ class SuperBPaxosSuite(benchmark.Suite[simplebpaxos.Input,
         bench.log('Clients finished and processes terminated.')
 
         # Client i writes results to `client_i_data.csv`.
-        client_csvs = [bench.abspath(f'client_{i}_data.csv')
-                       for i in range(input.num_client_procs)]
-        return benchmark.parse_recorder_data(bench, client_csvs,
-                drop_prefix=datetime.timedelta(seconds=0))
+        client_csvs = [
+            bench.abspath(f'client_{i}_data.csv')
+            for i in range(input.num_client_procs)
+        ]
+        return benchmark.parse_recorder_data(
+            bench, client_csvs, drop_prefix=datetime.timedelta(seconds=0))
 
 
 def get_parser() -> argparse.ArgumentParser:

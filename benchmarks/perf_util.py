@@ -35,11 +35,8 @@ from typing import Optional
 # [2]: https://github.com/jvm-profiling-tools/perf-map-agent
 # [3]: https://github.com/brendangregg/FlameGraph
 class JavaPerfProc(proc.Proc):
-    def __init__(self,
-                 bench: benchmark.BenchmarkDirectory,
-                 host: host.Host,
-                 proc: proc.Proc,
-                 label: str) -> None:
+    def __init__(self, bench: benchmark.BenchmarkDirectory, host: host.Host,
+                 proc: proc.Proc, label: str) -> None:
         self._bench = bench
         self._host = host
         self._proc = proc
@@ -52,19 +49,14 @@ class JavaPerfProc(proc.Proc):
             self._perf_record = None
         else:
             self._perf_record = bench.popen(
-                host = host,
-                label = f'{label}_perf_record',
-                cmd =  [
-                    'sudo',
-                    'perf',
-                    'record',
-                    '-o', bench.abspath(f'perf-{pid}.data'),
-                    '-p', str(proc.pid()),
-                    '--timestamp',
-                    '-g',
-                    '--', 'sleep', '1000000000000000000000'
-                ]
-            )
+                host=host,
+                label=f'{label}_perf_record',
+                cmd=[
+                    'sudo', 'perf', 'record', '-o',
+                    bench.abspath(f'perf-{pid}.data'), '-p',
+                    str(proc.pid()), '--timestamp', '-g', '--', 'sleep',
+                    '1000000000000000000000'
+                ])
 
     def cmd(self) -> str:
         return self._proc.cmd()
@@ -89,19 +81,16 @@ class JavaPerfProc(proc.Proc):
 
         self._perf_record.kill()
         self._bench.popen(
-            host = self._host,
-            label = f'{self._label}_create_java_perf_map',
-            cmd =  ['create-java-perf-map.sh', str(self._proc.pid())]
-        ).wait()
+            host=self._host,
+            label=f'{self._label}_create_java_perf_map',
+            cmd=['create-java-perf-map.sh',
+                 str(self._proc.pid())]).wait()
         self._bench.popen(
-            host = self._host,
-            label = f'{self._label}_create_java_perf_map_mv',
-            cmd = [
-                'sudo',
-                'mv',
-                f'/tmp/perf-{self._proc.pid()}.map',
+            host=self._host,
+            label=f'{self._label}_create_java_perf_map_mv',
+            cmd=[
+                'sudo', 'mv', f'/tmp/perf-{self._proc.pid()}.map',
                 self._bench.abspath(f'perf-{self._proc.pid()}.map')
-            ]
-        ).wait()
+            ]).wait()
         self._proc.kill()
         self._killed = True

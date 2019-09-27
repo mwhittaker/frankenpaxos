@@ -5,7 +5,7 @@ import os
 import subprocess
 
 
-def flatten_tuple_fields(t: Any, prefixes = None) -> List[str]:
+def flatten_tuple_fields(t: Any, prefixes=None) -> List[str]:
     """
     flatten_tuple_fields takes in a potentially nested named tuple and returns
     a flattened list of its fields. For example, consider the following named
@@ -72,7 +72,6 @@ def tuple_to_dict(t: Any) -> Dict[str, Any]:
         else:
             d[field] = x
     return d
-
 
 
 # See https://stackoverflow.com/a/2166841/3187068.

@@ -74,8 +74,7 @@ def main(args) -> None:
                 )
             ]
 
-        def summary(self,
-                    input: simplebpaxos.Input,
+        def summary(self, input: simplebpaxos.Input,
                     output: simplebpaxos.Output) -> str:
             return str({
                 'f': input.f,

@@ -83,14 +83,20 @@ def main(args) -> None:
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
-                'f': input.f,
-                'num_leaders': input.num_leaders,
-                'num_client_procs': input.num_client_procs,
-                'num_clients_per_proc': input.num_clients_per_proc,
+                'f':
+                    input.f,
+                'num_leaders':
+                    input.num_leaders,
+                'num_client_procs':
+                    input.num_client_procs,
+                'num_clients_per_proc':
+                    input.num_clients_per_proc,
                 'execute_graph_batch_size':
                     input.replica_options.execute_graph_batch_size,
-                'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
+                'latency.median_ms':
+                    f'{output.latency.median_ms:.6}',
+                'stop_throughput_1s.p90':
+                    f'{output.stop_throughput_1s.p90:.6}',
             })
 
     suite = NsdiFig2AblationSimpleBPaxosSuite()

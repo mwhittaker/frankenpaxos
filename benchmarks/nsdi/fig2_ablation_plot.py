@@ -13,17 +13,22 @@ import os
 import pandas as pd
 import re
 
+
 def avg_latency(df):
     return df['latency.median_ms'].agg(np.mean)
+
 
 def std_latency(df):
     return df['latency.median_ms'].agg(np.std)
 
+
 def avg_throughput(df):
     return df['stop_throughput_1s.p90'].agg(np.mean)
 
+
 def std_throughput(df):
     return df['stop_throughput_1s.p90'].agg(np.std)
+
 
 def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
     df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
@@ -38,18 +43,11 @@ def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
             label=label)
 
 
-def latency_figure(output_filename: str,
-                   superbpaxos_df: pd.DataFrame,
+def latency_figure(output_filename: str, superbpaxos_df: pd.DataFrame,
                    simplebpaxos_df: pd.DataFrame) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    labels = (
-        'coupled',
-        '3 leaders',
-        '4 leaders',
-        '5 leaders',
-        '6 leaders',
-        '7 leaders'
-    )
+    labels = ('coupled', '3 leaders', '4 leaders', '5 leaders', '6 leaders',
+              '7 leaders')
     latencies = [
         avg_latency(superbpaxos_df),
         avg_latency(simplebpaxos_df[simplebpaxos_df['num_leaders'] == 3]),
@@ -78,18 +76,11 @@ def latency_figure(output_filename: str,
     print(f'Wrote plot to {output_filename}.')
 
 
-def throughput_figure(output_filename: str,
-                   superbpaxos_df: pd.DataFrame,
-                   simplebpaxos_df: pd.DataFrame) -> None:
+def throughput_figure(output_filename: str, superbpaxos_df: pd.DataFrame,
+                      simplebpaxos_df: pd.DataFrame) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    labels = (
-        'coupled',
-        '3 leaders',
-        '4 leaders',
-        '5 leaders',
-        '6 leaders',
-        '7 leaders'
-    )
+    labels = ('coupled', '3 leaders', '4 leaders', '5 leaders', '6 leaders',
+              '7 leaders')
     latencies = [
         avg_throughput(superbpaxos_df),
         avg_throughput(simplebpaxos_df[simplebpaxos_df['num_leaders'] == 3]),
@@ -141,35 +132,26 @@ def main(args) -> None:
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--superbpaxos_results',
-        type=argparse.FileType('r'),
-        help='Super BPaxos results.csv file'
-    )
-    parser.add_argument(
-        '--simplebpaxos_results',
-        type=argparse.FileType('r'),
-        help='Simple BPaxos results.csv file'
-    )
-    parser.add_argument(
-        '--output_low_load_latency',
-        type=str,
-        default='nsdi_fig2_ablation_low_load_latency.pdf',
-        help='Output filename'
-    )
-    parser.add_argument(
-        '--output_high_load_latency',
-        type=str,
-        default='nsdi_fig2_ablation_high_load_latency.pdf',
-        help='Output filename'
-    )
-    parser.add_argument(
-        '--output_high_load_throughput',
-        type=str,
-        default='nsdi_fig2_ablation_high_load_throughput.pdf',
-        help='Output filename'
-    )
+    parser.add_argument('--superbpaxos_results',
+                        type=argparse.FileType('r'),
+                        help='Super BPaxos results.csv file')
+    parser.add_argument('--simplebpaxos_results',
+                        type=argparse.FileType('r'),
+                        help='Simple BPaxos results.csv file')
+    parser.add_argument('--output_low_load_latency',
+                        type=str,
+                        default='nsdi_fig2_ablation_low_load_latency.pdf',
+                        help='Output filename')
+    parser.add_argument('--output_high_load_latency',
+                        type=str,
+                        default='nsdi_fig2_ablation_high_load_latency.pdf',
+                        help='Output filename')
+    parser.add_argument('--output_high_load_throughput',
+                        type=str,
+                        default='nsdi_fig2_ablation_high_load_throughput.pdf',
+                        help='Output filename')
     return parser
+
 
 if __name__ == '__main__':
     parser = get_parser()

@@ -70,23 +70,18 @@ def main(args) -> None:
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
+    parser.add_argument('data_csv', type=str, help='data.csv file')
     parser.add_argument(
-        'data_csv',
-        type=str,
-        help='data.csv file'
-    )
-    parser.add_argument(
-        '-d', '--drop',
+        '-d',
+        '--drop',
         type=float,
         default=0,
-        help='Drop this number of seconds from the beginning of the benchmark.'
-    )
-    parser.add_argument(
-        '-o', '--output',
-        type=str,
-        default='latency_and_throughput.pdf',
-        help='Output filename'
-    )
+        help='Drop this number of seconds from the beginning of the benchmark.')
+    parser.add_argument('-o',
+                        '--output',
+                        type=str,
+                        default='latency_and_throughput.pdf',
+                        help='Output filename')
     return parser
 
 

@@ -9,27 +9,27 @@ def main(args) -> None:
         def inputs(self) -> Collection[Input]:
             return [
                 Input(
-                    f = 1,
-                    num_client_procs = 1,
-                    num_clients_per_proc = 1,
-                    duration = datetime.timedelta(seconds=2),
-                    timeout = datetime.timedelta(seconds=3),
-                    client_lag = datetime.timedelta(seconds=0),
-                    state_machine = 'Noop',
-                    workload = workload.StringWorkload(size_mean=0, size_std=0),
-                    profiled = args.profile,
-                    monitored = args.monitor,
-                    prometheus_scrape_interval =
-                        datetime.timedelta(milliseconds=200),
-                    leader_options = LeaderOptions(),
-                    leader_log_level = args.log_level,
-                    leader_dependency_graph = 'Tarjan',
-                    dep_service_node_options = DepServiceNodeOptions(),
-                    dep_service_node_log_level = args.log_level,
-                    acceptor_options = AcceptorOptions(),
-                    acceptor_log_level = args.log_level,
-                    client_options = ClientOptions(),
-                    client_log_level = args.log_level,
+                    f=1,
+                    num_client_procs=1,
+                    num_clients_per_proc=1,
+                    duration=datetime.timedelta(seconds=2),
+                    timeout=datetime.timedelta(seconds=3),
+                    client_lag=datetime.timedelta(seconds=0),
+                    state_machine='Noop',
+                    workload=workload.StringWorkload(size_mean=0, size_std=0),
+                    profiled=args.profile,
+                    monitored=args.monitor,
+                    prometheus_scrape_interval=datetime.timedelta(
+                        milliseconds=200),
+                    leader_options=LeaderOptions(),
+                    leader_log_level=args.log_level,
+                    leader_dependency_graph='Tarjan',
+                    dep_service_node_options=DepServiceNodeOptions(),
+                    dep_service_node_log_level=args.log_level,
+                    acceptor_options=AcceptorOptions(),
+                    acceptor_log_level=args.log_level,
+                    client_options=ClientOptions(),
+                    client_log_level=args.log_level,
                 )
             ]
 

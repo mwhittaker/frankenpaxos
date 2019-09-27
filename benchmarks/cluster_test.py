@@ -24,15 +24,22 @@ class ClusterTest(unittest.TestCase):
             [host.FakeHost('l0'), host.FakeHost('l1')])
         self.assertEqual(
             f1['acceptors'],
-            [host.FakeHost('a0'), host.FakeHost('a1'), host.FakeHost('a2')])
+            [host.FakeHost('a0'),
+             host.FakeHost('a1'),
+             host.FakeHost('a2')])
         f2 = c.f(2)
         self.assertEqual(
             f2['leaders'],
-            [host.FakeHost('l0'), host.FakeHost('l1'), host.FakeHost('l2')])
-        self.assertEqual(
-            f2['acceptors'],
-            [host.FakeHost('a0'), host.FakeHost('a1'), host.FakeHost('a2'),
-             host.FakeHost('a3'), host.FakeHost('a4')])
+            [host.FakeHost('l0'),
+             host.FakeHost('l1'),
+             host.FakeHost('l2')])
+        self.assertEqual(f2['acceptors'], [
+            host.FakeHost('a0'),
+            host.FakeHost('a1'),
+            host.FakeHost('a2'),
+            host.FakeHost('a3'),
+            host.FakeHost('a4')
+        ])
 
     def _test_bad_f(self):
         json = """ { "a": {} } """

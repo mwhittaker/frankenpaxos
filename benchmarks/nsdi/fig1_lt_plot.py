@@ -26,17 +26,11 @@ def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
     print(throughput)
     print(latency)
     print()
-    ax.plot(throughput,
-            latency,
-            '.-',
-            label=label,
-            linewidth=2)
+    ax.plot(throughput, latency, '.-', label=label, linewidth=2)
 
 
-def make_figure(output_filename: str,
-                multipaxos_df: pd.DataFrame,
-                epaxos_df: pd.DataFrame,
-                bpaxos_df: pd.DataFrame) -> None:
+def make_figure(output_filename: str, multipaxos_df: pd.DataFrame,
+                epaxos_df: pd.DataFrame, bpaxos_df: pd.DataFrame) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
     print('Multipaxos')
     plot_latency_throughput(multipaxos_df, ax, 'MultiPaxos')
@@ -78,34 +72,25 @@ def main(args) -> None:
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--multipaxos_results',
-        type=argparse.FileType('r'),
-        help='Multipaxos results.csv file'
-    )
-    parser.add_argument(
-        '--epaxos_results',
-        type=argparse.FileType('r'),
-        help='EPaxos results.csv file'
-    )
-    parser.add_argument(
-        '--bpaxos_results',
-        type=argparse.FileType('r'),
-        help='BPaxos results.csv file'
-    )
-    parser.add_argument(
-        '--outputf1',
-        type=str,
-        default='nsdi_fig1_lt_f1.pdf',
-        help='Output filename'
-    )
-    parser.add_argument(
-        '--outputf2',
-        type=str,
-        default='nsdi_fig1_lt_f2.pdf',
-        help='Output filename'
-    )
+    parser.add_argument('--multipaxos_results',
+                        type=argparse.FileType('r'),
+                        help='Multipaxos results.csv file')
+    parser.add_argument('--epaxos_results',
+                        type=argparse.FileType('r'),
+                        help='EPaxos results.csv file')
+    parser.add_argument('--bpaxos_results',
+                        type=argparse.FileType('r'),
+                        help='BPaxos results.csv file')
+    parser.add_argument('--outputf1',
+                        type=str,
+                        default='nsdi_fig1_lt_f1.pdf',
+                        help='Output filename')
+    parser.add_argument('--outputf2',
+                        type=str,
+                        default='nsdi_fig1_lt_f2.pdf',
+                        help='Output filename')
     return parser
+
 
 if __name__ == '__main__':
     parser = get_parser()

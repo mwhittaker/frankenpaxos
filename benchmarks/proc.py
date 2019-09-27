@@ -63,9 +63,7 @@ class Proc(abc.ABC):
 
 # A PopenProc is just a wrapper around a locally run subprocess.Popen.
 class PopenProc(Proc):
-    def __init__(self,
-                 args: Union[str, Sequence[str]],
-                 stdout: str,
+    def __init__(self, args: Union[str, Sequence[str]], stdout: str,
                  stderr: str) -> None:
         self._cmd = _canonicalize_args(args)
         self._popen = subprocess.Popen(args,
@@ -110,10 +108,8 @@ class PopenProc(Proc):
 # [1]: https://stackoverflow.com/q/7734679/3187068
 # [2]: http://docs.paramiko.org/en/latest/api/channel.html#paramiko.channel.Channel.get_pty
 class ParamikoProc(Proc):
-    def __init__(self,
-                 client: paramiko.SSHClient,
-                 args: Union[str, Sequence[str]],
-                 stdout: str,
+    def __init__(self, client: paramiko.SSHClient,
+                 args: Union[str, Sequence[str]], stdout: str,
                  stderr: str) -> None:
         self._nonce = _random_string(80)
         self._cmd = (f'echo {self._nonce}; ' +

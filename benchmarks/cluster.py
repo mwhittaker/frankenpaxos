@@ -49,23 +49,20 @@ class Cluster:
             if not isinstance(cluster, dict):
                 raise ValueError(
                     f'Cluster configuration {cluster} for f value {f} is not '
-                    f'an object.'
-                )
+                    f'an object.')
 
             sanitized[int(f)] = dict()
             for (role, addresses) in cluster.items():
                 if not isinstance(addresses, list):
                     raise ValueError(
                         f'Addresses {addresses} for role {role} in cluster '
-                        f'{cluster} for f value {f} is not a list.'
-                    )
+                        f'{cluster} for f value {f} is not a list.')
 
                 for (i, address) in enumerate(addresses):
                     if not isinstance(address, str):
                         raise ValueError(
                             f'Address {i} {address} for role {role} in cluster '
-                            f'{cluster} for f value {f} is not a string.'
-                        )
+                            f'{cluster} for f value {f} is not a string.')
 
                 sanitized[int(f)][role] = addresses
 
@@ -89,14 +86,13 @@ class Cluster:
                   connect: Callable[[str], host.Host]) -> 'Cluster':
         return Cluster(cluster, connect)
 
-    def __init__(self,
-                 cluster: Dict[int, Dict[str, List[str]]],
+    def __init__(self, cluster: Dict[int, Dict[str, List[str]]],
                  connect: Callable[[str], host.Host]) -> None:
         self._cache = _RemoteHostCache(connect)
         self._cluster = cluster
 
     def f(self, x: int) -> Dict[str, List[host.Host]]:
         return {
-            role: [self._cache.connect(a) for a in addresses]
-            for (role, addresses) in self._cluster[x].items()
+            role: [self._cache.connect(a) for a in addresses
+                  ] for (role, addresses) in self._cluster[x].items()
         }

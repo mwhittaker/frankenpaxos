@@ -13,9 +13,7 @@ class Host(abc.ABC):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def popen(self,
-              args: Union[str, Sequence[str]],
-              stdout: str,
+    def popen(self, args: Union[str, Sequence[str]], stdout: str,
               stderr: str) -> proc.Proc:
         raise NotImplementedError()
 
@@ -31,9 +29,7 @@ class LocalHost(Host):
     def ip(self) -> str:
         return "127.0.0.1"
 
-    def popen(self,
-              args: Union[str, Sequence[str]],
-              stdout: str,
+    def popen(self, args: Union[str, Sequence[str]], stdout: str,
               stderr: str) -> proc.Proc:
         return proc.PopenProc(args, stdout=stdout, stderr=stderr)
 
@@ -46,11 +42,11 @@ class RemoteHost(Host):
         (ip, _port) = self.client.get_transport().getpeername()
         return ip
 
-    def popen(self,
-              args: Union[str, Sequence[str]],
-              stdout: str,
+    def popen(self, args: Union[str, Sequence[str]], stdout: str,
               stderr: str) -> proc.Proc:
-        return proc.ParamikoProc(self.client, args, stdout=stdout,
+        return proc.ParamikoProc(self.client,
+                                 args,
+                                 stdout=stdout,
                                  stderr=stderr)
 
 
@@ -67,8 +63,6 @@ class FakeHost(Host):
     def ip(self) -> str:
         return self.address
 
-    def popen(self,
-              args: Union[str, Sequence[str]],
-              stdout: str,
+    def popen(self, args: Union[str, Sequence[str]], stdout: str,
               stderr: str) -> proc.Proc:
         raise NotImplementedError()

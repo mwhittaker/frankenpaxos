@@ -110,8 +110,8 @@ class SuiteDirectory(object):
         benchmark_dir_id = self.benchmark_dir_id
         self.benchmark_dir_id += 1
         name_suffix = ("_" + name) if name else ""
-        path = os.path.join(self.path,
-                            "{:03}{}".format(benchmark_dir_id, name_suffix))
+        path = os.path.join(self.path, "{:03}{}".format(benchmark_dir_id,
+                                                        name_suffix))
         return BenchmarkDirectory(path)
 
 
@@ -147,9 +147,9 @@ class BenchmarkDirectory(object):
 
     def __exit__(self, cls, exn, trace):
         self.process_stack.__exit__(cls, exn, trace)
-        self.write_dict('pids.json',
-                        {f'{ip}:{pid}': label
-                         for ((ip, pid), label) in self.pids.items()})
+        self.write_dict(
+            'pids.json',
+            {f'{ip}:{pid}': label for ((ip, pid), label) in self.pids.items()})
         self.write_string('stop_time.txt', str(datetime.datetime.now()))
 
     def abspath(self, filename: str) -> str:
@@ -171,9 +171,7 @@ class BenchmarkDirectory(object):
         self.logfile.write(f'[{_pretty_now_string()}] {s}\n')
         self.logfile.flush()
 
-    def popen(self,
-              host: host.Host,
-              label: str,
+    def popen(self, host: host.Host, label: str,
               cmd: Union[str, Sequence[str]]) -> proc.Proc:
         """Runs a command within this directory.
 
@@ -208,6 +206,8 @@ class BenchmarkDirectory(object):
 #  - a `run_benchmark` function to run a benchmark.
 Input = TypeVar('Input')
 Output = TypeVar('Output')
+
+
 class Suite(Generic[Input, Output]):
     def args(self) -> Dict[Any, Any]:
         raise NotImplementedError("")
@@ -218,9 +218,7 @@ class Suite(Generic[Input, Output]):
     def summary(self, input: Input, output: Output) -> str:
         raise NotImplementedError("")
 
-    def run_benchmark(self,
-                      bench: BenchmarkDirectory,
-                      args: Dict[Any, Any],
+    def run_benchmark(self, bench: BenchmarkDirectory, args: Dict[Any, Any],
                       input: Input) -> Output:
         raise NotImplementedError("")
 
@@ -251,8 +249,9 @@ class Suite(Generic[Input, Output]):
 
                 # Write the header if needed.
                 if i == 1:
-                    results_writer.writerow(util.flatten_tuple_fields(input) +
-                                            util.flatten_tuple_fields(output))
+                    results_writer.writerow(
+                        util.flatten_tuple_fields(input) +
+                        util.flatten_tuple_fields(output))
 
                 # Write the results.
                 row = util.flatten_tuple(input) + util.flatten_tuple(output)
@@ -275,8 +274,10 @@ class Suite(Generic[Input, Output]):
             suite_duration = current_time - suite_start_time
             duration_per_iteration = suite_duration / i
             remaining_duration = (n - i) * duration_per_iteration
+
             def round_timedelta(d):
                 return datetime.timedelta(seconds=int(d.total_seconds()))
+
             info += f'{colorful.blue(round_timedelta(bench_duration))} / '
             info += f'{colorful.green(round_timedelta(suite_duration))} + '
             info += f'{colorful.magenta(round_timedelta(remaining_duration))}? '
@@ -295,6 +296,7 @@ class LatencyOutput(NamedTuple):
     p95_ms: float
     p99_ms: float
 
+
 class ThroughputOutput(NamedTuple):
     mean: float
     median: float
@@ -303,6 +305,7 @@ class ThroughputOutput(NamedTuple):
     p90: float
     p95: float
     p99: float
+
 
 class RecorderOutput(NamedTuple):
     latency: LatencyOutput
@@ -313,13 +316,13 @@ class RecorderOutput(NamedTuple):
     stop_throughput_2s: ThroughputOutput
     stop_throughput_5s: ThroughputOutput
 
+
 # parse_recorder_data parses and summarizes data written by a
 # frankenpaxos.BenchmarkUtil.Recorder.
 #
 # TODO(mwhittaker): Drop the first couple of seconds from the data since it
 # takes a while for the JVM to fully ramp up.
-def parse_recorder_data(bench: BenchmarkDirectory,
-                        filenames: Iterable[str],
+def parse_recorder_data(bench: BenchmarkDirectory, filenames: Iterable[str],
                         drop_prefix: datetime.timedelta) -> RecorderOutput:
     df = pd_util.read_csvs(filenames, parse_dates=['start', 'stop'])
     bench.log('Aggregate recorder data read.')
@@ -347,32 +350,32 @@ def parse_recorder_data(bench: BenchmarkDirectory,
 
     def latency(s):
         return LatencyOutput(
-            mean_ms = s.mean(),
-            median_ms = s.median(),
-            min_ms = s.min(),
-            max_ms = s.max(),
-            p90_ms = s.quantile(.90),
-            p95_ms = s.quantile(.95),
-            p99_ms = s.quantile(.99),
+            mean_ms=s.mean(),
+            median_ms=s.median(),
+            min_ms=s.min(),
+            max_ms=s.max(),
+            p90_ms=s.quantile(.90),
+            p95_ms=s.quantile(.95),
+            p99_ms=s.quantile(.99),
         )
 
     def throughput(s):
         return ThroughputOutput(
-            mean = s.mean(),
-            median = s.median(),
-            min = s.min(),
-            max = s.max(),
-            p90 = s.quantile(.90),
-            p95 = s.quantile(.95),
-            p99 = s.quantile(.99),
+            mean=s.mean(),
+            median=s.median(),
+            min=s.min(),
+            max=s.max(),
+            p90=s.quantile(.90),
+            p95=s.quantile(.95),
+            p99=s.quantile(.99),
         )
 
     return RecorderOutput(
-        latency = latency(df['latency_nanos'] / 1e6),
-        start_throughput_1s = throughput(pd_util.throughput(df.index, 1000)),
-        start_throughput_2s = throughput(pd_util.throughput(df.index, 2000)),
-        start_throughput_5s = throughput(pd_util.throughput(df.index, 5000)),
-        stop_throughput_1s = throughput(pd_util.throughput(df['stop'], 1000)),
-        stop_throughput_2s = throughput(pd_util.throughput(df['stop'], 2000)),
-        stop_throughput_5s = throughput(pd_util.throughput(df['stop'], 5000)),
+        latency=latency(df['latency_nanos'] / 1e6),
+        start_throughput_1s=throughput(pd_util.throughput(df.index, 1000)),
+        start_throughput_2s=throughput(pd_util.throughput(df.index, 2000)),
+        start_throughput_5s=throughput(pd_util.throughput(df.index, 5000)),
+        stop_throughput_1s=throughput(pd_util.throughput(df['stop'], 1000)),
+        stop_throughput_2s=throughput(pd_util.throughput(df['stop'], 2000)),
+        stop_throughput_5s=throughput(pd_util.throughput(df['stop'], 5000)),
     )

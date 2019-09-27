@@ -1,0 +1,3 @@
+[style]
+based_on_style = google
+blank_line_before_nested_class_or_def = false

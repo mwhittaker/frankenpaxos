@@ -13,35 +13,35 @@ class ParamikoProcTest(unittest.TestCase):
         return client
 
     def test_wait(self):
-        p = proc.ParamikoProc(client = self._client(),
-                              args = 'true',
-                              stdout = '/tmp/out.txt',
-                              stderr = '/tmp/err.txt')
+        p = proc.ParamikoProc(client=self._client(),
+                              args='true',
+                              stdout='/tmp/out.txt',
+                              stderr='/tmp/err.txt')
         self.assertEqual(p.wait(), 0)
 
     # Smoke test.
     def test_kill(self):
-        p = proc.ParamikoProc(client = self._client(),
-                              args = ['sleep', '1000'],
-                              stdout = '/tmp/out.txt',
-                              stderr = '/tmp/err.txt')
+        p = proc.ParamikoProc(client=self._client(),
+                              args=['sleep', '1000'],
+                              stdout='/tmp/out.txt',
+                              stderr='/tmp/err.txt')
         p.kill()
 
     # Smoke test.
     def test_double_kill(self):
-        p = proc.ParamikoProc(client = self._client(),
-                              args = ['sleep', '1000'],
-                              stdout = '/tmp/out.txt',
-                              stderr = '/tmp/err.txt')
+        p = proc.ParamikoProc(client=self._client(),
+                              args=['sleep', '1000'],
+                              stdout='/tmp/out.txt',
+                              stderr='/tmp/err.txt')
         p.kill()
         p.kill()
 
     # Smoke test.
     def test_pid(self):
-        p = proc.ParamikoProc(client = self._client(),
-                              args = ['sleep', '1000'],
-                              stdout = '/tmp/out.txt',
-                              stderr = '/tmp/err.txt')
+        p = proc.ParamikoProc(client=self._client(),
+                              args=['sleep', '1000'],
+                              stdout='/tmp/out.txt',
+                              stderr='/tmp/err.txt')
         p.pid()
         p.kill()
 

@@ -33,6 +33,7 @@ class UniformSingleKeyWorkload(NamedTuple):
             }
         }
 
+
 class BernoulliSingleKeyWorkload(NamedTuple):
     conflict_rate: float
     size_mean: int
@@ -49,8 +50,6 @@ class BernoulliSingleKeyWorkload(NamedTuple):
             }
         }
 
-Workload = Union[
-    StringWorkload,
-    UniformSingleKeyWorkload,
-    BernoulliSingleKeyWorkload
-]
+
+Workload = Union[StringWorkload, UniformSingleKeyWorkload,
+                 BernoulliSingleKeyWorkload]

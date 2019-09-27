@@ -32,8 +32,7 @@ def outliers(s: pd.Series, n: float) -> pd.Series:
     return np.abs(s - mu) >= (n * sigma)
 
 
-def throughput(s: pd.Series,
-               window_size_ms: float,
+def throughput(s: pd.Series, window_size_ms: float,
                trim: bool = False) -> pd.Series:
     """
     Consider a series of timestamps:
@@ -112,6 +111,5 @@ def rate(s: pd.Series, window_size_ms: float) -> pd.Series:
 
     # We set min_periods=2 because if we only have one data point in a window,
     # the rate in the window is ill defined.
-    return (s.sort_index(0)
-             .rolling(f'{window_size_ms}ms', min_periods=2)
-             .apply(_dxdt, raw=False))
+    return (s.sort_index(0).rolling(f'{window_size_ms}ms',
+                                    min_periods=2).apply(_dxdt, raw=False))

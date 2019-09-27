@@ -10,6 +10,7 @@ Value = Union[Scalar, List[Scalar], Any]
 # A protobuf message. Any is Value.
 Message = Dict[str, Any]
 
+
 def message_to_pbtext(d: Message, indent: int = 0) -> str:
     """
     Convert a dictionary representation of a protobuf into the ascii
