@@ -3,7 +3,7 @@ from typing import Collection
 
 
 def _main(args) -> None:
-    class NsdiFig3WanFastMultiPaxosSuite(FastMultiPaxosSuite):
+    class SmokeFastMultiPaxosSuite(FastMultiPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -11,22 +11,19 @@ def _main(args) -> None:
             return [
                 Input(
                     f = 1,
-                    num_client_procs = num_client_procs,
-                    num_warmup_clients_per_proc = 50,
-                    num_clients_per_proc = num_clients_per_proc,
+                    num_client_procs = 1,
+                    num_warmup_clients_per_proc = 1,
+                    num_clients_per_proc = 1,
                     round_system_type = RoundSystemType.CLASSIC_ROUND_ROBIN,
-                    warmup_duration = datetime.timedelta(seconds=15),
-                    warmup_timeout = datetime.timedelta(seconds=20),
-                    warmup_sleep = datetime.timedelta(seconds=5),
-                    duration_seconds = 25,
-                    timeout_seconds = 30,
-                    client_lag_seconds = 5,
-                    state_machine = 'KeyValueStore',
-                    workload = workload.BernoulliSingleKeyWorkload(
-                        conflict_rate = 0.0,
-                        size_mean = 8,
-                        size_std = 0,
-                    ),
+                    jvm_heap_size = '100m',
+                    warmup_duration = datetime.timedelta(seconds=2),
+                    warmup_timeout = datetime.timedelta(seconds=3),
+                    warmup_sleep = datetime.timedelta(seconds=0),
+                    duration_seconds = 2,
+                    timeout_seconds = 3,
+                    client_lag_seconds = 0,
+                    state_machine = 'Noop',
+                    workload = workload.StringWorkload(size_mean=0, size_std=0),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval_ms = 200,
@@ -63,8 +60,7 @@ def _main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for (num_client_procs, num_clients_per_proc) in [(1, 1)]
-            ] * 3
+            ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
@@ -75,9 +71,9 @@ def _main(args) -> None:
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = NsdiFig3WanFastMultiPaxosSuite()
+    suite = SmokeFastMultiPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'fastmultipaxos_nsdi_fig3_wan') as dir:
+                                  'fastmultipaxos_smoke') as dir:
         suite.run_suite(dir)
 
 

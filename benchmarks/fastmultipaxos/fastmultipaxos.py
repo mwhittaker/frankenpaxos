@@ -1,8 +1,8 @@
 from .. import benchmark
+from .. import cluster
 from .. import host
 from .. import parser_util
 from .. import pd_util
-from .. import placement
 from .. import prometheus
 from .. import proto_util
 from .. import util
@@ -15,8 +15,6 @@ import datetime
 import enum
 import itertools
 import json
-import mininet
-import mininet.net
 import os
 import pandas as pd
 import paramiko
@@ -77,40 +75,24 @@ class ClientOptions(NamedTuple):
 
 class Input(NamedTuple):
     # System-wide parameters. ##################################################
-    # The maximum number of tolerated faults.
     f: int
-    # The number of benchmark client processes launched.
     num_client_procs: int
-    # The number of warmup clients run on each benchmark client process.
     num_warmup_clients_per_proc: int
-    # The number of clients run on each benchmark client process.
     num_clients_per_proc: int
-    # The type of round system used by the protocol.
     round_system_type: RoundSystemType
+    jvm_heap_size: str
 
     # Benchmark parameters. ####################################################
-    # The (rough) duration of the benchmark warmup.
     warmup_duration: datetime.timedelta
-    # Warmup timeout.
     warmup_timeout: datetime.timedelta
-    # Warmup sleep time.
     warmup_sleep: datetime.timedelta
-    # The (rough) duration of the benchmark.
     duration_seconds: float
-    # Global timeout.
     timeout_seconds: float
-    # Delay between starting leaders and clients.
     client_lag_seconds: float
-    # State machine
     state_machine: str
-    # Client workload.
     workload: Workload
-    # Profile the code with perf.
     profiled: bool
-    # Monitor the code with prometheus.
     monitored: bool
-    # The interval between Prometheus scrapes. This field is only relevant if
-    # monitoring is enabled.
     prometheus_scrape_interval_ms: int
 
     # Acceptor options. ########################################################
@@ -129,82 +111,19 @@ class Input(NamedTuple):
 Output = benchmark.RecorderOutput
 
 
-# Networks #####################################################################
-class FastMultiPaxosNet(object):
-    def __init__(self) -> None:
-        pass
-
-    def __enter__(self) -> 'FastMultiPaxosNet':
-        return self
-
-    def __exit__(self, cls, exn, traceback) -> None:
-        pass
-
-    def f(self) -> int:
-        raise NotImplementedError()
-
-    def rs_type(self) -> RoundSystemType:
-        raise NotImplementedError()
-
-    def clients(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def leaders(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def leader_elections(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def leader_heartbeats(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def acceptors(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def acceptor_heartbeats(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def config(self) -> proto_util.Message:
-        return {
-            'f': self.f(),
-            'leaderAddress': [
-                {'host': e.host.ip(), 'port': e.port}
-                for e in self.leaders()
-            ],
-            'leaderElectionAddress': [
-                {'host': e.host.ip(), 'port': e.port}
-                for e in self.leader_elections()
-            ],
-            'leaderHeartbeatAddress': [
-                {'host': e.host.ip(), 'port': e.port}
-                for e in self.leader_heartbeats()
-            ],
-            'acceptorAddress': [
-                {'host': e.host.ip(), 'port': e.port}
-                for e in self.acceptors()
-            ],
-            'acceptorHeartbeatAddress': [
-                {'host': e.host.ip(), 'port': e.port}
-                for e in self.acceptor_heartbeats()
-            ],
-            'roundSystemType': self.rs_type()
-        }
-
-
-class RemoteFastMultiPaxosNet(FastMultiPaxosNet):
+# Network ######################################################################
+class FastMultiPaxosNet:
     def __init__(self,
-                 placement_file: str,
+                 cluster_file: str,
                  key_filename: Optional[str],
-                 f: int,
-                 rs_type: RoundSystemType,
-                 num_client_procs: int) -> None:
+                 input: Input) -> None:
         self._key_filename = key_filename
-        self._f = f
-        self._rs_type = rs_type
-        self._num_client_procs = num_client_procs
-        with open(placement_file, 'r') as pf:
-            p = placement.Placement(json.load(pf), self._connect)
-            self._placement = p.f(f)
+        # It's important that we initialize the cluster after we set
+        # _key_filename since _connect reads _key_filename.
+        self._cluster = (cluster.Cluster
+                                .from_json_file(cluster_file, self._connect)
+                                .f(input.f))
+        self._input = input
 
     def _connect(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
@@ -215,7 +134,7 @@ class RemoteFastMultiPaxosNet(FastMultiPaxosNet):
             client.connect(address)
         return host.RemoteHost(client)
 
-    class _Placement(NamedTuple):
+    class Placement(NamedTuple):
         clients: List[host.Endpoint]
         leaders: List[host.Endpoint]
         leader_elections: List[host.Endpoint]
@@ -223,153 +142,64 @@ class RemoteFastMultiPaxosNet(FastMultiPaxosNet):
         acceptors: List[host.Endpoint]
         acceptor_heartbeats: List[host.Endpoint]
 
-    def _get_placement(self) -> '_Placement':
+    def placement(self) -> Placement:
         ports = itertools.count(10000, 100)
         def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
             return [host.Endpoint(h, next(ports)) for h in hosts]
 
-        return self._Placement(
-            leaders = portify(self._placement['leaders']),
-            leader_elections = portify(self._placement['leaders']),
-            leader_heartbeats = portify(self._placement['leaders']),
-            acceptors = portify(self._placement['acceptors']),
-            acceptor_heartbeats = portify(self._placement['acceptors']),
-            clients = portify(list(
-                itertools.islice(itertools.cycle(self._placement['clients']),
-                                 self._num_client_procs)
-            )),
+        def cycle_take_n(n: int, hosts: List[host.Host]) -> List[host.Host]:
+            return list(itertools.islice(itertools.cycle(hosts), n))
+
+        return self.Placement(
+            leaders = portify(cycle_take_n(
+                self._input.f + 1, self._cluster['leaders'])),
+            leader_elections = portify(cycle_take_n(
+                self._input.f + 1, self._cluster['leaders'])),
+            leader_heartbeats = portify(cycle_take_n(
+                self._input.f + 1, self._cluster['leaders'])),
+            acceptors = portify(cycle_take_n(
+                2 * self._input.f + 1, self._cluster['acceptors'])),
+            acceptor_heartbeats = portify(cycle_take_n(
+                2 * self._input.f + 1, self._cluster['acceptors'])),
+            clients = portify(cycle_take_n(
+                self._input.num_client_procs, self._cluster['clients'])),
         )
 
-    def f(self) -> int:
-        return self._f
-
-    def rs_type(self) -> RoundSystemType:
-        return self._rs_type
-
-    def clients(self) -> List[host.Endpoint]:
-        return self._get_placement().clients
-
-    def leaders(self) -> List[host.Endpoint]:
-        return self._get_placement().leaders
-
-    def leader_elections(self) -> List[host.Endpoint]:
-        return self._get_placement().leader_elections
-
-    def leader_heartbeats(self) -> List[host.Endpoint]:
-        return self._get_placement().leader_heartbeats
-
-    def acceptors(self) -> List[host.Endpoint]:
-        return self._get_placement().acceptors
-
-    def acceptor_heartbeats(self) -> List[host.Endpoint]:
-        return self._get_placement().acceptor_heartbeats
-
-
-class FastMultiPaxosMininet(FastMultiPaxosNet):
-    def __enter__(self) -> 'FastMultiPaxosNet':
-        self.net().start()
-        return self
-
-    def __exit__(self, cls, exn, traceback) -> None:
-        self.net().stop()
-
-    def net(self) -> mininet.net.Mininet:
-        raise NotImplementedError()
-
-
-class SingleSwitchMininet(FastMultiPaxosMininet):
-    def __init__(self,
-                 f: int,
-                 rs_type: RoundSystemType,
-                 num_client_procs: int) -> None:
-        self._f = f
-        self._rs_type = rs_type
-        self._clients: List[host.Endpoint] = []
-        self._leaders: List[host.Endpoint] = []
-        self._leader_elections: List[host.Endpoint] = []
-        self._leader_heartbeats: List[host.Endpoint] = []
-        self._acceptors: List[host.Endpoint] = []
-        self._acceptor_heartbeats: List[host.Endpoint] = []
-        self._net = mininet.net.Mininet()
-
-        switch = self._net.addSwitch('s1')
-        self._net.addController('c')
-
-        for i in range(num_client_procs):
-            client = self._net.addHost(f'c{i}')
-            self._net.addLink(client, switch)
-            self._clients.append(host.Endpoint(host.MininetHost(client), 10000))
-
-        num_leaders = f + 1
-        for i in range(num_leaders):
-            leader = self._net.addHost(f'l{i}')
-            self._net.addLink(leader, switch)
-            self._leaders.append(
-                host.Endpoint(host.MininetHost(leader), 11000))
-            self._leader_elections.append(
-                host.Endpoint(host.MininetHost(leader), 11010))
-            self._leader_heartbeats.append(
-                host.Endpoint(host.MininetHost(leader), 11020))
-
-        num_acceptors = 2*f + 1
-        for i in range(num_acceptors):
-            acceptor = self._net.addHost(f'a{i}')
-            self._net.addLink(acceptor, switch)
-            self._acceptors.append(
-                host.Endpoint(host.MininetHost(acceptor), 12000))
-            self._acceptor_heartbeats.append(
-                host.Endpoint(host.MininetHost(acceptor), 12010))
-
-    def net(self) -> mininet.net.Mininet:
-        return self._net
-
-    def f(self) -> int:
-        return self._f
-
-    def rs_type(self) -> RoundSystemType:
-        return self._rs_type
-
-    def clients(self) -> List[host.Endpoint]:
-        return self._clients
-
-    def leaders(self) -> List[host.Endpoint]:
-        return self._leaders
-
-    def leader_elections(self) -> List[host.Endpoint]:
-        return self._leader_elections
-
-    def leader_heartbeats(self) -> List[host.Endpoint]:
-        return self._leader_heartbeats
-
-    def acceptors(self) -> List[host.Endpoint]:
-        return self._acceptors
-
-    def acceptor_heartbeats(self) -> List[host.Endpoint]:
-        return self._acceptor_heartbeats
+    def config(self) -> proto_util.Message:
+        return {
+            'f': self._input.f,
+            'leaderAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.placement().leaders
+            ],
+            'leaderElectionAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.placement().leader_elections
+            ],
+            'leaderHeartbeatAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.placement().leader_heartbeats
+            ],
+            'acceptorAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.placement().acceptors
+            ],
+            'acceptorHeartbeatAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.placement().acceptor_heartbeats
+            ],
+            'roundSystemType': self._input.round_system_type
+        }
 
 
 # Suite ########################################################################
 class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
-    def make_net(self, args: Dict[Any, Any], input: Input) -> FastMultiPaxosNet:
-        if args['placement'] is not None:
-            return RemoteFastMultiPaxosNet(
-                        args['placement'],
-                        args['identity_file'],
-                        f=input.f,
-                        rs_type=input.round_system_type,
-                        num_client_procs=input.num_client_procs)
-        else:
-            return SingleSwitchMininet(
-                        f=input.f,
-                        rs_type=input.round_system_type,
-                        num_client_procs=input.num_client_procs)
-
     def run_benchmark(self,
                       bench: benchmark.BenchmarkDirectory,
                       args: Dict[Any, Any],
                       input: Input) -> Output:
-        with self.make_net(args, input) as net:
-            return self._run_benchmark(bench, args, input, net)
+        net = FastMultiPaxosNet(args['cluster'], args['identity_file'], input)
+        return self._run_benchmark(bench, args, input, net)
 
     def _run_benchmark(self,
                        bench: benchmark.BenchmarkDirectory,
@@ -397,11 +227,11 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
         # TODO(mwhittaker): Right now, not much thought has been put into the
         # heap size. Think more carefully about this. We may want, for example,
         # to increase the size of the young generation.
-        java += ['-Xms32G', '-Xmx32G']
+        java += [f'-Xms{input.jvm_heap_size}', f'-Xmx{input.jvm_heap_size}']
 
         # Launch acceptors.
         acceptor_procs = []
-        for (i, acceptor) in enumerate(net.acceptors()):
+        for (i, acceptor) in enumerate(net.placement().acceptors):
             proc = bench.popen(
                 host=acceptor.host,
                 label=f'acceptor_{i}',
@@ -425,7 +255,7 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch leaders.
         leader_procs = []
-        for (i, leader) in enumerate(net.leaders()):
+        for (i, leader) in enumerate(net.placement().leaders):
             proc = bench.popen(
                 host=leader.host,
                 label=f'leader_{i}',
@@ -482,16 +312,19 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
                 input.prometheus_scrape_interval_ms,
                 {
                   'fast_multipaxos_acceptor':
-                    [f'{e.host.ip()}:{e.port + 1}' for e in net.acceptors()],
+                    [f'{e.host.ip()}:{e.port + 1}'
+                     for e in net.placement().acceptors],
                   'fast_multipaxos_leader':
-                    [f'{e.host.ip()}:{e.port + 1}' for e in net.leaders()],
+                    [f'{e.host.ip()}:{e.port + 1}'
+                     for e in net.placement().leaders],
                   'fast_multipaxos_client':
-                    [f'{e.host.ip()}:{e.port + 1}' for e in net.clients()],
+                    [f'{e.host.ip()}:{e.port + 1}'
+                     for e in net.placement().clients],
                 }
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
             prometheus_server = bench.popen(
-                host=net.leaders()[0].host,
+                host=net.placement().leaders[0].host,
                 label='prometheus',
                 cmd = [
                     'prometheus',
@@ -513,7 +346,7 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
             proto_util.message_to_pbtext(input.workload.to_proto()))
 
         client_procs = []
-        for (i, client) in enumerate(net.clients()):
+        for (i, client) in enumerate(net.placement().clients):
             proc = bench.popen(
                 host=client.host,
                 label=f'client_{i}',
@@ -559,7 +392,6 @@ class FastMultiPaxosSuite(benchmark.Suite[Input, Output]):
         # Client i writes results to `client_i_data.csv`.
         client_csvs = [bench.abspath(f'client_{i}_data.csv')
                        for i in range(input.num_client_procs)]
-        # TODO(mwhittaker): Implement.
         return benchmark.parse_recorder_data(bench, client_csvs,
                 drop_prefix=datetime.timedelta(seconds=0))
 

@@ -1,0 +1,7 @@
+{
+  "1": {
+    "clients": ["localhost"],
+    "leaders": ["localhost"],
+    "acceptors": ["localhost"]
+  }
+}
