@@ -1,4 +1,5 @@
 from . import proc
+import os
 import paramiko
 import unittest
 
@@ -7,7 +8,8 @@ class ParamikoProcTest(unittest.TestCase):
     def _client(self) -> paramiko.SSHClient:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
-        client.connect('localhost')
+        home = os.path.expanduser('~')
+        client.connect('localhost', key_filename=f'{home}/.ssh/id_rsa')
         return client
 
     def test_wait(self):

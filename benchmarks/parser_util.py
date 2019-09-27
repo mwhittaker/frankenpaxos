@@ -50,10 +50,10 @@ def get_benchmark_parser() -> argparse.ArgumentParser:
         help='Remote addresses for benchmark'
     )
     parser.add_argument(
-        '--placement',
+        '--cluster',
         type=str,
         default=None,
-        help='A JSON file with node placement information'
+        help='A JSON file with cluster information'
     )
     parser.add_argument(
         '-i', '--identity_file',

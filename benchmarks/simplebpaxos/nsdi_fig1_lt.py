@@ -14,6 +14,7 @@ def main(args) -> None:
                     num_warmup_clients_per_proc = 50,
                     num_clients_per_proc = num_clients_per_proc,
                     num_leaders = num_leaders,
+                    jvm_heap_size = '32G',
                     warmup_duration = datetime.timedelta(seconds=5),
                     warmup_timeout = datetime.timedelta(seconds=10),
                     warmup_sleep = datetime.timedelta(seconds=5),

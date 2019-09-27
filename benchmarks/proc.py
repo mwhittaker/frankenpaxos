@@ -1,7 +1,5 @@
 from typing import Optional, Sequence, Union
 import abc
-import mininet
-import mininet.node
 import paramiko
 import random
 import string
@@ -196,28 +194,3 @@ class ParamikoProc(Proc):
 
         self._channel.close()
         self._killed = True
-
-
-class MininetProc(Proc):
-    def __init__(self,
-                 node: mininet.node.Node,
-                 args: Union[str, Sequence[str]],
-                 stdout: str,
-                 stderr: str) -> None:
-        self._node = node
-        self._cmd = _canonicalize_args(args)
-        self._popen = node.popen(args,
-                                 stdout=open(stdout, 'w'),
-                                 stderr=open(stderr, 'w'))
-
-    def cmd(self) -> str:
-        return self._cmd
-
-    def pid(self) -> Optional[int]:
-        return self._popen.pid
-
-    def wait(self) -> Optional[int]:
-        return self._popen.wait()
-
-    def kill(self) -> None:
-        self._popen.kill()
