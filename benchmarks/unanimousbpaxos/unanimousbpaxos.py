@@ -1,4 +1,5 @@
 from .. import benchmark
+from .. import cluster
 from .. import host
 from .. import parser_util
 from .. import pd_util
@@ -7,14 +8,12 @@ from .. import proto_util
 from .. import util
 from .. import workload
 from ..workload import Workload
-from typing import Any, Callable, Collection, Dict, List, NamedTuple
+from typing import Any, Callable, Collection, Dict, List, NamedTuple, Optional
 import argparse
 import csv
 import datetime
 import enum
 import itertools
-import mininet
-import mininet.net
 import os
 import paramiko
 import time
@@ -49,30 +48,18 @@ class AcceptorOptions(NamedTuple):
 
 class Input(NamedTuple):
     # System-wide parameters. ##################################################
-    # The maximum number of tolerated faults.
     f: int
-    # The number of benchmark client processes launched.
     num_client_procs: int
-    # The number of clients run on each benchmark client process.
     num_clients_per_proc: int
 
     # Benchmark parameters. ####################################################
-    # The (rough) duration of the benchmark.
     duration: datetime.timedelta
-    # Global timeout.
     timeout: datetime.timedelta
-    # Delay between starting leaders and clients.
     client_lag: datetime.timedelta
-    # State machine
     state_machine: str
-    # Client workload.
     workload: Workload
-    # Profile the code with perf.
     profiled: bool
-    # Monitor the code with prometheus.
     monitored: bool
-    # The interval between Prometheus scrapes. This field is only relevant if
-    # monitoring is enabled.
     prometheus_scrape_interval: datetime.timedelta
 
     # Leader options. ##########################################################
@@ -97,188 +84,76 @@ Output = benchmark.RecorderOutput
 
 
 # Networks #####################################################################
-class UnanimousBPaxosNet(object):
-    def __init__(self) -> None:
-        pass
-
-    def __enter__(self) -> 'UnanimousBPaxosNet':
-        return self
-
-    def __exit__(self, cls, exn, traceback) -> None:
-        pass
-
-    def f(self) -> int:
-        raise NotImplementedError()
-
-    def clients(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def leaders(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def dep_service_nodes(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def acceptors(self) -> List[host.Endpoint]:
-        raise NotImplementedError()
-
-    def config(self) -> proto_util.Message:
-        return {
-            'f': self.f(),
-            'leaderAddress': [
-                {'host': e.host.ip(), 'port': e.port}
-                for e in self.leaders()
-            ],
-            'depServiceNodeAddress': [
-                {'host': e.host.ip(), 'port': e.port}
-                for e in self.dep_service_nodes()
-            ],
-            'acceptorAddress': [
-                {'host': e.host.ip(), 'port': e.port}
-                for e in self.acceptors()
-            ],
-        }
-
-class RemoteUnanimousBPaxosNet(UnanimousBPaxosNet):
+class UnanimousBPaxosNet:
     def __init__(self,
-                 addresses: List[str],
-                 f: int,
-                 num_client_procs: int) -> None:
-        assert len(addresses) > 0
-        self._f = f
-        self._num_client_procs = num_client_procs
-        self._hosts = [self._make_host(a) for a in addresses]
+                 cluster_file: str,
+                 key_filename: Optional[str],
+                 input: Input) -> None:
+        self._key_filename = key_filename
+        # It's important that we initialize the cluster after we set
+        # _key_filename since _connect reads _key_filename.
+        self._cluster = (cluster.Cluster
+                                .from_json_file(cluster_file, self._connect)
+                                .f(input.f))
+        self._input = input
 
-    def _make_host(self, address: str) -> host.Host:
+    def _connect(self, address: str) -> host.Host:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
         client.connect(address)
         return host.RemoteHost(client)
 
-    class _Placement(NamedTuple):
+    class Placement(NamedTuple):
         clients: List[host.Endpoint]
         leaders: List[host.Endpoint]
         dep_service_nodes: List[host.Endpoint]
         acceptors: List[host.Endpoint]
 
-    def _placement(self) -> '_Placement':
+    def placement(self) -> Placement:
         ports = itertools.count(10000, 100)
         def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
             return [host.Endpoint(h, next(ports)) for h in hosts]
 
-        if len(self._hosts) == 1:
-            return self._Placement(
-                clients = portify(self._hosts * self._num_client_procs),
-                leaders = portify(self._hosts * (self.f() + 1)),
-                dep_service_nodes = portify(self._hosts * (2*self.f() + 1)),
-                acceptors = portify(self._hosts * (2*self.f() + 1)),
-            )
-        else:
-            raise NotImplementedError()
+        def cycle_take_n(n: int, hosts: List[host.Host]) -> List[host.Host]:
+            return list(itertools.islice(itertools.cycle(hosts), n))
 
-    def f(self) -> int:
-        return self._f
+        return self.Placement(
+            clients = portify(cycle_take_n(
+                self._input.num_client_procs, self._cluster['clients'])),
+            leaders = portify(cycle_take_n(
+                self._input.f + 1, self._cluster['leaders'])),
+            dep_service_nodes = portify(cycle_take_n(
+                2*self._input.f + 1, self._cluster['dep_service_nodes'])),
+            acceptors = portify(cycle_take_n(
+                2*self._input.f + 1, self._cluster['acceptors'])),
+        )
 
-    def clients(self) -> List[host.Endpoint]:
-        return self._placement().clients
-
-    def leaders(self) -> List[host.Endpoint]:
-        return self._placement().leaders
-
-    def dep_service_nodes(self) -> List[host.Endpoint]:
-        return self._placement().dep_service_nodes
-
-    def acceptors(self) -> List[host.Endpoint]:
-        return self._placement().acceptors
-
-
-class UnanimousBPaxosMininet(UnanimousBPaxosNet):
-    def __enter__(self) -> 'UnanimousBPaxosMininet':
-        self.net().start()
-        return self
-
-    def __exit__(self, cls, exn, traceback) -> None:
-        self.net().stop()
-
-    def net(self) -> mininet.net.Mininet:
-        raise NotImplementedError()
-
-
-class SingleSwitchMininet(UnanimousBPaxosMininet):
-    def __init__(self, f: int,
-                 num_client_procs: int) -> None:
-        self._f = f
-        self._clients: List[host.Endpoint] = []
-        self._leaders: List[host.Endpoint] = []
-        self._dep_service_nodes: List[host.Endpoint] = []
-        self._acceptors: List[host.Endpoint] = []
-        self._net = mininet.net.Mininet()
-
-        switch = self._net.addSwitch('s1')
-        self._net.addController('c')
-
-        for i in range(num_client_procs):
-            client = self._net.addHost(f'c{i}')
-            self._net.addLink(client, switch)
-            self._clients.append(host.Endpoint(host.MininetHost(client), 10000))
-
-        for i in range(f + 1):
-            leader = self._net.addHost(f'l{i}')
-            self._net.addLink(leader, switch)
-            self._leaders.append(host.Endpoint(host.MininetHost(leader), 11000))
-
-        for i in range(2*f + 1):
-            dep_service_node = self._net.addHost(f'd{i}')
-            self._net.addLink(dep_service_node, switch)
-            self._dep_service_nodes.append(
-                host.Endpoint(host.MininetHost(dep_service_node), 12000))
-
-        for i in range(2*f + 1):
-            acceptor = self._net.addHost(f'a{i}')
-            self._net.addLink(acceptor, switch)
-            self._acceptors.append(
-                host.Endpoint(host.MininetHost(acceptor), 13000))
-
-    def f(self) -> int:
-        return self._f
-
-    def net(self) -> mininet.net.Mininet:
-        return self._net
-
-    def clients(self) -> List[host.Endpoint]:
-        return self._clients
-
-    def leaders(self) -> List[host.Endpoint]:
-        return self._leaders
-
-    def dep_service_nodes(self) -> List[host.Endpoint]:
-        return self._dep_service_nodes
-
-    def acceptors(self) -> List[host.Endpoint]:
-        return self._acceptors
+    def config(self) -> proto_util.Message:
+        return {
+            'f': self._input.f,
+            'leaderAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.placement().leaders
+            ],
+            'depServiceNodeAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.placement().dep_service_nodes
+            ],
+            'acceptorAddress': [
+                {'host': e.host.ip(), 'port': e.port}
+                for e in self.placement().acceptors
+            ],
+        }
 
 
 # Suite ########################################################################
 class UnanimousBPaxosSuite(benchmark.Suite[Input, Output]):
-    def make_net(self,
-                 args: Dict[Any, Any],
-                 input: Input) -> UnanimousBPaxosNet:
-        if args['address'] is not None:
-            return RemoteUnanimousBPaxosNet(
-                        args['address'],
-                        f=input.f,
-                        num_client_procs=input.num_client_procs)
-        else:
-            return SingleSwitchMininet(
-                        f=input.f,
-                        num_client_procs=input.num_client_procs)
-
     def run_benchmark(self,
                       bench: benchmark.BenchmarkDirectory,
                       args: Dict[Any, Any],
                       input: Input) -> Output:
-        with self.make_net(args, input) as net:
-            return self._run_benchmark(bench, args, input, net)
+        net = UnanimousBPaxosNet(args['cluster'], args['identity_file'], input)
+        return self._run_benchmark(bench, args, input, net)
 
     def _run_benchmark(self,
                        bench: benchmark.BenchmarkDirectory,
@@ -293,7 +168,7 @@ class UnanimousBPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch leaders.
         leader_procs = []
-        for (i, leader) in enumerate(net.leaders()):
+        for (i, leader) in enumerate(net.placement().leaders):
             proc = bench.popen(
                 host=leader.host,
                 label=f'leader_{i}',
@@ -336,7 +211,7 @@ class UnanimousBPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch acceptors.
         acceptor_procs = []
-        for (i, acceptor) in enumerate(net.acceptors()):
+        for (i, acceptor) in enumerate(net.placement().acceptors):
             proc = bench.popen(
                 host=acceptor.host,
                 label=f'acceptor_{i}',
@@ -357,7 +232,7 @@ class UnanimousBPaxosSuite(benchmark.Suite[Input, Output]):
 
         # Launch dep service nodes.
         dep_service_node_procs = []
-        for (i, dep) in enumerate(net.dep_service_nodes()):
+        for (i, dep) in enumerate(net.placement().dep_service_nodes):
             proc = bench.popen(
                 host=dep.host,
                 label=f'dep_service_node_{i}',
@@ -368,6 +243,7 @@ class UnanimousBPaxosSuite(benchmark.Suite[Input, Output]):
                     '--index', str(i),
                     '--config', config_filename,
                     '--log_level', input.dep_service_node_log_level,
+                    '--state_machine', input.state_machine,
                     '--prometheus_host', dep.host.ip(),
                     '--prometheus_port',
                         str(dep.port + 1) if input.monitored else '-1',
@@ -383,21 +259,21 @@ class UnanimousBPaxosSuite(benchmark.Suite[Input, Output]):
                 {
                   'bpaxos_leader':
                     [f'{e.host.ip()}:{e.port + 1}'
-                     for e in net.leaders()],
+                     for e in net.placement().leaders],
                   'bpaxos_acceptor':
                     [f'{e.host.ip()}:{e.port + 1}'
-                     for e in net.acceptors()],
+                     for e in net.placement().acceptors],
                   'bpaxos_client':
                     [f'{e.host.ip()}:{e.port + 1}'
-                     for e in net.clients()],
+                     for e in net.placement().clients],
                   'bpaxos_dep_service_node':
                     [f'{e.host.ip()}:{e.port + 1}'
-                     for e in net.dep_service_nodes()],
+                     for e in net.placement().dep_service_nodes],
                 }
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
             prometheus_server = bench.popen(
-                host=net.leaders()[0].host,
+                host=net.placement().leaders[0].host,
                 label='prometheus',
                 cmd = [
                     'prometheus',
@@ -418,7 +294,7 @@ class UnanimousBPaxosSuite(benchmark.Suite[Input, Output]):
             proto_util.message_to_pbtext(input.workload.to_proto()))
 
         client_procs = []
-        for (i, client) in enumerate(net.clients()):
+        for (i, client) in enumerate(net.placement().clients):
             proc = bench.popen(
                 host=client.host,
                 label=f'client_{i}',

@@ -1,0 +1,8 @@
+{
+  "1": {
+    "clients": ["localhost"],
+    "leaders": ["localhost"],
+    "dep_service_nodes": ["localhost"],
+    "acceptors": ["localhost"]
+  }
+}
