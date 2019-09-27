@@ -2,30 +2,27 @@ from .simplegcbpaxos import *
 
 
 def main(args) -> None:
-    class ScaleSimpleGcBPaxosSuite(SimpleGcBPaxosSuite):
+    class SmokeSimpleGcBPaxosSuite(SimpleGcBPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
         def inputs(self) -> Collection[Input]:
             return [
                 Input(
-                    f = f,
-                    num_client_procs = num_client_procs,
+                    f = 1,
+                    num_client_procs = 1,
                     num_warmup_clients_per_proc = 1,
-                    num_clients_per_proc = num_clients_per_proc,
-                    num_leaders = f + 1,
-                    warmup_duration = datetime.timedelta(seconds=5),
-                    warmup_timeout = datetime.timedelta(seconds=10),
-                    warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=20),
-                    timeout = datetime.timedelta(seconds=30),
-                    client_lag = datetime.timedelta(seconds=2),
-                    state_machine = 'KeyValueStore',
-                    workload = workload.UniformSingleKeyWorkload(
-                        num_keys = 1000000,
-                        size_mean = 1,
-                        size_std = 0,
-                    ),
+                    num_clients_per_proc = 1,
+                    num_leaders = 2,
+                    jvm_heap_size = '100m',
+                    warmup_duration = datetime.timedelta(seconds=2),
+                    warmup_timeout = datetime.timedelta(seconds=3),
+                    warmup_sleep = datetime.timedelta(seconds=0),
+                    duration = datetime.timedelta(seconds=2),
+                    timeout = datetime.timedelta(seconds=3),
+                    client_lag = datetime.timedelta(seconds=0),
+                    state_machine = 'Noop',
+                    workload = workload.StringWorkload(size_mean=1, size_std=0),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -51,12 +48,15 @@ def main(args) -> None:
                             datetime.timedelta(seconds=60),
                         recover_vertex_timer_max_period = \
                             datetime.timedelta(seconds=120),
-                        execute_graph_batch_size = 100,
+                        execute_graph_batch_size = 1,
                         execute_graph_timer_period = \
                             datetime.timedelta(seconds=1)
                     ),
+                    replica_zigzag_options = ZigzagOptions(
+                        vertices_grow_size = 1000,
+                        garbage_collect_every_n_commands = 1000,
+                    ),
                     replica_log_level = args.log_level,
-                    replica_dependency_graph = 'Tarjan',
                     garbage_collector_options = GarbageCollectorOptions(),
                     garbage_collector_log_level = args.log_level,
                     client_options = ClientOptions(
@@ -64,23 +64,7 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for f in [1, 2]
-                for (num_client_procs, num_clients_per_proc) in
-                    [
-                        (1, 100),
-                        (2, 100),
-                        (3, 100),
-                        (4, 100),
-                        (5, 100),
-                        (6, 100),
-                        (6, 250),
-                        (6, 500),
-                        (6, 750),
-                        (6, 1000),
-                        (6, 1500),
-                        (6, 2000),
-                    ]
-            ] * 3
+            ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
@@ -91,9 +75,9 @@ def main(args) -> None:
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = ScaleSimpleGcBPaxosSuite()
+    suite = SmokeSimpleGcBPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'simplegcbpaxos_scale') as dir:
+                                  'simplegcbpaxos_smoke') as dir:
         suite.run_suite(dir)
 
 

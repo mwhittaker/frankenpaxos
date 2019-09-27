@@ -1,0 +1,11 @@
+{
+  "1": {
+    "clients": ["localhost"],
+    "leaders": ["localhost"],
+    "proposers": ["localhost"],
+    "dep_service_nodes": ["localhost"],
+    "acceptors": ["localhost"],
+    "replicas": ["localhost"],
+    "garbage_collectors": ["localhost"]
+  }
+}

@@ -240,7 +240,6 @@ class SimpleBPaxosSuite(benchmark.Suite[Input, Output]):
         # TODO(mwhittaker): Right now, not much thought has been put into the
         # heap size. Think more carefully about this. We may want, for example,
         # to increase the size of the young generation.
-        # TODO(mwhittaker): Toggle heap size with a flag.
         java += [f'-Xms{input.jvm_heap_size}', f'-Xmx{input.jvm_heap_size}']
 
         # Launch dep service nodes.
