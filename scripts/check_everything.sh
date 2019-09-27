@@ -7,7 +7,7 @@ main() {
     bash scripts/unittest.sh
     sbt "frankenpaxosJVM/assembly"
     sbt "frankenpaxosJVM/bench:compile"
-    bash scripts/benchmarks_smoke.sh
+    bash scripts/benchmark_smoke.sh
 }
 
 main "$@"
