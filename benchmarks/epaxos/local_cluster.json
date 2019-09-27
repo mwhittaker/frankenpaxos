@@ -1,0 +1,6 @@
+{
+  "1": {
+    "clients": ["localhost"],
+    "replicas": ["localhost"],
+  }
+}

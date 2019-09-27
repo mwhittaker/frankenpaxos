@@ -122,7 +122,7 @@ class Input(NamedTuple):
 Output = benchmark.RecorderOutput
 
 
-# Networks #####################################################################
+# Network ######################################################################
 class SimpleBPaxosNet:
     def __init__(self,
                  cluster_file: str,
@@ -153,9 +153,6 @@ class SimpleBPaxosNet:
         acceptors: List[host.Endpoint]
         replicas: List[host.Endpoint]
 
-    def f(self) -> int:
-        return self._input.f
-
     def placement(self) -> Placement:
         ports = itertools.count(10000, 100)
         def portify(hosts: List[host.Host]) -> List[host.Endpoint]:
@@ -183,7 +180,7 @@ class SimpleBPaxosNet:
 
     def config(self) -> proto_util.Message:
         return {
-            'f': self.f(),
+            'f': self._input.f,
             'leaderAddress': [
                 {'host': e.host.ip(), 'port': e.port}
                 for e in self.placement().leaders
