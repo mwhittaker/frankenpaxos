@@ -1,9 +1,9 @@
 from .. import benchmark
+from .. import cluster
 from .. import host
 from .. import parser_util
 from .. import pd_util
 from .. import perf_util
-from .. import placement
 from .. import proc
 from .. import prometheus
 from .. import proto_util
@@ -18,8 +18,6 @@ import datetime
 import enum
 import itertools
 import json
-import mininet
-import mininet.net
 import os
 import pandas as pd
 import paramiko
@@ -29,41 +27,23 @@ import tqdm
 import yaml
 
 
-# Input/Output #################################################################
-Input = simplebpaxos.Input
-Output = simplebpaxos.Output
-
-
 # Suite ########################################################################
-class SuperBPaxosSuite(benchmark.Suite[Input, Output]):
-    def make_net(self,
-                 args: Dict[Any, Any],
-                 input: Input) -> simplebpaxos.SimpleBPaxosNet:
-        if args['placement'] is not None:
-            return simplebpaxos.RemoteSimpleBPaxosNet(
-                        args['placement'],
-                        args['identity_file'],
-                        f=input.f,
-                        num_client_procs=input.num_client_procs,
-                        num_leaders=input.num_leaders)
-        else:
-            return simplebpaxos.SingleSwitchMininet(
-                        f=input.f,
-                        num_client_procs=input.num_client_procs,
-                        num_leaders=input.num_leaders)
-
+class SuperBPaxosSuite(benchmark.Suite[simplebpaxos.Input,
+                                       simplebpaxos.Output]):
     def run_benchmark(self,
                       bench: benchmark.BenchmarkDirectory,
                       args: Dict[Any, Any],
-                      input: Input) -> Output:
-        with self.make_net(args, input) as net:
-            return self._run_benchmark(bench, args, input, net)
+                      input: simplebpaxos.Input) -> simplebpaxos.Output:
+        net = simplebpaxos.SimpleBPaxosNet(
+                args['cluster'], args['identity_file'], input)
+        return self._run_benchmark(bench, args, input, net)
 
     def _run_benchmark(self,
                        bench: benchmark.BenchmarkDirectory,
                        args: Dict[Any, Any],
-                       input: Input,
-                       net: simplebpaxos.SimpleBPaxosNet) -> Output:
+                       input: simplebpaxos.Input,
+                       net: simplebpaxos.SimpleBPaxosNet
+                       ) -> simplebpaxos.Output:
         # Write config file.
         config = net.config()
         config_filename = bench.abspath('config.pbtxt')
@@ -86,19 +66,20 @@ class SuperBPaxosSuite(benchmark.Suite[Input, Output]):
         # TODO(mwhittaker): Right now, not much thought has been put into the
         # heap size. Think more carefully about this. We may want, for example,
         # to increase the size of the young generation.
-        java += ['-Xms32G', '-Xmx32G']
+        java += [f'-Xms{input.jvm_heap_size}', f'-Xmx{input.jvm_heap_size}']
 
         # Launch super nodes!
-        assert len(net.leaders()) == len(net.dep_service_nodes())
-        assert len(net.leaders()) == len(net.proposers())
-        assert len(net.leaders()) == len(net.acceptors())
-        assert len(net.leaders()) == len(net.replicas())
+        assert (len(net.placement().leaders) ==
+                len(net.placement().dep_service_nodes))
+        assert len(net.placement().leaders) == len(net.placement().proposers)
+        assert len(net.placement().leaders) == len(net.placement().acceptors)
+        assert len(net.placement().leaders) == len(net.placement().replicas)
         endhosts = [
-            net.leaders(),
-            net.dep_service_nodes(),
-            net.proposers(),
-            net.acceptors(),
-            net.replicas(),
+            net.placement().leaders,
+            net.placement().dep_service_nodes,
+            net.placement().proposers,
+            net.placement().acceptors,
+            net.placement().replicas,
         ]
 
         super_node_procs: List[proc.Proc] = []
@@ -182,22 +163,22 @@ class SuperBPaxosSuite(benchmark.Suite[Input, Output]):
                 int(input.prometheus_scrape_interval.total_seconds() * 1000),
                 {
                   'bpaxos_leader': [f'{e.host.ip()}:{e.port+1}'
-                                    for e in net.leaders()],
+                                    for e in net.placement().leaders],
                   'bpaxos_proposer': [f'{e.host.ip()}:{e.port+1}'
-                                      for e in net.proposers()],
+                                      for e in net.placement().proposers],
                   'bpaxos_acceptor': [f'{e.host.ip()}:{e.port+1}'
-                                      for e in net.acceptors()],
+                                      for e in net.placement().acceptors],
                   'bpaxos_client': [f'{e.host.ip()}:{e.port+1}'
-                                    for e in net.clients()],
+                                    for e in net.placement().clients],
                   'bpaxos_dep_service_node': [f'{e.host.ip()}:{e.port+1}'
-                                    for e in net.dep_service_nodes()],
+                                    for e in net.placement().dep_service_nodes],
                   'bpaxos_replica': [f'{e.host.ip()}:{e.port+1}'
-                                     for e in net.replicas()],
+                                     for e in net.placement().replicas],
                 }
             )
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
             prometheus_server = bench.popen(
-                host=net.clients()[0].host,
+                host=net.placement().clients[0].host,
                 label='prometheus',
                 cmd = [
                     'prometheus',
@@ -218,7 +199,7 @@ class SuperBPaxosSuite(benchmark.Suite[Input, Output]):
             proto_util.message_to_pbtext(input.workload.to_proto()))
 
         client_procs: List[proc.Proc] = []
-        for (i, client) in enumerate(net.clients()):
+        for (i, client) in enumerate(net.placement().clients):
             p = bench.popen(
                 host=client.host,
                 label=f'client_{i}',

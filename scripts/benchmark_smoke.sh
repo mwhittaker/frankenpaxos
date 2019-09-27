@@ -3,7 +3,8 @@
 set -euo pipefail
 
 main() {
-    for protocol in fastmultipaxos epaxos simplebpaxos simplegcbpaxos; do
+    for protocol in fastmultipaxos epaxos simplebpaxos superbpaxos \
+                    simplegcbpaxos; do
         echo "Running $protocol."
         python -m "benchmarks.${protocol}.smoke" \
             -m \

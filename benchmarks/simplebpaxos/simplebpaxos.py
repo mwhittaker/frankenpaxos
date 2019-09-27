@@ -78,6 +78,9 @@ class Input(NamedTuple):
     num_warmup_clients_per_proc: int
     num_clients_per_proc: int
     num_leaders: int
+    num_dep_service_nodes: int
+    num_acceptors: int
+    num_replicas: int
     jvm_heap_size: str
 
     # Benchmark parameters. ####################################################
@@ -161,8 +164,6 @@ class SimpleBPaxosNet:
         def cycle_take_n(n: int, hosts: List[host.Host]) -> List[host.Host]:
             return list(itertools.islice(itertools.cycle(hosts), n))
 
-        # TODO(mwhittaker): Pass in the number of every node used.
-        n = 2 * self._input.f + 1
         return self.Placement(
             clients = portify(cycle_take_n(
                 self._input.num_client_procs, self._cluster['clients'])),
@@ -171,11 +172,12 @@ class SimpleBPaxosNet:
             proposers = portify(cycle_take_n(
                 self._input.num_leaders, self._cluster['proposers'])),
             dep_service_nodes = portify(cycle_take_n(
-                n, self._cluster['dep_service_nodes'])),
+                self._input.num_dep_service_nodes,
+                self._cluster['dep_service_nodes'])),
             acceptors = portify(cycle_take_n(
-                n, self._cluster['acceptors'])),
+                self._input.num_acceptors, self._cluster['acceptors'])),
             replicas = portify(cycle_take_n(
-                self._input.f + 1, self._cluster['replicas'])),
+                self._input.num_replicas, self._cluster['replicas'])),
         )
 
     def config(self) -> proto_util.Message:

@@ -3,31 +3,30 @@ from .superbpaxos import *
 
 
 def main(args) -> None:
-    class NsdiFig2AblationSuperBPaxosSuite(SuperBPaxosSuite):
+    class SmokeSuperBPaxosSuite(SuperBPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
-        def inputs(self) -> Collection[Input]:
+        def inputs(self) -> Collection[simplebpaxos.Input]:
             return [
-                Input(
+                simplebpaxos.Input(
                     f = 1,
-                    num_client_procs = num_client_procs,
-                    num_warmup_clients_per_proc = 50,
-                    num_clients_per_proc = num_clients_per_proc,
-                    num_leaders = num_leaders,
+                    num_client_procs = 1,
+                    num_warmup_clients_per_proc = 1,
+                    num_clients_per_proc = 1,
+                    num_leaders = 3,
+                    num_dep_service_nodes = 3,
+                    num_acceptors = 3,
+                    num_replicas = 3,
                     jvm_heap_size = '100m',
-                    warmup_duration = datetime.timedelta(seconds=5),
-                    warmup_timeout = datetime.timedelta(seconds=10),
-                    warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=15),
-                    timeout = datetime.timedelta(seconds=20),
-                    client_lag = datetime.timedelta(seconds=5),
-                    state_machine = 'KeyValueStore',
-                    workload = workload.BernoulliSingleKeyWorkload(
-                        conflict_rate = 0.0,
-                        size_mean = 8,
-                        size_std = 0,
-                    ),
+                    warmup_duration = datetime.timedelta(seconds=2),
+                    warmup_timeout = datetime.timedelta(seconds=3),
+                    warmup_sleep = datetime.timedelta(seconds=0),
+                    duration = datetime.timedelta(seconds=2),
+                    timeout = datetime.timedelta(seconds=3),
+                    client_lag = datetime.timedelta(seconds=0),
+                    state_machine = 'Noop',
+                    workload = workload.StringWorkload(size_mean=0, size_std=0),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -58,14 +57,14 @@ def main(args) -> None:
                             datetime.timedelta(seconds=600),
                         recover_vertex_timer_max_period = \
                             datetime.timedelta(seconds=1200),
-                        execute_graph_batch_size = execute_graph_batch_size,
+                        execute_graph_batch_size = 1,
                         execute_graph_timer_period = \
                             datetime.timedelta(seconds=1),
                         num_blockers = 1,
                     ),
                     replica_zigzag_options = simplebpaxos.ZigzagOptions(
-                        vertices_grow_size = 20000,
-                        garbage_collect_every_n_commands = 20000,
+                        vertices_grow_size = 1000,
+                        garbage_collect_every_n_commands = 1000,
                     ),
                     replica_log_level = args.log_level,
                     client_options = simplebpaxos.ClientOptions(
@@ -73,31 +72,22 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for num_leaders in [3]
-                for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1), (6, 100)]
-                for execute_graph_batch_size in (
-                    [1] if num_client_procs * num_clients_per_proc == 1 else
-                    [100] if num_client_procs * num_clients_per_proc > 100 else
-                    [int(num_client_procs * num_clients_per_proc / 2)]
-                )
-            ] * 3
+            ]
 
-        def summary(self, input: Input, output: Output) -> str:
+        def summary(self,
+                    input: simplebpaxos.Input,
+                    output: simplebpaxos.Output) -> str:
             return str({
                 'f': input.f,
-                'num_leaders': input.num_leaders,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
-                'execute_graph_batch_size':
-                    input.replica_options.execute_graph_batch_size,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = NsdiFig2AblationSuperBPaxosSuite()
+    suite = SmokeSuperBPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'superbpaxos_nsdi_fig_2_ablation') as dir:
+                                  'superbpaxos_smoke') as dir:
         suite.run_suite(dir)
 
 
