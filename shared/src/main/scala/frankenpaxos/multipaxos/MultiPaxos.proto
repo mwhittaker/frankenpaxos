@@ -1,0 +1,202 @@
+// A protocol cheatsheet, similar to [1].
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      |      |      | -----^----> |        |      |     Phase1a
+//      |      |      | <----^----- |        |      |     Phase1b
+//      | -----^----> |      |      |        |      |     ClientRequest
+//      | ---> |      |      |      |        |      |     ClientRequest
+//      |      | ---> |      |      |        |      |     ClientRequestBatch
+//      |      |      | -----^----> |        |      |     Phase2a
+//      |      |      | <----^----- |        |      |     Phase2b
+//      |      |      | ---> |      |        |      |     Phase2a
+//      |      |      |      | ---> |        |      |     Phase2a
+//      |      |      |      | <--- |        |      |     Phase2b
+//      |      |      |      | -----^------> |      |     Chosen
+//      |      |      |      |      |        | ---> |     ClientReplyBatch
+//      | <----^------^------^------^--------^----- |     ClientReply
+//      |      |      |      |      |        | ---> |     ChosenWatermark
+//      |      |      | <----^------^--------^----- |     ChosenWatermark
+//      |      |      | <----^----- |        |      |     Nack
+//      | <----^----- |      |      |        |      |     LeaderInfo
+//      |      | <--- |      |      |        |      |     LeaderInfo
+//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+
+// TODO(mwhittaker): Leaders (including the active leader) need to learn about
+// chosen values so that when they leader change, they don't have to recover a
+// huge number of instances.
+
+syntax = "proto2";
+
+package frankenpaxos.multipaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.multipaxos"
+  flat_package: true
+};
+
+// Helper messages. ////////////////////////////////////////////////////////////
+message Noop {}
+
+message CommandId {
+  // A client's address, pseudonym, and id uniquely identify a command.
+  required bytes client_address = 1;
+  required int32 client_pseudonym = 2;
+  required int32 client_id = 3;
+}
+
+message Command {
+  required CommandId command_id = 1;
+  required bytes command = 2;
+}
+
+message CommandBatch {
+  repeated Command command = 1;
+}
+
+message CommandBatchOrNoop {
+  oneof value {
+    CommandBatch batch = 1;
+    Noop noop = 2;
+  }
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientRequest {
+  required Command command = 1;
+}
+
+message ClientRequestBatch {
+  required CommandBatch batch = 1;
+}
+
+message Phase1a {
+  required int32 round = 1;
+
+  // The leader knows that all entries in slots less than `chosenWatermark`
+  // have been chosen. Acceptors do not have to include slots below
+  // `chosenWatermark` in their phase1b response.
+  //
+  // The leader may know that some entries larger than `chosenWatermark` have
+  // also been chosen, but that's okay. It's not unsafe for acceptors to return
+  // too much information.
+  required int32 chosen_watermark = 2;
+}
+
+message Phase1bVote {
+  required int32 vote_round = 1;
+  required CommandBatchOrNoop vote_value = 2;
+}
+
+message Phase1bTriple {
+  required int32 round = 1;
+  optional Phase1bVote vote = 2;
+}
+
+message Phase1b {
+  required int32 acceptor_index = 1;
+  required int32 round = 2;
+  repeated Phase1bTriple triple = 3;
+}
+
+message Phase2a {
+  required int32 slot = 1;
+  required int32 round = 2;
+  required CommandBatchOrNoop command_batch_or_noop = 3;
+}
+
+message Phase2b {
+  required int32 acceptor_index = 1;
+  required int32 slot = 2;
+  required int32 round = 3;
+}
+
+message Chosen {
+  required int32 slot = 1;
+  required CommandBatchOrNoop command_batch_or_noop = 2;
+}
+
+message ClientReply {
+  required CommandId command_id = 1;
+  required bytes result = 2;
+}
+
+message ClientReplyBatch {
+  repeated ClientReply batch = 1;
+}
+
+message Nack {
+  required int32 round = 1;
+}
+
+message ChosenWatermark {
+  // Replicas periodically send ChosenWatermark messages to the leaders
+  // informing them that every log entry smaller than `slot` has been chosen.
+  // For example, if `slot` is 3, then slots 0, 1, and 2 have been chosen.
+  // Slots above `slot` may also be chosen, but that's okay.
+  //
+  // If replicas didn't send these messages, then leaders would have no idea
+  // which commands have been chosen and which haven't. This can significantly
+  // slow things down after a leader change.
+  required int32 slot = 1;
+}
+
+message LeaderInfo {
+  required int32 round = 1;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  oneof request {
+    LeaderInfo leader_info = 1;
+    ClientReply client_reply = 2;
+  }
+}
+
+message BatcherInbound {
+  oneof request {
+    ClientRequest client_request = 1;
+    LeaderInfo leader_info = 2;
+  }
+}
+
+message LeaderInbound {
+  oneof request {
+    Phase1b phase1b = 1;
+    ClientRequest client_request = 2;
+    ClientRequestBatch client_request_batch = 3;
+    Phase2b phase2b = 4;
+    Nack nack = 5;
+    ChosenWatermark chosen_watermark = 6;
+  }
+}
+
+message ProxyLeader {
+  oneof request {
+    Phase2a phase2a = 1;
+    Phase2b phase2b = 2;
+  }
+}
+
+message Acceptor {
+  oneof request {
+    Phase1a phase1a = 1;
+    Phase2a phase2a = 2;
+  }
+}
+
+message Replica {
+  oneof request {
+    Chosen chosen = 1;
+  }
+}
+
+message ProxyReplica {
+  oneof request {
+    ClientReplyBatch client_reply_batch = 1;
+    ChosenWatermark chosen_watermark = 2;
+  }
+}
