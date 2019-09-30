@@ -26,16 +26,14 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     // leaders), or we have at least f + 1 batchers to tolerate failures.
     require(
       numBatchers == 0 || numBatchers >= f + 1,
-      s"numBatchers must be >= f + 1 (${f + 1}). It's ${numBatchers}."
+      s"numBatchers must be 0 or >= f + 1 (${f + 1}). It's ${numBatchers}."
     )
     require(
       numLeaders >= f + 1,
       s"numLeaders must be >= f + 1 (${f + 1}). It's ${numLeaders}."
     )
-    // We either have no proxy leaders (in which case leaders act as proxy
-    // leaders), or we have at least f + 1 proxy leaders to tolerate failures.
     require(
-      numProxyLeaders == 0 || numProxyLeaders >= f + 1,
+      numProxyLeaders >= f + 1,
       s"numProxyLeaders must be >= f + 1 (${f + 1}). It's ${numProxyLeaders}."
     )
     require(
