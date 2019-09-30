@@ -7,8 +7,6 @@
 //      | -----^----> |      |      |        |      |     ClientRequest
 //      | ---> |      |      |      |        |      |     ClientRequest
 //      |      | ---> |      |      |        |      |     ClientRequestBatch
-//      |      |      | -----^----> |        |      |     Phase2a
-//      |      |      | <----^----- |        |      |     Phase2b
 //      |      |      | ---> |      |        |      |     Phase2a
 //      |      |      |      | ---> |        |      |     Phase2a
 //      |      |      |      | <--- |        |      |     Phase2b
@@ -84,20 +82,16 @@ message Phase1a {
   required int32 chosen_watermark = 2;
 }
 
-message Phase1bVote {
-  required int32 vote_round = 1;
-  required CommandBatchOrNoop vote_value = 2;
-}
-
-message Phase1bTriple {
-  required int32 round = 1;
-  optional Phase1bVote vote = 2;
+message Phase1bSlotInfo {
+  required int32 slot = 1;
+  required int32 vote_round = 2;
+  required CommandBatchOrNoop vote_value = 3;
 }
 
 message Phase1b {
   required int32 acceptor_index = 1;
   required int32 round = 2;
-  repeated Phase1bTriple triple = 3;
+  repeated Phase1bSlotInfo info = 3;
 }
 
 message Phase2a {
@@ -166,7 +160,6 @@ message LeaderInbound {
     Phase1b phase1b = 1;
     ClientRequest client_request = 2;
     ClientRequestBatch client_request_batch = 3;
-    Phase2b phase2b = 4;
     Nack nack = 5;
     ChosenWatermark chosen_watermark = 6;
   }
