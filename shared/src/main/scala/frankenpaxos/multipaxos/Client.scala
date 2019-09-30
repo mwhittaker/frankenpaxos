@@ -98,13 +98,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   // Batcher channels.
   private val batchers: Seq[Chan[Batcher[Transport]]] =
-    for ((address, i) <- config.batcherAddresses.zipWithIndex)
-      yield i -> chan[Batcher[Transport]](address, Batcher.serializer)
+    for (address <- config.batcherAddresses)
+      yield chan[Batcher[Transport]](address, Batcher.serializer)
 
   // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
-    for ((address, i) <- config.leaderAddresses.zipWithIndex)
-      yield i -> chan[Leader[Transport]](address, Leader.serializer)
+    for (address <- config.leaderAddresses)
+      yield chan[Leader[Transport]](address, Leader.serializer)
 
   // The round that this client thinks the leader is in. This value is not
   // always accurate. It's just the client's best guess. The leader associated

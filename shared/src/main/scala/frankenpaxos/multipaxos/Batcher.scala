@@ -87,8 +87,8 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
 
   // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
-    for ((address, i) <- config.leaderAddresses.zipWithIndex)
-      yield i -> chan[Leader[Transport]](address, Leader.serializer)
+    for (address <- config.leaderAddresses)
+      yield chan[Leader[Transport]](address, Leader.serializer)
 
   // The round that this batcher thinks the leader is in. This value is not
   // always accurate. It's just the batcher's best guess. The leader associated
