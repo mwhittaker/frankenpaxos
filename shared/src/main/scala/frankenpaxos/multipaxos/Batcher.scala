@@ -122,8 +122,8 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.ClientRequest(r) => "ClientRequest"
-        case Request.LeaderInfo(r)    => "LeaderInfo"
+        case Request.ClientRequest(_) => "ClientRequest"
+        case Request.LeaderInfo(_)    => "LeaderInfo"
         case Request.Empty =>
           logger.fatal("Empty BatcherInbound encountered.")
       }

@@ -131,8 +131,8 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Phase2A(r) => "Phase2a"
-        case Request.Phase2B(r) => "Phase2b"
+        case Request.Phase2A(_) => "Phase2a"
+        case Request.Phase2B(_) => "Phase2b"
         case Request.Empty =>
           logger.fatal("Empty ProxyLeaderInbound encountered.")
       }
@@ -163,7 +163,7 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         // thrifty quorum of it. Relay the Phase2A message to the quorum
         val group = acceptors(rand.nextInt(acceptors.size))
         val quorum = scala.util.Random.shuffle(group).take(config.quorumSize)
-        quorum.foreach(_.send(AcceptorInbound().withPhase2a(phase2a)))
+        quorum.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
 
         // Update our state.
         states(slotround) = Pending(phase2a = phase2a, phase2bs = mutable.Map())
