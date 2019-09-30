@@ -9,8 +9,6 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
-import frankenpaxos.roundsystem.ClassicRound
-import frankenpaxos.roundsystem.FastRound
 import frankenpaxos.roundsystem.RoundSystem
 import scala.concurrent.Future
 import scala.concurrent.Promise
