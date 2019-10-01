@@ -172,7 +172,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         })
         .toSeq
     )
-    leader.send(LeaderInbound().Phase1b(phase1b))
+    leader.send(LeaderInbound().withPhase1B(phase1b))
   }
 
   private def handlePhase2a(

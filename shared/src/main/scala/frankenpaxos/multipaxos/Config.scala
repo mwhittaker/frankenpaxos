@@ -6,6 +6,7 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     batcherAddresses: Seq[Transport#Address],
     leaderAddresses: Seq[Transport#Address],
+    leaderElectionAddresses: Seq[Transport#Address],
     proxyLeaderAddresses: Seq[Transport#Address],
     acceptorAddresses: Seq[Seq[Transport#Address]],
     replicaAddresses: Seq[Transport#Address],
@@ -31,6 +32,11 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     require(
       numLeaders >= f + 1,
       s"numLeaders must be >= f + 1 (${f + 1}). It's ${numLeaders}."
+    )
+    require(
+      leaderElectionAddresses.size == numLeaders,
+      s"leaderElectionAddresses.size must be equal to numLeaders " +
+        s"(${numLeaders}). It's ${leaderElectionAddresses.size}."
     )
     require(
       numProxyLeaders >= f + 1,

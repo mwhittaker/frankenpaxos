@@ -305,6 +305,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case CommandBatchOrNoop.Value.CommandBatch(batch) =>
         batch.command.foreach(executeCommand(slot, _, clientReplies))
         metrics.executedLogEntriesTotal.labels("command").inc()
+      case CommandBatchOrNoop.Value.Empty =>
+        logger.fatal("Empty CommandBatchOrNoop encountered.")
     }
   }
 
