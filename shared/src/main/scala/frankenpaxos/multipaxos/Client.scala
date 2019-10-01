@@ -142,7 +142,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   private val resendClientRequestTimers =
     mutable.Map[Pseudonym, Transport#Timer]()
 
-  // Methods ///////////////////////////////////////////////////////////////////
+  // Helpers ///////////////////////////////////////////////////////////////////
   def toClientRequest(pendingCommand: PendingCommand): ClientRequest = {
     ClientRequest(
       command = Command(

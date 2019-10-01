@@ -102,7 +102,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var states = mutable.SortedMap[Slot, State]()
 
-  // Methods ///////////////////////////////////////////////////////////////////
+  // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
     if (options.measureLatencies) {
       val startNanos = System.nanoTime

@@ -101,7 +101,7 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var pendingBatch = mutable.Buffer[Command]()
 
-  // Methods ///////////////////////////////////////////////////////////////////
+  // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
     if (options.measureLatencies) {
       val startNanos = System.nanoTime
