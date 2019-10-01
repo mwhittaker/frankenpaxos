@@ -5,7 +5,7 @@ package frankenpaxos.election;
 import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
-  package_name: "frankenpaxos.election"
+  package_name: "frankenpaxos.election.raft"
   flat_package: true
 };
 

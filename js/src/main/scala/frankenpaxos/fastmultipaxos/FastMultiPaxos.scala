@@ -4,7 +4,7 @@ import frankenpaxos.Actor
 import frankenpaxos.JsLogger
 import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
-import frankenpaxos.election.LeaderElectionOptions
+import frankenpaxos.election.raft.ElectionOptions
 import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.roundsystem.RoundSystem
@@ -72,7 +72,7 @@ class FastMultiPaxos {
     valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(600),
     resendPhase1asTimerPeriod = java.time.Duration.ofSeconds(600),
     resendPhase2asTimerPeriod = java.time.Duration.ofSeconds(600),
-    leaderElectionOptions = LeaderElectionOptions.default.copy(
+    leaderElectionOptions = ElectionOptions.default.copy(
       pingPeriod = java.time.Duration.ofSeconds(600),
       noPingTimeoutMin = java.time.Duration.ofSeconds(600),
       noPingTimeoutMax = java.time.Duration.ofSeconds(1200),

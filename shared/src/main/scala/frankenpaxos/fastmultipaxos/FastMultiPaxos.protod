@@ -1,0 +1,195 @@
+// A protocol cheatsheet, similar to [1].
+//
+//   Client              Leader              Acceptor
+//      | ---------------> |                     |     ProposeRequest
+//      | -----------------^-------------------> |     ProposeRequest
+//      | <--------------- |                     |     ProposeReply
+//      | <--------------- |                     |     LeaderInfo
+//      |                  | ------------------> |     Phase1a
+//      |                  | <------------------ |     Phase1b
+//      |                  | <------------------ |     Phase1bNack
+//      |                  | ------------------> |     Phase2a
+//      |                  | <------------------ |     Phase2b
+//      |                  | ----------.         |     ValueChosen
+//      |                  | <---------'         |
+//      |                  |                     |
+//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+
+syntax = "proto2";
+
+package frankenpaxos.fastmultipaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.fastmultipaxos"
+  flat_package: true
+};
+
+// Helper messages. ////////////////////////////////////////////////////////////
+// A special noop command that does not affect the state machine.
+message Noop {}
+
+// The designated "any" value.
+message AnyVal {}
+
+// An infinite suffix of any's. See Phase2a.
+message AnyValSuffix {}
+
+message Command {
+  // The client's address.
+  required bytes client_address = 1;
+
+  // Logically, every Fast MultiPaxos client can have at most one pending
+  // request at a time. This assumption simplifies the protocol's handling of
+  // duplicate requests because leaders only have to remember the most recently
+  // executed command for every client.
+  //
+  // However, this assumption also makes it difficult to properly benchmark a
+  // consensus protocol because it is difficult to create enough client load.
+  // Thus, we let each Fast MultiPaxos client play the part of a number of
+  // clients, each taking on an integer pseudonym.
+  required int32 client_pseudonym = 2;
+
+  // Clients annotate every command with a unique and monotonically increasing
+  // id. The pair of (client address, client pseudonym, client id) uniquely
+  // identify a command.
+  required int32 client_id = 3;
+
+  required bytes command = 4;
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ProposeRequest {
+  // When a client proposes a command, it includes the round that it thinks the
+  // leader is currently in.
+  required int32 round = 1;
+  required Command command = 2;
+}
+
+message ProposeReply {
+  // The round in which this command was chosen and executed. Leaders inform
+  // clients of the current round so that they know whether to send future
+  // requests directly to acceptors (if it's a fast round) or to send future
+  // requests to the leader (if it's a classic round).
+  required int32 round = 1;
+
+  // The client pseudonym and id of the command.
+  required int32 client_pseudonym = 2;
+  required int32 client_id = 3;
+
+  // The result of executing the command.
+  required bytes result = 4;
+}
+
+// A leader sends a LeaderInfo message to a client to inform it of the current
+// round.
+message LeaderInfo {
+  required int32 round = 1;
+}
+
+message Phase1a {
+  required int32 round = 1;
+
+  // The leader knows that all entries in slots less than chosenWatermark have
+  // been chosen. Acceptors do not have to include slots below chosenWatermark
+  // in their phase1b response.
+  required int32 chosenWatermark = 2;
+
+  // The leader also knows that every slot in chosenSlot has been chosen. As
+  // with chosenWatermark, an acceptor does not have to include a slot in a
+  // phase1b response if the leader already knows its chosen.
+  repeated int32 chosenSlot = 3;
+}
+
+message Phase1bVote {
+  required int32 slot = 1;
+  required int32 voteRound = 2;
+  oneof value {
+     Command command = 3;
+     Noop noop = 4;
+  }
+}
+
+message Phase1b {
+  required int32 acceptor_id = 1;
+  required int32 round = 2;
+  repeated Phase1bVote vote = 3;
+}
+
+message Phase1bNack {
+  required int32 acceptor_id = 1;
+  required int32 round = 2;
+}
+
+message Phase2a {
+  required int32 slot = 1;
+  required int32 round = 2;
+  oneof value {
+     Command command = 3;
+     Noop noop = 4;
+     AnyVal any = 5;
+     // In this case, slot above is the start of the suffix.
+     AnyValSuffix any_suffix = 6;
+  }
+}
+
+message Phase2aBuffer {
+  repeated Phase2a phase2a = 1;
+}
+
+message Phase2b {
+  required int32 acceptor_id = 1;
+  required int32 slot = 2;
+  required int32 round = 3;
+  oneof vote {
+    Command command = 4;
+    Noop noop = 5;
+  }
+}
+
+message Phase2bBuffer {
+  repeated Phase2b phase2b = 1;
+}
+
+message ValueChosen {
+  required int32 slot = 1;
+  oneof value {
+    Command command = 2;
+    Noop noop = 3;
+  }
+}
+
+message ValueChosenBuffer {
+  repeated ValueChosen value_chosen = 1;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  oneof request {
+    LeaderInfo leader_info = 1;
+    ProposeReply propose_reply = 2;
+  }
+}
+
+message LeaderInbound {
+  oneof request {
+    ProposeRequest propose_request = 1;
+    Phase1b phase1b = 2;
+    Phase1bNack phase1b_nack = 3;
+    Phase2b phase2b = 4;
+    Phase2bBuffer phase2b_buffer = 5;
+    ValueChosen value_chosen = 6;
+    ValueChosenBuffer value_chosen_buffer = 7;
+  }
+}
+
+message AcceptorInbound {
+  oneof request {
+    ProposeRequest propose_request = 1;
+    Phase1a phase1a = 2;
+    Phase2a phase2a = 3;
+    Phase2aBuffer phase2a_buffer = 4;
+  }
+}

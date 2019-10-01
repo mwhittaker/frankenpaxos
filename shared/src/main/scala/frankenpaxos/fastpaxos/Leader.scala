@@ -5,7 +5,7 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.election.Participant
+import frankenpaxos.election.raft.Participant
 import scala.scalajs.js.annotation._
 
 @JSExportAll

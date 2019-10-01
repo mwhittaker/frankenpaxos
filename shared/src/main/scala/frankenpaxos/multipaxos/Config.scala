@@ -1,7 +1,9 @@
 package frankenpaxos.multipaxos
 
 import frankenpaxos.roundsystem.RoundSystem
+import scala.scalajs.js.annotation.JSExportAll
 
+@JSExportAll
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     batcherAddresses: Seq[Transport#Address],

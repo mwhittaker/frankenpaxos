@@ -1,4 +1,4 @@
-package frankenpaxos.election
+package frankenpaxos.election.raft
 
 import frankenpaxos.Actor
 import frankenpaxos.Chan
@@ -34,7 +34,7 @@ object Participant {
 // uniformly at random to avoid collisions. Similarly, a candidate waits
 // between `noVoteTimeoutMin` and `noVoteTimeoutMax` seconds to become a
 // candidate at a higher round.
-case class LeaderElectionOptions(
+case class ElectionOptions(
     pingPeriod: java.time.Duration,
     noPingTimeoutMin: java.time.Duration,
     noPingTimeoutMax: java.time.Duration,
@@ -42,8 +42,8 @@ case class LeaderElectionOptions(
     notEnoughVotesTimeoutMax: java.time.Duration
 )
 
-object LeaderElectionOptions {
-  val default = LeaderElectionOptions(
+object ElectionOptions {
+  val default = ElectionOptions(
     pingPeriod = java.time.Duration.ofSeconds(1),
     noPingTimeoutMin = java.time.Duration.ofSeconds(10),
     noPingTimeoutMax = java.time.Duration.ofSeconds(12),
@@ -61,30 +61,30 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     // A potential initial leader. If participants are initialized with a
     // leader, at most one leader should be set.
     leader: Option[Transport#Address] = None,
-    options: LeaderElectionOptions = LeaderElectionOptions.default
+    options: ElectionOptions = ElectionOptions.default
 ) extends Actor(address, transport, logger) {
   // Possible states ///////////////////////////////////////////////////////////
-  sealed trait LeaderElectionState
+  sealed trait ElectionState
 
   @JSExportAll
   case class LeaderlessFollower(
       noPingTimer: Transport#Timer
-  ) extends LeaderElectionState
+  ) extends ElectionState
 
   @JSExportAll
   case class Follower(
       noPingTimer: Transport#Timer,
       leader: Transport#Address
-  ) extends LeaderElectionState
+  ) extends ElectionState
 
   @JSExportAll
   case class Candidate(
       notEnoughVotesTimer: Transport#Timer,
       votes: Set[Transport#Address]
-  ) extends LeaderElectionState
+  ) extends ElectionState
 
   @JSExportAll
-  case class Leader(pingTimer: Transport#Timer) extends LeaderElectionState
+  case class Leader(pingTimer: Transport#Timer) extends ElectionState
 
   // Members ///////////////////////////////////////////////////////////////////
   override type InboundMessage = ParticipantInbound
@@ -94,7 +94,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   logger.check(addresses.contains(address))
   logger.checkLe(options.noPingTimeoutMin, options.noPingTimeoutMax)
   logger.checkLe(options.notEnoughVotesTimeoutMin,
-                  options.notEnoughVotesTimeoutMax)
+                 options.notEnoughVotesTimeoutMax)
   leader match {
     case Some(address) => logger.check(addresses.contains(address))
     case None          =>
@@ -113,7 +113,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   var round: Int = 0
 
   // The current state.
-  var state: LeaderElectionState = {
+  var state: ElectionState = {
     leader match {
       case Some(leaderAddress) =>
         if (address == leaderAddress) {
@@ -295,7 +295,7 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def stopTimer(state: LeaderElectionState): Unit = {
+  private def stopTimer(state: ElectionState): Unit = {
     state match {
       case LeaderlessFollower(noPingTimer)   => { noPingTimer.stop() }
       case Follower(noPingTimer, _)          => { noPingTimer.stop() }

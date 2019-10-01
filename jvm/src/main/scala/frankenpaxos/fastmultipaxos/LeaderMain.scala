@@ -7,7 +7,7 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
-import frankenpaxos.election.LeaderElectionOptions
+import frankenpaxos.election.raft.ElectionOptions
 import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.statemachine
 import frankenpaxos.statemachine.StateMachine
@@ -40,7 +40,7 @@ object LeaderMain extends App {
 
   implicit class ElectionWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def electionAction(
-        f: (A, LeaderElectionOptions) => LeaderElectionOptions
+        f: (A, ElectionOptions) => ElectionOptions
     ): scopt.OptionDef[A, Flags] =
       o.action((x, flags) => {
         flags.copy(

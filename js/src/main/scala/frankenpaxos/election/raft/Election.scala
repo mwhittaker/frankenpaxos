@@ -1,4 +1,4 @@
-package frankenpaxos.election
+package frankenpaxos.election.raft
 
 import scala.scalajs.js.annotation._
 import frankenpaxos.JsLogger
@@ -6,7 +6,7 @@ import frankenpaxos.JsTransport
 import frankenpaxos.JsTransportAddress
 
 @JSExportAll
-class LeaderElection {
+class Election {
   // Transport.
   val logger = new JsLogger()
   val transport = new JsTransport(logger);
@@ -27,7 +27,7 @@ class LeaderElection {
   val eLogger = new JsLogger()
 
   // Nodes.
-  val options = LeaderElectionOptions(
+  val options = ElectionOptions(
     pingPeriod = java.time.Duration.ofMillis(1500),
     noPingTimeoutMin = java.time.Duration.ofMillis(2500),
     noPingTimeoutMax = java.time.Duration.ofMillis(3500),
@@ -63,7 +63,7 @@ class LeaderElection {
 }
 
 @JSExportAll
-@JSExportTopLevel("frankenpaxos.election.TweenedLeaderElection")
-object TweenedLeaderElection {
-  val LeaderElection = new LeaderElection();
+@JSExportTopLevel("frankenpaxos.election.raft.TweenedElection")
+object TweenedElection {
+  val Election = new Election();
 }

@@ -7,14 +7,17 @@ def main(args) -> None:
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
-        def inputs(self) -> Collection[Input]:
+        def inputs(self) -> Collection[simplebpaxos.Input]:
             return [
-                Input(
+                simplebpaxos.Input(
                     f = 1,
                     num_client_procs = num_client_procs,
                     num_warmup_clients_per_proc = 50,
                     num_clients_per_proc = num_clients_per_proc,
                     num_leaders = num_leaders,
+                    num_dep_service_nodes = 3,
+                    num_acceptors = 3,
+                    num_replicas = 2,
                     jvm_heap_size = '100m',
                     warmup_duration = datetime.timedelta(seconds=5),
                     warmup_timeout = datetime.timedelta(seconds=10),
@@ -83,7 +86,8 @@ def main(args) -> None:
                 )
             ] * 3
 
-        def summary(self, input: Input, output: Output) -> str:
+        def summary(self, input: simplebpaxos.Input,
+                    output: simplebpaxos.Output) -> str:
             return str({
                 'f':
                     input.f,

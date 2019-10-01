@@ -8,7 +8,7 @@ import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.Util
-import frankenpaxos.election.raft.ElectionOptions
+import frankenpaxos.election.raft.LeaderElectionOptions
 import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
@@ -44,7 +44,7 @@ case class LeaderOptions(
     // As with phase 2a messages, leaders buffer value chosen messages.
     valueChosenMaxBufferSize: Int,
     valueChosenBufferFlushPeriod: java.time.Duration,
-    leaderElectionOptions: ElectionOptions,
+    leaderElectionOptions: LeaderElectionOptions,
     heartbeatOptions: HeartbeatOptions,
     measureLatencies: Boolean
 )
@@ -59,7 +59,7 @@ object LeaderOptions {
     phase2aBufferFlushPeriod = java.time.Duration.ofMillis(100),
     valueChosenMaxBufferSize = 100,
     valueChosenBufferFlushPeriod = java.time.Duration.ofSeconds(5),
-    leaderElectionOptions = ElectionOptions.default,
+    leaderElectionOptions = LeaderElectionOptions.default,
     heartbeatOptions = HeartbeatOptions.default,
     measureLatencies = true
   )
@@ -315,8 +315,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   protected val electionAddress: Transport#Address =
     config.leaderElectionAddresses(leaderId)
   @JSExport
-  protected val election: frankenpaxos.election.raft.Participant[Transport] =
-    new frankenpaxos.election.raft.Participant[Transport](
+  protected val election: frankenpaxos.election.Participant[Transport] =
+    new frankenpaxos.election.Participant[Transport](
       electionAddress,
       transport,
       logger,

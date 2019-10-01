@@ -10,7 +10,7 @@ let election_colors = {
   leader: '#e74c3c',
 }
 
-function make_nodes(LeaderElection, snap) {
+function make_nodes(Election, snap) {
   // https://flatuicolors.com/palette/defo
   let colored = (color) => {
     return {
@@ -47,40 +47,40 @@ function make_nodes(LeaderElection, snap) {
   let [tdx, tdy] = polar_to_cartesian(x_origin, y_origin, 4 * theta, r + 40);
   let [tex, tey] = polar_to_cartesian(x_origin, y_origin, 5 * theta, r + 40);
 
-  nodes[LeaderElection.a.address] = {
-    actor: LeaderElection.a,
+  nodes[Election.a.address] = {
+    actor: Election.a,
     svgs: [
       snap.circle(ax, ay, 20).attr(colored(election_colors.leaderless_follower)),
       snap.text(ax, ay, '0').attr(title_attr),
       snap.text(tax, tay, 'a').attr(title_attr),
     ],
   };
-  nodes[LeaderElection.b.address] = {
-    actor: LeaderElection.b,
+  nodes[Election.b.address] = {
+    actor: Election.b,
     svgs: [
       snap.circle(bx, by, 20).attr(colored(election_colors.leaderless_follower)),
       snap.text(bx, by, '0').attr(title_attr),
       snap.text(tbx, tby, 'b').attr(title_attr),
     ],
   };
-  nodes[LeaderElection.c.address] = {
-    actor: LeaderElection.c,
+  nodes[Election.c.address] = {
+    actor: Election.c,
     svgs: [
       snap.circle(cx, cy, 20).attr(colored(election_colors.leaderless_follower)),
       snap.text(cx, cy, '0').attr(title_attr),
       snap.text(tcx, tcy, 'c').attr(title_attr),
     ],
   };
-  nodes[LeaderElection.d.address] = {
-    actor: LeaderElection.d,
+  nodes[Election.d.address] = {
+    actor: Election.d,
     svgs: [
       snap.circle(dx, dy, 20).attr(colored(election_colors.leaderless_follower)),
       snap.text(dx, dy, '0').attr(title_attr),
       snap.text(tdx, tdy, 'd').attr(title_attr),
     ],
   };
-  nodes[LeaderElection.e.address] = {
-    actor: LeaderElection.e,
+  nodes[Election.e.address] = {
+    actor: Election.e,
     svgs: [
       snap.circle(ex, ey, 20).attr(colored(election_colors.leaderless_follower)),
       snap.text(ex, ey, '0').attr(title_attr),
@@ -92,10 +92,10 @@ function make_nodes(LeaderElection, snap) {
 }
 
 function main() {
-  let LeaderElection =
-    frankenpaxos.election.TweenedLeaderElection.LeaderElection;
+  let Election =
+    frankenpaxos.election.raft.TweenedElection.Election;
   let snap = Snap('#animation');
-  let nodes = make_nodes(LeaderElection, snap);
+  let nodes = make_nodes(Election, snap);
 
   let state_to_color = function(state) {
     // scala.js does not let you nicely pattern match on an ADT. Thus, we do
@@ -126,18 +126,18 @@ function main() {
 
     data: {
       nodes: nodes,
-      node: nodes[LeaderElection.a.address],
-      transport: LeaderElection.transport,
+      node: nodes[Election.a.address],
+      transport: Election.transport,
       settings: {
           time_scale: 1,
           auto_deliver_messages: true,
           auto_start_timers: true,
       },
-      a: nodes[LeaderElection.a.address],
-      b: nodes[LeaderElection.b.address],
-      c: nodes[LeaderElection.c.address],
-      d: nodes[LeaderElection.d.address],
-      e: nodes[LeaderElection.e.address],
+      a: nodes[Election.a.address],
+      b: nodes[Election.b.address],
+      c: nodes[Election.c.address],
+      d: nodes[Election.d.address],
+      e: nodes[Election.e.address],
     },
 
     methods: {
