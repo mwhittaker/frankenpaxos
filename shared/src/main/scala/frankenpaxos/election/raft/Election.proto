@@ -1,6 +1,6 @@
 syntax = "proto2";
 
-package frankenpaxos.election;
+package frankenpaxos.election.raft;
 
 import "scalapb/scalapb.proto";
 

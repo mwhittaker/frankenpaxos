@@ -1,0 +1,21 @@
+syntax = "proto2";
+
+package frankenpaxos.election.basic;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.election.basic"
+  flat_package: true
+};
+
+message Ping {
+  required int32 leader_index = 1;
+  required int32 round = 2;
+}
+
+message ParticipantInbound {
+  oneof request {
+    Ping ping = 1;
+  }
+}
