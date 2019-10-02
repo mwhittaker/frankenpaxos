@@ -201,8 +201,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           frankenpaxos.Util.randomDuration(options.recoverLogEntryMinPeriod,
                                            options.recoverLogEntryMaxPeriod),
           () => {
-            val proxyReplica = proxyReplicas(rand.nextInt(proxyReplicas.size))
-            proxyReplica.send(
+            getProxyReplica().send(
               ProxyReplicaInbound().withRecover(
                 Recover(slot = executedWatermark)
               )
@@ -245,6 +244,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
+    }
+  }
+
+  private def getProxyReplica(): Chan[ProxyReplica[Transport]] = {
+    config.distributionScheme match {
+      case Hash      => proxyReplicas(rand.nextInt(proxyReplicas.size))
+      case Colocated => proxyReplicas(index)
     }
   }
 
@@ -337,8 +343,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             // Select a proxy replica uniformly at random, and send the
             // ChosenWatermark message to it. The proxy replica will forward
             // the message to the leaders.
-            val proxyReplica = proxyReplicas(rand.nextInt(proxyReplicas.size))
-            proxyReplica.send(
+            getProxyReplica().send(
               ProxyReplicaInbound()
                 .withChosenWatermark(ChosenWatermark(slot = executedWatermark))
             )
@@ -379,8 +384,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // If we have client replies, send them to a proxy replica. We choose a
     // proxy replica uniformly at random.
     if (clientReplyBatch.batch.size > 0) {
-      val proxyReplica = proxyReplicas(rand.nextInt(proxyReplicas.size))
-      proxyReplica.send(
+      getProxyReplica().send(
         ProxyReplicaInbound().withClientReplyBatch(clientReplyBatch)
       )
     }

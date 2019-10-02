@@ -13,6 +13,7 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     acceptorAddresses: Seq[Seq[Transport#Address]],
     replicaAddresses: Seq[Transport#Address],
     proxyReplicaAddresses: Seq[Transport#Address],
+    distributionScheme: DistributionScheme,
     roundSystem: RoundSystem
 ) {
   val quorumSize = f + 1
@@ -29,11 +30,11 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     // leaders), or we have at least f + 1 batchers to tolerate failures.
     require(
       numBatchers == 0 || numBatchers >= f + 1,
-      s"numBatchers must be 0 or >= f + 1 (${f + 1}). It's ${numBatchers}."
+      s"numBatchers must be 0 or >= f + 1 (${f + 1}). It's $numBatchers."
     )
     require(
       numLeaders >= f + 1,
-      s"numLeaders must be >= f + 1 (${f + 1}). It's ${numLeaders}."
+      s"numLeaders must be >= f + 1 (${f + 1}). It's $numLeaders."
     )
     require(
       leaderElectionAddresses.size == numLeaders,
@@ -42,11 +43,18 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     )
     require(
       numProxyLeaders >= f + 1,
-      s"numProxyLeaders must be >= f + 1 (${f + 1}). It's ${numProxyLeaders}."
+      s"numProxyLeaders must be >= f + 1 (${f + 1}). It's $numProxyLeaders."
     )
+    if (distributionScheme == Colocated) {
+      require(
+        numProxyLeaders == numLeaders,
+        s"numProxyLeaders must equal numLeaders ($numLeaders). " +
+          s"It's $numProxyLeaders."
+      )
+    }
     require(
       numAcceptorGroups >= 1,
-      s"numAcceptorGroups must be >= 1. It's ${numAcceptorGroups}."
+      s"numAcceptorGroups must be >= 1. It's $numAcceptorGroups."
     )
     for (acceptorCluster <- acceptorAddresses) {
       require(
@@ -57,11 +65,18 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     }
     require(
       numReplicas >= f + 1,
-      s"numReplicas must be >= f + 1 (${f + 1}). It's ${numReplicas}."
+      s"numReplicas must be >= f + 1 (${f + 1}). It's $numReplicas."
     )
     require(
       numProxyReplicas >= f + 1,
-      s"numProxyReplicas must be >= f + 1 (${f + 1}). It's ${numProxyReplicas}."
+      s"numProxyReplicas must be >= f + 1 (${f + 1}). It's $numProxyReplicas."
     )
+    if (distributionScheme == Colocated) {
+      require(
+        numProxyReplicas == numReplicas,
+        s"numProxyReplicas must equal numReplicas ($numReplicas). " +
+          s"It's $numProxyReplicas."
+      )
+    }
   }
 }

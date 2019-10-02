@@ -203,6 +203,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private def getProxyLeader(): Chan[ProxyLeader[Transport]] = {
+    config.distributionScheme match {
+      case Hash      => proxyLeaders(rand.nextInt(proxyLeaders.size))
+      case Colocated => proxyLeaders(index)
+    }
+  }
+
   private def thriftyQuorum(
       acceptors: Seq[Chan[Acceptor[Transport]]]
   ): Seq[Chan[Acceptor[Transport]]] =
@@ -240,8 +247,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     logger.checkEq(state, Phase2)
 
-    val proxyLeader = proxyLeaders(rand.nextInt(proxyLeaders.size))
-    proxyLeader.send(
+    getProxyLeader().send(
       ProxyLeaderInbound().withPhase2A(
         Phase2a(slot = nextSlot,
                 round = round,
@@ -375,8 +381,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // values to fill in the log.
         for (slot <- chosenWatermark to maxSlot) {
           val group = phase1.phase1bs(slot % config.numAcceptorGroups)
-          val proxyLeader = proxyLeaders(rand.nextInt(proxyLeaders.size))
-          proxyLeader.send(
+          getProxyLeader().send(
             ProxyLeaderInbound().withPhase2A(
               Phase2a(
                 slot = slot,
