@@ -228,41 +228,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
     inbound.request match {
-      case Request.LeaderInfo(r)  => handleLeaderInfo(src, r)
       case Request.ClientReply(r) => handleClientReply(src, r)
+      case Request.NotLeaderClient(r) =>
+        handleNotLeaderClient(src, r)
+      case Request.LeaderInfoReplyClient(r) =>
+        handleLeaderInfoReplyClient(src, r)
       case Request.Empty =>
         logger.fatal("Empty ClientInbound encountered.")
-    }
-  }
-
-  private def handleLeaderInfo(
-      src: Transport#Address,
-      leaderInfo: LeaderInfo
-  ): Unit = {
-    if (leaderInfo.round <= round) {
-      logger.debug(
-        s"A client received a LeaderInfo message with round " +
-          s"${leaderInfo.round} but is already in round $round. The " +
-          s"LeaderInfo message must be stale, so we are ignoring it."
-      )
-      return
-    }
-
-    // Update our round.
-    val oldRound = round
-    val newRound = leaderInfo.round
-    round = leaderInfo.round
-
-    // We've sent all of our pending commands to the leader of round `round`,
-    // but we just learned about a new round `leaderInfo.round`. If the leader
-    // of the new round is different than the leader of the old round, then we
-    // have to re-send our messages.
-    if (config.roundSystem.leader(oldRound) !=
-          config.roundSystem.leader(newRound)) {
-      for ((pseudonym, pendingCommand) <- pendingCommands) {
-        sendClientRequest(toClientRequest(pendingCommand))
-        resendClientRequestTimers(pseudonym).reset()
-      }
     }
   }
 
@@ -295,6 +267,48 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             s"${clientReply.commandId.clientId}."
         )
         metrics.unpendingResponsesTotal.inc()
+    }
+  }
+
+  private def handleNotLeaderClient(
+      src: Transport#Address,
+      notLeader: NotLeaderClient
+  ): Unit = {
+    leaders.foreach(
+      _.send(
+        LeaderInbound().withLeaderInfoRequestClient(LeaderInfoRequestClient())
+      )
+    )
+  }
+
+  private def handleLeaderInfoReplyClient(
+      src: Transport#Address,
+      leaderInfo: LeaderInfoReplyClient
+  ): Unit = {
+    if (leaderInfo.round <= round) {
+      logger.debug(
+        s"A client received a LeaderInfoReplyClient message with round " +
+          s"${leaderInfo.round} but is already in round $round. The " +
+          s"LeaderInfoReplyClient message must be stale, so we are ignoring it."
+      )
+      return
+    }
+
+    // Update our round.
+    val oldRound = round
+    val newRound = leaderInfo.round
+    round = leaderInfo.round
+
+    // We've sent all of our pending commands to the leader of round `round`,
+    // but we just learned about a new round `leaderInfo.round`. If the leader
+    // of the new round is different than the leader of the old round, then we
+    // have to re-send our messages.
+    if (config.roundSystem.leader(oldRound) !=
+          config.roundSystem.leader(newRound)) {
+      for ((pseudonym, pendingCommand) <- pendingCommands) {
+        sendClientRequest(toClientRequest(pendingCommand))
+        resendClientRequestTimers(pseudonym).reset()
+      }
     }
   }
 

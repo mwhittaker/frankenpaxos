@@ -2,25 +2,29 @@
 //
 //                         Leader                Replica
 //   Client Batcher Leader Proxy Acceptor Replica Proxy
-//      |      |      | -----^----> |        |      |     Phase1a
-//      |      |      | <----^----- |        |      |     Phase1b
-//      | -----^----> |      |      |        |      |     ClientRequest
-//      | ---> |      |      |      |        |      |     ClientRequest
-//      |      | ---> |      |      |        |      |     ClientRequestBatch
-//      |      |      | ---> |      |        |      |     Phase2a
-//      |      |      |      | ---> |        |      |     Phase2a
-//      |      |      |      | <--- |        |      |     Phase2b
-//      |      |      |      | -----^------> |      |     Chosen
-//      |      |      |      |      |        | ---> |     ClientReplyBatch
-//      | <----^------^------^------^--------^----- |     ClientReply
+//      |      |      | -----^----> |        |      |   Phase1a
+//      |      |      | <----^----- |        |      |   Phase1b
+//      | -----^----> |      |      |        |      |   ClientRequest
+//      | ---> |      |      |      |        |      |   ClientRequest
+//      |      | ---> |      |      |        |      |   ClientRequestBatch
+//      |      |      | ---> |      |        |      |   Phase2a
+//      |      |      |      | ---> |        |      |   Phase2a
+//      |      |      |      | <--- |        |      |   Phase2b
+//      |      |      |      | -----^------> |      |   Chosen
+//      |      |      |      |      |        | ---> |   ClientReplyBatch
+//      | <----^------^------^------^--------^----- |   ClientReply
 //
-//      | <----^----- |      |      |        |      |     LeaderInfo
-//      |      | <--- |      |      |        |      |     LeaderInfo
-//      |      |      | <----^----- |        |      |     Nack
-//      |      |      |      |      |        | ---> |     ChosenWatermark
-//      |      |      | <----^------^--------^----- |     ChosenWatermark
-//      |      |      |      |      |        | ---> |     Recover
-//      |      |      | <----^------^--------^----- |     Recover
+//      | <----^----- |      |      |        |      |   NotLeaderClient
+//      | -----^----> |      |      |        |      |   LeaderInfoRequestClient
+//      | <----^----- |      |      |        |      |   LeaderInfoReplyClient
+//      |      | <--- |      |      |        |      |   NotLeaderBatcher
+//      |      | ---> |      |      |        |      |   LeaderInfoRequestBatcher
+//      |      | <--- |      |      |        |      |   LeaderInfoReplyBatcher
+//      |      |      | <----^----- |        |      |   Nack
+//      |      |      |      |      |        | ---> |   ChosenWatermark
+//      |      |      | <----^------^--------^----- |   ChosenWatermark
+//      |      |      |      |      |        | ---> |   Recover
+//      |      |      | <----^------^--------^----- |   Recover
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
@@ -122,7 +126,26 @@ message ClientReplyBatch {
   repeated ClientReply batch = 1;
 }
 
-message LeaderInfo {
+// If a client or batcher sends a request to a leader, but the leader is
+// inactive, then the leader sends back a NotLeader{Client,Batcher} message.
+// The client or batcher then sends a LeaderInfoRequest{Client,Batcher} request
+// to all leaders, and the active leader replies with a
+// LeaderInfoReply{Client,Batcher} request with its current round.
+message NotLeaderClient {}
+
+message LeaderInfoRequestClient {}
+
+message LeaderInfoReplyClient {
+  required int32 round = 1;
+}
+
+message NotLeaderBatcher {
+  required ClientRequestBatch client_request_batch = 1;
+}
+
+message LeaderInfoRequestBatcher {}
+
+message LeaderInfoReplyBatcher {
   required int32 round = 1;
 }
 
@@ -153,15 +176,17 @@ message Recover {
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ClientInbound {
   oneof request {
-    LeaderInfo leader_info = 1;
-    ClientReply client_reply = 2;
+    ClientReply client_reply = 1;
+    NotLeaderClient not_leader_client = 2;
+    LeaderInfoReplyClient leader_info_reply_client = 3;
   }
 }
 
 message BatcherInbound {
   oneof request {
     ClientRequest client_request = 1;
-    LeaderInfo leader_info = 2;
+    NotLeaderBatcher not_leader_batcher = 2;
+    LeaderInfoReplyBatcher leader_info_reply_batcher = 3;
   }
 }
 
@@ -170,9 +195,11 @@ message LeaderInbound {
     Phase1b phase1b = 1;
     ClientRequest client_request = 2;
     ClientRequestBatch client_request_batch = 3;
-    Nack nack = 5;
-    ChosenWatermark chosen_watermark = 6;
-    Recover recover = 7;
+    LeaderInfoRequestClient leader_info_request_client = 4;
+    LeaderInfoRequestBatcher leader_info_request_batcher = 5;
+    Nack nack = 6;
+    ChosenWatermark chosen_watermark = 7;
+    Recover recover = 8;
   }
 }
 

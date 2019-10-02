@@ -99,7 +99,10 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
   protected var round: Int = 0
 
   @JSExport
-  protected var pendingBatch = mutable.Buffer[Command]()
+  protected var growingBatch = mutable.Buffer[Command]()
+
+  @JSExport
+  protected var pendingResendBatches = mutable.Buffer[ClientRequestBatch]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -122,8 +125,9 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.ClientRequest(_) => "ClientRequest"
-        case Request.LeaderInfo(_)    => "LeaderInfo"
+        case Request.ClientRequest(_)          => "ClientRequest"
+        case Request.NotLeaderBatcher(_)       => "NotLeaderBatcher"
+        case Request.LeaderInfoReplyBatcher(_) => "LeaderInfoReplyBatcher"
         case Request.Empty =>
           logger.fatal("Empty BatcherInbound encountered.")
       }
@@ -131,8 +135,9 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.ClientRequest(r) => handleClientRequest(src, r)
-        case Request.LeaderInfo(r)    => handleLeaderInfo(src, r)
+        case Request.ClientRequest(r)          => handleClientRequest(src, r)
+        case Request.NotLeaderBatcher(r)       => handleNotLeaderBatcher(src, r)
+        case Request.LeaderInfoReplyBatcher(r) => handleLeaderInfo(src, r)
         case Request.Empty =>
           logger.fatal("Empty BatcherInbound encountered.")
       }
@@ -143,32 +148,60 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       clientRequest: ClientRequest
   ): Unit = {
-    pendingBatch += clientRequest.command
-    if (pendingBatch.size >= options.batchSize) {
+    growingBatch += clientRequest.command
+    if (growingBatch.size >= options.batchSize) {
       val leader = leaders(config.roundSystem.leader(round))
       leader.send(
         LeaderInbound().withClientRequestBatch(
-          ClientRequestBatch(batch = CommandBatch(command = pendingBatch.toSeq))
+          ClientRequestBatch(batch = CommandBatch(command = growingBatch.toSeq))
         )
       )
-      pendingBatch.clear()
+      growingBatch.clear()
       metrics.batchesSent.inc()
     }
   }
 
+  private def handleNotLeaderBatcher(
+      src: Transport#Address,
+      notLeader: NotLeaderBatcher
+  ): Unit = {
+    pendingResendBatches += notLeader.clientRequestBatch
+    leaders.foreach(
+      _.send(
+        LeaderInbound().withLeaderInfoRequestBatcher(LeaderInfoRequestBatcher())
+      )
+    )
+  }
+
   private def handleLeaderInfo(
       src: Transport#Address,
-      leaderInfo: LeaderInfo
+      leaderInfo: LeaderInfoReplyBatcher
   ): Unit = {
     if (leaderInfo.round <= round) {
       logger.debug(
-        s"A batcher received a LeaderInfo message with round " +
+        s"A batcher received a LeaderInfoReplyBatcher message with round " +
           s"${leaderInfo.round} but is already in round $round. The " +
-          s"LeaderInfo message must be stale, so we are ignoring it."
+          s"LeaderInfoReplyBatcher message must be stale, so we are ignoring " +
+          s"it."
       )
       return
     }
 
+    // Update our round.
+    val oldRound = round
+    val newRound = leaderInfo.round
     round = leaderInfo.round
+
+    // We've sent all of our batches to the leader of round `round`, but we
+    // just learned about a new round `leaderInfo.round`. If the leader of the
+    // new round is different than the leader of the old round, then we have to
+    // re-send our messages.
+    if (config.roundSystem.leader(oldRound) !=
+          config.roundSystem.leader(newRound)) {
+      val leader = leaders(config.roundSystem.leader(newRound))
+      for (batch <- pendingResendBatches) {
+        leader.send(LeaderInbound().withClientRequestBatch(batch))
+      }
+    }
   }
 }

@@ -158,24 +158,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     options = options.electionOptions
   )
   election.register((leaderIndex) => {
-    // TODO(mwhittaker): Implement.
-    ???
+    leaderChange(leaderIndex == index)
   })
 
   // The leader's state.
   @JSExport
   protected var state: State = if (index == initialLeaderIndex) {
-    val phase1a = Phase1a(round = round, chosenWatermark = chosenWatermark)
-    for (group <- acceptors) {
-      thriftyQuorum(group).foreach(
-        _.send(AcceptorInbound().withPhase1A(phase1a))
-      )
-    }
-    Phase1(
-      phase1bs = mutable.Buffer.fill(config.numAcceptorGroups)(mutable.Map()),
-      pendingClientRequestBatches = mutable.Buffer(),
-      resendPhase1as = makeResendPhase1asTimer(phase1a)
-    )
+    startPhase1(round, chosenWatermark)
   } else {
     Inactive
   }
@@ -249,8 +238,59 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private def processClientRequestBatch(
       clientRequestBatch: ClientRequestBatch
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    logger.checkEq(state, Phase2)
+
+    val proxyLeader = proxyLeaders(rand.nextInt(proxyLeaders.size))
+    proxyLeader.send(
+      ProxyLeaderInbound().withPhase2A(
+        Phase2a(slot = nextSlot,
+                round = round,
+                commandBatchOrNoop = CommandBatchOrNoop()
+                  .withCommandBatch(clientRequestBatch.batch))
+      )
+    )
+    nextSlot += 1
+  }
+
+  private def startPhase1(round: Round, chosenWatermark: Slot): Phase1 = {
+    val phase1a = Phase1a(round = round, chosenWatermark = chosenWatermark)
+    for (group <- acceptors) {
+      thriftyQuorum(group).foreach(
+        _.send(AcceptorInbound().withPhase1A(phase1a))
+      )
+    }
+    Phase1(
+      phase1bs = mutable.Buffer.fill(config.numAcceptorGroups)(mutable.Map()),
+      pendingClientRequestBatches = mutable.Buffer(),
+      resendPhase1as = makeResendPhase1asTimer(phase1a)
+    )
+  }
+
+  private def leaderChange(isNewLeader: Boolean): Unit = {
+    metrics.leaderChangesTotal.inc()
+
+    (state, isNewLeader) match {
+      case (Inactive, false) =>
+      // Do nothing.
+      case (phase1: Phase1, false) =>
+        phase1.resendPhase1as.stop()
+        state = Inactive
+      case (Phase2, false) =>
+        state = Inactive
+      case (Inactive, true) =>
+        round = config.roundSystem
+          .nextClassicRound(leaderIndex = index, round = round)
+        state = startPhase1(round = round, chosenWatermark = chosenWatermark)
+      case (phase1: Phase1, true) =>
+        phase1.resendPhase1as.stop()
+        round = config.roundSystem
+          .nextClassicRound(leaderIndex = index, round = round)
+        state = startPhase1(round = round, chosenWatermark = chosenWatermark)
+      case (Phase2, true) =>
+        round = config.roundSystem
+          .nextClassicRound(leaderIndex = index, round = round)
+        state = startPhase1(round = round, chosenWatermark = chosenWatermark)
+    }
   }
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -259,12 +299,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Phase1B(_)            => "Phase1b"
-        case Request.ClientRequest(_)      => "ClientRequest"
-        case Request.ClientRequestBatch(_) => "ClientRequestBatch"
-        case Request.Nack(_)               => "Nack"
-        case Request.ChosenWatermark(_)    => "ChosenWatermark"
-        case Request.Recover(_)            => "Recover"
+        case Request.Phase1B(_)                  => "Phase1b"
+        case Request.ClientRequest(_)            => "ClientRequest"
+        case Request.ClientRequestBatch(_)       => "ClientRequestBatch"
+        case Request.LeaderInfoRequestClient(_)  => "LeaderInfoRequestClient"
+        case Request.LeaderInfoRequestBatcher(_) => "LeaderInfoRequestBatcher"
+        case Request.Nack(_)                     => "Nack"
+        case Request.ChosenWatermark(_)          => "ChosenWatermark"
+        case Request.Recover(_)                  => "Recover"
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -272,12 +314,22 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.Phase1B(r)            => handlePhase1b(src, r)
-        case Request.ClientRequest(r)      => handleClientRequest(src, r)
-        case Request.ClientRequestBatch(r) => handleClientRequestBatch(src, r)
-        case Request.Nack(r)               => handleNack(src, r)
-        case Request.ChosenWatermark(r)    => handleChosenWatermark(src, r)
-        case Request.Recover(r)            => handleRecover(src, r)
+        case Request.Phase1B(r) =>
+          handlePhase1b(src, r)
+        case Request.ClientRequest(r) =>
+          handleClientRequest(src, r)
+        case Request.ClientRequestBatch(r) =>
+          handleClientRequestBatch(src, r)
+        case Request.LeaderInfoRequestClient(r) =>
+          handleLeaderInfoRequestClient(src, r)
+        case Request.LeaderInfoRequestBatcher(r) =>
+          handleLeaderInfoRequestBatcher(src, r)
+        case Request.Nack(r) =>
+          handleNack(src, r)
+        case Request.ChosenWatermark(r) =>
+          handleChosenWatermark(src, r)
+        case Request.Recover(r) =>
+          handleRecover(src, r)
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -354,25 +406,120 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       clientRequest: ClientRequest
   ): Unit = {
-    state = // TODO(mwhittaker): Implement
-      ???
+    state match {
+      case Inactive =>
+        // If we're not the active leader but receive a request from a client,
+        // then we send back a NotLeader message to let them know that they've
+        // contacted the wrong leader.
+        val client = chan[Client[Transport]](src, Client.serializer)
+        client.send(ClientInbound().withNotLeaderClient(NotLeaderClient()))
+
+      case phase1: Phase1 =>
+        // We'll process the client request after we've finished phase 1.
+        phase1.pendingClientRequestBatches += ClientRequestBatch(
+          batch = CommandBatch(command = Seq(clientRequest.command))
+        )
+
+      case Phase2 =>
+        processClientRequestBatch(
+          ClientRequestBatch(
+            batch = CommandBatch(command = Seq(clientRequest.command))
+          )
+        )
+    }
   }
 
   private def handleClientRequestBatch(
       src: Transport#Address,
       clientRequestBatch: ClientRequestBatch
   ): Unit = {
-    processClientRequestBatch(clientRequestBatch)
-    // TODO(mwhittaker): Implement
-    ???
+    state match {
+      case Inactive =>
+        // If we're not the active leader but receive a request from a bathcer,
+        // then we send back a NotLeader message to let them know that they've
+        // contacted the wrong leader.
+        //
+        // Note that we also send back the client request batch to the batcher
+        // so that it can resend it to the right leader. We don't send back
+        // messages to clients because they cache their requests until they
+        // receive a response.
+        val batcher = chan[Batcher[Transport]](src, Batcher.serializer)
+        batcher.send(
+          BatcherInbound().withNotLeaderBatcher(
+            NotLeaderBatcher(clientRequestBatch = clientRequestBatch)
+          )
+        )
+
+      case phase1: Phase1 =>
+        // We'll process the client request after we've finished phase 1.
+        phase1.pendingClientRequestBatches += clientRequestBatch
+
+      case Phase2 =>
+        processClientRequestBatch(clientRequestBatch)
+    }
+  }
+
+  private def handleLeaderInfoRequestClient(
+      src: Transport#Address,
+      leaderInfoRequest: LeaderInfoRequestClient
+  ): Unit = {
+    state match {
+      case Inactive =>
+      // We're inactive, so we ignore the leader info request. The active
+      // leader will respond to the request.
+
+      case _: Phase1 | Phase2 =>
+        val client = chan[Client[Transport]](src, Client.serializer)
+        client.send(
+          ClientInbound()
+            .withLeaderInfoReplyClient(LeaderInfoReplyClient(round = round))
+        )
+    }
+  }
+
+  private def handleLeaderInfoRequestBatcher(
+      src: Transport#Address,
+      leaderInfoRequest: LeaderInfoRequestBatcher
+  ): Unit = {
+    state match {
+      case Inactive =>
+      // We're inactive, so we ignore the leader info request. The active
+      // leader will respond to the request.
+
+      case _: Phase1 | Phase2 =>
+        val batcher = chan[Batcher[Transport]](src, Batcher.serializer)
+        batcher.send(
+          BatcherInbound()
+            .withLeaderInfoReplyBatcher(LeaderInfoReplyBatcher(round = round))
+        )
+    }
   }
 
   private def handleNack(
       src: Transport#Address,
       nack: Nack
   ): Unit = {
-    // TODO(mwhittaker): Implement
-    ???
+    if (nack.round <= round) {
+      logger.debug(
+        s"A Leader received a Nack message with round ${nack.round} but is " +
+          s"already in round $round. The Nack is being ignored."
+      )
+      return
+    }
+
+    state match {
+      case Inactive =>
+        // Do nothing.
+        round = nack.round
+      case _: Phase1 =>
+        round = config.roundSystem
+          .nextClassicRound(leaderIndex = index, round = nack.round)
+        leaderChange(isNewLeader = true)
+      case Phase2 =>
+        round = config.roundSystem
+          .nextClassicRound(leaderIndex = index, round = nack.round)
+        leaderChange(isNewLeader = true)
+    }
   }
 
   private def handleChosenWatermark(
@@ -386,7 +533,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       recover: Recover
   ): Unit = {
-    // TODO(mwhittaker): Implement
-    ???
+    state match {
+      case Inactive =>
+      // Do nothing. The active leader will recover.
+      case _: Phase1 | Phase2 =>
+        // Leader change to make sure the slot is chosen.
+        leaderChange(isNewLeader = true)
+    }
   }
 }
