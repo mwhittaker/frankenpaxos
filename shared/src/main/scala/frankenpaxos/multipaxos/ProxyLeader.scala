@@ -159,9 +159,9 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case None =>
-        // Randomly select an acceptor group, and then randomly select a
-        // thrifty quorum of it. Relay the Phase2A message to the quorum
-        val group = acceptors(rand.nextInt(acceptors.size))
+        // Select the appropriate acceptor group, and then randomly select a
+        // thrifty quorum of it. Relay the Phase2a message to the quorum
+        val group = acceptors(phase2a.slot % config.numAcceptorGroups)
         val quorum = scala.util.Random.shuffle(group).take(config.quorumSize)
         quorum.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
 

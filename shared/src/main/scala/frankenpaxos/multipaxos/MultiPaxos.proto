@@ -24,8 +24,6 @@
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
-// TODO(mwhittaker): Replicas need to send recover messages to the leaders.
-
 syntax = "proto2";
 
 package frankenpaxos.multipaxos;
@@ -92,9 +90,10 @@ message Phase1bSlotInfo {
 }
 
 message Phase1b {
-  required int32 acceptor_index = 1;
-  required int32 round = 2;
-  repeated Phase1bSlotInfo info = 3;
+  required int32 group_index = 1;
+  required int32 acceptor_index = 2;
+  required int32 round = 3;
+  repeated Phase1bSlotInfo info = 4;
 }
 
 message Phase2a {

@@ -85,16 +85,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       yield chan[Leader[Transport]](address, Leader.serializer)
 
   // Acceptor index.
-  private val index = config.acceptorAddresses.find(_.contains(address)) match {
-    case None =>
-      logger.fatal(
-        s"Configuation $config doesn't contain an acceptor group with " +
-          s"acceptor address $address."
-      )
-
-    case Some(group) =>
-      group.indexOf(address)
-  }
+  private val groupIndex =
+    config.acceptorAddresses.indexWhere(_.contains(address))
+  private val index = config.acceptorAddresses(groupIndex).indexOf(address)
 
   @JSExport
   protected var round: Int = -1
@@ -160,6 +153,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // leader.
     round = phase1a.round
     val phase1b = Phase1b(
+      groupIndex = groupIndex,
       acceptorIndex = index,
       round = round,
       info = states

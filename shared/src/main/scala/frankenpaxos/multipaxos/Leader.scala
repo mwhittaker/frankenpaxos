@@ -5,6 +5,8 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import frankenpaxos.election.basic.ElectionOptions
+import frankenpaxos.election.basic.Participant
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
@@ -28,12 +30,16 @@ object Leader {
 
 @JSExportAll
 case class LeaderOptions(
+    resendPhase1asPeriod: java.time.Duration,
+    electionOptions: ElectionOptions,
     measureLatencies: Boolean
 )
 
 @JSExportAll
 object LeaderOptions {
   val default = LeaderOptions(
+    resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
+    electionOptions = ElectionOptions.default,
     measureLatencies = true
   )
 }
@@ -53,6 +59,18 @@ class LeaderMetrics(collectors: Collectors) {
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
+
+  val leaderChangesTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_leader_leader_changes_total")
+    .help("Total number of leader changes.")
+    .register()
+
+  val resendPhase1asTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_leader_resend_phase1as_total")
+    .help("Total number of times the leader resent phase 1a messages.")
+    .register()
 }
 
 @JSExportAll
@@ -61,16 +79,125 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
+    initialLeaderIndex: Int,
     options: LeaderOptions = LeaderOptions.default,
-    metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors)
+    metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors),
+    seed: Long = System.currentTimeMillis()
 ) extends Actor(address, transport, logger) {
   config.checkValid()
+  logger.check(config.leaderAddresses.contains(address))
 
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = LeaderInbound
   override val serializer = LeaderInboundSerializer
 
+  type AcceptorIndex = Int
+  type Round = Int
+  type Slot = Int
+
+  @JSExportAll
+  sealed trait State
+
+  @JSExportAll
+  case object Inactive extends State
+
+  @JSExportAll
+  case class Phase1(
+      phase1bs: mutable.Buffer[mutable.Map[AcceptorIndex, Phase1b]],
+      pendingClientRequestBatches: mutable.Buffer[ClientRequestBatch],
+      resendPhase1as: Transport#Timer
+  ) extends State
+
+  @JSExportAll
+  case object Phase2 extends State
+
   // Fields ////////////////////////////////////////////////////////////////////
+  // A random number generator instantiated from `seed`. This allows us to
+  // perform deterministic randomized tests.
+  private val rand = new Random(seed)
+
+  private val index = config.leaderAddresses.indexOf(address)
+
+  // Acceptor channels.
+  private val acceptors: Seq[Seq[Chan[Acceptor[Transport]]]] =
+    for (acceptorCluster <- config.acceptorAddresses) yield {
+      for (address <- acceptorCluster)
+        yield chan[Acceptor[Transport]](address, Acceptor.serializer)
+    }
+
+  // ProxyLeader channels.
+  private val proxyLeaders: Seq[Chan[ProxyLeader[Transport]]] =
+    for (address <- config.proxyLeaderAddresses)
+      yield chan[ProxyLeader[Transport]](address, ProxyLeader.serializer)
+
+  // If the leader is the active leader, then this is its round. If it is
+  // inactive, then this is the largest active round it knows about.
+  @JSExport
+  protected var round: Round = config.roundSystem
+    .nextClassicRound(leaderIndex = initialLeaderIndex, round = -1)
+
+  // The next available slot in the log. Even though we have a next slot into
+  // the log, you'll note that we don't even have a log! Because we've
+  // decoupled aggressively, leaders don't actually need a log at all.
+  @JSExport
+  protected var nextSlot: Slot = 0
+
+  // Every slot less than chosenWatermark has been chosen. Replicas
+  // periodically send their chosenWatermarks to the leaders.
+  @JSExport
+  protected var chosenWatermark: Slot = 0
+
+  // Leader election participant.
+  @JSExport
+  protected val election = new Participant[Transport](
+    address = config.leaderElectionAddresses(index),
+    transport = transport,
+    logger = logger,
+    addresses = config.leaderElectionAddresses,
+    initialLeaderIndex = initialLeaderIndex,
+    options = options.electionOptions
+  )
+  election.register((leaderIndex) => {
+    // TODO(mwhittaker): Implement.
+    ???
+  })
+
+  // The leader's state.
+  @JSExport
+  protected var state: State = if (index == initialLeaderIndex) {
+    val phase1a = Phase1a(round = round, chosenWatermark = chosenWatermark)
+    for (group <- acceptors) {
+      thriftyQuorum(group).foreach(
+        _.send(AcceptorInbound().withPhase1A(phase1a))
+      )
+    }
+    Phase1(
+      phase1bs = mutable.Buffer.fill(config.numAcceptorGroups)(mutable.Map()),
+      pendingClientRequestBatches = mutable.Buffer(),
+      resendPhase1as = makeResendPhase1asTimer(phase1a)
+    )
+  } else {
+    Inactive
+  }
+
+  // Timers ////////////////////////////////////////////////////////////////////
+  private def makeResendPhase1asTimer(
+      phase1a: Phase1a
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendPhase1as",
+      options.resendPhase1asPeriod,
+      () => {
+        metrics.resendPhase1asTotal.inc()
+        for (group <- acceptors; acceptor <- group) {
+          acceptor.send(AcceptorInbound().withPhase1A(phase1a))
+        }
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -85,6 +212,45 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     } else {
       e
     }
+  }
+
+  private def thriftyQuorum(
+      acceptors: Seq[Chan[Acceptor[Transport]]]
+  ): Seq[Chan[Acceptor[Transport]]] =
+    scala.util.Random.shuffle(acceptors).take(config.quorumSize)
+
+  // `maxPhase1bSlot(phase1b)` finds the largest slot present in `phase1b` or
+  // -1 if no slots are present.
+  private def maxPhase1bSlot(phase1b: Phase1b): Slot = {
+    if (phase1b.info.isEmpty) {
+      -1
+    } else {
+      phase1b.info.map(_.slot).max
+    }
+  }
+
+  // Given a quorum of Phase1b messages, `safeValue` finds a value that is safe
+  // to propose in a particular slot. If the Phase1b messages have at least one
+  // vote in the slot, then the value with the highest vote round is safe.
+  // Otherwise, everything is safe. In this case, we return Noop.
+  private def safeValue(
+      phase1bs: Iterable[Phase1b],
+      slot: Slot
+  ): CommandBatchOrNoop = {
+    val slotInfos =
+      phase1bs.flatMap(phase1b => phase1b.info.find(_.slot == slot))
+    if (slotInfos.isEmpty) {
+      CommandBatchOrNoop().withNoop(Noop())
+    } else {
+      slotInfos.maxBy(_.voteRound).voteValue
+    }
+  }
+
+  private def processClientRequestBatch(
+      clientRequestBatch: ClientRequestBatch
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
   }
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -122,22 +288,81 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1b: Phase1b
   ): Unit = {
-    // TODO(mwhittaker): Implement
-    ???
+    state match {
+      case Inactive | Phase2 =>
+        logger.debug(
+          s"A leader received a Phase1b message but is not in Phase1. Its " +
+            s"state is $state. The Phase1b message is being ignored."
+        )
+
+      case phase1: Phase1 =>
+        // Ignore messages from stale rounds.
+        if (phase1b.round != round) {
+          logger.debug(
+            s"A leader received a Phase1b message in round ${phase1b.round} " +
+              s"but is in round $round. The Phase1b is being ignored."
+          )
+          // If phase1b.round were larger than round, then we would have
+          // received a nack instead of a Phase1b.
+          logger.checkLt(phase1b.round, round)
+          return
+        }
+
+        // Wait until we have a quorum of responses from _every_ acceptor group.
+        phase1.phase1bs(phase1b.groupIndex)(phase1b.acceptorIndex) = phase1b
+        if (phase1.phase1bs.exists(_.size < config.quorumSize)) {
+          return
+        }
+
+        // Find the largest slot with a vote.
+        val maxSlot = phase1.phase1bs
+          .map(groupPhase1bs => groupPhase1bs.values.map(maxPhase1bSlot).max)
+          .max
+
+        // Now, we iterate from chosenWatermark to maxSlot proposing safe
+        // values to fill in the log.
+        for (slot <- chosenWatermark to maxSlot) {
+          val group = phase1.phase1bs(slot % config.numAcceptorGroups)
+          val proxyLeader = proxyLeaders(rand.nextInt(proxyLeaders.size))
+          proxyLeader.send(
+            ProxyLeaderInbound().withPhase2A(
+              Phase2a(
+                slot = slot,
+                round = round,
+                commandBatchOrNoop = safeValue(group.values, slot)
+              )
+            )
+          )
+        }
+
+        // We've filled in every slot until and including maxSlot, so the next
+        // slot is maxSlot + 1.
+        nextSlot = maxSlot + 1
+
+        // Update our state.
+        phase1.resendPhase1as.stop()
+        state = Phase2
+
+        // Process any pending client requests.
+        for (clientRequestBatch <- phase1.pendingClientRequestBatches) {
+          processClientRequestBatch(clientRequestBatch)
+        }
+    }
   }
 
   private def handleClientRequest(
       src: Transport#Address,
       clientRequest: ClientRequest
   ): Unit = {
-    // TODO(mwhittaker): Implement
-    ???
+    state = // TODO(mwhittaker): Implement
+      ???
   }
 
   private def handleClientRequestBatch(
       src: Transport#Address,
       clientRequestBatch: ClientRequestBatch
   ): Unit = {
+    processClientRequestBatch(clientRequestBatch)
     // TODO(mwhittaker): Implement
     ???
   }
@@ -152,10 +377,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handleChosenWatermark(
       src: Transport#Address,
-      chosenWatermark: ChosenWatermark
+      msg: ChosenWatermark
   ): Unit = {
-    // TODO(mwhittaker): Implement
-    ???
+    chosenWatermark = Math.max(chosenWatermark, msg.slot)
   }
 
   private def handleRecover(
