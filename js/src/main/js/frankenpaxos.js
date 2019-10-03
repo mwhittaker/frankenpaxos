@@ -774,6 +774,54 @@ Vue.component('frankenpaxos-map', {
   `
 });
 
+Vue.component('frankenpaxos-horizontal-map', {
+  props: {
+    map: {
+      required: true,
+    },
+    show_values_at_start: {
+      type: Boolean,
+      default: true,
+    },
+  },
+
+  data: function() {
+    return {
+      js_map: typeof this.map !== 'undefined' ?
+                frankenpaxos.JsUtils.mapToJs(this.map) :
+                {},
+    };
+  },
+
+  watch: {
+    map: {
+      handler: function(map) {
+        this.js_map = typeof map !== 'undefined' ?
+                        frankenpaxos.JsUtils.mapToJs(map) :
+                        {};
+      },
+      deep: true,
+    }
+  },
+
+  template: `
+    <table class="frankenpaxos-map">
+      <tr>
+        <td v-for="kv in js_map" class="frankenpaxos-map-key">
+          {{kv[0]}}
+        </td>
+      </tr>
+      <tr>
+        <td v-for="kv in js_map" class="frankenpaxos-map-value">
+          <fp-toggle :value="kv[1]" :show_at_start="show_values_at_start">
+            <slot :value="kv[1]">{{kv[1]}}</slot>
+          </fp-toggle>
+        </td>
+      </tr>
+    </table>
+  `
+});
+
 Vue.component('frankenpaxos-seq', {
   props: ['seq'],
 

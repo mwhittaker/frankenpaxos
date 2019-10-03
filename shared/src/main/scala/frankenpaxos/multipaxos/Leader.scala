@@ -147,10 +147,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var chosenWatermark: Slot = 0
 
+  // Leader election address. This field exists for the javascript
+  // visualizations.
+  @JSExport
+  protected val electionAddress = config.leaderElectionAddresses(index)
+
   // Leader election participant.
   @JSExport
   protected val election = new Participant[Transport](
-    address = config.leaderElectionAddresses(index),
+    address = electionAddress,
     transport = transport,
     logger = logger,
     addresses = config.leaderElectionAddresses,

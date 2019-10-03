@@ -270,7 +270,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       clientReplies: mutable.Buffer[ClientReply]
   ): Unit = {
     val commandId = command.commandId
-    val clientIdentity = (commandId.clientAddress, commandId.clientId)
+    val clientIdentity = (commandId.clientAddress, commandId.clientPseudonym)
     clientTable.get(clientIdentity) match {
       case None =>
         val result =
