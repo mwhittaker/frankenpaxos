@@ -160,15 +160,16 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private val index = config.replicaAddresses.indexOf(address)
 
   // The log of commands. We implement the log as a BufferMap as opposed to
-  // something like a SortedMap for efficiency.
+  // something like a SortedMap for efficiency. `log` is public for testing.
   @JSExport
-  protected val log =
+  val log =
     new util.BufferMap[CommandBatchOrNoop](options.logGrowSize)
 
   // Every log entry less than `executedWatermark` has been executed. There may
   // be commands larger than `executedWatermark` pending execution.
+  // `executedWatermark` is public for testing.
   @JSExport
-  protected var executedWatermark: Int = 0
+  var executedWatermark: Int = 0
 
   // The number of log entries that have been chosen and placed in `log`. We
   // use `numChosen` and `executedWatermark` to know whether there are commands
