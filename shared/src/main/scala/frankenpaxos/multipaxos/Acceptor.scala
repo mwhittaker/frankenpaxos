@@ -89,6 +89,8 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     config.acceptorAddresses.indexWhere(_.contains(address))
   private val index = config.acceptorAddresses(groupIndex).indexOf(address)
 
+  private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
+
   @JSExport
   protected var round: Int = -1
 
@@ -182,7 +184,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         s"An acceptor received a Phase2a message in round ${phase2a.round} " +
           s"but is in round $round."
       )
-      val leader = leaders(config.roundSystem.leader(phase2a.round))
+      val leader = leaders(roundSystem.leader(phase2a.round))
       leader.send(LeaderInbound().withNack(Nack(round = round)))
       return
     }

@@ -44,8 +44,7 @@ class MultiPaxos(val f: Int, seed: Long) {
       (1 to numReplicas).map(i => FakeTransportAddress(s"Replica $i")),
     proxyReplicaAddresses = (1 to numProxyReplicas)
       .map(i => FakeTransportAddress(s"ProxyReplica $i")),
-    distributionScheme = Hash,
-    roundSystem = new RoundSystem.ClassicRoundRobin(numLeaders)
+    distributionScheme = Hash
   )
 
   // Clients.
@@ -81,7 +80,6 @@ class MultiPaxos(val f: Int, seed: Long) {
       transport = transport,
       logger = new FakeLogger(),
       config = config,
-      initialLeaderIndex = 0,
       options = LeaderOptions.default,
       metrics = new LeaderMetrics(FakeCollectors),
       seed = seed

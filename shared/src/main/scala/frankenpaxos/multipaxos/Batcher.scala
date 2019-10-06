@@ -90,11 +90,13 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.leaderAddresses)
       yield chan[Leader[Transport]](address, Leader.serializer)
 
+  private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
+
   // The round that this batcher thinks the leader is in. This value is not
   // always accurate. It's just the batcher's best guess. The leader associated
-  // with this round can be computed using `config.roundSystem`. The batchers
-  // need to know who the leader is because they need to know where to send
-  // their commands.
+  // with this round can be computed using `roundSystem`. The batchers need to
+  // know who the leader is because they need to know where to send their
+  // commands.
   @JSExport
   protected var round: Int = 0
 
@@ -150,7 +152,7 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     growingBatch += clientRequest.command
     if (growingBatch.size >= options.batchSize) {
-      val leader = leaders(config.roundSystem.leader(round))
+      val leader = leaders(roundSystem.leader(round))
       leader.send(
         LeaderInbound().withClientRequestBatch(
           ClientRequestBatch(batch = CommandBatch(command = growingBatch.toSeq))
@@ -196,9 +198,8 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
     // just learned about a new round `leaderInfo.round`. If the leader of the
     // new round is different than the leader of the old round, then we have to
     // re-send our messages.
-    if (config.roundSystem.leader(oldRound) !=
-          config.roundSystem.leader(newRound)) {
-      val leader = leaders(config.roundSystem.leader(newRound))
+    if (roundSystem.leader(oldRound) != roundSystem.leader(newRound)) {
+      val leader = leaders(roundSystem.leader(newRound))
       for (batch <- pendingResendBatches) {
         leader.send(LeaderInbound().withClientRequestBatch(batch))
       }

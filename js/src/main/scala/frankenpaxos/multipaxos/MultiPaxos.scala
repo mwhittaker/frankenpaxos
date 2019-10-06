@@ -54,8 +54,7 @@ class MultiPaxos {
       JsTransportAddress("ProxyReplica 1"),
       JsTransportAddress("ProxyReplica 2")
     ),
-    distributionScheme = Hash,
-    roundSystem = new RoundSystem.ClassicRoundRobin(n = 2)
+    distributionScheme = Hash
   )
 
   // Clients.
@@ -99,7 +98,6 @@ class MultiPaxos {
       transport = transport,
       logger = new JsLogger(),
       config = config,
-      initialLeaderIndex = 0,
       options = LeaderOptions.default.copy(
         resendPhase1asPeriod = java.time.Duration.ofSeconds(10),
         electionOptions = ElectionOptions.default.copy(

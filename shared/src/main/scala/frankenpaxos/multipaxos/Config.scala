@@ -1,6 +1,5 @@
 package frankenpaxos.multipaxos
 
-import frankenpaxos.roundsystem.RoundSystem
 import scala.scalajs.js.annotation.JSExportAll
 
 @JSExportAll
@@ -13,8 +12,7 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     acceptorAddresses: Seq[Seq[Transport#Address]],
     replicaAddresses: Seq[Transport#Address],
     proxyReplicaAddresses: Seq[Transport#Address],
-    distributionScheme: DistributionScheme,
-    roundSystem: RoundSystem
+    distributionScheme: DistributionScheme
 ) {
   val quorumSize = f + 1
   val numBatchers = batcherAddresses.size

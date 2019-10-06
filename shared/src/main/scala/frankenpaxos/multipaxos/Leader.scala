@@ -79,7 +79,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     transport: Transport,
     logger: Logger,
     config: Config[Transport],
-    initialLeaderIndex: Int,
     options: LeaderOptions = LeaderOptions.default,
     metrics: LeaderMetrics = new LeaderMetrics(PrometheusCollectors),
     seed: Long = System.currentTimeMillis()
@@ -130,11 +129,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.proxyLeaderAddresses)
       yield chan[ProxyLeader[Transport]](address, ProxyLeader.serializer)
 
+  private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
+
   // If the leader is the active leader, then this is its round. If it is
   // inactive, then this is the largest active round it knows about.
   @JSExport
-  protected var round: Round = config.roundSystem
-    .nextClassicRound(leaderIndex = initialLeaderIndex, round = -1)
+  protected var round: Round = roundSystem
+    .nextClassicRound(leaderIndex = 0, round = -1)
 
   // The next available slot in the log. Even though we have a next slot into
   // the log, you'll note that we don't even have a log! Because we've
@@ -159,7 +160,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     transport = transport,
     logger = logger,
     addresses = config.leaderElectionAddresses,
-    initialLeaderIndex = initialLeaderIndex,
+    initialLeaderIndex = 0,
     options = options.electionOptions
   )
   election.register((leaderIndex) => {
@@ -168,7 +169,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // The leader's state.
   @JSExport
-  protected var state: State = if (index == initialLeaderIndex) {
+  protected var state: State = if (index == 0) {
     startPhase1(round, chosenWatermark)
   } else {
     Inactive
@@ -289,16 +290,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case (Phase2, false) =>
         state = Inactive
       case (Inactive, true) =>
-        round = config.roundSystem
+        round = roundSystem
           .nextClassicRound(leaderIndex = index, round = round)
         state = startPhase1(round = round, chosenWatermark = chosenWatermark)
       case (phase1: Phase1, true) =>
         phase1.resendPhase1as.stop()
-        round = config.roundSystem
+        round = roundSystem
           .nextClassicRound(leaderIndex = index, round = round)
         state = startPhase1(round = round, chosenWatermark = chosenWatermark)
       case (Phase2, true) =>
-        round = config.roundSystem
+        round = roundSystem
           .nextClassicRound(leaderIndex = index, round = round)
         state = startPhase1(round = round, chosenWatermark = chosenWatermark)
     }
@@ -522,12 +523,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Do nothing.
         round = nack.round
       case _: Phase1 =>
-        round = config.roundSystem
-          .nextClassicRound(leaderIndex = index, round = nack.round)
+        round =
+          roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
         leaderChange(isNewLeader = true)
       case Phase2 =>
-        round = config.roundSystem
-          .nextClassicRound(leaderIndex = index, round = nack.round)
+        round =
+          roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
         leaderChange(isNewLeader = true)
     }
   }

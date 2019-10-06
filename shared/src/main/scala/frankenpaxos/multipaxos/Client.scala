@@ -106,11 +106,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.leaderAddresses)
       yield chan[Leader[Transport]](address, Leader.serializer)
 
+  private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
+
   // The round that this client thinks the leader is in. This value is not
   // always accurate. It's just the client's best guess. The leader associated
-  // with this round can be computed using `config.roundSystem`. The clients
-  // need to know who the leader is because they need to know where to send
-  // their commands.
+  // with this round can be computed using `roundSystem`. The clients need to
+  // know who the leader is because they need to know where to send their
+  // commands.
   @JSExport
   protected var round: Int = 0
 
@@ -157,7 +159,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   private def sendClientRequest(clientRequest: ClientRequest): Unit = {
     if (config.numBatchers == 0) {
       // If there are no batchers, then we send to who we think the leader is.
-      val leader = leaders(config.roundSystem.leader(round))
+      val leader = leaders(roundSystem.leader(round))
       leader.send(LeaderInbound().withClientRequest(clientRequest))
     } else {
       // If there are batchers, then we send to a randomly selected batcher.
@@ -303,8 +305,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     // but we just learned about a new round `leaderInfo.round`. If the leader
     // of the new round is different than the leader of the old round, then we
     // have to re-send our messages.
-    if (config.roundSystem.leader(oldRound) !=
-          config.roundSystem.leader(newRound)) {
+    if (roundSystem.leader(oldRound) != roundSystem.leader(newRound)) {
       for ((pseudonym, pendingCommand) <- pendingCommands) {
         sendClientRequest(toClientRequest(pendingCommand))
         resendClientRequestTimers(pseudonym).reset()
