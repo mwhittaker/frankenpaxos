@@ -10,8 +10,11 @@ class MultiPaxosTest extends FlatSpec {
     val numRuns = 500
     info(s"runLength = $runLength, numRuns = $numRuns")
 
-    for (f <- 1 to 2) {
-      val sim = new SimulatedMultiPaxos(f)
+    for {
+      batched <- Seq(true, false)
+      f <- 1 to 2
+    } {
+      val sim = new SimulatedMultiPaxos(f = f, batched = batched)
 
       Simulator
         .simulate(sim, runLength = runLength, numRuns = numRuns)
@@ -28,7 +31,7 @@ class MultiPaxosTest extends FlatSpec {
         case None => {}
       }
 
-      val suffix = s"f=$f"
+      val suffix = s"f=$f, batched=$batched"
       if (sim.valueChosen) {
         info(s"Value chosen ($suffix)")
       } else {
