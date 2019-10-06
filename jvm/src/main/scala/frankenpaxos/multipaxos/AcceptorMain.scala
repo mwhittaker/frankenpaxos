@@ -33,7 +33,7 @@ object AcceptorMain extends App {
     help("help")
 
     // Basic flags.
-    opt[Int]("groupIndex").required().action((x, f) => f.copy(groupIndex = x))
+    opt[Int]("group_index").required().action((x, f) => f.copy(groupIndex = x))
     opt[Int]("index").required().action((x, f) => f.copy(index = x))
     opt[File]("config").required().action((x, f) => f.copy(configFile = x))
     opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))

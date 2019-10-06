@@ -26,7 +26,7 @@ message AcceptorGroup {
 message NettyConfigProto {
   required int32 f = 1;
   repeated HostPortProto batcher_address = 2;
-  repeated HostPortProto leaderAddress = 3;
+  repeated HostPortProto leader_address = 3;
   repeated HostPortProto leader_election_address = 4;
   repeated HostPortProto proxy_leader_address = 5;
   repeated AcceptorGroup acceptor_address = 6;
