@@ -59,7 +59,6 @@ class BatcherMetrics(collectors: Collectors) {
   val batchesSent: Counter = collectors.counter
     .build()
     .name("multipaxos_batcher_batches_sent")
-    .labelNames("type")
     .help("Total number of batches sent.")
     .register()
 }
