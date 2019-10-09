@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1570579575647,
+  "iteration": 1570584704748,
   "links": [],
   "panels": [
     {
@@ -1268,7 +1268,7 @@
       {
         "allValue": null,
         "current": {
-          "selected": false,
+          "selected": true,
           "text": "jvm_classes_unloaded_total",
           "value": "jvm_classes_unloaded_total"
         },
@@ -1650,9 +1650,8 @@
       {
         "allValue": null,
         "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
+          "text": "multipaxos_proxy_replica",
+          "value": "multipaxos_proxy_replica"
         },
         "datasource": "Prometheus",
         "definition": "label_values(job)",
@@ -1663,7 +1662,7 @@
         "name": "job",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": "All",
             "value": "$__all"
           },
@@ -1671,6 +1670,16 @@
             "selected": false,
             "text": "multipaxos_acceptor",
             "value": "multipaxos_acceptor"
+          },
+          {
+            "selected": false,
+            "text": "multipaxos_batcher",
+            "value": "multipaxos_batcher"
+          },
+          {
+            "selected": false,
+            "text": "multipaxos_client",
+            "value": "multipaxos_client"
           },
           {
             "selected": false,
@@ -1683,7 +1692,7 @@
             "value": "multipaxos_proxy_leader"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "multipaxos_proxy_replica",
             "value": "multipaxos_proxy_replica"
           },
@@ -1735,8 +1744,8 @@
     ]
   },
   "time": {
-    "from": "2019-10-08T23:58:20.638Z",
-    "to": "2019-10-08T23:59:09.167Z"
+    "from": "2019-10-09T01:16:25.350Z",
+    "to": "2019-10-09T01:16:36.213Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1766,5 +1775,5 @@
   "timezone": "",
   "title": "MultiPaxos",
   "uid": "rFE0aw2Zk",
-  "version": 4
+  "version": 6
 }
