@@ -85,9 +85,9 @@ class ReplicaMetrics(collectors: Collectors) {
     .help("Latency (in milliseconds) of a request.")
     .register()
 
-  val redundantChosenTotal: Counter = collectors.counter
+  val redundantlyChosenTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_replica_reduntant_chosen_total")
+    .name("multipaxos_replica_redundantly_chosen_total")
     .help("Total number of Chosen commands that were redundantly received.")
     .register()
 
@@ -116,7 +116,7 @@ class ReplicaMetrics(collectors: Collectors) {
     .help("Total number of chosen watermarks sent.")
     .register()
 
-  val recoversSent: Counter = collectors.counter
+  val recoversSentTotal: Counter = collectors.counter
     .build()
     .name("multipaxos_replica_recovers_sent_total")
     .help("Total number of recover messages sent.")
@@ -207,6 +207,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                 Recover(slot = executedWatermark)
               )
             )
+            metrics.recoversSentTotal.inc()
           }
         )
       )
@@ -348,6 +349,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               ProxyReplicaInbound()
                 .withChosenWatermark(ChosenWatermark(slot = executedWatermark))
             )
+            metrics.chosenWatermarksSentTotal.inc()
           }
 
         case None =>
@@ -374,7 +376,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case Some(_) =>
         // We've already received a Chosen message for this slot. We ignore the
         // message.
-        metrics.redundantChosenTotal.inc()
+        metrics.redundantlyChosenTotal.inc()
         return
       case None =>
         log.put(chosen.slot, chosen.commandBatchOrNoop)
