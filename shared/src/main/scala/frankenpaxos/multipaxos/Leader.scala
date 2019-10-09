@@ -253,14 +253,41 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     logger.checkEq(state, Phase2)
 
-    getProxyLeader().send(
-      ProxyLeaderInbound().withPhase2A(
-        Phase2a(slot = nextSlot,
-                round = round,
-                commandBatchOrNoop = CommandBatchOrNoop()
-                  .withCommandBatch(clientRequestBatch.batch))
-      )
-    )
+    // Normally, we'd have the following code, but to measure the time taken
+    // for serialization vs sending, we split it up. It's less readable, but it
+    // leads to some better performance insights.
+    //
+    // getProxyLeader().send(
+    //   ProxyLeaderInbound().withPhase2A(
+    //     Phase2a(slot = nextSlot,
+    //             round = round,
+    //             commandBatchOrNoop = CommandBatchOrNoop()
+    //               .withCommandBatch(clientRequestBatch.batch))
+    //   )
+    // )
+
+    val proxyLeaderIndex = timed("processClientRequestBatch/getProxyLeader") {
+      config.distributionScheme match {
+        case Hash      => rand.nextInt(proxyLeaders.size)
+        case Colocated => index
+      }
+    }
+
+    val bytes = timed("processClientRequestBatch/serialize") {
+      ProxyLeaderInbound()
+        .withPhase2A(
+          Phase2a(slot = nextSlot,
+                  round = round,
+                  commandBatchOrNoop = CommandBatchOrNoop()
+                    .withCommandBatch(clientRequestBatch.batch))
+        )
+        .toByteArray
+    }
+
+    timed("processClientRequestBatch/send") {
+      send(config.proxyLeaderAddresses(proxyLeaderIndex), bytes)
+    }
+
     nextSlot += 1
   }
 
