@@ -484,28 +484,32 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
         if input.monitored:
             prometheus_config = prometheus.prometheus_config(
                 int(input.prometheus_scrape_interval.total_seconds() * 1000), {
-                    'bpaxos_batcher': [
+                    'multipaxos_client': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().clients
+                    ],
+                    'multipaxos_batcher': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().batchers
                     ],
-                    'bpaxos_leader': [
+                    'multipaxos_leader': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().leaders
                     ],
-                    'bpaxos_proxy_leader': [
+                    'multipaxos_proxy_leader': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().proxy_leaders
                     ],
-                    'bpaxos_acceptor': [
+                    'multipaxos_acceptor': [
                         f'{e.host.ip()}:{e.port+1}'
                         for group in net.placement().acceptors
                         for e in group
                     ],
-                    'bpaxos_replica': [
+                    'multipaxos_replica': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().replicas
                     ],
-                    'bpaxos_proxy_replica': [
+                    'multipaxos_proxy_replica': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().proxy_replicas
                     ],
