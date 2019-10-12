@@ -29,12 +29,18 @@ object ProxyLeader {
 
 @JSExportAll
 case class ProxyLeaderOptions(
+    // A proxy leader flushes all of its channels to the acceptors after every
+    // `flushPhase2asEveryN` Phase2a messages sent. For example, if
+    // `flushPhase2asEveryN` is 1, then the proxy leader flushes after every
+    // send.
+    flushPhase2asEveryN: Int,
     measureLatencies: Boolean
 )
 
 @JSExportAll
 object ProxyLeaderOptions {
   val default = ProxyLeaderOptions(
+    flushPhase2asEveryN = 1,
     measureLatencies = true
   )
 }
@@ -107,6 +113,9 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.replicaAddresses)
       yield chan[Replica[Transport]](address, Replica.serializer)
 
+  // The number of Phase2a messages since the last flush.
+  private var numPhase2asSentSinceLastFlush: Int = 0
+
   @JSExport
   protected var states = mutable.Map[SlotRound, State]()
 
@@ -163,7 +172,18 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         // thrifty quorum of it. Relay the Phase2a message to the quorum
         val group = acceptors(phase2a.slot % config.numAcceptorGroups)
         val quorum = scala.util.Random.shuffle(group).take(config.quorumSize)
-        quorum.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+        if (options.flushPhase2asEveryN == 1) {
+          quorum.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
+        } else {
+          quorum.foreach(_.sendNoFlush(AcceptorInbound().withPhase2A(phase2a)))
+          numPhase2asSentSinceLastFlush += 1
+          if (numPhase2asSentSinceLastFlush >= options.flushPhase2asEveryN) {
+            for (group <- acceptors; acceptor <- group) {
+              acceptor.flush()
+            }
+            numPhase2asSentSinceLastFlush = 0
+          }
+        }
 
         // Update our state.
         states(slotround) = Pending(phase2a = phase2a, phase2bs = mutable.Map())

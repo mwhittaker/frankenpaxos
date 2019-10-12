@@ -54,7 +54,7 @@ class LeaderOptions(NamedTuple):
 
 
 class ProxyLeaderOptions(NamedTuple):
-    pass
+    flush_phase2as_every_n: int = 1
 
 
 class AcceptorOptions(NamedTuple):
@@ -330,6 +330,8 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     proxy_leader.host.ip(),
                     '--prometheus_port',
                     str(proxy_leader.port + 1) if input.monitored else '-1',
+                    '--options.flushPhase2asEveryN',
+                    str(input.proxy_leader_options.flush_phase2as_every_n),
                 ],
             )
             if input.profiled:

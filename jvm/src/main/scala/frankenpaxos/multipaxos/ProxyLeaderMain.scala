@@ -28,6 +28,13 @@ object ProxyLeaderMain extends App {
       options: ProxyLeaderOptions = ProxyLeaderOptions.default
   )
 
+  implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def optionAction(
+        f: (A, ProxyLeaderOptions) => ProxyLeaderOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => flags.copy(options = f(x, flags.options)))
+  }
+
   val parser = new scopt.OptionParser[Flags]("") {
     help("help")
 
@@ -42,6 +49,10 @@ object ProxyLeaderMain extends App {
     opt[Int]("prometheus_port")
       .action((x, f) => f.copy(prometheusPort = x))
       .text(s"-1 to disable")
+
+    // Options.
+    opt[Int]("options.flushPhase2asEveryN")
+      .optionAction((x, o) => o.copy(flushPhase2asEveryN = x))
   }
 
   // Parse flags.
