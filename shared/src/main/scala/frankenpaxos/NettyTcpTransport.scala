@@ -319,7 +319,7 @@ class NettyTcpTransport(private val logger: Logger)
     }
   }
 
-  def register(
+  override def register(
       address: NettyTcpTransport#Address,
       actor: Actor[NettyTcpTransport]
   ): Unit = {
@@ -361,10 +361,11 @@ class NettyTcpTransport(private val logger: Logger)
   // have an actor registered. There is no need to actually send it. We can
   // pass it directly to the actor. The one hiccup is that want to schedule the
   // sending to happen after the code calling send finishes.
-  def send(
+  private def sendImpl(
       src: NettyTcpTransport#Address,
       dst: NettyTcpTransport#Address,
-      bytes: Array[Byte]
+      bytes: Array[Byte],
+      flush: Boolean
   ): Unit = {
     val actor = actors.get(src) match {
       case Some(actor) => actor
@@ -377,13 +378,23 @@ class NettyTcpTransport(private val logger: Logger)
 
     channels.get((src, dst)) match {
       case Some(Chan(channel)) =>
-        channel
-          .writeAndFlush(bytes)
-          .addListener(
-            new LogFailureFutureListener(
-              s"Unable to send message from $src to $dst."
+        if (flush) {
+          channel
+            .writeAndFlush(bytes)
+            .addListener(
+              new LogFailureFutureListener(
+                s"Unable to send message from $src to $dst."
+              )
             )
-          )
+        } else {
+          channel
+            .write(bytes)
+            .addListener(
+              new LogFailureFutureListener(
+                s"Unable to send message from $src to $dst."
+              )
+            )
+        }
 
       case Some(Pending(msgs)) =>
         logger.debug(
@@ -444,7 +455,43 @@ class NettyTcpTransport(private val logger: Logger)
     }
   }
 
-  def timer(
+  override private[frankenpaxos] def send(
+      src: NettyTcpTransport#Address,
+      dst: NettyTcpTransport#Address,
+      bytes: Array[Byte]
+  ): Unit =
+    sendImpl(src, dst, bytes, flush = true)
+
+  override private[frankenpaxos] def sendNoFlush(
+      src: NettyTcpTransport#Address,
+      dst: NettyTcpTransport#Address,
+      bytes: Array[Byte]
+  ): Unit =
+    sendImpl(src, dst, bytes, flush = false)
+
+  override private[frankenpaxos] def flush(
+      src: NettyTcpTransport#Address,
+      dst: NettyTcpTransport#Address
+  ): Unit = {
+    channels.get((src, dst)) match {
+      case Some(Chan(channel)) =>
+        channel.flush()
+
+      case Some(Pending(msgs)) =>
+        logger.debug(
+          s"Attempted to flush the channel between $src and $dst, but the " +
+            s"channel is currently pending. The flush is being ignored."
+        )
+
+      case None =>
+        logger.debug(
+          s"Attempted to flush the channel between $src and $dst, but no " +
+            s"such channel exists. The flush is being ignored."
+        )
+    }
+  }
+
+  override def timer(
       address: NettyTcpTransport#Address,
       name: String,
       delay: java.time.Duration,

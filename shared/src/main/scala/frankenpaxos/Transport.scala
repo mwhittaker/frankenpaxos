@@ -68,6 +68,21 @@ trait Transport[Self <: Transport[Self]] {
       bytes: Array[Byte]
   ): Unit
 
+  // Buffer a message from a source actor to a destination actor. The message
+  // is not guaranteed to be sent until `flush` or `send` is called. The
+  // message may be sent before then, though. You should not call this method
+  // directly.  Instead, use the `sendNoFlush` method inside Actor.
+  private[frankenpaxos] def sendNoFlush(
+      src: Self#Address,
+      dst: Self#Address,
+      bytes: Array[Byte]
+  ): Unit
+
+  // Flush the channel between src and dst. If no channel exists, nothing
+  // happens. You should not call this method directly. Instead, use the
+  // `flush` method inside Actor.
+  private[frankenpaxos] def flush(src: Self#Address, dst: Self#Address): Unit
+
   // Create a named timer for a particular actor. You should not call this
   // method directly. Instead, use the timer method inside Actor.
   private[frankenpaxos] def timer(

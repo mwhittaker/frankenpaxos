@@ -90,8 +90,20 @@ class FakeTransport(logger: Logger) extends Transport[FakeTransport] {
       src: FakeTransport#Address,
       dst: FakeTransport#Address,
       bytes: Array[Byte]
+  ): Unit = messages += FakeTransportMessage(src, dst, bytes.to[Vector])
+
+  // FakeTransport does not do flushing, so sendNoFlush and send are the same.
+  override def sendNoFlush(
+      src: FakeTransport#Address,
+      dst: FakeTransport#Address,
+      bytes: Array[Byte]
+  ): Unit = send(src, dst, bytes)
+
+  override def flush(
+      src: FakeTransport#Address,
+      dst: FakeTransport#Address
   ): Unit = {
-    messages += FakeTransportMessage(src, dst, bytes.to[Vector])
+    // Do nothing.
   }
 
   override def timer(

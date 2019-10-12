@@ -121,6 +121,22 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
     }
   }
 
+  // The JsTransport treats sendNoFlush exactly like send. We don't bother to
+  // implement batching messages and flushing them at once.
+  override def sendNoFlush(
+      src: JsTransport#Address,
+      dst: JsTransport#Address,
+      bytes: Array[Byte]
+  ): Unit =
+    send(src, dst, bytes)
+
+  override def flush(
+      src: JsTransport#Address,
+      dst: JsTransport#Address
+  ): Unit = {
+    // Do nothing.
+  }
+
   override def timer(
       address: JsTransport#Address,
       name: String,

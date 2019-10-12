@@ -28,9 +28,12 @@ abstract class Actor[Transport <: frankenpaxos.Transport[Transport]](
     new Chan[A](transport, address, dst, serializer)
   }
 
-  def send(dst: Transport#Address, bytes: Array[Byte]): Unit = {
+  // Sending and flushing.
+  def send(dst: Transport#Address, bytes: Array[Byte]): Unit =
     transport.send(address, dst, bytes)
-  }
+  def sendNoFlush(dst: Transport#Address, bytes: Array[Byte]): Unit =
+    transport.sendNoFlush(address, dst, bytes)
+  def flush(dst: Transport#Address): Unit = transport.flush(address, dst)
 
   // Creates a new Timer with the specified delay. The returned timer will not
   // be started; you have to start it yourself. Also note that name does not
