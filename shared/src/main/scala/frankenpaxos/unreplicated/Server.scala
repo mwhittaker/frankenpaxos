@@ -74,7 +74,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   override val serializer = ServerInboundSerializer
 
   // Fields ////////////////////////////////////////////////////////////////////
-  private val clients =
+  @JSExport
+  protected val clients =
     mutable.Map[Transport#Address, Chan[Client[Transport]]]()
 
   // The number of messages since the last flush.
