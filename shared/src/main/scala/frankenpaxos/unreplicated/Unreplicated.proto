@@ -1,0 +1,46 @@
+syntax = "proto2";
+
+package frankenpaxos.unreplicated;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.unreplicated"
+  flat_package: true
+};
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 command_id = 1;
+  required bytes command = 2;
+}
+
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 command_id = 1;
+  required bytes result = 2;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientReply client_reply = 1;
+  }
+}
+
+message ServerInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientRequest client_request = 1;
+  }
+}
