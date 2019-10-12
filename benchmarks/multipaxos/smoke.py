@@ -39,6 +39,7 @@ def main(args) -> None:
                     batcher_log_level = args.log_level,
                     leader_options = LeaderOptions(
                         resend_phase1as_period = datetime.timedelta(seconds=60),
+                        flush_phase2as_every_n = 1,
                         election_options = ElectionOptions(
                             ping_period = datetime.timedelta(seconds=60),
                             no_ping_timeout_min = \

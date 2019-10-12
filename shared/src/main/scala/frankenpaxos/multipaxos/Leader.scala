@@ -31,6 +31,10 @@ object Leader {
 @JSExportAll
 case class LeaderOptions(
     resendPhase1asPeriod: java.time.Duration,
+    // A leader flushes all of its channels to the proxy leaders after every
+    // `flushPhase2asEveryN` Phase2a messages sent. For example, if
+    // `flushPhase2asEveryN` is 1, then the leader flushes after every send.
+    flushPhase2asEveryN: Int,
     electionOptions: ElectionOptions,
     measureLatencies: Boolean
 )
@@ -39,6 +43,7 @@ case class LeaderOptions(
 object LeaderOptions {
   val default = LeaderOptions(
     resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
+    flushPhase2asEveryN = 1,
     electionOptions = ElectionOptions.default,
     measureLatencies = true
   )
@@ -167,6 +172,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     leaderChange(leaderIndex == index)
   })
 
+  // The number of Phase2a messages since the last flush.
+  private var numPhase2asSentSinceLastFlush: Int = 0
+
   // The leader's state.
   @JSExport
   protected var state: State = if (index == 0) {
@@ -285,7 +293,21 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     timed("processClientRequestBatch/send") {
-      send(config.proxyLeaderAddresses(proxyLeaderIndex), bytes)
+      if (options.flushPhase2asEveryN == 1) {
+        // If we flush every message, don't bother managing
+        // `numPhase2asSentSinceLastFlush` or flushing channels.
+        send(config.proxyLeaderAddresses(proxyLeaderIndex), bytes)
+      } else {
+        sendNoFlush(config.proxyLeaderAddresses(proxyLeaderIndex), bytes)
+        numPhase2asSentSinceLastFlush += 1
+      }
+    }
+
+    timed("processClientRequestBatch/flush") {
+      if (numPhase2asSentSinceLastFlush >= options.flushPhase2asEveryN) {
+        proxyLeaders.foreach(_.flush())
+        numPhase2asSentSinceLastFlush = 0
+      }
     }
 
     nextSlot += 1

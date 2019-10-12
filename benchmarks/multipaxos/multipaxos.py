@@ -49,6 +49,7 @@ class ElectionOptions(NamedTuple):
 
 class LeaderOptions(NamedTuple):
     resend_phase1as_period: datetime.timedelta = datetime.timedelta(seconds=1)
+    flush_phase2as_every_n: int = 1
     election_options: ElectionOptions = ElectionOptions()
 
 
@@ -464,6 +465,8 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     '--options.resendPhase1asPeriod',
                     '{}s'.format(input.leader_options.resend_phase1as_period.
                                  total_seconds()),
+                    '--options.flushPhase2asEveryN',
+                    str(input.leader_options.flush_phase2as_every_n),
                     '--options.election.pingPeriod',
                     '{}s'.format(input.leader_options.election_options.
                                  ping_period.total_seconds()),
