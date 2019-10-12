@@ -3,8 +3,8 @@
 set -euo pipefail
 
 main() {
-    for protocol in multipaxos fastmultipaxos epaxos simplebpaxos superbpaxos \
-                    simplegcbpaxos unanimousbpaxos; do
+    for protocol in unreplicated multipaxos fastmultipaxos epaxos simplebpaxos \
+                    superbpaxos simplegcbpaxos unanimousbpaxos; do
         echo "Running $protocol."
         python -m "benchmarks.${protocol}.smoke" \
             -m \
