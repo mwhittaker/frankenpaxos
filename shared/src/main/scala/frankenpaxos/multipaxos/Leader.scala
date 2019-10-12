@@ -292,22 +292,24 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         .toByteArray
     }
 
-    timed("processClientRequestBatch/send") {
-      if (options.flushPhase2asEveryN == 1) {
-        // If we flush every message, don't bother managing
-        // `numPhase2asSentSinceLastFlush` or flushing channels.
+    if (options.flushPhase2asEveryN == 1) {
+      // If we flush every message, don't bother managing
+      // `numPhase2asSentSinceLastFlush` or flushing channels.
+      timed("processClientRequestBatch/send") {
         send(config.proxyLeaderAddresses(proxyLeaderIndex), bytes)
-      } else {
-        sendNoFlush(config.proxyLeaderAddresses(proxyLeaderIndex), bytes)
-        numPhase2asSentSinceLastFlush += 1
       }
+    } else {
+      timed("processClientRequestBatch/sendNoFlush") {
+        sendNoFlush(config.proxyLeaderAddresses(proxyLeaderIndex), bytes)
+      }
+      numPhase2asSentSinceLastFlush += 1
     }
 
-    timed("processClientRequestBatch/flush") {
-      if (numPhase2asSentSinceLastFlush >= options.flushPhase2asEveryN) {
+    if (numPhase2asSentSinceLastFlush >= options.flushPhase2asEveryN) {
+      timed("processClientRequestBatch/flush") {
         proxyLeaders.foreach(_.flush())
-        numPhase2asSentSinceLastFlush = 0
       }
+      numPhase2asSentSinceLastFlush = 0
     }
 
     nextSlot += 1
