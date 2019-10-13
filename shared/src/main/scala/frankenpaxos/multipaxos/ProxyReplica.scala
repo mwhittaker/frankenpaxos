@@ -29,12 +29,16 @@ object ProxyReplica {
 
 @JSExportAll
 case class ProxyReplicaOptions(
+    // A proxy replica flushes all of its channels to the clients after every
+    // `flushEveryN` commands processed.
+    flushEveryN: Int,
     measureLatencies: Boolean
 )
 
 @JSExportAll
 object ProxyReplicaOptions {
   val default = ProxyReplicaOptions(
+    flushEveryN = 1,
     measureLatencies = true
   )
 }
@@ -76,6 +80,14 @@ class ProxyReplica[Transport <: frankenpaxos.Transport[Transport]](
   private val leaders: Seq[Chan[Leader[Transport]]] =
     for (address <- config.leaderAddresses)
       yield chan[Leader[Transport]](address, Leader.serializer)
+
+  // Client channels.
+  @JSExport
+  protected val clients =
+    mutable.Map[Transport#Address, Chan[Client[Transport]]]()
+
+  // The number of messages since the last flush.
+  private var numMessagesSinceLastFlush: Int = 0
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -122,12 +134,23 @@ class ProxyReplica[Transport <: frankenpaxos.Transport[Transport]](
       clientReplyBatch: ClientReplyBatch
   ): Unit = {
     for (clientReply <- clientReplyBatch.batch) {
-      val client = chan[Client[Transport]](
-        transport.addressSerializer
-          .fromBytes(clientReply.commandId.clientAddress.toByteArray()),
-        Client.serializer
+      val clientAddress = transport.addressSerializer
+        .fromBytes(clientReply.commandId.clientAddress.toByteArray())
+      val client = clients.getOrElseUpdate(
+        clientAddress,
+        chan[Client[Transport]](clientAddress, Client.serializer)
       )
-      client.send(ClientInbound().withClientReply(clientReply))
+
+      if (options.flushEveryN == 1) {
+        client.send(ClientInbound().withClientReply(clientReply))
+      } else {
+        client.sendNoFlush(ClientInbound().withClientReply(clientReply))
+        numMessagesSinceLastFlush += 1
+        if (numMessagesSinceLastFlush >= options.flushEveryN) {
+          clients.values.foreach(_.flush())
+          numMessagesSinceLastFlush = 0
+        }
+      }
     }
   }
 

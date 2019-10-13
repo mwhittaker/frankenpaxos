@@ -73,7 +73,7 @@ class ReplicaOptions(NamedTuple):
 
 
 class ProxyReplicaOptions(NamedTuple):
-    pass
+    flush_every_n: int = 1
 
 
 class Input(NamedTuple):
@@ -436,6 +436,8 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     proxy_replica.host.ip(),
                     '--prometheus_port',
                     str(proxy_replica.port + 1) if input.monitored else '-1',
+                    '--options.flushEveryN',
+                    str(input.proxy_replica_options.flush_every_n),
                 ],
             )
             if input.profiled:
