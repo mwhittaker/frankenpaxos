@@ -133,12 +133,18 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       chan[Client[Transport]](src, Client.serializer)
     )
     if (options.flushEveryN == 1) {
-      client.send(ClientInbound().withClientReply(clientReply))
+      timed("handleClientRequest/send") {
+        client.send(ClientInbound().withClientReply(clientReply))
+      }
     } else {
-      client.sendNoFlush(ClientInbound().withClientReply(clientReply))
+      timed("handleClientRequest/sendNoFlush") {
+        client.sendNoFlush(ClientInbound().withClientReply(clientReply))
+      }
       numMessagesSinceLastFlush += 1
       if (numMessagesSinceLastFlush >= options.flushEveryN) {
-        clients.values.foreach(_.flush())
+        timed("handleClientRequest/flush") {
+          clients.values.foreach(_.flush())
+        }
         numMessagesSinceLastFlush = 0
       }
     }
