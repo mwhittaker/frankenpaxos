@@ -98,9 +98,9 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       executor.send(ExecutorInbound().withForward(Forward(clientRequest = clientRequest)))
     }
 
-    for ((_, leader) <- leaders) {
+    /*for ((_, leader) <- leaders) {
       leader.send(LeaderInbound().withProposal(Proposal(clientRequest.uniqueId, round)))
-    }
+    }*/
   }
 
   def handleAcknowledge(src: Transport#Address, acknowledge: Acknowledge) = {
@@ -113,9 +113,9 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       stableIds.append(acknowledge.uniqueId)
 
       // Request is simultaneously sent to the leader when receiving a client request
-      /*for ((_, leader) <- leaders) {
+      for ((_, leader) <- leaders) {
         leader.send(LeaderInbound().withProposal(Proposal(acknowledge.uniqueId, round)))
-      }*/
+      }
     }
   }
 
