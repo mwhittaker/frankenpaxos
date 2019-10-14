@@ -323,7 +323,7 @@ function make_nodes(SPaxosDecouple, snap) {
   }
 
   // Proposers
-  let proposers_x = 150;
+  /*let proposers_x = 150;
 
   nodes[SPaxosDecouple.proposer1.address] = {
     actor: SPaxosDecouple.proposer1,
@@ -353,7 +353,7 @@ function make_nodes(SPaxosDecouple, snap) {
     ],
     color: flat_blue,
     component: proposer_info,
-  }
+  }*/
 
   // Acceptors.
   let acceptors_x = 550;
@@ -445,8 +445,9 @@ function make_nodes(SPaxosDecouple, snap) {
 
   // Node titles.
   snap.text(50, 15, 'Clients').attr({'text-anchor': 'middle'});
-  snap.text(200, 15, 'Proposers').attr({'text-anchor': 'middle'});
-  snap.text(350, 15, 'Acceptors').attr({'text-anchor': 'middle'});
+  snap.text(200, 15, 'Executors').attr({'text-anchor': 'middle'});
+  snap.text(350, 15, 'Leaders').attr({'text-anchor': 'middle'});
+  snap.text(500, 15, 'Acceptors').attr({'text-anchor': 'middle'});
 
   return nodes
 }
