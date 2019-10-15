@@ -173,7 +173,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       // TODO(mwhittaker): Abstract out the policy that determines which
       // leader group we propose to. Ideally, we would load balance to minimize
       // the skew between leaders.
-      val leaderGroupIndex = rand.nextInt(batchers.size)
+      val leaderGroupIndex = rand.nextInt(leaders.size)
       val leader = leaders(leaderGroupIndex)(
         roundSystem(leaderGroupIndex).leader(round(leaderGroupIndex))
       )

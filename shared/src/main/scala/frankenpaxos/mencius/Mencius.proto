@@ -224,6 +224,8 @@ message ClientReplyBatch {
 message NotLeaderClient {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 leader_group_index = 1;
 }
 
 message LeaderInfoRequestClient {
@@ -235,14 +237,16 @@ message LeaderInfoReplyClient {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 round = 1;
+  required int32 leader_group_index = 1;
+  required int32 round = 2;
 }
 
 message NotLeaderBatcher {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required ClientRequestBatch client_request_batch = 1;
+  required int32 leader_group_index = 1;
+  required ClientRequestBatch client_request_batch = 2;
 }
 
 message LeaderInfoRequestBatcher {
@@ -254,7 +258,8 @@ message LeaderInfoReplyBatcher {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 round = 1;
+  required int32 leader_group_index = 1;
+  required int32 round = 2;
 }
 
 message Nack {
