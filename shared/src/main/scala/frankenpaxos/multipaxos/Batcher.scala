@@ -203,5 +203,6 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
         leader.send(LeaderInbound().withClientRequestBatch(batch))
       }
     }
+    pendingResendBatches.clear()
   }
 }
