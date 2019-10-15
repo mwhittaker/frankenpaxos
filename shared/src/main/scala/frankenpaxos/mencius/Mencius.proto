@@ -1,0 +1,376 @@
+// A protocol cheatsheet, similar to [1].
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      |      |      | -----^----> |        |      |   Phase1a
+//      |      |      | <----^----- |        |      |   Phase1b
+//      | -----^----> |      |      |        |      |   ClientRequest
+//      | ---> |      |      |      |        |      |   ClientRequest
+//      |      | ---> |      |      |        |      |   ClientRequestBatch
+//      |      |      | ---> |      |        |      |   ChosenHighWatermark
+//      |      |      | <--- |      |        |      |   ChosenHighWatermark
+//      |      |      | ---> |      |        |      |   Phase2a
+//      |      |      |      | ---> |        |      |   Phase2a
+//      |      |      | ---> |      |        |      |   Phase2aNoopRange
+//      |      |      |      | ---> |        |      |   Phase2aNoopRange
+//      |      |      |      | <--- |        |      |   Phase2b
+//      |      |      |      | <--- |        |      |   Phase2bNoopRange
+//      |      |      |      | -----^------> |      |   Chosen
+//      |      |      |      | -----^------> |      |   ChosenNoopRange
+//      |      |      |      |      |        | ---> |   ClientReplyBatch
+//      | <----^------^------^------^--------^----- |   ClientReply
+//
+//      | <----^----- |      |      |        |      |   NotLeaderClient
+//      | -----^----> |      |      |        |      |   LeaderInfoRequestClient
+//      | <----^----- |      |      |        |      |   LeaderInfoReplyClient
+//      |      | <--- |      |      |        |      |   NotLeaderBatcher
+//      |      | ---> |      |      |        |      |   LeaderInfoRequestBatcher
+//      |      | <--- |      |      |        |      |   LeaderInfoReplyBatcher
+//      |      |      | <----^----- |        |      |   Nack
+//      |      |      |      |      |        | ---> |   ChosenLowWatermark
+//      |      |      | <----^------^--------^----- |   ChosenLowWatermark
+//      |      |      |      |      |        | ---> |   Recover
+//      |      |      | <----^------^--------^----- |   Recover
+//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+
+syntax = "proto2";
+
+package frankenpaxos.mencius;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.mencius"
+  flat_package: true
+};
+
+// Helper messages. ////////////////////////////////////////////////////////////
+message Noop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message CommandId {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // A client's address, pseudonym, and id uniquely identify a command.
+  required bytes client_address = 1;
+  required int32 client_pseudonym = 2;
+  required int32 client_id = 3;
+}
+
+message Command {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes command = 2;
+}
+
+message CommandBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated Command command = 1;
+}
+
+message CommandBatchOrNoop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    CommandBatch command_batch = 1;
+    Noop noop = 2;
+  }
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Command command = 1;
+}
+
+message ClientRequestBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandBatch batch = 1;
+}
+
+message Phase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+
+  // The leader knows that all entries in slots less than `chosenWatermark`
+  // have been chosen. Acceptors do not have to include slots below
+  // `chosenWatermark` in their phase1b response.
+  //
+  // The leader may know that some entries larger than `chosenWatermark` have
+  // also been chosen, but that's okay. It's not unsafe for acceptors to return
+  // too much information.
+  required int32 chosen_low_watermark = 2;
+}
+
+message Phase1bSlotInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 vote_round = 2;
+  required CommandBatchOrNoop vote_value = 3;
+}
+
+message Phase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 group_index = 1;
+  required int32 acceptor_index = 2;
+  required int32 round = 3;
+  repeated Phase1bSlotInfo info = 4;
+}
+
+message ChosenHighWatermark {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // Mencius round-robin partitions the log among a set of leaders. If one
+  // leader executes faster than the others, then there can be large gaps in
+  // the log. To prevent this, every once in a while, a leader broadcasts its
+  // nextSlot to all other leaders. If a leader's nextSlot is significantly
+  // lagging the global maximum nextSlot, then we issue a range of noops.
+  required int32 slot = 1;
+}
+
+message Phase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 round = 2;
+  required CommandBatchOrNoop command_batch_or_noop = 3;
+}
+
+message Phase2aNoopRange {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot_start_inclusive = 1;
+  required int32 slot_end_exclusive = 2;
+  required int32 round = 3;
+}
+
+message Phase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 acceptor_index = 1;
+  required int32 slot = 2;
+  required int32 round = 3;
+}
+
+message Phase2bNoopRange {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 acceptor_index = 1;
+  required int32 slot_start_inclusive = 2;
+  required int32 slot_end_exclusive = 3;
+  required int32 round = 4;
+}
+
+message Chosen {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required CommandBatchOrNoop command_batch_or_noop = 2;
+}
+
+message ChosenNoopRange {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot_start_inclusive = 1;
+  required int32 slot_end_inclusive = 2;
+}
+
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes result = 2;
+}
+
+message ClientReplyBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated ClientReply batch = 1;
+}
+
+// If a client or batcher sends a request to a leader, but the leader is
+// inactive, then the leader sends back a NotLeader{Client,Batcher} message.
+// The client or batcher then sends a LeaderInfoRequest{Client,Batcher} request
+// to all leaders, and the active leader replies with a
+// LeaderInfoReply{Client,Batcher} request with its current round.
+message NotLeaderClient {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoRequestClient {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoReplyClient {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message NotLeaderBatcher {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required ClientRequestBatch client_request_batch = 1;
+}
+
+message LeaderInfoRequestBatcher {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoReplyBatcher {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message Nack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message ChosenLowWatermark {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // Replicas periodically send ChosenLowWatermark messages to the leaders
+  // informing them that every log entry smaller than `slot` has been chosen.
+  // For example, if `slot` is 3, then slots 0, 1, and 2 have been chosen.
+  // Slots above `slot` may also be chosen, but that's okay.
+  //
+  // If replicas didn't send these messages, then leaders would have no idea
+  // which commands have been chosen and which haven't. This can significantly
+  // slow things down after a leader change.
+  required int32 slot = 1;
+}
+
+message Recover {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // Replicas execute logs in prefix order. Thus, if the log permanently has a
+  // hole in it, the algorithm remains forever blocked. To solve this, if a
+  // replica notices a hole in its log for a certain amount of time, it sends a
+  // Recover message to the leader to get the hole plugged.
+  required int32 slot = 1;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientReply client_reply = 1;
+    NotLeaderClient not_leader_client = 2;
+    LeaderInfoReplyClient leader_info_reply_client = 3;
+  }
+}
+
+message BatcherInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientRequest client_request = 1;
+    NotLeaderBatcher not_leader_batcher = 2;
+    LeaderInfoReplyBatcher leader_info_reply_batcher = 3;
+  }
+}
+
+message LeaderInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Phase1b phase1b = 1;
+    ClientRequest client_request = 2;
+    ClientRequestBatch client_request_batch = 3;
+    ChosenHighWatermark chosen_high_watermark = 4;
+    LeaderInfoRequestClient leader_info_request_client = 5;
+    LeaderInfoRequestBatcher leader_info_request_batcher = 6;
+    Nack nack = 7;
+    ChosenLowWatermark chosen_low_watermark = 8;
+    Recover recover = 9;
+  }
+}
+
+message ProxyLeaderInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ChosenHighWatermark chosen_high_watermark = 1;
+    Phase2a phase2a = 2;
+    Phase2aNoopRange phase2a_noop_range = 3;
+    Phase2b phase2b = 4;
+    Phase2bNoopRange phase2b_noop_range = 5;
+  }
+}
+
+message AcceptorInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Phase1a phase1a = 1;
+    Phase2a phase2a = 2;
+    Phase2aNoopRange phase2a_noop_range = 3;
+  }
+}
+
+message ReplicaInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Chosen chosen = 1;
+    ChosenNoopRange chosen_noop_range = 2;
+  }
+}
+
+message ProxyReplicaInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientReplyBatch client_reply_batch = 1;
+    ChosenLowWatermark chosen_low_watermark = 2;
+    Recover recover = 3;
+  }
+}
