@@ -7,8 +7,8 @@
 //      | -----^----> |      |      |        |      |   ClientRequest
 //      | ---> |      |      |      |        |      |   ClientRequest
 //      |      | ---> |      |      |        |      |   ClientRequestBatch
-//      |      |      | ---> |      |        |      |   ChosenHighWatermark
-//      |      |      | <--- |      |        |      |   ChosenHighWatermark
+//      |      |      | ---> |      |        |      |   HighWatermark
+//      |      |      | <--- |      |        |      |   HighWatermark
 //      |      |      | ---> |      |        |      |   Phase2a
 //      |      |      |      | ---> |        |      |   Phase2a
 //      |      |      | ---> |      |        |      |   Phase2aNoopRange
@@ -27,8 +27,8 @@
 //      |      | ---> |      |      |        |      |   LeaderInfoRequestBatcher
 //      |      | <--- |      |      |        |      |   LeaderInfoReplyBatcher
 //      |      |      | <----^----- |        |      |   Nack
-//      |      |      |      |      |        | ---> |   ChosenLowWatermark
-//      |      |      | <----^------^--------^----- |   ChosenLowWatermark
+//      |      |      |      |      |        | ---> |   ChosenWatermark
+//      |      |      | <----^------^--------^----- |   ChosenWatermark
 //      |      |      |      |      |        | ---> |   Recover
 //      |      |      | <----^------^--------^----- |   Recover
 //
@@ -114,7 +114,7 @@ message Phase1a {
   // The leader may know that some entries larger than `chosenWatermark` have
   // also been chosen, but that's okay. It's not unsafe for acceptors to return
   // too much information.
-  required int32 chosen_low_watermark = 2;
+  required int32 chosen_watermark = 2;
 }
 
 message Phase1bSlotInfo {
@@ -136,7 +136,7 @@ message Phase1b {
   repeated Phase1bSlotInfo info = 4;
 }
 
-message ChosenHighWatermark {
+message HighWatermark {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
@@ -145,7 +145,7 @@ message ChosenHighWatermark {
   // the log. To prevent this, every once in a while, a leader broadcasts its
   // nextSlot to all other leaders. If a leader's nextSlot is significantly
   // lagging the global maximum nextSlot, then we issue a range of noops.
-  required int32 slot = 1;
+  required int32 nextSlot = 1;
 }
 
 message Phase2a {
@@ -269,11 +269,11 @@ message Nack {
   required int32 round = 1;
 }
 
-message ChosenLowWatermark {
+message ChosenWatermark {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  // Replicas periodically send ChosenLowWatermark messages to the leaders
+  // Replicas periodically send ChosenWatermark messages to the leaders
   // informing them that every log entry smaller than `slot` has been chosen.
   // For example, if `slot` is 3, then slots 0, 1, and 2 have been chosen.
   // Slots above `slot` may also be chosen, but that's okay.
@@ -326,11 +326,11 @@ message LeaderInbound {
     Phase1b phase1b = 1;
     ClientRequest client_request = 2;
     ClientRequestBatch client_request_batch = 3;
-    ChosenHighWatermark chosen_high_watermark = 4;
+    HighWatermark high_watermark = 4;
     LeaderInfoRequestClient leader_info_request_client = 5;
     LeaderInfoRequestBatcher leader_info_request_batcher = 6;
     Nack nack = 7;
-    ChosenLowWatermark chosen_low_watermark = 8;
+    ChosenWatermark chosen_watermark = 8;
     Recover recover = 9;
   }
 }
@@ -340,7 +340,7 @@ message ProxyLeaderInbound {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   oneof request {
-    ChosenHighWatermark chosen_high_watermark = 1;
+    HighWatermark high_watermark = 1;
     Phase2a phase2a = 2;
     Phase2aNoopRange phase2a_noop_range = 3;
     Phase2b phase2b = 4;
@@ -375,7 +375,7 @@ message ProxyReplicaInbound {
 
   oneof request {
     ClientReplyBatch client_reply_batch = 1;
-    ChosenLowWatermark chosen_low_watermark = 2;
+    ChosenWatermark chosen_watermark = 2;
     Recover recover = 3;
   }
 }
