@@ -179,10 +179,11 @@ message Phase2bNoopRange {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 acceptor_index = 1;
-  required int32 slot_start_inclusive = 2;
-  required int32 slot_end_exclusive = 3;
-  required int32 round = 4;
+  required int32 acceptor_group_index = 1;
+  required int32 acceptor_index = 2;
+  required int32 slot_start_inclusive = 3;
+  required int32 slot_end_exclusive = 4;
+  required int32 round = 5;
 }
 
 message Chosen {
@@ -198,7 +199,7 @@ message ChosenNoopRange {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 slot_start_inclusive = 1;
-  required int32 slot_end_inclusive = 2;
+  required int32 slot_end_exclusive = 2;
 }
 
 message ClientReply {
