@@ -228,34 +228,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // Handlers //////////////////////////////////////////////////////////////////
-  override def receive(src: Transport#Address, inbound: InboundMessage) = {
-    import ReplicaInbound.Request
-
-    val label =
-      inbound.request match {
-        case Request.Chosen(_) => "Chosen"
-        case Request.Empty =>
-          logger.fatal("Empty ReplicaInbound encountered.")
-      }
-    metrics.requestsTotal.labels(label).inc()
-
-    timed(label) {
-      inbound.request match {
-        case Request.Chosen(r) => handleChosen(src, r)
-        case Request.Empty =>
-          logger.fatal("Empty ReplicaInbound encountered.")
-      }
-    }
-  }
-
-  private def getProxyReplica(): Chan[ProxyReplica[Transport]] = {
-    config.distributionScheme match {
-      case Hash      => proxyReplicas(rand.nextInt(proxyReplicas.size))
-      case Colocated => proxyReplicas(index)
-    }
-  }
-
   // `executeCommand(slot, command, clientReplies)` attempts to execute the
   // command `command` in slot `slot`. Attempting to execute `command` may or
   // may not produce a corresponding ClientReply. If the command is stale, it
@@ -365,6 +337,34 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     throw new IllegalStateException()
   }
 
+  // Handlers //////////////////////////////////////////////////////////////////
+  override def receive(src: Transport#Address, inbound: InboundMessage) = {
+    import ReplicaInbound.Request
+
+    val label =
+      inbound.request match {
+        case Request.Chosen(_) => "Chosen"
+        case Request.Empty =>
+          logger.fatal("Empty ReplicaInbound encountered.")
+      }
+    metrics.requestsTotal.labels(label).inc()
+
+    timed(label) {
+      inbound.request match {
+        case Request.Chosen(r) => handleChosen(src, r)
+        case Request.Empty =>
+          logger.fatal("Empty ReplicaInbound encountered.")
+      }
+    }
+  }
+
+  private def getProxyReplica(): Chan[ProxyReplica[Transport]] = {
+    config.distributionScheme match {
+      case Hash      => proxyReplicas(rand.nextInt(proxyReplicas.size))
+      case Colocated => proxyReplicas(index)
+    }
+  }
+
   private def handleChosen(
       src: Transport#Address,
       chosen: Chosen
@@ -386,6 +386,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // If we have client replies, send them to a proxy replica. We choose a
     // proxy replica uniformly at random.
+    //
+    // TODO(mwhittaker): Add flushing?
     if (clientReplyBatch.batch.size > 0) {
       getProxyReplica().send(
         ProxyReplicaInbound().withClientReplyBatch(clientReplyBatch)
