@@ -682,7 +682,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       ProxyLeaderInbound().withPhase2ANoopRange(
         Phase2aNoopRange(
           slotStartInclusive = nextSlot,
-          slotEndExclusive = highWatermark,
+          slotEndExclusive = slotSystem.nextClassicRound(index, highWatermark),
           round = round
         )
       )
