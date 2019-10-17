@@ -211,7 +211,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     if (options.unsafeDontRecover) {
       None
     } else {
-      Some(
+      lazy val t: Transport#Timer =
         timer(
           "recover",
           frankenpaxos.Util.randomDuration(options.recoverLogEntryMinPeriod,
@@ -223,9 +223,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               )
             )
             metrics.recoversSentTotal.inc()
+            t.start()
           }
         )
-      )
+      Some(t)
     }
 
   // Helpers ///////////////////////////////////////////////////////////////////

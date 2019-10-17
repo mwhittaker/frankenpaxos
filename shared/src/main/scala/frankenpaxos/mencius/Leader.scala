@@ -137,7 +137,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     seed: Long = System.currentTimeMillis()
 ) extends Actor(address, transport, logger) {
   config.checkValid()
-  logger.check(config.leaderAddresses.contains(address))
 
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = LeaderInbound
@@ -174,10 +173,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // perform deterministic randomized tests.
   private val rand = new Random(seed)
 
-  private val groupIndex =
+  @JSExport
+  protected val groupIndex =
     config.leaderAddresses.indexWhere(_.contains(address))
 
-  private val index = config.leaderAddresses(groupIndex).indexOf(address)
+  @JSExport
+  protected val index = config.leaderAddresses(groupIndex).indexOf(address)
 
   // Acceptor channels.
   private val acceptors: Seq[Seq[Chan[Acceptor[Transport]]]] =
@@ -422,7 +423,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       numPhase2asSentSinceLastFlush = 0
     }
 
-    // Broadcast our nextSlot, if needed.
+    // Update our slot.
+    nextSlot += config.numLeaderGroups
+    metrics.nextSlot.set(nextSlot)
+
+    // Broadcast our nextSlot, if needed. Note that we make sure to broadcast
+    // our slot after updating it, not before.
     numCommandsSinceHighWatermarkSend += 1
     if (numCommandsSinceHighWatermarkSend >= options.sendHighWatermarkEveryN) {
       getProxyLeader().send(
@@ -432,9 +438,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       metrics.highWatermarksSentTotal.inc()
       numCommandsSinceHighWatermarkSend = 0
     }
-
-    nextSlot += config.numLeaderGroups
-    metrics.nextSlot.set(nextSlot)
   }
 
   private def startPhase1(round: Round, chosenWatermark: Slot): Phase1 = {
@@ -556,11 +559,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Find the largest slot with a vote. The largest slot should be owned
-        // by this leader group.
+        // by this leader group (or -1).
         val maxSlot = phase1.phase1bs
           .map(groupPhase1bs => groupPhase1bs.values.map(maxPhase1bSlot).max)
           .max
-        logger.check(slotSystem.leader(maxSlot) == groupIndex)
+        logger.check(maxSlot == -1 || slotSystem.leader(maxSlot) == groupIndex)
 
         // In MultiPaxos, we iterate from chosenWatermark to maxSlot proposing
         // safe values to fill in the log. In Mencius, we do the same, but we
@@ -583,7 +586,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // We've filled in every slot until and including maxSlot, so the next
         // slot is the first available slot after `maxSlot`.
-        nextSlot = slotSystem.nextClassicRound(index, maxSlot)
+        nextSlot = slotSystem.nextClassicRound(groupIndex, maxSlot)
         metrics.nextSlot.set(nextSlot)
 
         // Update our state.
@@ -657,39 +660,50 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       highWatermarkMessage: HighWatermark
   ): Unit = {
+    // Ignore stale high watermarks.
     highWatermark = Math.max(nextSlot, highWatermark)
     if (highWatermarkMessage.nextSlot <= highWatermark) {
       logger.debug(
         s"A leader received a HighWatermark message with watermark " +
-          s"${highWatermarkMessage.nextSlot} but already has a larger " +
-          s"highWatermark $highWatermark. The HighWatermark is being ignored."
+          s"${highWatermarkMessage.nextSlot} but already has a larger or " +
+          s"equal highWatermark $highWatermark. The HighWatermark is being " +
+          s"ignored."
       )
       return
     }
 
+    // Update our watermark.
     highWatermark = highWatermarkMessage.nextSlot
     metrics.highWatermark.set(highWatermark)
 
-    // If our nextSlot isn't lagging the highWatermark by that much, then we
-    // don't do anything special.
-    if (highWatermark - nextSlot < options.sendNoopRangeIfLaggingBy) {
-      return
-    }
+    state match {
+      case _: Phase1 | Inactive =>
+      // If we receive a HighWatermark message, but we're not the active
+      // leader, we still update our highWatermark, but we don't issue a
+      // NoopRange. Only the active leader can do that.
+      case Phase2 =>
+        // If our nextSlot isn't lagging the highWatermark by that much, then
+        // we don't do anything special.
+        if (highWatermark - nextSlot < options.sendNoopRangeIfLaggingBy) {
+          return
+        }
 
-    // If our nextSlot is lagging the highWatermark by quite a bit, then we
-    // send a range noop out to fill in the holes.
-    getProxyLeader().send(
-      ProxyLeaderInbound().withPhase2ANoopRange(
-        Phase2aNoopRange(
-          slotStartInclusive = nextSlot,
-          slotEndExclusive = slotSystem.nextClassicRound(index, highWatermark),
-          round = round
+        // If our nextSlot is lagging the highWatermark by quite a bit, then we
+        // send a range noop out to fill in the holes.
+        getProxyLeader().send(
+          ProxyLeaderInbound().withPhase2ANoopRange(
+            Phase2aNoopRange(
+              slotStartInclusive = nextSlot,
+              slotEndExclusive =
+                slotSystem.nextClassicRound(groupIndex, highWatermark),
+              round = round
+            )
+          )
         )
-      )
-    )
-    metrics.noopRangesSentTotal.inc()
-    nextSlot = slotSystem.nextClassicRound(index, highWatermark)
-    metrics.nextSlot.set(nextSlot)
+        metrics.noopRangesSentTotal.inc()
+        nextSlot = slotSystem.nextClassicRound(groupIndex, highWatermark)
+        metrics.nextSlot.set(nextSlot)
+    }
   }
 
   private def handleLeaderInfoRequestClient(

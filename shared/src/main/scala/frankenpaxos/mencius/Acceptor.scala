@@ -78,22 +78,25 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       voteValue: CommandBatchOrNoop
   )
 
-// Fields ////////////////////////////////////////////////////////////////////
-// Leader channels.
+  // Fields ////////////////////////////////////////////////////////////////////
+  // Leader channels.
   private val leaders: Seq[Seq[Chan[Leader[Transport]]]] =
     for (group <- config.leaderAddresses) yield {
       for (address <- group)
         yield chan[Leader[Transport]](address, Leader.serializer)
     }
 
-// The acceptor's indices.
-  private val leaderGroupIndex: Int =
+  // The acceptor's indices.
+  @JSExport
+  protected val leaderGroupIndex: Int =
     config.acceptorAddresses.indexWhere(
       groups => groups.exists(_.contains(address))
     )
-  private val acceptorGroupIndex: Int =
+  @JSExport
+  protected val acceptorGroupIndex: Int =
     config.acceptorAddresses(leaderGroupIndex).indexWhere(_.contains(address))
-  private val index = config
+  @JSExport
+  protected val index = config
     .acceptorAddresses(leaderGroupIndex)(acceptorGroupIndex)
     .indexOf(address)
 
@@ -184,7 +187,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       acceptorIndex = index,
       round = round,
       info = states
-        .iteratorFrom(round)
+        .iteratorFrom(phase1a.chosenWatermark)
         .map({
           case (slot, state) =>
             Phase1bSlotInfo(slot = slot,
@@ -264,7 +267,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     for (slot <- startSlot until
            phase2a.slotEndExclusive by
-           config.numLeaderGroups) {
+           config.numLeaderGroups * config
+             .acceptorAddresses(leaderGroupIndex)
+             .size) {
       states(slot) = State(
         voteRound = round,
         voteValue = CommandBatchOrNoop().withNoop(Noop())

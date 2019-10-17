@@ -88,6 +88,13 @@ class ProxyReplica[Transport <: frankenpaxos.Transport[Transport]](
   protected val clients =
     mutable.Map[Transport#Address, Chan[Client[Transport]]]()
 
+  // A round system used to figure out which leader groups are in charge of
+  // which slots. For example, if we have 5 leader groups and we're leader
+  // group 1 and we'd like to know which slot to use after slot 20, we can call
+  // slotSystem.nextClassicRound(1, 20).
+  private val slotSystem =
+    new RoundSystem.ClassicRoundRobin(config.numLeaderGroups)
+
   // The number of messages since the last flush.
   private var numMessagesSinceLastFlush: Int = 0
 
@@ -171,10 +178,11 @@ class ProxyReplica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       recover: Recover
   ): Unit = {
-    for (group <- leaders) {
-      for (leader <- group) {
-        leader.send(LeaderInbound().withRecover(recover))
-      }
+    // We only need to send a Recover message to the leaders that own the slot
+    // we're trying to recover.
+    val leaderGroupIndex = slotSystem.leader(recover.slot)
+    for (leader <- leaders(leaderGroupIndex)) {
+      leader.send(LeaderInbound().withRecover(recover))
     }
   }
 }
