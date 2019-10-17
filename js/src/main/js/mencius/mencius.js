@@ -198,6 +198,9 @@ const leader_info = {
               <frankenpaxos-seq :seq="node.actor.state.pendingClientRequestBatches">
               </frankenpaxos-seq>
             </fp-field>
+            <fp-field :name="'recoverSlot'">
+              {{node.actor.state.recoverSlot}}
+            </fp-field>
             <fp-field :name="'resendPhase1as'">
               {{node.actor.state.resendPhase1as}}
             </fp-field>

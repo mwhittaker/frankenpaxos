@@ -161,6 +161,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // it in `pendingClientRequestBatches` to resend once phase 1 is
       // complete.
       pendingClientRequestBatches: mutable.Buffer[ClientRequestBatch],
+      // If a leader receives a Recover request, then it performs a leader
+      // change. At the end of phase 1 and the beginning of phase 2, the leader
+      // has to make sure that slots up to and including recoverSlot are
+      // chosen. If the phase 1 is not part of a recovery, then recoverSlot is
+      // -1.
+      //
+      // Note that this is not needed in MultiPaxos. See the comments in
+      // multipaxos.Leader to see why.
+      recoverSlot: Int,
       // A timer to resend phase 1as.
       resendPhase1as: Transport#Timer
   ) extends State
@@ -249,7 +258,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     options = options.electionOptions
   )
   election.register((leaderIndex) => {
-    leaderChange(leaderIndex == index)
+    leaderChange(leaderIndex == index, recoverSlot = -1)
   })
 
   // The number of commands processed since the last time this leader
@@ -262,7 +271,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // The leader's state.
   @JSExport
   protected var state: State = if (index == 0) {
-    startPhase1(round, chosenWatermark)
+    startPhase1(round, chosenWatermark, recoverSlot = -1)
   } else {
     Inactive
   }
@@ -440,7 +449,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def startPhase1(round: Round, chosenWatermark: Slot): Phase1 = {
+  private def startPhase1(
+      round: Round,
+      chosenWatermark: Slot,
+      recoverSlot: Slot
+  ): Phase1 = {
     val phase1a = Phase1a(round = round, chosenWatermark = chosenWatermark)
     for (group <- acceptors) {
       thriftyQuorum(group).foreach(
@@ -451,11 +464,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase1bs = mutable.Buffer
         .fill(config.acceptorAddresses(groupIndex).size)(mutable.Map()),
       pendingClientRequestBatches = mutable.Buffer(),
+      recoverSlot = recoverSlot,
       resendPhase1as = makeResendPhase1asTimer(phase1a)
     )
   }
 
-  private def leaderChange(isNewLeader: Boolean): Unit = {
+  private def leaderChange(isNewLeader: Boolean, recoverSlot: Slot): Unit = {
     metrics.leaderChangesTotal.inc()
 
     (state, isNewLeader) match {
@@ -469,16 +483,22 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case (Inactive, true) =>
         round = roundSystem
           .nextClassicRound(leaderIndex = index, round = round)
-        state = startPhase1(round = round, chosenWatermark = chosenWatermark)
+        state = startPhase1(round = round,
+                            chosenWatermark = chosenWatermark,
+                            recoverSlot = recoverSlot)
       case (phase1: Phase1, true) =>
         phase1.resendPhase1as.stop()
         round = roundSystem
           .nextClassicRound(leaderIndex = index, round = round)
-        state = startPhase1(round = round, chosenWatermark = chosenWatermark)
+        state = startPhase1(round = round,
+                            chosenWatermark = chosenWatermark,
+                            recoverSlot = recoverSlot)
       case (Phase2, true) =>
         round = roundSystem
           .nextClassicRound(leaderIndex = index, round = round)
-        state = startPhase1(round = round, chosenWatermark = chosenWatermark)
+        state = startPhase1(round = round,
+                            chosenWatermark = chosenWatermark,
+                            recoverSlot = recoverSlot)
     }
   }
 
@@ -558,11 +578,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
-        // Find the largest slot with a vote. The largest slot should be owned
-        // by this leader group (or -1).
-        val maxSlot = phase1.phase1bs
-          .map(groupPhase1bs => groupPhase1bs.values.map(maxPhase1bSlot).max)
-          .max
+        // Find the largest slot with a vote. The `maxSlot` is either this
+        // value or `phase1.recoverSlot` if that's larger. The max slot should
+        // be owned by this leader group (or -1).
+        val maxSlot =
+          scala.math.max(
+            phase1.phase1bs
+              .map(
+                groupPhase1bs => groupPhase1bs.values.map(maxPhase1bSlot).max
+              )
+              .max,
+            phase1.recoverSlot
+          )
         logger.check(maxSlot == -1 || slotSystem.leader(maxSlot) == groupIndex)
 
         // In MultiPaxos, we iterate from chosenWatermark to maxSlot proposing
@@ -767,11 +794,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case _: Phase1 =>
         round =
           roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
-        leaderChange(isNewLeader = true)
+        leaderChange(isNewLeader = true, recoverSlot = -1)
       case Phase2 =>
         round =
           roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
-        leaderChange(isNewLeader = true)
+        leaderChange(isNewLeader = true, recoverSlot = -1)
     }
   }
 
@@ -787,12 +814,25 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       recover: Recover
   ): Unit = {
+    // In MultiPaxos, we don't actually need to use `recover.slot` at all. If a
+    // slot needs to be recovered, larger slots have been chosen. These larger
+    // slots will be discovered in phase 1, and the leader will make sure all
+    // smaller slots (including `recovers.slot`) are chosen.
+    //
+    // In Mencius, this is not true. One leader group, say group A, might
+    // choose a slot and cause the recovery of a lower slot owned by a
+    // different leader group, say group B. Group B won't see the slots chosen
+    // by group A since the two groups use completely disjoint sets of
+    // acceptors.
+    //
+    // Thus, we have to explicitly pass `recover.slot` through phase 1 and make
+    // sure that the slot actually gets recovered.
     state match {
       case Inactive =>
       // Do nothing. The active leader will recover.
       case _: Phase1 | Phase2 =>
         // Leader change to make sure the slot is chosen.
-        leaderChange(isNewLeader = true)
+        leaderChange(isNewLeader = true, recoverSlot = recover.slot)
     }
   }
 }
