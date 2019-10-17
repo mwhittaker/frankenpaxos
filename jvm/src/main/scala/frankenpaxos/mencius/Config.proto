@@ -1,0 +1,41 @@
+syntax = "proto2";
+
+package frankenpaxos.mencius;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.mencius"
+  flat_package: true
+};
+
+message HostPortProto {
+  required string host = 1;
+  required int32 port = 2;
+}
+
+enum DistributionSchemeProto {
+  HASH = 0;
+  COLOCATED = 1;
+}
+
+message AddressGroup {
+  repeated HostPortProto address = 1;
+}
+
+message AddressGroupGroup {
+  // `groups` is a keyword, so we pluralize.
+  repeated AddressGroup groups = 1;
+}
+
+message NettyConfigProto {
+  required int32 f = 1;
+  repeated HostPortProto batcher_address = 2;
+  repeated AddressGroup leader_address = 3;
+  repeated AddressGroup leader_election_address = 4;
+  repeated HostPortProto proxy_leader_address = 5;
+  repeated AddressGroupGroup acceptor_address = 6;
+  repeated HostPortProto replica_address = 7;
+  repeated HostPortProto proxy_replica_address = 8;
+  required DistributionSchemeProto distribution_scheme = 9;
+}
