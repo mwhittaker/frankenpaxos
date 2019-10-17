@@ -159,7 +159,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       acceptorIndex = index,
       round = round,
       info = states
-        .iteratorFrom(round)
+        .iteratorFrom(phase1a.chosenWatermark)
         .map({
           case (slot, state) =>
             Phase1bSlotInfo(slot = slot,
