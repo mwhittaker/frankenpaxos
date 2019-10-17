@@ -84,6 +84,12 @@ const client_info = {
   template: `
     <div>
       <div>
+        round =
+        <frankenpaxos-horizontal-seq :seq="node.actor.round">
+        </frankenpaxos-horizontal-seq>
+      </div>
+
+      <div>
         ids =
         <frankenpaxos-map :map="node.actor.ids"></frankenpaxos-map>
       </div>
@@ -118,7 +124,9 @@ const batcher_info = {
   template: `
     <div>
       <div>
-        round = {{node.actor.round}}
+        round =
+        <frankenpaxos-horizontal-seq :seq="node.actor.round">
+        </frankenpaxos-horizontal-seq>
       </div>
 
       <div>
@@ -148,13 +156,20 @@ const leader_info = {
   template: `
     <div>
       <div>
+        groupIndex = {{node.actor.groupIndex}}
+      </div>
+      <div>
+        index = {{node.actor.index}}
+      </div>
+      <div>
         round = {{node.actor.round}}
       </div>
-
       <div>
         nextSlot = {{node.actor.nextSlot}}
       </div>
-
+      <div>
+        highWatermark = {{node.actor.highWatermark}}
+      </div>
       <div>
         chosenWatermark = {{node.actor.chosenWatermark}}
       </div>
@@ -226,7 +241,20 @@ const proxy_leader_info = {
     <div>
       states =
       <frankenpaxos-map :map="node.actor.states" v-slot="{value: state}">
-        <div v-if="state.constructor.name.includes('Pending')">
+        <div v-if="state.constructor.name.includes('PendingPhase2aNoopRange')">
+          PendingPhase2aNoopRange
+          <fp-object>
+            <fp-field :name="'phase2aNoopRange'">
+              {{state.phase2aNoopRange}}
+            </fp-field>
+            <fp-field :name="'phase2bNoopRanges'">
+              {{state.phase2bNoopRanges}}
+            </fp-field>
+          </fp-object>
+        </div>
+
+        <div v-else-if="state.constructor.name.includes('PendingPhase2a')">
+          PendingPhase2a
           <fp-object>
             <fp-field :name="'phase2a'">
               {{state.phase2a}}
@@ -237,7 +265,7 @@ const proxy_leader_info = {
           </fp-object>
         </div>
 
-        <div v-if="state.constructor.name.includes('Done')">
+        <div v-else-if="state.constructor.name.includes('Done')">
           Done
         </div>
       </frankenpaxos-map>
@@ -252,6 +280,15 @@ const acceptor_info = {
 
   template: `
     <div>
+      <div>
+        leaderGroupIndex = {{node.actor.leaderGroupIndex}}
+      </div>
+      <div>
+        acceptorGroupIndex = {{node.actor.acceptorGroupIndex}}
+      </div>
+      <div>
+        index = {{node.actor.index}}
+      </div>
       <div>
         round = {{node.actor.round}}
       </div>
@@ -315,7 +352,7 @@ const proxy_replica_info = {
 }
 
 // Main app ////////////////////////////////////////////////////////////////////
-function make_nodes(MultiPaxos, snap) {
+function make_nodes(Mencius, snap) {
   // https://flatuicolors.com/palette/defo
   const flat_red = '#e74c3c';
   const flat_blue = '#3498db';
@@ -324,6 +361,13 @@ function make_nodes(MultiPaxos, snap) {
   const flat_purple = '#9b59b6';
   const flat_dark_blue = '#2c3e50';
   const flat_turquoise = '#1abc9c';
+  const client_color = flat_red;
+  const batcher_color = flat_blue;
+  const leader_color = flat_orange;
+  const proxy_leader_color = flat_green;
+  const acceptor_color = flat_purple;
+  const replica_color = flat_dark_blue;
+  const proxy_replica_color = flat_turquoise;
 
   const colored = (color) => {
     return {
@@ -345,27 +389,27 @@ function make_nodes(MultiPaxos, snap) {
   const client_x = 100;
   const batcher_x = 200;
   const leader_x = 300;
-  const proxy_leader_x = 400;
-  const replica_x = 800;
-  const proxy_replica_x = 900;
+  const proxy_leader_x = 600;
+  const acceptor_x = 700;
+  const replica_x = 1000;
+  const proxy_replica_x = 1100;
 
   const nodes = {};
 
   // Clients.
   const clients = [
-    {client: MultiPaxos.client1, y: 100},
-    {client: MultiPaxos.client2, y: 200},
-    {client: MultiPaxos.client3, y: 300},
-    {client: MultiPaxos.client4, y: 400},
+    {client: Mencius.client1, y: 100},
+    {client: Mencius.client2, y: 200},
+    {client: Mencius.client3, y: 300},
+    {client: Mencius.client4, y: 400},
   ]
   for (const [index, {client, y}] of clients.entries()) {
-    const color = flat_red;
     nodes[client.address] = {
       actor: client,
-      color: color,
+      color: client_color,
       component: client_info,
       svgs: [
-        snap.circle(client_x, y, 20).attr(colored(color)),
+        snap.circle(client_x, y, 20).attr(colored(client_color)),
         snap.text(client_x, y, (index + 1).toString()).attr(number_style),
       ],
     };
@@ -373,17 +417,16 @@ function make_nodes(MultiPaxos, snap) {
 
   // Batchers.
   const batchers = [
-    {batcher: MultiPaxos.batcher1, y: 200},
-    {batcher: MultiPaxos.batcher2, y: 300},
+    {batcher: Mencius.batcher1, y: 200},
+    {batcher: Mencius.batcher2, y: 300},
   ]
   for (const [index, {batcher, y}] of batchers.entries()) {
-    const color = flat_blue;
     nodes[batcher.address] = {
       actor: batcher,
-      color: color,
+      color: batcher_color,
       component: batcher_info,
       svgs: [
-        snap.circle(batcher_x, y, 20).attr(colored(color)),
+        snap.circle(batcher_x, y, 20).attr(colored(batcher_color)),
         snap.text(batcher_x, y, (index + 1).toString()).attr(number_style),
       ],
     };
@@ -391,43 +434,45 @@ function make_nodes(MultiPaxos, snap) {
 
   // Leaders.
   const leaders = [
-    {leader: MultiPaxos.leader1, y: 200, ey: 150},
-    {leader: MultiPaxos.leader2, y: 300, ey: 350},
+    {leader: Mencius.leaderA1, name: 'A1', x: leader_x,       y: 100, ey: 150},
+    {leader: Mencius.leaderA2, name: 'A2', x: leader_x + 100, y: 100, ey: 150},
+    {leader: Mencius.leaderA3, name: 'A3', x: leader_x + 200, y: 100, ey: 150},
+    {leader: Mencius.leaderB1, name: 'B1', x: leader_x,       y: 400, ey: 350},
+    {leader: Mencius.leaderB2, name: 'B2', x: leader_x + 100, y: 400, ey: 350},
+    {leader: Mencius.leaderB3, name: 'B3', x: leader_x + 200, y: 400, ey: 350},
   ]
-  for (const [index, {leader, y, ey}] of leaders.entries()) {
-    const color = flat_orange;
+  for (const [index, {leader, name, x, y, ey}] of leaders.entries()) {
     nodes[leader.address] = {
       actor: leader,
-      color: color,
+      color: leader_color,
       component: leader_info,
       svgs: [
-        snap.circle(leader_x, y, 20).attr(colored(color)),
-        snap.text(leader_x, y, (index + 1).toString()).attr(number_style),
+        snap.circle(x, y, 20).attr(colored(leader_color)),
+        snap.text(x, y, name).attr(number_style),
       ],
     };
     nodes[leader.electionAddress] = {
       actor: leader.election,
-      color: color,
+      color: leader_color,
       component: election_info,
       svgs: [
-        snap.circle(leader_x + 50, ey, 15).attr(colored(color)),
+        snap.circle(x + 50, ey, 15).attr(colored(leader_color)),
       ],
     };
   }
 
   // ProxyLeaders.
   const proxy_leaders = [
-    {proxy_leader: MultiPaxos.proxyLeader1, y: 200},
-    {proxy_leader: MultiPaxos.proxyLeader2, y: 300},
+    {proxy_leader: Mencius.proxyLeader1, y: 200},
+    {proxy_leader: Mencius.proxyLeader2, y: 300},
   ]
   for (const [index, {proxy_leader, y}] of proxy_leaders.entries()) {
-    const color = flat_green;
     nodes[proxy_leader.address] = {
       actor: proxy_leader,
-      color: color,
+      color: proxy_leader_color,
       component: proxy_leader_info,
       svgs: [
-        snap.circle(proxy_leader_x, y, 20).attr(colored(color)),
+        snap.circle(proxy_leader_x, y, 20).attr(colored(proxy_leader_color)),
         snap.text(proxy_leader_x, y, (index + 1).toString()).attr(number_style),
       ],
     };
@@ -435,21 +480,23 @@ function make_nodes(MultiPaxos, snap) {
 
   // Acceptors.
   const acceptors = [
-    {acc: MultiPaxos.acceptorA1, name: 'A1', x: proxy_leader_x+ 100, y: 100},
-    {acc: MultiPaxos.acceptorA2, name: 'A2', x: proxy_leader_x+ 200, y: 100},
-    {acc: MultiPaxos.acceptorA3, name: 'A3', x: proxy_leader_x+ 300, y: 100},
-    {acc: MultiPaxos.acceptorB1, name: 'B1', x: proxy_leader_x+ 100, y: 400},
-    {acc: MultiPaxos.acceptorB2, name: 'B2', x: proxy_leader_x+ 200, y: 400},
-    {acc: MultiPaxos.acceptorB3, name: 'B3', x: proxy_leader_x+ 300, y: 400},
+    {acc: Mencius.acceptorA1, name: 'A1', x: acceptor_x,       y: 100},
+    {acc: Mencius.acceptorA2, name: 'A2', x: acceptor_x + 100, y: 100},
+    {acc: Mencius.acceptorA3, name: 'A3', x: acceptor_x + 200, y: 100},
+    {acc: Mencius.acceptorB1, name: 'B1', x: acceptor_x,       y: 200},
+    {acc: Mencius.acceptorB2, name: 'B2', x: acceptor_x + 100, y: 200},
+    {acc: Mencius.acceptorB3, name: 'B3', x: acceptor_x + 200, y: 200},
+    {acc: Mencius.acceptorC1, name: 'C1', x: acceptor_x,       y: 400},
+    {acc: Mencius.acceptorC2, name: 'C2', x: acceptor_x + 100, y: 400},
+    {acc: Mencius.acceptorC3, name: 'C3', x: acceptor_x + 200, y: 400},
   ]
   for (const [index, {acc, name, x, y}] of acceptors.entries()) {
-    const color = flat_purple;
     nodes[acc.address] = {
       actor: acc,
-      color: color,
+      color: acceptor_color,
       component: acceptor_info,
       svgs: [
-        snap.circle(x, y, 20).attr(colored(color)),
+        snap.circle(x, y, 20).attr(colored(acceptor_color)),
         snap.text(x, y, name).attr(number_style),
       ],
     };
@@ -457,17 +504,16 @@ function make_nodes(MultiPaxos, snap) {
 
   // Replicas.
   const replicas = [
-    {replica: MultiPaxos.replica1, y: 200},
-    {replica: MultiPaxos.replica2, y: 300},
+    {replica: Mencius.replica1, y: 200},
+    {replica: Mencius.replica2, y: 300},
   ]
   for (const [index, {replica, y}] of replicas.entries()) {
-    const color = flat_dark_blue;
     nodes[replica.address] = {
       actor: replica,
-      color: color,
+      color: replica_color,
       component: replica_info,
       svgs: [
-        snap.circle(replica_x, y, 20).attr(colored(color)),
+        snap.circle(replica_x, y, 20).attr(colored(replica_color)),
         snap.text(replica_x, y, (index + 1).toString()).attr(number_style),
       ],
     };
@@ -475,17 +521,16 @@ function make_nodes(MultiPaxos, snap) {
 
   // ProxyReplicas.
   const proxy_replicas = [
-    {proxy_replica: MultiPaxos.proxyReplica1, y: 200},
-    {proxy_replica: MultiPaxos.proxyReplica2, y: 300},
+    {proxy_replica: Mencius.proxyReplica1, y: 200},
+    {proxy_replica: Mencius.proxyReplica2, y: 300},
   ]
   for (const [index, {proxy_replica, y}] of proxy_replicas.entries()) {
-    const color = flat_turquoise;
     nodes[proxy_replica.address] = {
       actor: proxy_replica,
-      color: color,
+      color: proxy_replica_color,
       component: proxy_replica_info,
       svgs: [
-        snap.circle(proxy_replica_x, y, 20).attr(colored(color)),
+        snap.circle(proxy_replica_x, y, 20).attr(colored(proxy_replica_color)),
         snap.text(proxy_replica_x, y, (index + 1).toString()).attr(number_style),
       ],
     };
@@ -495,9 +540,9 @@ function make_nodes(MultiPaxos, snap) {
   const anchor_middle = (text) => text.attr({'text-anchor': 'middle'});
   anchor_middle(snap.text(client_x, 50, 'Clients'));
   anchor_middle(snap.text(batcher_x, 50, 'Batchers'));
-  anchor_middle(snap.text(leader_x, 50, 'Leaders'));
+  anchor_middle(snap.text(leader_x + 100, 50, 'Leaders'));
   anchor_middle(snap.text(proxy_leader_x, 50, 'Proxy Leaders'));
-  anchor_middle(snap.text(proxy_leader_x + 200, 50, 'Acceptors'));
+  anchor_middle(snap.text(acceptor_x + 100, 50, 'Acceptors'));
   anchor_middle(snap.text(replica_x, 50, 'Replicas'));
   anchor_middle(snap.text(proxy_replica_x, 50, 'Proxy Replicas'));
 
@@ -505,9 +550,9 @@ function make_nodes(MultiPaxos, snap) {
 }
 
 function main() {
-  const MultiPaxos = frankenpaxos.multipaxos.MultiPaxos.MultiPaxos;
+  const Mencius = frankenpaxos.mencius.Mencius.Mencius;
   const snap = Snap('#animation');
-  const nodes = make_nodes(MultiPaxos, snap);
+  const nodes = make_nodes(Mencius, snap);
 
   // Create the vue app.
   let vue_app = new Vue({
@@ -515,8 +560,8 @@ function main() {
 
     data: {
       nodes: nodes,
-      node: nodes[MultiPaxos.client1.address],
-      transport: MultiPaxos.transport,
+      node: nodes[Mencius.client1.address],
+      transport: Mencius.transport,
       settings: {
         time_scale: 1,
         auto_deliver_messages: true,
