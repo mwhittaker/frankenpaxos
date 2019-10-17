@@ -11,7 +11,6 @@ import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.RoundSystem
 import scala.scalajs.js.annotation._
-import scala.util.Random
 
 @JSExportAll
 object ProxyReplicaInboundSerializer

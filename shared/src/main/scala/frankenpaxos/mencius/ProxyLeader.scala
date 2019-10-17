@@ -232,7 +232,7 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         val group = acceptors(leaderGroupIndex)(
           acceptorGroupIndexBySlot(leaderGroupIndex, phase2a.slot)
         )
-        val quorum = scala.util.Random.shuffle(group).take(config.quorumSize)
+        val quorum = rand.shuffle(group).take(config.quorumSize)
         if (options.flushPhase2asEveryN == 1) {
           quorum.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
         } else {
@@ -273,7 +273,7 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         // thrifty quorums. Relay the Phase2a message to every quorum.
         val leaderGroupIndex = slotSystem.leader(phase2a.slotStartInclusive)
         for (group <- acceptors(leaderGroupIndex)) {
-          val quorum = scala.util.Random.shuffle(group).take(config.quorumSize)
+          val quorum = rand.shuffle(group).take(config.quorumSize)
           if (options.flushPhase2asEveryN == 1) {
             quorum.foreach(
               _.send(AcceptorInbound().withPhase2ANoopRange(phase2a))

@@ -346,7 +346,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private def thriftyQuorum(
       acceptors: Seq[Chan[Acceptor[Transport]]]
   ): Seq[Chan[Acceptor[Transport]]] =
-    scala.util.Random.shuffle(acceptors).take(config.quorumSize)
+    rand.shuffle(acceptors).take(config.quorumSize)
 
   // `maxPhase1bSlot(phase1b)` finds the largest slot present in `phase1b` or
   // -1 if no slots are present.
