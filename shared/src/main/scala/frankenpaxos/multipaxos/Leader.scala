@@ -595,6 +595,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       recover: Recover
   ): Unit = {
+    // Note that we don't actually use `recover.slot` anywhere. This is
+    // actually ok. If there is a slot in the log that needs recovering, then
+    // some slot above that slot was chosen. This means that when the leader
+    // runs phase 1, it will see this larger slot and recover all instances
+    // below it, including `recover.slot`.
     state match {
       case Inactive =>
       // Do nothing. The active leader will recover.
