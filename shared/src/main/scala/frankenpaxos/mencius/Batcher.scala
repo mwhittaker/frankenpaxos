@@ -56,9 +56,9 @@ class BatcherMetrics(collectors: Collectors) {
     .help("Latency (in milliseconds) of a request.")
     .register()
 
-  val batchesSent: Counter = collectors.counter
+  val batchesSentTotal: Counter = collectors.counter
     .build()
-    .name("mencius_batcher_batches_sent")
+    .name("mencius_batcher_batches_sent_total")
     .help("Total number of batches sent.")
     .register()
 }
@@ -176,7 +176,7 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
         )
       )
       growingBatch.clear()
-      metrics.batchesSent.inc()
+      metrics.batchesSentTotal.inc()
     }
   }
 
