@@ -689,6 +689,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     // Ignore stale high watermarks.
     highWatermark = Math.max(nextSlot, highWatermark)
+    metrics.highWatermark.set(highWatermark)
     if (highWatermarkMessage.nextSlot <= highWatermark) {
       logger.debug(
         s"A leader received a HighWatermark message with watermark " +

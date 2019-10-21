@@ -92,6 +92,12 @@ class ReplicaMetrics(collectors: Collectors) {
     .help("The replica's executedWatermark.")
     .register()
 
+  val highWatermark: Gauge = collectors.gauge
+    .build()
+    .name("mencius_replica_high_watermark")
+    .help("The replica's high watermark, the largest chosen command.")
+    .register()
+
   val redundantlyChosenTotal: Counter = collectors.counter
     .build()
     .name("mencius_replica_redundantly_chosen_total")
@@ -186,6 +192,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   var executedWatermark: Int = 0
   metrics.executedWatermark.set(executedWatermark)
 
+  // `highWatermark` is the largest slot chosen.
+  @JSExport
+  var highWatermark: Int = 0
+  metrics.highWatermark.set(highWatermark)
+
   // The number of log entries that have been chosen and placed in `log`. We
   // use `numChosen` and `executedWatermark` to know whether there are commands
   // pending execution. If `numChosen == executedWatermark`, then all chosen
@@ -203,6 +214,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var clientTable =
     mutable.Map[(ByteString, ClientPseudonym), (ClientId, ByteString)]()
+
+  // The slot that prompted us to start the recover timer.
+  @JSExport
+  protected var recoveringSlot: Option[Int] = None
 
   // A timer to send Recover messages to the leaders. The timer is optional
   // because if we set the `options.unsafeDontRecover` flag to true, then we
@@ -388,9 +403,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       chosen: Chosen
   ): Unit = {
-    // If `numChosen != executedWatermark`, then the recover timer is running.
-    val recoverTimerRunning = numChosen != executedWatermark
-
     log.get(chosen.slot) match {
       case Some(_) =>
         // We've already received a Chosen message for this slot. We ignore the
@@ -400,6 +412,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
         log.put(chosen.slot, chosen.commandBatchOrNoop)
         numChosen += 1
+        if (chosen.slot > highWatermark) {
+          highWatermark = chosen.slot
+          metrics.highWatermark.set(highWatermark)
+        }
     }
     val clientReplyBatch = executeLog()
 
@@ -414,14 +430,34 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // If `numChosen != executedWatermark`, then there's a hole in the log. We
-    // start or stop the timer depending on whether it is already running. If
-    // `options.unsafeDontRecover`, though, we skip all this.
+    // start, stop, or reset the timer depending on whether it is already
+    // running. If `options.unsafeDontRecover`, though, we skip all this.
     if (options.unsafeDontRecover) {
       // Do nothing.
-    } else if (!recoverTimerRunning && numChosen != executedWatermark) {
-      recoverTimer.foreach(_.start())
-    } else if (recoverTimerRunning && numChosen == executedWatermark) {
-      recoverTimer.foreach(_.stop())
+      return
+    }
+
+    (recoveringSlot, numChosen != executedWatermark) match {
+      case (None, true) =>
+        // The timer is not running, but it should be. Start the timer.
+        recoveringSlot = Some(executedWatermark)
+        recoverTimer.foreach(_.start())
+      case (None, false) =>
+      // The timer isn't running, and it doesn't need to be. Do nothing.
+
+      case (Some(slot), true) =>
+        // The timer is running, and it should be. Check to see if we're still
+        // waiting on the same slot, or if we need to restart the timer.
+        if (slot == executedWatermark) {
+          // Do nothing.
+        } else {
+          recoveringSlot = Some(executedWatermark)
+          recoverTimer.foreach(_.reset())
+        }
+      case (Some(slot), false) =>
+        // The timer is running but it shouldn't be. Stop the timer.
+        recoveringSlot = None
+        recoverTimer.foreach(_.stop())
     }
   }
 
@@ -459,14 +495,34 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     // If `numChosen != executedWatermark`, then there's a hole in the log. We
-    // start or stop the timer depending on whether it is already running. If
-    // `options.unsafeDontRecover`, though, we skip all this.
+    // start, stop, or reset the timer depending on whether it is already
+    // running. If `options.unsafeDontRecover`, though, we skip all this.
     if (options.unsafeDontRecover) {
       // Do nothing.
-    } else if (!recoverTimerRunning && numChosen != executedWatermark) {
-      recoverTimer.foreach(_.start())
-    } else if (recoverTimerRunning && numChosen == executedWatermark) {
-      recoverTimer.foreach(_.stop())
+      return
+    }
+
+    (recoveringSlot, numChosen != executedWatermark) match {
+      case (None, true) =>
+        // The timer is not running, but it should be. Start the timer.
+        recoveringSlot = Some(executedWatermark)
+        recoverTimer.foreach(_.start())
+      case (None, false) =>
+      // The timer isn't running, and it doesn't need to be. Do nothing.
+
+      case (Some(slot), true) =>
+        // The timer is running, and it should be. Check to see if we're still
+        // waiting on the same slot, or if we need to restart the timer.
+        if (slot == executedWatermark) {
+          // Do nothing.
+        } else {
+          recoveringSlot = Some(executedWatermark)
+          recoverTimer.foreach(_.reset())
+        }
+      case (Some(slot), false) =>
+        // The timer is running but it shouldn't be. Stop the timer.
+        recoveringSlot = None
+        recoverTimer.foreach(_.stop())
     }
   }
 }
