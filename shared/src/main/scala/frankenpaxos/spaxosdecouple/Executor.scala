@@ -73,14 +73,16 @@ case class ExecutorOptions(
     // TODO(mwhittaker): Is there a smarter way to reduce the number of
     // conflicts?
     waitPeriod: java.time.Duration,
-    waitStagger: java.time.Duration
+    waitStagger: java.time.Duration,
+    batchSize: Int
 )
 
 @JSExportAll
 object ExecutorOptions {
   val default = ExecutorOptions(
     waitPeriod = java.time.Duration.ofMillis(25),
-    waitStagger = java.time.Duration.ofMillis(25)
+    waitStagger = java.time.Duration.ofMillis(25),
+    batchSize = 100
   )
 }
 
@@ -116,25 +118,31 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
     mutable.Map[(Transport#Address, ClientPseudonym), (ClientId, Array[Byte])]()
 
   @JSExport
-  protected var idRequestMap: mutable.Map[UniqueId, ByteString] = mutable.Map()
+  protected var idRequestMap: mutable.Map[BatchId, RequestBatch] = mutable.Map()
 
   // Requests received from proposers to be disseminated
   @JSExport
-  protected var requestsDisseminated: mutable.Set[ClientRequest] = mutable.Set()
+  protected var requestsDisseminated: mutable.Set[RequestBatch] = mutable.Set()
 
   @JSExport
-  protected var chosenIds: mutable.Set[UniqueId] = mutable.Set()
+  protected var chosenIds: mutable.Set[BatchId] = mutable.Set()
 
   @JSExport
   protected var index: Int = config.executorAddresses.indexOf(address)
 
   @JSExport
-  protected var chosenBeforeForward: mutable.Set[UniqueId] = mutable.Set()
+  protected var chosenBeforeForward: mutable.Set[BatchId] = mutable.Set()
 
   private val proposers: Seq[Chan[Proposer[Transport]]] = {
     for (proposerAddress <- config.proposerAddresses)
       yield chan[Proposer[Transport]](proposerAddress, Proposer.serializer)
   }
+
+  @JSExport
+  protected var growingBatch = mutable.Buffer[Acknowledge]()
+
+  @JSExport
+  protected var pendingResendBatches = mutable.Buffer[Acknowledge]()
 
 // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
@@ -164,7 +172,7 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
             result = idRequestMap.get(valueChosen.getUniqueId).get
           )))
       chosenIds.add(valueChosen.getUniqueId)
-    }*/
+    }
     val entry = valueChosen.value match {
       case ValueChosen.Value.UniqueId(command) => ECommand(command)
       case ValueChosen.Value.Noop(_)          => ENoop
@@ -177,14 +185,14 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
         log(valueChosen.slot) = entry
     }
 
-    executeLog()
+    executeLog()*/
   }
 
   private def handleValueChosenBuffer(
                                        src: Transport#Address,
                                        valueChosenBuffer: ValueChosenBuffer
                                      ): Unit = {
-    metrics.requestsTotal.labels("ValueChosenBuffer").inc()
+    /*metrics.requestsTotal.labels("ValueChosenBuffer").inc()
     for (valueChosen <- valueChosenBuffer.valueChosen) {
       val entry = valueChosen.value match {
         case ValueChosen.Value.UniqueId(command) => ECommand(command)
@@ -198,92 +206,21 @@ class Executor[Transport <: frankenpaxos.Transport[Transport]](
           log(valueChosen.slot) = entry
       }
     }
-    executeLog()
-  }
-
-  def executeLog(): Unit = {
-    while (log.contains(chosenWatermark)) {
-      log(chosenWatermark) match {
-        case ECommand(
-        UniqueId(clientAddressBytes, clientPseudonym, clientId)
-        ) =>
-          val clientAddress = transport.addressSerializer.fromBytes(
-            clientAddressBytes.toByteArray()
-          )
-
-          // True if this command has already been executed.
-          val executed =
-            clientTable.get((clientAddress, clientPseudonym)) match {
-              case Some((highestClientId, _)) => clientId <= highestClientId
-              case None                       => false
-            }
-
-          if (!executed) {
-            val command = idRequestMap.getOrElse(UniqueId(clientAddressBytes, clientPseudonym, clientId), null)
-            if (command != null) {
-              val output = stateMachine.run(command.toByteArray())
-              clientTable((clientAddress, clientPseudonym)) = (clientId, output)
-
-              // Note that only the leader replies to the client since
-              // ProposeReplies include the round of the leader, and only the
-              // leader knows this.
-              if (!chosenIds.contains(UniqueId(clientAddressBytes, clientPseudonym, clientId))) {
-                // Only one executor responds to the client
-                if (clientId % config.executorAddresses.size == index) {
-                  val client =
-                    chan[Client[Transport]](clientAddress, Client.serializer)
-                  client.send(
-                    ClientInbound().withClientReply(
-                      ClientReply(clientPseudonym = clientPseudonym,
-                        clientId = clientId,
-                        result = ByteString.copyFrom(output))
-                    )
-                  )
-                }
-                chosenIds.add(UniqueId(clientAddressBytes, clientPseudonym, clientId))
-              }
-            } else {
-              chosenBeforeForward.add(UniqueId(clientAddressBytes, clientPseudonym, clientId))
-              return
-            }
-
-          }
-        case ENoop =>
-          // Do nothing.
-
-      }
-      chosenWatermark += 1
-    }
+    executeLog()*/
   }
 
 
 
   def handleForwardRequest(src: Transport#Address, forward: Forward) = {
-    if (chosenBeforeForward.contains(forward.clientRequest.uniqueId)) {
-      if (forward.clientRequest.uniqueId.clientId % config.executorAddresses.size == index) {
+    if (!requestsDisseminated.contains(forward.requestBatch)) {
+      requestsDisseminated.add(forward.requestBatch)
 
-        val output = stateMachine.run(forward.clientRequest.command.toByteArray())
-        val clientAddress = transport.addressSerializer.fromBytes(
-          forward.clientRequest.uniqueId.clientAddress.toByteArray()
-        )
-        clientTable((clientAddress, forward.clientRequest.uniqueId.clientPseudonym)) = (forward.clientRequest.uniqueId.clientId, output)
-        val client =
-          chan[Client[Transport]](clientAddress, Client.serializer)
-        client.send(
-          ClientInbound().withClientReply(
-            ClientReply(clientPseudonym = forward.clientRequest.uniqueId.clientPseudonym,
-              clientId = forward.clientRequest.uniqueId.clientId,
-              result = ByteString.copyFrom(output))
-          )
-        )
-      }
-      chosenBeforeForward.remove(forward.clientRequest.uniqueId)
-    }
-    if (!requestsDisseminated.contains(forward.clientRequest)) {
-      requestsDisseminated.add(forward.clientRequest)
-      idRequestMap.put(forward.clientRequest.uniqueId, forward.clientRequest.command)
-      /*val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
-      proposer.send(ProposerInbound().withAcknowledge(Acknowledge(uniqueId = forward.clientRequest.uniqueId)))*/
+      val id: BatchId = BatchId(java.util.UUID.randomUUID.toString)
+      idRequestMap.put(id, forward.requestBatch)
+
+      val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
+        proposer.send(ProposerInbound().withAcknowledge(Acknowledge(
+          CommandBatch(id))))
     }
   }
 }

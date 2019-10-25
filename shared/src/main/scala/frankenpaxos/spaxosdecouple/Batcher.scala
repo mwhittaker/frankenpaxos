@@ -89,6 +89,16 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.leaderAddresses)
       yield chan[Leader[Transport]](address, Leader.serializer)
 
+  // Proposer channels
+  private val proposers: Seq[Chan[Proposer[Transport]]] =
+    for (address <- config.proposerAddresses)
+      yield chan[Proposer[Transport]](address, Proposer.serializer)
+
+  // Executor channels
+  private val executors: Seq[Chan[Executor[Transport]]] =
+    for (address <- config.executorAddresses)
+      yield chan[Executor[Transport]](address, Executor.serializer)
+
   private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
 
   // The round that this batcher thinks the leader is in. This value is not
@@ -100,7 +110,7 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
   protected var round: Int = 0
 
   @JSExport
-  protected var growingBatch = mutable.Buffer[Command]()
+  protected var growingBatch = mutable.Buffer[ClientRequest]()
 
   @JSExport
   protected var pendingResendBatches = mutable.Buffer[ClientRequestBatch]()
@@ -149,14 +159,15 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       clientRequest: ClientRequest
   ): Unit = {
-    growingBatch += clientRequest.command
+    growingBatch += clientRequest
     if (growingBatch.size >= options.batchSize) {
-      val leader = leaders(roundSystem.leader(round))
-      leader.send(
-        LeaderInbound().withClientRequestBatch(
-          ClientRequestBatch(batch = CommandBatch(command = growingBatch.toSeq))
-        )
-      )
+      val r = scala.util.Random
+      val proposer = proposers(r.nextInt(config.numProposers))
+
+      proposer.send(ProposerInbound().withRequestBatch(
+        RequestBatch(growingBatch)
+      ))
+
       growingBatch.clear()
       metrics.batchesSent.inc()
     }
@@ -178,7 +189,7 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       leaderInfo: LeaderInfoReplyBatcher
   ): Unit = {
-    if (leaderInfo.round <= round) {
+    /*if (leaderInfo.round <= round) {
       logger.debug(
         s"A batcher received a LeaderInfoReplyBatcher message with round " +
           s"${leaderInfo.round} but is already in round $round. The " +
@@ -202,6 +213,6 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
       for (batch <- pendingResendBatches) {
         leader.send(LeaderInbound().withClientRequestBatch(batch))
       }
-    }
+    }*/
   }
 }

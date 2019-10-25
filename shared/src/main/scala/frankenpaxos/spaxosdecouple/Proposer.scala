@@ -6,6 +6,7 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.roundsystem.RoundSystem
 
 import scala.scalajs.js.annotation._
 
@@ -28,11 +29,14 @@ class ProposerMetrics(collectors: Collectors) {
 
 @JSExportAll
 case class ProposerOptions(
+                            batchSize: Int,
+                            measureLatencies: Boolean
 )
 
 @JSExportAll
 object ProposerOptions {
-  val default = ProposerOptions()
+  val default = ProposerOptions(batchSize = 100,
+    measureLatencies = true)
 }
 
 @JSExportAll
@@ -68,17 +72,24 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   // The acknowledge messages received from Execution Service
   @JSExport
-  protected val acks: mutable.Map[UniqueId, mutable.Map[ExecutorId, Acknowledge]] = mutable.Map[UniqueId, mutable.Map[ExecutorId, Acknowledge]]()
+  protected val acks: mutable.Map[CommandBatch, mutable.Map[ExecutorId, Acknowledge]] = mutable.Map[CommandBatch, mutable.Map[ExecutorId, Acknowledge]]()
 
   // Stable ids
   @JSExport
-  protected var stableIds: mutable.Buffer[UniqueId] = mutable.Buffer()
+  protected var stableBatches: mutable.Buffer[CommandBatch] = mutable.Buffer()
 
-  // Quorum size for disseminators
+  private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
+
   @JSExport
   protected var disseminatorQuorumSize: Int = config.f + 1
 
   protected var round: Int = 0
+
+  @JSExport
+  protected var growingBatch = mutable.Buffer[UniqueId]()
+
+  @JSExport
+  protected var pendingResendBatches = mutable.Buffer[UniqueId]()
 
 // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
@@ -87,35 +98,40 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       case Request.ClientRequest(r)  => handleClientRequest(src, r)
       case Request.Acknowledge(r)    => handleAcknowledge(src, r)
       case Request.LeaderInfo(r)     => handleLeaderInfo(src, r)
+      case Request.RequestBatch(r)   => handleRequestBatch(src, r)
       case Request.Empty => {
         logger.fatal("Empty AcceptorInbound encountered.")
       }
     }
   }
 
+  def handleRequestBatch(src: Transport#Address, requestBatch: RequestBatch): Unit = {
+    for (executor <- executors) {
+      executor.send(ExecutorInbound().withForward(Forward(requestBatch)))
+    }
+  }
+
   def handleClientRequest(src: Transport#Address, clientRequest: ClientRequest) = {
     for (executor <- executors) {
-      executor.send(ExecutorInbound().withForward(Forward(clientRequest = clientRequest)))
+      val requestBatch = RequestBatch(Seq(clientRequest))
+      executor.send(ExecutorInbound().withForward(Forward(requestBatch)))
     }
-
-    /*for ((_, leader) <- leaders) {
-      leader.send(LeaderInbound().withProposal(Proposal(clientRequest.uniqueId, round)))
-    }*/
   }
 
   def handleAcknowledge(src: Transport#Address, acknowledge: Acknowledge) = {
-    val executorMap: mutable.Map[ExecutorId, Acknowledge] = acks.getOrElse(acknowledge.uniqueId, mutable.Map())
+    val executorMap: mutable.Map[ExecutorId, Acknowledge] = acks.getOrElse(acknowledge.commandBatch, mutable.Map())
     executorMap.put(config.executorAddresses.indexOf(src), acknowledge)
 
-    acks.put(acknowledge.uniqueId, executorMap)
+    acks.put(acknowledge.commandBatch, executorMap)
 
-    if (acks.getOrElse(acknowledge.uniqueId, mutable.Map()).size >= disseminatorQuorumSize && !stableIds.contains(acknowledge.uniqueId)) {
-      stableIds.append(acknowledge.uniqueId)
+    if (acks.getOrElse(acknowledge.commandBatch, mutable.Map()).size >= disseminatorQuorumSize && !stableBatches.contains(acknowledge.commandBatch)) {
+      stableBatches.append(acknowledge.commandBatch)
 
-      // Request is simultaneously sent to the leader when receiving a client request
-      for ((_, leader) <- leaders) {
-        leader.send(LeaderInbound().withProposal(Proposal(acknowledge.uniqueId, round)))
-      }
+      val leader = leaders(roundSystem.leader(round))
+      leader.send(
+        LeaderInbound().withClientRequestBatch(
+          ClientRequestBatch(acknowledge.commandBatch))
+      )
     }
   }
 

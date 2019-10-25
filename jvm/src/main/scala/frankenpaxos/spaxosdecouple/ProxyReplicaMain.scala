@@ -4,10 +4,9 @@ import java.io.File
 
 import frankenpaxos.{LogLevel, NettyTcpTransport, PrintLogger, PrometheusUtil}
 
-object AcceptorMain extends App {
+object ProxyReplicaMain extends App {
   case class Flags(
       // Basic flags.
-      groupIndex: Int = -1,
       index: Int = -1,
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
@@ -15,14 +14,20 @@ object AcceptorMain extends App {
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
       // Options.
-      options: AcceptorOptions = AcceptorOptions.default
+      options: ProxyReplicaOptions = ProxyReplicaOptions.default
   )
+
+  implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def optionAction(
+        f: (A, ProxyReplicaOptions) => ProxyReplicaOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => flags.copy(options = f(x, flags.options)))
+  }
 
   val parser = new scopt.OptionParser[Flags]("") {
     help("help")
 
     // Basic flags.
-    opt[Int]("group_index").required().action((x, f) => f.copy(groupIndex = x))
     opt[Int]("index").required().action((x, f) => f.copy(index = x))
     opt[File]("config").required().action((x, f) => f.copy(configFile = x))
     opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))
@@ -33,6 +38,10 @@ object AcceptorMain extends App {
     opt[Int]("prometheus_port")
       .action((x, f) => f.copy(prometheusPort = x))
       .text(s"-1 to disable")
+
+    // Options.
+    opt[Int]("options.flushEveryN")
+      .optionAction((x, o) => o.copy(flushEveryN = x))
   }
 
   // Parse flags.
@@ -43,11 +52,11 @@ object AcceptorMain extends App {
       throw new IllegalArgumentException("Could not parse flags.")
   }
 
-  // Construct acceptor.
+  // Construct proxyReplica.
   val logger = new PrintLogger(flags.logLevel)
   val config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath())
-  val acceptor = new Acceptor[NettyTcpTransport](
-    address = config.acceptorAddresses(flags.groupIndex)(flags.index),
+  val proxyReplica = new ProxyReplica[NettyTcpTransport](
+    address = config.proxyReplicaAddresses(flags.index),
     transport = new NettyTcpTransport(logger),
     logger = logger,
     config = config,

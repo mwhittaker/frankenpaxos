@@ -3,40 +3,29 @@ package frankenpaxos.spaxosdecouple
 import java.io.File
 
 import frankenpaxos.Flags.durationRead
-import frankenpaxos.{LogLevel, NettyTcpTransport, PrintLogger, PrometheusUtil}
-import frankenpaxos.election.basic.ElectionOptions
+import frankenpaxos._
+import frankenpaxos.statemachine.StateMachine
+import frankenpaxos.statemachine.StateMachine.read
 
-object LeaderMain extends App {
+object ReplicaMain extends App {
   case class Flags(
       // Basic flags.
       index: Int = -1,
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
+      stateMachine: StateMachine = new statemachine.Noop(),
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
       // Options.
-      options: LeaderOptions = LeaderOptions.default
+      options: ReplicaOptions = ReplicaOptions.default
   )
 
   implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
     def optionAction(
-        f: (A, LeaderOptions) => LeaderOptions
+        f: (A, ReplicaOptions) => ReplicaOptions
     ): scopt.OptionDef[A, Flags] =
       o.action((x, flags) => flags.copy(options = f(x, flags.options)))
-  }
-
-  implicit class ElectionOptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
-    def electionOptionAction(
-        f: (A, ElectionOptions) => ElectionOptions
-    ): scopt.OptionDef[A, Flags] =
-      o.action(
-        (x, flags) =>
-          flags.copy(
-            options = flags.options
-              .copy(electionOptions = f(x, flags.options.electionOptions))
-          )
-      )
   }
 
   val parser = new scopt.OptionParser[Flags]("") {
@@ -46,6 +35,9 @@ object LeaderMain extends App {
     opt[Int]("index").required().action((x, f) => f.copy(index = x))
     opt[File]("config").required().action((x, f) => f.copy(configFile = x))
     opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))
+    opt[StateMachine]("state_machine")
+      .required()
+      .action((x, f) => f.copy(stateMachine = x))
 
     // Monitoring.
     opt[String]("prometheus_host")
@@ -55,16 +47,18 @@ object LeaderMain extends App {
       .text(s"-1 to disable")
 
     // Options.
-    opt[java.time.Duration]("options.resendPhase1asPeriod")
-      .optionAction((x, o) => o.copy(resendPhase1asPeriod = x))
-    opt[Int]("options.flushPhase2asEveryN")
-      .optionAction((x, o) => o.copy(flushPhase2asEveryN = x))
-    opt[java.time.Duration]("options.election.pingPeriod")
-      .electionOptionAction((x, o) => o.copy(pingPeriod = x))
-    opt[java.time.Duration]("options.election.noPingTimeoutMin")
-      .electionOptionAction((x, o) => o.copy(noPingTimeoutMin = x))
-    opt[java.time.Duration]("options.election.noPingTimeoutMax")
-      .electionOptionAction((x, o) => o.copy(noPingTimeoutMax = x))
+    opt[Int]("options.logGrowSize")
+      .optionAction((x, o) => o.copy(logGrowSize = x))
+    opt[Boolean]("options.unsafeDontUseClientTable")
+      .optionAction((x, o) => o.copy(unsafeDontUseClientTable = x))
+    opt[Int]("options.sendChosenWatermarkEveryNEntries")
+      .optionAction((x, o) => o.copy(sendChosenWatermarkEveryNEntries = x))
+    opt[java.time.Duration]("options.recoverLogEntryMinPeriod")
+      .optionAction((x, o) => o.copy(recoverLogEntryMinPeriod = x))
+    opt[java.time.Duration]("options.recoverLogEntryMaxPeriod")
+      .optionAction((x, o) => o.copy(recoverLogEntryMaxPeriod = x))
+    opt[Boolean]("options.unsafeDontRecover")
+      .optionAction((x, o) => o.copy(unsafeDontRecover = x))
   }
 
   // Parse flags.
@@ -75,13 +69,14 @@ object LeaderMain extends App {
       throw new IllegalArgumentException("Could not parse flags.")
   }
 
-  // Construct leader.
+  // Construct replica.
   val logger = new PrintLogger(flags.logLevel)
   val config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath())
-  val leader = new Leader[NettyTcpTransport](
-    address = config.leaderAddresses(flags.index),
+  val replica = new Replica[NettyTcpTransport](
+    address = config.replicaAddresses(flags.index),
     transport = new NettyTcpTransport(logger),
     logger = logger,
+    stateMachine = flags.stateMachine,
     config = config,
     options = flags.options
   )

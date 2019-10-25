@@ -1,12 +1,19 @@
 package frankenpaxos.spaxosdecouple
 
+import collection.mutable
 import com.google.protobuf.ByteString
-import frankenpaxos.{Actor, Logger, ProtoSerializer}
-import frankenpaxos.monitoring.{Collectors, Counter, PrometheusCollectors}
-
-import scala.collection.mutable
-import scala.concurrent.{Future, Promise}
+import frankenpaxos.Actor
+import frankenpaxos.Chan
+import frankenpaxos.Logger
+import frankenpaxos.ProtoSerializer
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.roundsystem.RoundSystem
+import scala.concurrent.Future
+import scala.concurrent.Promise
 import scala.scalajs.js.annotation._
+import scala.util.Random
 
 @JSExportAll
 object ClientInboundSerializer extends ProtoSerializer[ClientInbound] {
@@ -23,34 +30,40 @@ object Client {
 
 @JSExportAll
 case class ClientOptions(
-    reproposePeriod: java.time.Duration
+    resendClientRequestPeriod: java.time.Duration
 )
 
 @JSExportAll
 object ClientOptions {
   val default = ClientOptions(
-    reproposePeriod = java.time.Duration.ofSeconds(20)
+    resendClientRequestPeriod = java.time.Duration.ofSeconds(10)
   )
 }
 
 @JSExportAll
 class ClientMetrics(collectors: Collectors) {
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_client_requests_total")
+    .help("Total number of client requests sent.")
+    .register()
+
   val responsesTotal: Counter = collectors.counter
     .build()
-    .name("fast_multipaxos_client_responses_total")
-    .help("Total number of successful client responses.")
+    .name("multipaxos_client_responses_total")
+    .help("Total number of successful client responses received.")
     .register()
 
   val unpendingResponsesTotal: Counter = collectors.counter
     .build()
-    .name("fast_multipaxos_client_unpending_responses_total")
-    .help("Total number of unpending client responses.")
+    .name("multipaxos_client_unpending_responses_total")
+    .help("Total number of unpending client responses received.")
     .register()
 
-  val reproposeTotal: Counter = collectors.counter
+  val resendClientRequestTotal: Counter = collectors.counter
     .build()
-    .name("fast_multipaxos_client_repropose_total")
-    .help("Total number of times a client reproposes a value..")
+    .name("multipaxos_client_resend_client_request_total")
+    .help("Total number of times a client resends a ClientRequest.")
     .register()
 }
 
@@ -61,21 +74,45 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     logger: Logger,
     config: Config[Transport],
     options: ClientOptions = ClientOptions.default,
-    metrics: ClientMetrics = new ClientMetrics(PrometheusCollectors)
+    metrics: ClientMetrics = new ClientMetrics(PrometheusCollectors),
+    seed: Long = System.currentTimeMillis()
 ) extends Actor(address, transport, logger) {
-  // Fields ////////////////////////////////////////////////////////////////////
+  config.checkValid()
+
+  // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = ClientInbound
   override val serializer = ClientInboundSerializer
 
   type Pseudonym = Int
   type Id = Int
 
-  val addressAsBytes: ByteString =
+  // Fields ////////////////////////////////////////////////////////////////////
+  // A random number generator instantiated from `seed`. This allows us to
+  // perform deterministic randomized tests.
+  private val rand = new Random(seed)
+
+  // The client's address. A client includes its address in its commands so
+  // that replicas know where to send back the reply.
+  private val addressAsBytes: ByteString =
     ByteString.copyFrom(transport.addressSerializer.toBytes(address))
+
+  // Batcher channels.
+  private val batchers: Seq[Chan[Batcher[Transport]]] =
+    for (address <- config.batcherAddresses)
+      yield chan[Batcher[Transport]](address, Batcher.serializer)
+
+  // Leader channels.
+  private val leaders: Seq[Chan[Leader[Transport]]] =
+    for (address <- config.leaderAddresses)
+      yield chan[Leader[Transport]](address, Leader.serializer)
+
+  private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
 
   // The round that this client thinks the leader is in. This value is not
   // always accurate. It's just the client's best guess. The leader associated
-  // with this round can be computed using `config.roundSystem`.
+  // with this round can be computed using `roundSystem`. The clients need to
+  // know who the leader is because they need to know where to send their
+  // commands.
   @JSExport
   protected var round: Int = 0
 
@@ -87,7 +124,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var ids = mutable.Map[Pseudonym, Id]()
 
-  // A pending command. Clients can only propose one request at a time, so if
+  // Clients can only propose one request at a time (per pseudonym), so if
   // there is a pending command, no other command can be proposed. This
   // restriction hurts performance a bit---a single client cannot pipeline
   // requests---but it simplifies the design of the protocol.
@@ -102,136 +139,56 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var pendingCommands = mutable.Map[Pseudonym, PendingCommand]()
 
-  // Leader channels
-  private val leaders: Map[Int, Chan[Leader[Transport]]] = {
-    for ((address, i) <- config.leaderAddresses.zipWithIndex)
-      yield i -> chan[Leader[Transport]](address, Leader.serializer)
-  }.toMap
-
-  // Executor channels
-  private val executors: Map[Int, Chan[Executor[Transport]]] = {
-    for ((address, i) <- config.executorAddresses.zipWithIndex)
-      yield i -> chan[Executor[Transport]](address, Executor.serializer)
-  }.toMap
-
-  // Timers ////////////////////////////////////////////////////////////////////
   // A timer to resend a proposed value. If a client doesn't hear back quickly
-  // enough, it resends its proposal to all of the leaders.
-  private val reproposeTimers = mutable.Map[Pseudonym, Transport#Timer]()
+  // enough, it resends its proposal to all of the batchers (or leaders).
+  private val resendClientRequestTimers =
+    mutable.Map[Pseudonym, Transport#Timer]()
 
-  // Handlers //////////////////////////////////////////////////////////////////
-  override def receive(src: Transport#Address, inbound: InboundMessage) = {
-    import ClientInbound.Request
-    inbound.request match {
-      case Request.ClientReply(r) => handleProposeReply(src, r)
-      case Request.Empty =>
-        logger.fatal("Empty ClientInbound encountered.")
-    }
-  }
-
-  private def handleProposeReply(
-      src: Transport#Address,
-      proposeReply: ClientReply
-  ): Unit = {
-    pendingCommands.get(proposeReply.clientPseudonym) match {
-      case Some(PendingCommand(pseudonym, id, command, promise)) =>
-        logger.checkEq(proposeReply.clientPseudonym, pseudonym)
-        if (proposeReply.clientId == id) {
-          pendingCommands -= pseudonym
-          reproposeTimers(pseudonym).stop()
-          promise.success(proposeReply.result.toByteArray())
-          metrics.responsesTotal.inc()
-        } else {
-          logger.warn(
-            s"Received a reply for unpending command with pseudonym " +
-              s"${proposeReply.clientPseudonym} and id ${proposeReply.clientId}."
-          )
-          metrics.unpendingResponsesTotal.inc()
-        }
-
-      case None =>
-        logger.warn(
-          s"Received a reply for unpending command with pseudonym " +
-            s"${proposeReply.clientPseudonym} and id ${proposeReply.clientId}."
-        )
-        metrics.unpendingResponsesTotal.inc()
-    }
-
-  }
-
-  // Methods ///////////////////////////////////////////////////////////////////
-  private def processNewRound(newRound: Int): Unit = {
-    if (newRound <= round) {
-      logger.debug(
-        s"Client heard about round ${newRound} but is already in round $round."
-      )
-      return
-    }
-
-    // If we were in an old round, we update our round information and resend
-    // all our requests.
-    round = newRound
-    for ((pseudonym, pendingCommand) <- pendingCommands) {
-      sendProposeRequest(pendingCommand)
-      reproposeTimers(pseudonym).reset()
-    }
-  }
-
-  private def toProposeRequest(
-      pendingCommand: PendingCommand
-  ): ClientRequest = {
-    val PendingCommand(pseudonym, id, command, _) = pendingCommand
+  // Helpers ///////////////////////////////////////////////////////////////////
+  def toClientRequest(pendingCommand: PendingCommand): ClientRequest = {
     ClientRequest(
-      UniqueId(clientAddress = addressAsBytes,
-              clientPseudonym = pseudonym,
-              clientId = id),
-              command = ByteString.copyFrom(command)
+        uniqueId = UniqueId(clientAddress = addressAsBytes,
+                              clientPseudonym = pendingCommand.pseudonym,
+                              clientId = pendingCommand.id),
+        command = ByteString.copyFrom(pendingCommand.command)
     )
   }
 
-  private def sendProposeRequest(pendingCommand: PendingCommand): Unit = {
-    val request = toProposeRequest(pendingCommand)
-    /*val r = scala.util.Random
-    val index = r.nextInt(config.proposerAddresses.size)
-    val leader = proposers(index)
-    leader.send(ProposerInbound().withClientRequest(request))*/
-    for ((_, leader) <- leaders) {
-      leader.send(LeaderInbound().withProposal(Proposal(request.uniqueId, round)))
-    }
-
-    for ((_, executor) <- executors) {
-      executor.send(ExecutorInbound().withForward(Forward(request)))
+  private def sendClientRequest(clientRequest: ClientRequest): Unit = {
+    if (config.numBatchers == 0) {
+      // If there are no batchers, then we send to who we think the leader is.
+      val leader = leaders(roundSystem.leader(round))
+      leader.send(LeaderInbound().withClientRequest(clientRequest))
+    } else {
+      // If there are batchers, then we send to a randomly selected batcher.
+      // The batchers will take care of forwarding our message to a leader.
+      //
+      // TODO(mwhittaker): Abstract out the policy that determines which
+      // batcher we propose to.
+      val batcher = batchers(rand.nextInt(batchers.size))
+      batcher.send(BatcherInbound().withClientRequest(clientRequest))
     }
   }
 
-  private def reproposeTimer(pseudonym: Pseudonym): Transport#Timer = {
+  private def makeResendClientRequestTimer(
+      clientRequest: ClientRequest
+  ): Transport#Timer = {
     lazy val t: Transport#Timer = timer(
-      s"reproposeTimer$pseudonym",
-      options.reproposePeriod,
+      s"resendClientRequest " +
+        s"[pseudonym=${clientRequest.uniqueId.clientPseudonym}; " +
+        s"id=${clientRequest.uniqueId.clientId}]",
+      options.resendClientRequestPeriod,
       () => {
-        metrics.reproposeTotal.inc()
-        pendingCommands.get(pseudonym) match {
-          case None =>
-            logger.fatal(
-              s"Attempting to repropose pending command for pseudonym " +
-                s"$pseudonym, but there is no pending command."
-            )
-
-          case Some(pendingCommand) =>
-            logger.debug("Had to repropose: " + pendingCommand.command)
-            val request = toProposeRequest(pendingCommand)
-            val r = scala.util.Random
-            val index = r.nextInt(config.executorAddresses.size)
-            val executor = executors(index)
-            executor.send(ExecutorInbound().withForward(Forward(request)))
-        }
+        sendClientRequest(clientRequest)
+        metrics.resendClientRequestTotal.inc()
         t.start()
       }
     )
+    t.start()
     t
   }
 
-  private def _propose(
+  private def proposeImpl(
       pseudonym: Pseudonym,
       command: Array[Byte],
       promise: Promise[Array[Byte]]
@@ -242,7 +199,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           new IllegalStateException(
             s"You attempted to propose a value with pseudonym $pseudonym, " +
               s"but this pseudonym already has a command pending. A client " +
-              s"can only have one pending request at a time. Try waiting or s" +
+              s"can only have one pending request at a time. Try waiting or " +
               s"use a different pseudonym."
           )
         )
@@ -250,15 +207,107 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
         // Send the command.
         val id = ids.getOrElse(pseudonym, 0)
-        val pendingCommand = PendingCommand(pseudonym, id, command, promise)
-        sendProposeRequest(pendingCommand)
+        val pendingCommand = PendingCommand(pseudonym = pseudonym,
+                                            id = id,
+                                            command = command,
+                                            result = promise)
+        val clientRequest = toClientRequest(pendingCommand)
+        sendClientRequest(clientRequest)
+        metrics.requestsTotal.inc()
 
         // Update our metadata.
         pendingCommands(pseudonym) = pendingCommand
-        reproposeTimers
-          .getOrElseUpdate(pseudonym, reproposeTimer(pseudonym))
-          .start()
+        resendClientRequestTimers(pseudonym) = makeResendClientRequestTimer(
+          clientRequest
+        )
         ids(pseudonym) = id + 1
+    }
+  }
+
+  // Handlers //////////////////////////////////////////////////////////////////
+  override def receive(src: Transport#Address, inbound: InboundMessage) = {
+    import ClientInbound.Request
+    inbound.request match {
+      case Request.ClientReply(r) => handleClientReply(src, r)
+      case Request.NotLeaderClient(r) =>
+        handleNotLeaderClient(src, r)
+      case Request.LeaderInfoReplyClient(r) =>
+        handleLeaderInfoReplyClient(src, r)
+      case Request.Empty =>
+        logger.fatal("Empty ClientInbound encountered.")
+    }
+  }
+
+  private def handleClientReply(
+      src: Transport#Address,
+      clientReply: ClientReply
+  ): Unit = {
+    pendingCommands.get(clientReply.uniqueId.clientPseudonym) match {
+      case Some(pendingCommand: PendingCommand) =>
+        logger.checkEq(clientReply.uniqueId.clientPseudonym,
+                       pendingCommand.pseudonym)
+        if (clientReply.uniqueId.clientId == pendingCommand.id) {
+          pendingCommands -= pendingCommand.pseudonym
+          resendClientRequestTimers(pendingCommand.pseudonym).stop()
+          pendingCommand.result.success(clientReply.result.toByteArray())
+          metrics.responsesTotal.inc()
+        } else {
+          logger.debug(
+            s"A client received a ClientReply for an unpending command with " +
+              s"pseudonym ${clientReply.uniqueId.clientPseudonym} and id " +
+              s"${clientReply.uniqueId.clientId}."
+          )
+          metrics.unpendingResponsesTotal.inc()
+        }
+
+      case None =>
+        logger.debug(
+          s"A client received a ClientReply for an unpending command with " +
+            s"pseudonym ${clientReply.uniqueId.clientPseudonym} and id " +
+            s"${clientReply.uniqueId.clientId}."
+        )
+        metrics.unpendingResponsesTotal.inc()
+    }
+  }
+
+  private def handleNotLeaderClient(
+      src: Transport#Address,
+      notLeader: NotLeaderClient
+  ): Unit = {
+    leaders.foreach(
+      _.send(
+        LeaderInbound().withLeaderInfoRequestClient(LeaderInfoRequestClient())
+      )
+    )
+  }
+
+  private def handleLeaderInfoReplyClient(
+      src: Transport#Address,
+      leaderInfo: LeaderInfoReplyClient
+  ): Unit = {
+    if (leaderInfo.round <= round) {
+      logger.debug(
+        s"A client received a LeaderInfoReplyClient message with round " +
+          s"${leaderInfo.round} but is already in round $round. The " +
+          s"LeaderInfoReplyClient message must be stale, so we are ignoring it."
+      )
+      return
+    }
+
+    // Update our round.
+    val oldRound = round
+    val newRound = leaderInfo.round
+    round = leaderInfo.round
+
+    // We've sent all of our pending commands to the leader of round `round`,
+    // but we just learned about a new round `leaderInfo.round`. If the leader
+    // of the new round is different than the leader of the old round, then we
+    // have to re-send our messages.
+    if (roundSystem.leader(oldRound) != roundSystem.leader(newRound)) {
+      for ((pseudonym, pendingCommand) <- pendingCommands) {
+        sendClientRequest(toClientRequest(pendingCommand))
+        resendClientRequestTimers(pseudonym).reset()
+      }
     }
   }
 
@@ -269,7 +318,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   ): Future[Array[Byte]] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => _propose(pseudonym, command, promise)
+      () => proposeImpl(pseudonym, command, promise)
     )
     promise.future
   }
@@ -277,7 +326,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   def propose(pseudonym: Pseudonym, command: String): Future[String] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => _propose(pseudonym, command.getBytes(), promise)
+      () => proposeImpl(pseudonym, command.getBytes(), promise)
     )
     promise.future.map(new String(_))(
       concurrent.ExecutionContext.Implicits.global

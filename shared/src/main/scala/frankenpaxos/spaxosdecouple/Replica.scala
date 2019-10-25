@@ -163,7 +163,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // something like a SortedMap for efficiency. `log` is public for testing.
   @JSExport
   val log =
-    new util.BufferMap[CommandBatchOrNoop](options.logGrowSize)
+    new util.BufferMap[RequestBatchOrNoop](options.logGrowSize)
 
   // Every log entry less than `executedWatermark` has been executed. There may
   // be commands larger than `executedWatermark` pending execution.
@@ -279,7 +279,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
         clientTable(clientIdentity) = (commandId.clientId, result)
         if (slot % config.numReplicas == index) {
-          clientReplies += ClientReply(commandId = commandId, result = result)
+          clientReplies += ClientReply(commandId, result = result)
         }
         metrics.executedCommandsTotal.inc()
 
@@ -287,7 +287,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         if (commandId.clientId < largestClientId) {
           metrics.reduntantlyExecutedCommandsTotal.inc()
         } else if (commandId.clientId == largestClientId) {
-          clientReplies += ClientReply(commandId = commandId,
+          clientReplies += ClientReply(commandId,
                                        result = cachedResult)
           metrics.reduntantlyExecutedCommandsTotal.inc()
         } else {
@@ -295,7 +295,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
           clientTable(clientIdentity) = (commandId.clientId, result)
           if (slot % config.numReplicas == index) {
-            clientReplies += ClientReply(commandId = commandId, result = result)
+            clientReplies += ClientReply(commandId, result = result)
           }
           metrics.executedCommandsTotal.inc()
         }
@@ -304,16 +304,19 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   private def executeCommandBatchOrNoop(
       slot: Slot,
-      commandBatchOrNoop: CommandBatchOrNoop,
+      commandBatchOrNoop: RequestBatchOrNoop,
       clientReplies: mutable.Buffer[ClientReply]
   ): Unit = {
     commandBatchOrNoop.value match {
-      case CommandBatchOrNoop.Value.Noop(Noop()) =>
+      case RequestBatchOrNoop.Value.Noop(Noop()) =>
         metrics.executedLogEntriesTotal.labels("noop").inc()
-      case CommandBatchOrNoop.Value.CommandBatch(batch) =>
-        batch.command.foreach(executeCommand(slot, _, clientReplies))
+      case RequestBatchOrNoop.Value.CommandBatch(batch) =>
+        batch.batch.foreach(_.command)
+        for (clientRequest <- batch.batch) {
+          executeCommand(slot, Command(clientRequest.uniqueId, clientRequest.command), clientReplies)
+        }
         metrics.executedLogEntriesTotal.labels("command").inc()
-      case CommandBatchOrNoop.Value.Empty =>
+      case RequestBatchOrNoop.Value.Empty =>
         logger.fatal("Empty CommandBatchOrNoop encountered.")
     }
   }

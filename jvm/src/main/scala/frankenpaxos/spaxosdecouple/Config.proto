@@ -14,19 +14,25 @@ message HostPortProto {
   required int32 port = 2;
 }
 
-enum RoundSystemType {
-  CLASSIC_ROUND_ROBIN = 0;
+enum DistributionSchemeProto {
+  HASH = 0;
+  COLOCATED = 1;
 }
 
-message ConfigProto {
+message AcceptorGroup {
+  repeated HostPortProto acceptor_address = 6;
+}
+
+message NettyConfigProto {
   required int32 f = 1;
-  repeated HostPortProto leaderAddress = 2;
-  repeated HostPortProto leaderElectionAddress = 3;
-  repeated HostPortProto leaderHeartbeatAddress = 4;
-  repeated HostPortProto acceptorAddress = 5;
-  repeated HostPortProto acceptorHeartbeatAddress = 6;
-  repeated HostPortProto proposerAddress = 7;
-  repeated HostPortProto executorAddress = 8;
-  repeated HostPortProto fakeLeaderAddress = 9;
-  required RoundSystemType roundSystemType = 10;
+  repeated HostPortProto batcher_address = 2;
+  repeated HostPortProto leader_address = 3;
+  repeated HostPortProto leader_election_address = 4;
+  repeated HostPortProto proxy_leader_address = 5;
+  repeated AcceptorGroup acceptor_address = 6;
+  repeated HostPortProto replica_address = 7;
+  repeated HostPortProto proxy_replica_address = 8;
+  required DistributionSchemeProto distribution_scheme = 9;
+  repeated HostPortProto proposer_address = 10;
+  repeated HostPortProto executor_address = 11;
 }

@@ -216,14 +216,14 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Let the replicas know that the value has been chosen.
-        replicas.foreach(
+        /*replicas.foreach(
           _.send(
             ReplicaInbound().withChosen(
               Chosen(slot = phase2b.slot,
                      commandBatchOrNoop = pending.phase2a.commandBatchOrNoop)
             )
           )
-        )
+        )*/
 
         // Update our state.
         states(slotround) = Done

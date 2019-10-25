@@ -3,29 +3,31 @@ package frankenpaxos.spaxosdecouple
 import java.net.InetSocketAddress
 
 import frankenpaxos.{NettyTcpAddress, NettyTcpTransport}
-import frankenpaxos.roundsystem.RoundSystem
 
 object ConfigUtil {
-  def fromProto(proto: ConfigProto): Config[NettyTcpTransport] = {
-    val toAddresses = (hostports: Seq[HostPortProto]) =>
-      hostports.map(
-        hp => NettyTcpAddress(new InetSocketAddress(hp.host, hp.port))
-      )
+  def fromProto(proto: NettyConfigProto): Config[NettyTcpTransport] = {
+    def addr(hostPort: HostPortProto): NettyTcpAddress =
+      NettyTcpAddress(new InetSocketAddress(hostPort.host, hostPort.port))
 
-    Config[NettyTcpTransport](
+    Config(
       f = proto.f,
-      leaderAddresses = toAddresses(proto.leaderAddress),
-      leaderElectionAddresses = toAddresses(proto.leaderElectionAddress),
-      leaderHeartbeatAddresses = toAddresses(proto.leaderHeartbeatAddress),
-      acceptorAddresses = toAddresses(proto.acceptorAddress),
-      acceptorHeartbeatAddresses = toAddresses(proto.acceptorHeartbeatAddress),
-      proposerAddresses = toAddresses(proto.proposerAddress),
-      executorAddresses = toAddresses(proto.executorAddress),
-      fakeLeaderAddresses = toAddresses(proto.fakeLeaderAddress),
-      roundSystem = proto.roundSystemType match {
-        case RoundSystemType.CLASSIC_ROUND_ROBIN =>
-          new RoundSystem.ClassicRoundRobin(proto.leaderAddress.size)
-        case RoundSystemType.Unrecognized(_) => ???
+      batcherAddresses = proto.batcherAddress.map(addr),
+      proposerAddresses = proto.proposerAddress.map(addr),
+      executorAddresses = proto.executorAddress.map(addr),
+      leaderAddresses = proto.leaderAddress.map(addr),
+      leaderElectionAddresses = proto.leaderElectionAddress.map(addr),
+      proxyLeaderAddresses = proto.proxyLeaderAddress.map(addr),
+      acceptorAddresses =
+        proto.acceptorAddress.map(group => group.acceptorAddress.map(addr)),
+      replicaAddresses = proto.replicaAddress.map(addr),
+      proxyReplicaAddresses = proto.proxyReplicaAddress.map(addr),
+      distributionScheme = proto.distributionScheme match {
+        case DistributionSchemeProto.HASH      => Hash
+        case DistributionSchemeProto.COLOCATED => Colocated
+        case DistributionSchemeProto.Unrecognized(_) =>
+          throw new IllegalArgumentException(
+            "Unrecognized DistributionSchemeProto."
+          )
       }
     )
   }
@@ -33,7 +35,7 @@ object ConfigUtil {
   def fromFile(filename: String): Config[NettyTcpTransport] = {
     val source = scala.io.Source.fromFile(filename)
     try {
-      fromProto(ConfigProto.fromAscii(source.mkString))
+      fromProto(NettyConfigProto.fromAscii(source.mkString))
     } finally {
       source.close()
     }

@@ -45,19 +45,8 @@ message Command {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  // The client's address.
-  required bytes client_address = 1;
-
-  // Clients use pseudonyms to simulate multiple clients. See Fast MultiPaxos
-  // for more explanation.
-  required int32 client_pseudonym = 2;
-
-  // Clients annotate every command with a unique and monotonically increasing
-  // id. The pair of (client address, client id) uniquely identify a command.
-  required int32 client_id = 3;
-
-  // The actual command.
-  required bytes command = 4;
+  required UniqueId command_id = 1;
+  required bytes command = 2;
 }
 
 message UniqueId {
@@ -106,14 +95,14 @@ message Forward {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required ClientRequest client_request = 1;
+  required RequestBatch request_batch = 1;
 }
 
 message Acknowledge {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required UniqueId unique_id = 1;
+  required CommandBatch command_batch = 1;
 }
 
 message Decide {
@@ -129,66 +118,57 @@ message AnyVal {}
 // An infinite suffix of any's. See Phase2a.
 message AnyValSuffix {}
 
-
 message Phase1a {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
   required int32 round = 1;
 
-  // The leader knows that all entries in slots less than chosenWatermark have
-  // been chosen. Acceptors do not have to include slots below chosenWatermark
-  // in their phase1b response.
-  required int32 chosenWatermark = 2;
-
-  // The leader also knows that every slot in chosenSlot has been chosen. As
-  // with chosenWatermark, an acceptor does not have to include a slot in a
-  // phase1b response if the leader already knows its chosen.
-  repeated int32 chosenSlot = 3;
+  // The leader knows that all entries in slots less than `chosenWatermark`
+  // have been chosen. Acceptors do not have to include slots below
+  // `chosenWatermark` in their phase1b response.
+  //
+  // The leader may know that some entries larger than `chosenWatermark` have
+  // also been chosen, but that's okay. It's not unsafe for acceptors to return
+  // too much information.
+  required int32 chosen_watermark = 2;
 }
 
-message Phase1bVote {
+message Phase1bSlotInfo {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
   required int32 slot = 1;
-  required int32 voteRound = 2;
-  oneof value {
-     UniqueId unique_id = 3;
-     Noop noop = 4;
-  }
+  required int32 vote_round = 2;
+  required CommandBatchOrNoop vote_value = 3;
 }
 
 message Phase1b {
-  required int32 acceptor_id = 1;
-  required int32 round = 2;
-  repeated Phase1bVote vote = 3;
-}
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
 
-message Phase1bNack {
-  required int32 acceptor_id = 1;
-  required int32 round = 2;
+  required int32 group_index = 1;
+  required int32 acceptor_index = 2;
+  required int32 round = 3;
+  repeated Phase1bSlotInfo info = 4;
 }
 
 message Phase2a {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
   required int32 slot = 1;
   required int32 round = 2;
-  oneof value {
-     UniqueId unique_id = 3;
-     Noop noop = 4;
-  }
-}
-
-message Phase2aBuffer {
-  repeated Phase2a phase2a = 1;
+  required CommandBatchOrNoop command_batch_or_noop = 3;
 }
 
 message Phase2b {
-  required int32 acceptor_id = 1;
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 acceptor_index = 1;
   required int32 slot = 2;
   required int32 round = 3;
-  oneof vote {
-    UniqueId unique_id = 4;
-    Noop noop = 5;
-  }
-}
-
-message Phase2bBuffer {
-  repeated Phase2b phase2b = 1;
 }
 
 message ValueChosen {
@@ -207,10 +187,9 @@ message ClientReply {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 client_pseudonym = 1;
-  required int32 client_id = 2;
+  required UniqueId unique_id = 1;
   // The result of executing the command.
-  required bytes result = 3;
+  required bytes result = 2;
 }
 
 message Proposal {
@@ -225,11 +204,18 @@ message LeaderInfo {
   required int32 round = 1;
 }
 
+message BatchId {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
+  required string batch_id = 1;
+}
+
 message CommandBatch {
   option (scalapb.message).annotations =
          "@scala.scalajs.js.annotation.JSExportAll";
 
-  repeated Command command = 1;
+  required BatchId batch_id = 1;
 }
 
 message CommandBatchOrNoop {
@@ -242,12 +228,35 @@ message CommandBatchOrNoop {
   }
 }
 
+message RequestBatchOrNoop {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    RequestBatch command_batch = 1;
+    Noop noop = 2;
+  }
+}
+
 message Chosen {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 slot = 1;
-  required CommandBatchOrNoop command_batch_or_noop = 2;
+  required RequestBatchOrNoop command_batch_or_noop = 2;
+}
+
+message RequestBatch {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+  repeated ClientRequest batch = 1;
+}
+
+message ClientRequestBatch {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandBatch command_batch = 1;
 }
 
 message ClientReplyBatch {
@@ -255,6 +264,18 @@ message ClientReplyBatch {
          "@scala.scalajs.js.annotation.JSExportAll";
 
   repeated ClientReply batch = 1;
+}
+
+message NotLeaderClient {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoReplyClient {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
 }
 
 message ChosenWatermark {
@@ -283,6 +304,37 @@ message Recover {
   required int32 slot = 1;
 }
 
+message NotLeaderBatcher {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
+  required ClientRequestBatch client_request_batch = 1;
+}
+
+message LeaderInfoRequestBatcher {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoReplyBatcher {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message LeaderInfoRequestClient {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message Nack {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ProposerInbound {
   option (scalapb.message).annotations =
@@ -292,6 +344,18 @@ message ProposerInbound {
     ClientRequest client_request = 1;
     Acknowledge acknowledge = 2;
     LeaderInfo leader_info = 3;
+    RequestBatch request_batch = 4;
+  }
+}
+
+message BatcherInbound {
+  option (scalapb.message).annotations =
+         "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientRequest client_request = 1;
+    NotLeaderBatcher not_leader_batcher = 2;
+    LeaderInfoReplyBatcher leader_info_reply_batcher = 3;
   }
 }
 
@@ -300,17 +364,21 @@ message LeaderInbound {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   oneof request {
-    Proposal proposal = 1;
-    Phase1b phase1b = 2;
-    Phase1bNack phase1b_nack = 3;
+    Phase1b phase1b = 1;
+    ClientRequest client_request = 2;
+    ClientRequestBatch client_request_batch = 3;
+    LeaderInfoRequestClient leader_info_request_client = 4;
+    LeaderInfoRequestBatcher leader_info_request_batcher = 5;
+    Nack nack = 6;
+    ChosenWatermark chosen_watermark = 7;
+    Recover recover = 8;
   }
 }
 
 message AcceptorInbound {
   oneof request {
-    Proposal propose_request = 1;
-    Phase1a phase1a = 2;
-    Phase2aBuffer phase2a_buffer = 3;
+    Phase1a phase1a = 1;
+    Phase2a phase2a = 2;
   }
 }
 
@@ -328,6 +396,8 @@ message ClientInbound {
 
   oneof request {
     ClientReply client_reply = 1;
+    NotLeaderClient not_leader_client = 2;
+    LeaderInfoReplyClient leader_info_reply_client = 3;
   }
 }
 
