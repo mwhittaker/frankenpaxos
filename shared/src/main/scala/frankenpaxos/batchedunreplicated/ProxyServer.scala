@@ -28,12 +28,16 @@ object ProxyServer {
 
 @JSExportAll
 case class ProxyServerOptions(
+    // A proxy server flushes all of its channels to the clients after every
+    // `flushEveryN` commands processed.
+    flushEveryN: Int,
     measureLatencies: Boolean
 )
 
 @JSExportAll
 object ProxyServerOptions {
   val default = ProxyServerOptions(
+    flushEveryN = 1,
     measureLatencies = true
   )
 }
@@ -73,6 +77,9 @@ class ProxyServer[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val clients =
     mutable.Map[Transport#Address, Chan[Client[Transport]]]()
+
+  // The number of messages since the last flush.
+  private var numMessagesSinceLastFlush: Int = 0
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -118,8 +125,30 @@ class ProxyServer[Transport <: frankenpaxos.Transport[Transport]](
       val clientAddress = transport.addressSerializer.fromBytes(
         result.clientAddress.toByteArray()
       )
-      val client = chan[Client[Transport]](clientAddress, Client.serializer)
-      client.send(ClientInbound().withClientReply(ClientReply(result = result)))
+      val client = clients.getOrElseUpdate(
+        clientAddress,
+        chan[Client[Transport]](clientAddress, Client.serializer)
+      )
+      if (options.flushEveryN == 1) {
+        timed("handleClientReplyBatch/send") {
+          client.send(
+            ClientInbound().withClientReply(ClientReply(result = result))
+          )
+        }
+      } else {
+        timed("handleClientReplyBatch/sendNoFlush") {
+          client.sendNoFlush(
+            ClientInbound().withClientReply(ClientReply(result = result))
+          )
+        }
+        numMessagesSinceLastFlush += 1
+        if (numMessagesSinceLastFlush >= options.flushEveryN) {
+          timed("handleClientReplyBatch/flush") {
+            clients.values.foreach(_.flush())
+          }
+          numMessagesSinceLastFlush = 0
+        }
+      }
     }
   }
 }
