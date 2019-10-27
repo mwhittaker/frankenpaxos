@@ -1,0 +1,21 @@
+syntax = "proto2";
+
+package frankenpaxos.batchedunreplicated;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.batchedunreplicated"
+  flat_package: true
+};
+
+message HostPortProto {
+  required string host = 1;
+  required int32 port = 2;
+}
+
+message NettyConfigProto {
+  repeated HostPortProto batcher_address = 1;
+  required HostPortProto server_address = 2;
+  repeated HostPortProto proxy_server_address = 3;
+}
