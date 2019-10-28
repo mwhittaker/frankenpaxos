@@ -94,11 +94,6 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.proposerAddresses)
       yield chan[Proposer[Transport]](address, Proposer.serializer)
 
-  // Executor channels
-  private val executors: Seq[Chan[Executor[Transport]]] =
-    for (address <- config.executorAddresses)
-      yield chan[Executor[Transport]](address, Executor.serializer)
-
   private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
 
   // The round that this batcher thinks the leader is in. This value is not

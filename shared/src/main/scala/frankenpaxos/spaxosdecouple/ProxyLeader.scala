@@ -113,6 +113,13 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.replicaAddresses)
       yield chan[Replica[Transport]](address, Replica.serializer)
 
+  // Disseminator channels.
+  private val disseminators: Seq[Seq[Chan[Disseminator[Transport]]]] =
+    for (disseminatorCluster <- config.disseminatorAddresses) yield {
+      for (address <- disseminatorCluster)
+        yield chan[Disseminator[Transport]](address, Disseminator.serializer)
+    }
+
   // The number of Phase2a messages since the last flush.
   private var numPhase2asSentSinceLastFlush: Int = 0
 
@@ -213,6 +220,19 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         phase2bs(phase2b.acceptorIndex) = phase2b
         if (phase2bs.size < config.quorumSize) {
           return
+        }
+
+        // Let the disseminators/replicas know that the value has been chosen
+        pending.phase2a.commandBatchOrNoop.value match {
+          case CommandBatchOrNoop.Value.CommandBatch(batch) =>
+            val group = disseminators(Math.abs(batch.batchId.batchId.hashCode()) % disseminators.size)
+            val r = scala.util.Random
+            val randomDisseminator = group(r.nextInt(group.size))
+            randomDisseminator.send(DisseminatorInbound().withValueChosen(ValueChosen(slot = phase2b.slot, commandBatchOrNoop = pending.phase2a.commandBatchOrNoop)))
+          case CommandBatchOrNoop.Value.Noop(Noop()) =>
+            replicas.foreach(_.send(ReplicaInbound().withChosen(Chosen(slot = phase2b.slot, commandBatchOrNoop = RequestBatchOrNoop(RequestBatchOrNoop.Value.Noop(Noop()))))))
+          case CommandBatchOrNoop.Value.Empty =>
+            logger.fatal("Empty CommandBatchOrNoop encountered.")
         }
 
         // Let the replicas know that the value has been chosen.

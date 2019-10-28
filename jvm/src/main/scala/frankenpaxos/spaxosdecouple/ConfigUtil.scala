@@ -13,7 +13,6 @@ object ConfigUtil {
       f = proto.f,
       batcherAddresses = proto.batcherAddress.map(addr),
       proposerAddresses = proto.proposerAddress.map(addr),
-      executorAddresses = proto.executorAddress.map(addr),
       leaderAddresses = proto.leaderAddress.map(addr),
       leaderElectionAddresses = proto.leaderElectionAddress.map(addr),
       proxyLeaderAddresses = proto.proxyLeaderAddress.map(addr),
@@ -21,6 +20,7 @@ object ConfigUtil {
         proto.acceptorAddress.map(group => group.acceptorAddress.map(addr)),
       replicaAddresses = proto.replicaAddress.map(addr),
       proxyReplicaAddresses = proto.proxyReplicaAddress.map(addr),
+      disseminatorAddresses = proto.disseminatorAddress.map(group => group.disseminatorAddress.map(addr)),
       distributionScheme = proto.distributionScheme match {
         case DistributionSchemeProto.HASH      => Hash
         case DistributionSchemeProto.COLOCATED => Colocated

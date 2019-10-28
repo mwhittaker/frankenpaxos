@@ -24,10 +24,6 @@ class SPaxosDecouple {
       JsTransportAddress("Proposer 1"),
       JsTransportAddress("Proposer 2")
     ),
-    executorAddresses = Seq(
-      JsTransportAddress("Executor 1"),
-      JsTransportAddress("Executor 2")
-    ),
     leaderAddresses = Seq(
       JsTransportAddress("Leader 1"),
       JsTransportAddress("Leader 2")
@@ -59,6 +55,18 @@ class SPaxosDecouple {
     proxyReplicaAddresses = Seq(
       JsTransportAddress("ProxyReplica 1"),
       JsTransportAddress("ProxyReplica 2")
+    ),
+    disseminatorAddresses = Seq(
+      Seq(
+        JsTransportAddress("Disseminator D1"),
+        JsTransportAddress("Disseminator D2"),
+        JsTransportAddress("Disseminator D3")
+      ),
+      Seq(
+        JsTransportAddress("Disseminator E1"),
+        JsTransportAddress("Disseminator E2"),
+        JsTransportAddress("Disseminator E3")
+      )
     ),
     distributionScheme = Hash
   )
@@ -96,6 +104,19 @@ class SPaxosDecouple {
   }
   val batcher1 = batchers(0)
   val batcher2 = batchers(1)
+
+  val proposers = for (address <- config.proposerAddresses) yield {
+    new Proposer[JsTransport](
+      address = address,
+      transport = transport,
+      logger = new JsLogger(),
+      config = config,
+      options = ProposerOptions.default,
+      metrics = new ProposerMetrics(FakeCollectors)
+    )
+  }
+  val proposer1 = proposers(0)
+  val proposer2 = proposers(1)
 
   // Leaders.
   val leaders = for (address <- config.leaderAddresses) yield {
@@ -151,6 +172,25 @@ class SPaxosDecouple {
   val acceptorB2 = acceptors(4)
   val acceptorB3 = acceptors(5)
 
+  // Disseminators.
+  val disseminators = for (group <- config.disseminatorAddresses; address <- group)
+    yield {
+      new Disseminator[JsTransport](
+        address = address,
+        transport = transport,
+        logger = new JsLogger(),
+        config = config,
+        options = DisseminatorOptions.default,
+        metrics = new DisseminatorMetrics(FakeCollectors)
+      )
+    }
+  val disseminatorD1 = disseminators(0)
+  val disseminatorD2 = disseminators(1)
+  val disseminatorD3 = disseminators(2)
+  val disseminatorE1 = disseminators(3)
+  val disseminatorE2 = disseminators(4)
+  val disseminatorE3 = disseminators(5)
+
   // Replicas.
   val replicas = for (address <- config.replicaAddresses) yield {
     new Replica[JsTransport](
@@ -186,6 +226,12 @@ class SPaxosDecouple {
   }
   val proxyReplica1 = proxyReplicas(0)
   val proxyReplica2 = proxyReplicas(1)
+}
+
+@JSExportAll
+@JSExportTopLevel("frankenpaxos.spaxosdecouple.SPaxosDecouple")
+object SPaxosDecouple {
+  val SPaxosDecouple = new SPaxosDecouple();
 }
 
 

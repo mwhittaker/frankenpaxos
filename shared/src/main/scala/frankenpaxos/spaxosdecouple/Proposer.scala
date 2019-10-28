@@ -62,17 +62,18 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
       yield i -> chan[Leader[Transport]](leaderAddress, Leader.serializer)
   }.toMap
 
-  // Executors
-  private val executors: Seq[Chan[Executor[Transport]]] = {
-    for (executorAddress <- config.executorAddresses)
-      yield chan[Executor[Transport]](executorAddress, Executor.serializer)
-  }
+  // Disseminator channels.
+  private val disseminators: Seq[Seq[Chan[Disseminator[Transport]]]] =
+    for (disseminatorCluster <- config.disseminatorAddresses) yield {
+      for (address <- disseminatorCluster)
+        yield chan[Disseminator[Transport]](address, Disseminator.serializer)
+    }
 
-  type ExecutorId = Int
+  type DisseminatorId = Int
 
   // The acknowledge messages received from Execution Service
   @JSExport
-  protected val acks: mutable.Map[CommandBatch, mutable.Map[ExecutorId, Acknowledge]] = mutable.Map[CommandBatch, mutable.Map[ExecutorId, Acknowledge]]()
+  protected val acks: mutable.Map[CommandBatch, mutable.Map[Transport#Address, Acknowledge]] = mutable.Map[CommandBatch, mutable.Map[Transport#Address, Acknowledge]]()
 
   // Stable ids
   @JSExport
@@ -106,23 +107,26 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   def handleRequestBatch(src: Transport#Address, requestBatch: RequestBatch): Unit = {
-    for (executor <- executors) {
-      executor.send(ExecutorInbound().withForward(Forward(requestBatch)))
-    }
+    val id: BatchId = BatchId(java.util.UUID.randomUUID.toString)
+    val group = disseminators(Math.abs(id.batchId.hashCode()) % disseminators.size)
+    group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id))))
   }
 
   def handleClientRequest(src: Transport#Address, clientRequest: ClientRequest) = {
-    for (executor <- executors) {
-      val requestBatch = RequestBatch(Seq(clientRequest))
-      executor.send(ExecutorInbound().withForward(Forward(requestBatch)))
+    val id: BatchId = BatchId(java.util.UUID.randomUUID.toString)
+    val group = disseminators(id.batchId.hashCode() % disseminators.size)
+    val requestBatch = RequestBatch(Seq(clientRequest))
+
+    for (disseminator <- group) {
+      disseminator.send(DisseminatorInbound().withForward(Forward(requestBatch, id)))
     }
   }
 
   def handleAcknowledge(src: Transport#Address, acknowledge: Acknowledge) = {
-    val executorMap: mutable.Map[ExecutorId, Acknowledge] = acks.getOrElse(acknowledge.commandBatch, mutable.Map())
-    executorMap.put(config.executorAddresses.indexOf(src), acknowledge)
+    val disseminatorMap: mutable.Map[Transport#Address, Acknowledge] = acks.getOrElse(acknowledge.commandBatch, mutable.Map())
+    disseminatorMap.put(src, acknowledge)
 
-    acks.put(acknowledge.commandBatch, executorMap)
+    acks.put(acknowledge.commandBatch, disseminatorMap)
 
     if (acks.getOrElse(acknowledge.commandBatch, mutable.Map()).size >= disseminatorQuorumSize && !stableBatches.contains(acknowledge.commandBatch)) {
       stableBatches.append(acknowledge.commandBatch)

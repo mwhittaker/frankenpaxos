@@ -7,11 +7,11 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     batcherAddresses: Seq[Transport#Address],
     proposerAddresses: Seq[Transport#Address],
-    executorAddresses: Seq[Transport#Address],
     leaderAddresses: Seq[Transport#Address],
     leaderElectionAddresses: Seq[Transport#Address],
     proxyLeaderAddresses: Seq[Transport#Address],
     acceptorAddresses: Seq[Seq[Transport#Address]],
+    disseminatorAddresses: Seq[Seq[Transport#Address]],
     replicaAddresses: Seq[Transport#Address],
     proxyReplicaAddresses: Seq[Transport#Address],
     distributionScheme: DistributionScheme
@@ -19,12 +19,12 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
   val quorumSize = f + 1
   val numBatchers = batcherAddresses.size
   val numProposers = proposerAddresses.size
-  val numExecutors = executorAddresses.size
   val numLeaders = leaderAddresses.size
   val numProxyLeaders = proxyLeaderAddresses.size
   val numAcceptorGroups = acceptorAddresses.size
   val numReplicas = replicaAddresses.size
   val numProxyReplicas = proxyReplicaAddresses.size
+  val numDisseminatorGroups = disseminatorAddresses.size
 
   def checkValid(): Unit = {
     require(f >= 1, s"f must be >= 1. It's $f.")
@@ -37,10 +37,6 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     require(
       numProposers >= f + 1,
       s"numProposers must be >= f + 1 (${f + 1}). It's $numProposers."
-    )
-    require(
-      numExecutors >= f + 1,
-      s"numExecutors must be >= f + 1 (${f + 1}). It's $numExecutors."
     )
     require(
       numLeaders >= f + 1,
@@ -73,6 +69,10 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
           s"It's ${acceptorCluster.size}."
       )
     }
+    require(
+      numDisseminatorGroups >= 1,
+      s"numDisseminatorGroups must be >= 1. It's $numDisseminatorGroups."
+    )
     require(
       numReplicas >= f + 1,
       s"numReplicas must be >= f + 1 (${f + 1}). It's $numReplicas."

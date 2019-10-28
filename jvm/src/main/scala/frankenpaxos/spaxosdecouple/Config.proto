@@ -23,6 +23,10 @@ message AcceptorGroup {
   repeated HostPortProto acceptor_address = 6;
 }
 
+message DisseminatorGroup {
+  repeated HostPortProto disseminator_address = 7;
+}
+
 message NettyConfigProto {
   required int32 f = 1;
   repeated HostPortProto batcher_address = 2;
@@ -34,5 +38,5 @@ message NettyConfigProto {
   repeated HostPortProto proxy_replica_address = 8;
   required DistributionSchemeProto distribution_scheme = 9;
   repeated HostPortProto proposer_address = 10;
-  repeated HostPortProto executor_address = 11;
+  repeated DisseminatorGroup disseminator_address = 11;
 }

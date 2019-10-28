@@ -96,6 +96,7 @@ message Forward {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required RequestBatch request_batch = 1;
+  required BatchId batch_id = 2;
 }
 
 message Acknowledge {
@@ -173,10 +174,7 @@ message Phase2b {
 
 message ValueChosen {
   required int32 slot = 1;
-  oneof value {
-    UniqueId unique_id = 2;
-    Noop noop = 3;
-  }
+  required CommandBatchOrNoop command_batch_or_noop = 2;
 }
 
 message ValueChosenBuffer {
@@ -387,6 +385,13 @@ message ExecutorInbound {
     ValueChosen value_chosen = 1;
     ValueChosenBuffer value_chosen_buffer = 2;
     Forward forward = 3;
+  }
+}
+
+message DisseminatorInbound {
+  oneof request {
+    ValueChosen value_chosen = 1;
+    Forward forward = 2;
   }
 }
 
