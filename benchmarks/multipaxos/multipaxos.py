@@ -89,7 +89,13 @@ class Input(NamedTuple):
     num_replicas: int
     num_proxy_replicas: int
     distribution_scheme: DistributionScheme
-    jvm_heap_size: str
+    client_jvm_heap_size: str
+    batcher_jvm_heap_size: str
+    leader_jvm_heap_size: str
+    proxy_leader_jvm_heap_size: str
+    acceptor_jvm_heap_size: str
+    replica_jvm_heap_size: str
+    proxy_replica_jvm_heap_size: str
 
     # Benchmark parameters. ####################################################
     warmup_duration: datetime.timedelta
@@ -263,22 +269,18 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                            proto_util.message_to_pbtext(config))
         bench.log('Config file config.pbtxt written.')
 
-        # If we're monitoring the code, run garbage collection verbosely.
-        java = ['java']
-        if input.monitored:
-            java += [
-                '-verbose:gc',
-                '-XX:-PrintGC',
-                '-XX:+PrintHeapAtGC',
-                '-XX:+PrintGCDetails',
-                '-XX:+PrintGCTimeStamps',
-                '-XX:+PrintGCDateStamps',
-            ]
-        # Increase the heap size.
-        # TODO(mwhittaker): Right now, not much thought has been put into the
-        # heap size. Think more carefully about this. We may want, for example,
-        # to increase the size of the young generation.
-        java += [f'-Xms{input.jvm_heap_size}', f'-Xmx{input.jvm_heap_size}']
+        def java(heap_size: str) -> List[str]:
+            cmd = ['java', f'-Xms{heap_size}', f'-Xmx{heap_size}']
+            if input.monitored:
+                cmd += [
+                    '-verbose:gc',
+                    '-XX:-PrintGC',
+                    '-XX:+PrintHeapAtGC',
+                    '-XX:+PrintGCDetails',
+                    '-XX:+PrintGCTimeStamps',
+                    '-XX:+PrintGCDateStamps',
+                ]
+            return cmd
 
         # Launch batchers.
         batcher_procs: List[proc.Proc] = []
@@ -286,7 +288,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=batcher.host,
                 label=f'batcher_{i}',
-                cmd=java + [
+                cmd=java(input.batcher_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
                     'frankenpaxos.multipaxos.BatcherMain',
@@ -316,7 +318,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=proxy_leader.host,
                 label=f'proxy_leader_{i}',
-                cmd=java + [
+                cmd=java(input.proxy_leader_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
                     'frankenpaxos.multipaxos.ProxyLeaderMain',
@@ -347,7 +349,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                 p = bench.popen(
                     host=acceptor.host,
                     label=f'acceptor_{group_index}_{i}',
-                    cmd=java + [
+                    cmd=java(input.acceptor_jvm_heap_size) + [
                         '-cp',
                         os.path.abspath(args['jar']),
                         'frankenpaxos.multipaxos.AcceptorMain',
@@ -377,7 +379,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=replica.host,
                 label=f'replica_{i}',
-                cmd=java + [
+                cmd=java(input.replica_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
                     'frankenpaxos.multipaxos.ReplicaMain',
@@ -422,7 +424,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=proxy_replica.host,
                 label=f'proxy_replica_{i}',
-                cmd=java + [
+                cmd=java(input.proxy_replica_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
                     'frankenpaxos.multipaxos.ProxyReplicaMain',
@@ -452,7 +454,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=leader.host,
                 label=f'leader_{i}',
-                cmd=java + [
+                cmd=java(input.leader_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
                     'frankenpaxos.multipaxos.LeaderMain',
@@ -551,8 +553,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                 # TODO(mwhittaker): For now, we don't run clients with large
                 # heaps and verbose garbage collection because they are all
                 # colocated on one machine.
-                cmd=[
-                    'java',
+                cmd=java(input.client_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
                     'frankenpaxos.multipaxos.ClientMain',
