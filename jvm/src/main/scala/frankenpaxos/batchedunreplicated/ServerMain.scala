@@ -20,7 +20,6 @@ import scala.concurrent.duration
 object ServerMain extends App {
   case class Flags(
       // Basic flags.
-      index: Int = -1,
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       stateMachine: StateMachine = new statemachine.Noop(),
@@ -42,7 +41,6 @@ object ServerMain extends App {
     help("help")
 
     // Basic flags.
-    opt[Int]("index").required().action((x, f) => f.copy(index = x))
     opt[File]("config").required().action((x, f) => f.copy(configFile = x))
     opt[LogLevel]("log_level").required().action((x, f) => f.copy(logLevel = x))
     opt[StateMachine]("state_machine")

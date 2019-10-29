@@ -1,0 +1,8 @@
+{
+  "1": {
+    "clients": ["localhost"],
+    "batchers": ["localhost"],
+    "server": ["localhost"],
+    "proxy_servers": ["localhost"]
+  }
+}
