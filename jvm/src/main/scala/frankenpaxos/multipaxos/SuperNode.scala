@@ -26,6 +26,7 @@ object SuperNodeMain extends App {
       configFile: File = new File("."),
       logLevel: frankenpaxos.LogLevel = frankenpaxos.LogDebug,
       stateMachine: StateMachine = new statemachine.Noop(),
+      leaderDelay: java.time.Duration = java.time.Duration.ofSeconds(3),
       // Monitoring.
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 8009,
@@ -192,15 +193,6 @@ object SuperNodeMain extends App {
     )
   }
 
-  // Construct leader.
-  val leader = new Leader[NettyTcpTransport](
-    address = config.leaderAddresses(flags.index),
-    transport = transport,
-    logger = logger,
-    config = config,
-    options = flags.leaderOptions
-  )
-
   // Construct proxy leader.
   val proxyLeader = new ProxyLeader[NettyTcpTransport](
     address = config.proxyLeaderAddresses(flags.index),
@@ -236,6 +228,19 @@ object SuperNodeMain extends App {
     logger = logger,
     config = config,
     options = flags.proxyReplicaOptions
+  )
+
+  // Construct leader. We make sure to construct the leader last so that the
+  // other nodes have a time to start up before they are contacted. We also
+  // sleep for a bit to let all the acceptors start up properly. Is this good
+  // code? No. But it works okay :)
+  Thread.sleep(flags.leaderDelay.toMillis())
+  val leader = new Leader[NettyTcpTransport](
+    address = config.leaderAddresses(flags.index),
+    transport = transport,
+    logger = logger,
+    config = config,
+    options = flags.leaderOptions
   )
 
   // Start Prometheus.
