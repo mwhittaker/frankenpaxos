@@ -46,14 +46,14 @@ object ProxyServerOptions {
 class ProxyServerMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("batchedunreplicated_proxy_replica_requests_total")
+    .name("batchedunreplicated_proxy_server_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("batchedunreplicated_proxy_replica_requests_latency")
+    .name("batchedunreplicated_proxy_server_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()

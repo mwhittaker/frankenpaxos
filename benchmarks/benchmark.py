@@ -323,15 +323,16 @@ class RecorderOutput(NamedTuple):
 # TODO(mwhittaker): Drop the first couple of seconds from the data since it
 # takes a while for the JVM to fully ramp up.
 def parse_recorder_data(bench: BenchmarkDirectory, filenames: Iterable[str],
-                        drop_prefix: datetime.timedelta) -> RecorderOutput:
+                        drop_prefix: datetime.timedelta, save_data: bool = True) -> RecorderOutput:
     df = pd_util.read_csvs(filenames, parse_dates=['start', 'stop'])
     bench.log('Aggregate recorder data read.')
     df = df.set_index('start')
     bench.log('Aggregate recorder data index set.')
     df = df.sort_index(0)
     bench.log('Aggregate recorder data index sorted.')
-    df.to_csv(bench.abspath('data.csv'))
-    bench.log('Aggregate recorder data written.')
+    if save_data:
+        df.to_csv(bench.abspath('data.csv'))
+        bench.log('Aggregate recorder data written.')
 
     # Since we concatenate and save the file, we can throw away the originals.
     for filename in filenames:
@@ -339,8 +340,9 @@ def parse_recorder_data(bench: BenchmarkDirectory, filenames: Iterable[str],
     bench.log('Individual recorder data removed.')
 
     # We also compress the output data since it can get big.
-    subprocess.call(['gzip', bench.abspath('data.csv')])
-    bench.log('Aggregate recorder data compressed.')
+    if save_data:
+        subprocess.call(['gzip', bench.abspath('data.csv')])
+        bench.log('Aggregate recorder data compressed.')
 
     # Drop prefix of data.
     start_time = df.index[0]

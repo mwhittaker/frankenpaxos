@@ -16,8 +16,8 @@ def main(args) -> None:
                     warmup_duration=datetime.timedelta(seconds=5),
                     warmup_timeout=datetime.timedelta(seconds=10),
                     warmup_sleep=datetime.timedelta(seconds=5),
-                    duration=datetime.timedelta(seconds=10),
-                    timeout=datetime.timedelta(seconds=15),
+                    duration=datetime.timedelta(seconds=8),
+                    timeout=datetime.timedelta(seconds=13),
                     client_lag=datetime.timedelta(seconds=5),
                     state_machine='Noop',
                     workload=workload.StringWorkload(size_mean=1, size_std=0),
@@ -40,7 +40,9 @@ def main(args) -> None:
                     (5, 20, 20),
                     (6, 50, 50),
                     (6, 100, 100),
-                    (12, 100, 100),
+                    (10, 100, 100),
+                    (20, 100, 100),
+                    (20, 200, 100),
                 ]
             ] * 3
 

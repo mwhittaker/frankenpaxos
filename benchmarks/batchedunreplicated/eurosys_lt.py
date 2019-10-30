@@ -21,8 +21,8 @@ def main(args) -> None:
                     warmup_duration=datetime.timedelta(seconds=5),
                     warmup_timeout=datetime.timedelta(seconds=10),
                     warmup_sleep=datetime.timedelta(seconds=5),
-                    duration=datetime.timedelta(seconds=10),
-                    timeout=datetime.timedelta(seconds=15),
+                    duration=datetime.timedelta(seconds=8),
+                    timeout=datetime.timedelta(seconds=13),
                     client_lag=datetime.timedelta(seconds=5),
                     state_machine='Noop',
                     workload=workload.StringWorkload(size_mean=1, size_std=0),
@@ -56,14 +56,16 @@ def main(args) -> None:
                     proxy_server_flush_every_n
                 ) in [
                     ( 1,   1, 1, 10, 1, 1, 1),
-                    ( 1,  10, 1, 10, 5, 1, 1),
-                    ( 5,  10, 1, 10, 10, 1, 1),
-                    ( 5,  20, 2, 10, 20, 1, 1),
-                    ( 6,  50, 3, 10, 50, 1, 1),
-                    ( 6, 100, 4, 10, 100, 1, 1),
-                    (12, 100, 5, 10, 100, 1, 1),
+                    ( 1,  10, 1, 10, 5, 1, 5),
+                    ( 5,  10, 1, 10, 10, 1, 10),
+                    ( 5,  20, 1, 10, 10, 1, 10),
+                    ( 6,  50, 1, 10, 10, 1, 10),
+                    ( 6, 100, 2, 10, 10, 1, 10),
+                    (10, 100, 4, 10, 10, 1, 10),
+                    (20, 100, 4, 10, 20, 1, 20),
+                    (20, 200, 8, 10, 40, 1, 40),
                 ]
-            ]
+            ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
