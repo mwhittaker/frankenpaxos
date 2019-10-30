@@ -26,10 +26,19 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     require(f >= 1, s"f must be >= 1. It's $f.")
     // We either have no batchers (in which case clients sends straight to
     // leaders), or we have at least f + 1 batchers to tolerate failures.
-    require(
-      numBatchers == 0 || numBatchers >= f + 1,
-      s"numBatchers must be 0 or >= f + 1 (${f + 1}). It's $numBatchers."
-    )
+    distributionScheme match {
+      case Hash =>
+        require(
+          numBatchers == 0 || numBatchers >= f + 1,
+          s"numBatchers must be 0 or >= f + 1 (${f + 1}). It's $numBatchers."
+        )
+      case Colocated =>
+        require(
+          numBatchers == 0 || numBatchers == numLeaders,
+          s"numBatchers must be 0 or equal to numLeaders ($numLeaders). " +
+            s"It's $numBatchers."
+        )
+    }
     require(
       numLeaders >= f + 1,
       s"numLeaders must be >= f + 1 (${f + 1}). It's $numLeaders."

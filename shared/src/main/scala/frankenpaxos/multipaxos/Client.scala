@@ -156,6 +156,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     )
   }
 
+  private def getBatcher(): Chan[Batcher[Transport]] = {
+    config.distributionScheme match {
+      case Hash      => batchers(rand.nextInt(batchers.size))
+      case Colocated => batchers(roundSystem.leader(round))
+    }
+  }
+
   private def sendClientRequest(clientRequest: ClientRequest): Unit = {
     if (config.numBatchers == 0) {
       // If there are no batchers, then we send to who we think the leader is.
@@ -167,8 +174,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       //
       // TODO(mwhittaker): Abstract out the policy that determines which
       // batcher we propose to.
-      val batcher = batchers(rand.nextInt(batchers.size))
-      batcher.send(BatcherInbound().withClientRequest(clientRequest))
+      getBatcher().send(BatcherInbound().withClientRequest(clientRequest))
     }
   }
 
