@@ -32,17 +32,11 @@ def main(args) -> None:
                         milliseconds=200),
                     client_options=ClientOptions(),
                     client_log_level=args.log_level,
-                    batcher_options=BatcherOptions(
-                        batch_size = 1,
-                    ),
+                    batcher_options=BatcherOptions(batch_size=1,),
                     batcher_log_level=args.log_level,
-                    server_options=ServerOptions(
-                        flush_every_n = 1,
-                    ),
+                    server_options=ServerOptions(flush_every_n=1,),
                     server_log_level=args.log_level,
-                    proxy_server_options=ProxyServerOptions(
-                        flush_every_n = 1,
-                    ),
+                    proxy_server_options=ProxyServerOptions(flush_every_n=1,),
                     proxy_server_log_level=args.log_level,
                 )
             ]

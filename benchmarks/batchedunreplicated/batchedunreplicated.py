@@ -132,15 +132,11 @@ class BatchedUnreplicatedNet:
                              self._cluster['clients'])),
             batchers=portify(
                 cycle_take_n(self._input.num_batchers,
-                self._cluster['batchers']
-                )
-                ),
+                             self._cluster['batchers'])),
             server=portify_one(self._cluster['server'][0]),
             proxy_servers=portify(
                 cycle_take_n(self._input.num_proxy_servers,
-                self._cluster['proxy_servers']
-                )
-                ),
+                             self._cluster['proxy_servers'])),
         )
 
     def config(self) -> proto_util.Message:
@@ -164,7 +160,8 @@ class BatchedUnreplicatedNet:
 class BatchedUnreplicatedSuite(benchmark.Suite[Input, Output]):
     def run_benchmark(self, bench: benchmark.BenchmarkDirectory,
                       args: Dict[Any, Any], input: Input) -> Output:
-        net = BatchedUnreplicatedNet(args['cluster'], args['identity_file'], input)
+        net = BatchedUnreplicatedNet(args['cluster'], args['identity_file'],
+                                     input)
         return self._run_benchmark(bench, args, input, net)
 
     def _run_benchmark(self, bench: benchmark.BenchmarkDirectory,
@@ -331,7 +328,7 @@ class BatchedUnreplicatedSuite(benchmark.Suite[Input, Output]):
                 # TODO(mwhittaker): For now, we don't run clients with large
                 # heaps and verbose garbage collection because they are all
                 # colocated on one machine.
-                cmd= java(input.client_jvm_heap_size) + [
+                cmd=java(input.client_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
                     'frankenpaxos.batchedunreplicated.ClientMain',
