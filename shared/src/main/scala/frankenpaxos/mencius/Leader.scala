@@ -339,7 +339,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private def getProxyLeader(): Chan[ProxyLeader[Transport]] = {
     config.distributionScheme match {
       case Hash      => proxyLeaders(rand.nextInt(proxyLeaders.size))
-      case Colocated => proxyLeaders(index)
+      case Colocated => proxyLeaders(groupIndex)
     }
   }
 

@@ -315,7 +315,6 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                 acceptor_procs.append(p)
         bench.log('Acceptors started.')
 
-
         # Launch batchers.
         batcher_procs: List[proc.Proc] = []
         for (i, batcher) in enumerate(net.placement().batchers):

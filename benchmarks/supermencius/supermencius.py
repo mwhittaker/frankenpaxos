@@ -9,7 +9,7 @@ from .. import prometheus
 from .. import proto_util
 from .. import util
 from .. import workload
-from ..multipaxos import multipaxos
+from ..mencius import mencius
 from ..workload import Workload
 from typing import Any, Callable, Collection, Dict, List, NamedTuple, Optional
 import argparse
@@ -28,18 +28,16 @@ import yaml
 
 
 # Suite ########################################################################
-class SuperMultiPaxosSuite(benchmark.Suite[multipaxos.Input, multipaxos.Output]
-                          ):
+class SuperMenciusSuite(benchmark.Suite[mencius.Input, mencius.Output]):
     def run_benchmark(self, bench: benchmark.BenchmarkDirectory,
                       args: Dict[Any, Any],
-                      input: multipaxos.Input) -> multipaxos.Output:
-        net = multipaxos.MultiPaxosNet(args['cluster'], args['identity_file'],
-                                       input)
+                      input: mencius.Input) -> mencius.Output:
+        net = mencius.MenciusNet(args['cluster'], args['identity_file'], input)
         return self._run_benchmark(bench, args, input, net)
 
     def _run_benchmark(self, bench: benchmark.BenchmarkDirectory,
-                       args: Dict[Any, Any], input: multipaxos.Input,
-                       net: multipaxos.MultiPaxosNet) -> multipaxos.Output:
+                       args: Dict[Any, Any], input: mencius.Input,
+                       net: mencius.MenciusNet) -> mencius.Output:
         # Write config file.
         config = net.config()
         config_filename = bench.abspath('config.pbtxt')
@@ -47,6 +45,7 @@ class SuperMultiPaxosSuite(benchmark.Suite[multipaxos.Input, multipaxos.Output]
                            proto_util.message_to_pbtext(config))
         bench.log('Config file config.pbtxt written.')
 
+        # If we're monitoring the code, run garbage collection verbosely.
         def java(heap_size: str) -> List[str]:
             cmd = ['java', f'-Xms{heap_size}', f'-Xmx{heap_size}']
             if input.monitored:
@@ -61,22 +60,12 @@ class SuperMultiPaxosSuite(benchmark.Suite[multipaxos.Input, multipaxos.Output]
             return cmd
 
         # Launch super nodes.
-        assert (len(net.placement().batchers) == 0 or
-                len(net.placement().leaders) == len(net.placement().batchers))
-        assert len(net.placement().leaders) == len(
-            net.placement().proxy_leaders)
-        assert len(net.placement().acceptors) == 1
-        assert len(net.placement().leaders) == len(net.placement().acceptors[0])
-        assert len(net.placement().leaders) == len(net.placement().replicas)
-        assert len(net.placement().leaders) == len(
-            net.placement().proxy_replicas)
-
         super_node_procs: List[proc.Proc] = []
-        for (i, leader) in enumerate(net.placement().leaders):
+        for (i, leaders) in enumerate(net.placement().leaders):
             cmd = java(input.leader_jvm_heap_size) + [
                 '-cp',
                 os.path.abspath(args['jar']),
-                'frankenpaxos.multipaxos.SuperNodeMain',
+                'frankenpaxos.mencius.SuperNodeMain',
                 '--index',
                 str(i),
                 '--config',
@@ -84,11 +73,15 @@ class SuperMultiPaxosSuite(benchmark.Suite[multipaxos.Input, multipaxos.Output]
                 '--log_level',
                 input.leader_log_level,
                 '--prometheus_host',
-                leader.host.ip(),
+                leaders[0].host.ip(),
                 '--prometheus_port',
-                str(leader.port + 1) if input.monitored else '-1',
+                str(leaders[0].port + 1) if input.monitored else '-1',
 
                 # Leader options.
+                '--leader.sendHighWatermarkEveryN',
+                str(input.leader_options.send_high_watermark_every_n),
+                '--leader.sendNoopRangeIfLaggingBy',
+                str(input.leader_options.send_noop_range_if_lagging_by),
                 '--leader.resendPhase1asPeriod',
                 '{}s'.format(input.leader_options.resend_phase1as_period.
                              total_seconds()),
@@ -138,44 +131,48 @@ class SuperMultiPaxosSuite(benchmark.Suite[multipaxos.Input, multipaxos.Output]
                     str(input.batcher_options.batch_size),
                 ]
 
-            p = bench.popen(host=leader.host, label=f'super_node_{i}', cmd=cmd)
+            p = bench.popen(host=leaders[0].host,
+                            label=f'super_node_{i}',
+                            cmd=cmd)
             if input.profiled:
-                p = perf_util.JavaPerfProc(bench, leader.host, p,
+                p = perf_util.JavaPerfProc(bench, leaders[0].host, p,
                                            f'super_node_{i}')
             super_node_procs.append(p)
         bench.log('SuperNodes started.')
 
         # Launch Prometheus.
-        # TODO(mwhittaker): Is this right?
+        # TODO(mwhittaker): Is this correct?
         if input.monitored:
             prometheus_config = prometheus.prometheus_config(
                 int(input.prometheus_scrape_interval.total_seconds() * 1000), {
-                    'multipaxos_client': [
+                    'mencius_client': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().clients
                     ],
-                    'multipaxos_batcher': [
+                    'mencius_batcher': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().batchers
                     ],
-                    'multipaxos_leader': [
+                    'mencius_leader': [
                         f'{e.host.ip()}:{e.port+1}'
-                        for e in net.placement().leaders
+                        for group in net.placement().leaders
+                        for e in group
                     ],
-                    'multipaxos_proxy_leader': [
+                    'mencius_proxy_leader': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().proxy_leaders
                     ],
-                    'multipaxos_acceptor': [
+                    'mencius_acceptor': [
                         f'{e.host.ip()}:{e.port+1}'
-                        for group in net.placement().acceptors
-                        for e in group
+                        for leader_group in net.placement().acceptors
+                        for acceptor_group in leader_group
+                        for e in acceptor_group
                     ],
-                    'multipaxos_replica': [
+                    'mencius_replica': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().replicas
                     ],
-                    'multipaxos_proxy_replica': [
+                    'mencius_proxy_replica': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().proxy_replicas
                     ],
@@ -210,11 +207,10 @@ class SuperMultiPaxosSuite(benchmark.Suite[multipaxos.Input, multipaxos.Output]
                 # TODO(mwhittaker): For now, we don't run clients with large
                 # heaps and verbose garbage collection because they are all
                 # colocated on one machine.
-                cmd=[
-                    'java',
+                cmd=java(input.client_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.ClientMain',
+                    'frankenpaxos.mencius.ClientMain',
                     '--host',
                     client.host.ip(),
                     '--port',

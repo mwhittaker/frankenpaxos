@@ -1,4 +1,4 @@
-package frankenpaxos.multipaxos
+package frankenpaxos.mencius
 
 import frankenpaxos.Actor
 import frankenpaxos.Flags.durationRead
@@ -8,6 +8,7 @@ import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
 import frankenpaxos.election.basic.ElectionOptions
+import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.statemachine
 import frankenpaxos.statemachine.AppendLog
 import frankenpaxos.statemachine.StateMachine
@@ -116,6 +117,10 @@ object SuperNodeMain extends App {
       .batcherOptionAction((x, o) => o.copy(batchSize = x))
 
     // Leader options.
+    opt[Int]("leader.sendHighWatermarkEveryN")
+      .leaderOptionAction((x, o) => o.copy(sendHighWatermarkEveryN = x))
+    opt[Int]("leader.sendNoopRangeIfLaggingBy")
+      .leaderOptionAction((x, o) => o.copy(sendNoopRangeIfLaggingBy = x))
     opt[java.time.Duration]("leader.resendPhase1asPeriod")
       .leaderOptionAction((x, o) => o.copy(resendPhase1asPeriod = x))
     opt[Int]("leader.flushPhase2asEveryN")
@@ -172,13 +177,35 @@ object SuperNodeMain extends App {
       config.batcherAddresses.size == 2 * config.f + 1
   )
   logger.checkEq(config.leaderAddresses.size, 2 * config.f + 1)
+  for (group <- config.leaderAddresses) {
+    logger.checkEq(group.size, 2 * config.f + 1)
+  }
   logger.checkEq(config.leaderElectionAddresses.size, 2 * config.f + 1)
+  for (group <- config.leaderElectionAddresses) {
+    logger.checkEq(group.size, 2 * config.f + 1)
+  }
   logger.checkEq(config.proxyLeaderAddresses.size, 2 * config.f + 1)
-  logger.checkEq(config.acceptorAddresses.size, 1)
-  logger.checkEq(config.acceptorAddresses(0).size, 2 * config.f + 1)
+  logger.checkEq(config.acceptorAddresses.size, 2 * config.f + 1)
+  for (acceptorGroups <- config.acceptorAddresses) {
+    logger.checkEq(acceptorGroups.size, 1)
+    logger.checkEq(acceptorGroups(0).size, 2 * config.f + 1)
+  }
   logger.checkEq(config.replicaAddresses.size, 2 * config.f + 1)
   logger.checkEq(config.proxyReplicaAddresses.size, 2 * config.f + 1)
   logger.checkEq(config.distributionScheme, Colocated)
+
+  // Construct acceptors.
+  val acceptorMetrics = new AcceptorMetrics(PrometheusCollectors)
+  val acceptors = for (acceptorGroups <- config.acceptorAddresses) yield {
+    new Acceptor[NettyTcpTransport](
+      address = acceptorGroups(0)(flags.index),
+      transport = transport,
+      logger = logger,
+      config = config,
+      options = flags.acceptorOptions,
+      metrics = acceptorMetrics
+    )
+  }
 
   // Construct batcher. Batching is optional, so if no batcher addresses are
   // given, we do not start a batcher.
@@ -201,15 +228,6 @@ object SuperNodeMain extends App {
     options = flags.proxyLeaderOptions
   )
 
-  // Construct acceptor.
-  val acceptor = new Acceptor[NettyTcpTransport](
-    address = config.acceptorAddresses(0)(flags.index),
-    transport = transport,
-    logger = logger,
-    config = config,
-    options = flags.acceptorOptions
-  )
-
   // Construct replica.
   val replica = new Replica[NettyTcpTransport](
     address = config.replicaAddresses(flags.index),
@@ -229,18 +247,30 @@ object SuperNodeMain extends App {
     options = flags.proxyReplicaOptions
   )
 
-  // Construct leader. We make sure to construct the leader last so that the
-  // other nodes have a time to start up before they are contacted. We also
-  // sleep for a bit to let all the acceptors start up properly. Is this good
-  // code? No. But it works okay :)
+  // Construct leaders. We make sure to construct the leader last so that the
+  // other nodes have a time to start up before they are contacted. Knowing
+  // which leaders to run on each node is tricky. See DistributionScheme.scala
+  // for an example.
+  //
+  // We also sleep for a bit to let all the acceptors start up properly. Is
+  // this good code? No. But it works okay :)
   Thread.sleep(flags.leaderDelay.toMillis())
-  val leader = new Leader[NettyTcpTransport](
-    address = config.leaderAddresses(flags.index),
-    transport = transport,
-    logger = logger,
-    config = config,
-    options = flags.leaderOptions
-  )
+
+  def rotated[A](xs: Seq[A], n: Int): Seq[A] =
+    xs.slice(n, xs.size) ++ xs.slice(0, n)
+
+  val leaderMetrics = new LeaderMetrics(PrometheusCollectors)
+  val leaders =
+    for ((group, i) <- rotated(config.leaderAddresses, flags.index).zipWithIndex)
+      yield
+        new Leader[NettyTcpTransport](
+          address = group(i),
+          transport = transport,
+          logger = logger,
+          config = config,
+          options = flags.leaderOptions,
+          metrics = leaderMetrics
+        )
 
   // Start Prometheus.
   PrometheusUtil.server(flags.prometheusHost, flags.prometheusPort)

@@ -609,8 +609,7 @@ class MenciusSuite(benchmark.Suite[Input, Output]):
                 # TODO(mwhittaker): For now, we don't run clients with large
                 # heaps and verbose garbage collection because they are all
                 # colocated on one machine.
-                cmd=[
-                    'java',
+                cmd=java(input.client_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
                     'frankenpaxos.mencius.ClientMain',
