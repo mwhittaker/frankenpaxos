@@ -1,0 +1,11 @@
+{
+  "1": {
+    "clients": ["localhost"],
+    "batchers": ["localhost"],
+    "leaders": ["localhost"],
+    "proxy_leaders": ["localhost"],
+    "acceptors": ["localhost"],
+    "replicas": ["localhost"],
+    "proxy_replicas": ["localhost"]
+  }
+}
