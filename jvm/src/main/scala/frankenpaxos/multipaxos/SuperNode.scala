@@ -167,7 +167,8 @@ object SuperNodeMain extends App {
 
   // Sanity check the configuration.
   logger.check(
-    config.batcherAddresses.isEmpty || config.batcherAddresses.size == 1
+    config.batcherAddresses.isEmpty ||
+      config.batcherAddresses.size == 2 * config.f + 1
   )
   logger.checkEq(config.leaderAddresses.size, 2 * config.f + 1)
   logger.checkEq(config.leaderElectionAddresses.size, 2 * config.f + 1)
@@ -181,12 +182,7 @@ object SuperNodeMain extends App {
   // Construct batcher. Batching is optional, so if no batcher addresses are
   // given, we do not start a batcher. If we do use batching, only the leader
   // (index 0) is co-located with a batcher.
-  //
-  // TODO(mwhittaker): In full generality, we should have one batcher on every
-  // leader, and the clients should figure out which batcher to send to. Here,
-  // we assume no leader changes happen, so we're safe to just run a batcher
-  // co-located with the first leader.
-  if (!config.batcherAddresses.isEmpty && flags.index == 0) {
+  if (!config.batcherAddresses.isEmpty) {
     val batcher = new Batcher[NettyTcpTransport](
       address = config.batcherAddresses(flags.index),
       transport = transport,
