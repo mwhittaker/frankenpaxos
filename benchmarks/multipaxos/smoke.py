@@ -13,7 +13,7 @@ def main(args) -> None:
                     num_client_procs = 1,
                     num_warmup_clients_per_proc = 1,
                     num_clients_per_proc = 1,
-                    num_batchers = 2,
+                    num_batchers = num_batchers,
                     num_leaders = 2,
                     num_proxy_leaders = 2,
                     num_acceptor_groups = 2,
@@ -78,11 +78,13 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
+                for num_batchers in [0, 2]
             ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
+                'num_batchers': input.num_batchers,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
