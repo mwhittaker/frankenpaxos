@@ -2,7 +2,7 @@ from .batchedunreplicated import *
 
 
 def main(args) -> None:
-    class SmokeBatchedUnreplicatedSuite(BatchedUnreplicatedSuite):
+    class EuroSysLtBatchedUnreplicatedSuite(BatchedUnreplicatedSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -81,9 +81,9 @@ def main(args) -> None:
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.7}',
             })
 
-    suite = SmokeBatchedUnreplicatedSuite()
+    suite = EuroSysLtBatchedUnreplicatedSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'batchedunreplicated_smoke') as dir:
+                                  'batchedunreplicated_eurosys_lt') as dir:
         suite.run_suite(dir)
 
 
