@@ -10,7 +10,7 @@ def main(args) -> None:
             return [
                 Input(
                     num_client_procs=num_client_procs,
-                    num_warmup_clients_per_proc=50,
+                    num_warmup_clients_per_proc=num_clients_per_proc,
                     num_clients_per_proc=num_clients_per_proc,
                     jvm_heap_size='32g',
                     warmup_duration=datetime.timedelta(seconds=5),
