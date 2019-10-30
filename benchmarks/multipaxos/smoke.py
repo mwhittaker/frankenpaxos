@@ -32,7 +32,7 @@ def main(args) -> None:
                     warmup_sleep = datetime.timedelta(seconds=0),
                     duration = datetime.timedelta(seconds=2),
                     timeout = datetime.timedelta(seconds=3),
-                    client_lag = datetime.timedelta(seconds=0),
+                    client_lag = datetime.timedelta(seconds=3),
                     state_machine = 'Noop',
                     workload = workload.StringWorkload(size_mean=1, size_std=0),
                     profiled = args.profile,

@@ -183,8 +183,10 @@ class MultiPaxosNet:
 
         def chunks(xs, n):
             # https://stackoverflow.com/a/312464/3187068
+            result = []
             for i in range(0, len(xs), n):
-                yield xs[i:i + n]
+                result.append(xs[i:i + n])
+            return result
 
         n = 2 * self._input.f + 1
         return self.Placement(
@@ -282,6 +284,38 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                 ]
             return cmd
 
+        # Launch acceptors.
+        acceptor_procs: List[proc.Proc] = []
+        for (group_index, group) in enumerate(net.placement().acceptors):
+            for (i, acceptor) in enumerate(group):
+                p = bench.popen(
+                    host=acceptor.host,
+                    label=f'acceptor_{group_index}_{i}',
+                    cmd=java(input.acceptor_jvm_heap_size) + [
+                        '-cp',
+                        os.path.abspath(args['jar']),
+                        'frankenpaxos.multipaxos.AcceptorMain',
+                        '--group_index',
+                        str(group_index),
+                        '--index',
+                        str(i),
+                        '--config',
+                        config_filename,
+                        '--log_level',
+                        input.acceptor_log_level,
+                        '--prometheus_host',
+                        acceptor.host.ip(),
+                        '--prometheus_port',
+                        str(acceptor.port + 1) if input.monitored else '-1',
+                    ],
+                )
+                if input.profiled:
+                    p = perf_util.JavaPerfProc(bench, acceptor.host, p,
+                                               f'acceptor_{group_index}_{i}')
+                acceptor_procs.append(p)
+        bench.log('Acceptors started.')
+
+
         # Launch batchers.
         batcher_procs: List[proc.Proc] = []
         for (i, batcher) in enumerate(net.placement().batchers):
@@ -341,37 +375,6 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                                            f'proxy_leader_{i}')
             proxy_leader_procs.append(p)
         bench.log('ProxyLeaders started.')
-
-        # Launch acceptors.
-        acceptor_procs: List[proc.Proc] = []
-        for (group_index, group) in enumerate(net.placement().acceptors):
-            for (i, acceptor) in enumerate(group):
-                p = bench.popen(
-                    host=acceptor.host,
-                    label=f'acceptor_{group_index}_{i}',
-                    cmd=java(input.acceptor_jvm_heap_size) + [
-                        '-cp',
-                        os.path.abspath(args['jar']),
-                        'frankenpaxos.multipaxos.AcceptorMain',
-                        '--group_index',
-                        str(group_index),
-                        '--index',
-                        str(i),
-                        '--config',
-                        config_filename,
-                        '--log_level',
-                        input.acceptor_log_level,
-                        '--prometheus_host',
-                        acceptor.host.ip(),
-                        '--prometheus_port',
-                        str(acceptor.port + 1) if input.monitored else '-1',
-                    ],
-                )
-                if input.profiled:
-                    p = perf_util.JavaPerfProc(bench, acceptor.host, p,
-                                               f'acceptor_{group_index}_{i}')
-                acceptor_procs.append(p)
-        bench.log('Acceptors started.')
 
         # Launch replicas.
         replica_procs: List[proc.Proc] = []
