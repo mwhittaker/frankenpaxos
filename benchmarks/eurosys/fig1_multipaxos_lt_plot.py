@@ -46,7 +46,7 @@ def make_figure(output_filename: str,
 
 def main(args) -> None:
     unbatched_coupled_df = add_num_clients(pd.read_csv(args.unbatched_coupled_multipaxos_results))
-    # unbatched_multipaxos_df = add_num_clients(pd.read_csv(args.unbatched_multipaxos_results))
+    unbatched_multipaxos_df = add_num_clients(pd.read_csv(args.unbatched_multipaxos_results))
     unbatched_unreplicated_df = add_num_clients(pd.read_csv(args.unbatched_unreplicated_results))
     batched_coupled_df = add_num_clients(pd.read_csv(args.batched_coupled_multipaxos_results))
     # batched_multipaxos_df = add_num_clients(pd.read_csv(args.batched_multipaxos_results))
@@ -55,8 +55,7 @@ def main(args) -> None:
     make_figure(
         args.output_unbatched,
         unbatched_coupled_df,
-        # unbatched_multipaxos_df,
-        unbatched_unreplicated_df,
+        unbatched_multipaxos_df,
         unbatched_unreplicated_df,
     )
 
