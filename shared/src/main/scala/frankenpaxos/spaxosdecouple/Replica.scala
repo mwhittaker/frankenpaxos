@@ -73,52 +73,52 @@ object ReplicaOptions {
 class ReplicaMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_replica_requests_total")
+    .name("spaxosdecouple_replica_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("multipaxos_replica_requests_latency")
+    .name("spaxosdecouple_replica_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
 
   val redundantlyChosenTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_replica_redundantly_chosen_total")
+    .name("spaxosdecouple_replica_redundantly_chosen_total")
     .help("Total number of Chosen commands that were redundantly received.")
     .register()
 
   val executedLogEntriesTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_replica_executed_log_entries_total")
+    .name("spaxosdecouple_replica_executed_log_entries_total")
     .labelNames("type") // "noop" or "command"
     .help("Total number of log entries that have been executed.")
     .register()
 
   val executedCommandsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_replica_executed_commands_total")
+    .name("spaxosdecouple_replica_executed_commands_total")
     .help("Total number of commands that have been executed.")
     .register()
 
   val reduntantlyExecutedCommandsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_replica_reduntantly_executed_commands_total")
+    .name("spaxosdecouple_replica_reduntantly_executed_commands_total")
     .help("Total number of commands that were redundantly chosen.")
     .register()
 
   val chosenWatermarksSentTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_replica_chosen_watermarks_sent_total")
+    .name("spaxosdecouple_replica_chosen_watermarks_sent_total")
     .help("Total number of chosen watermarks sent.")
     .register()
 
   val recoversSentTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_replica_recovers_sent_total")
+    .name("spaxosdecouple_replica_recovers_sent_total")
     .help("Total number of recover messages sent.")
     .register()
 }

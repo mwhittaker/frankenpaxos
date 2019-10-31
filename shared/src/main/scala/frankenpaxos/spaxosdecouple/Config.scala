@@ -73,6 +73,13 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
       numDisseminatorGroups >= 1,
       s"numDisseminatorGroups must be >= 1. It's $numDisseminatorGroups."
     )
+    for (disseminatorCluster <- disseminatorAddresses) {
+      require(
+        disseminatorCluster.size == 2 * f + 1,
+        s"disseminatorCluster.size must be 2*f + 1 (${2 * f + 1}). " +
+          s"It's ${disseminatorCluster.size}."
+      )
+    }
     require(
       numReplicas >= f + 1,
       s"numReplicas must be >= f + 1 (${f + 1}). It's $numReplicas."

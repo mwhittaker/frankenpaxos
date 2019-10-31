@@ -44,25 +44,25 @@ object ClientOptions {
 class ClientMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_requests_total")
+    .name("spaxosdecouple_client_requests_total")
     .help("Total number of client requests sent.")
     .register()
 
   val responsesTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_responses_total")
+    .name("spaxosdecouple_client_responses_total")
     .help("Total number of successful client responses received.")
     .register()
 
   val unpendingResponsesTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_unpending_responses_total")
+    .name("spaxosdecouple_client_unpending_responses_total")
     .help("Total number of unpending client responses received.")
     .register()
 
   val resendClientRequestTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_resend_client_request_total")
+    .name("spaxosdecouple_client_resend_client_request_total")
     .help("Total number of times a client resends a ClientRequest.")
     .register()
 }
@@ -101,10 +101,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.batcherAddresses)
       yield chan[Batcher[Transport]](address, Batcher.serializer)
 
-  // Leader channels.
-  private val leaders: Seq[Chan[Leader[Transport]]] =
-    for (address <- config.leaderAddresses)
-      yield chan[Leader[Transport]](address, Leader.serializer)
+  // Proposer channels.
+  private val proposers: Seq[Chan[Proposer[Transport]]] =
+    for (address <- config.proposerAddresses)
+      yield chan[Proposer[Transport]](address, Proposer.serializer)
 
   private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
 
@@ -156,12 +156,12 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   private def sendClientRequest(clientRequest: ClientRequest): Unit = {
     if (config.numBatchers == 0) {
-      // If there are no batchers, then we send to who we think the leader is.
-      val leader = leaders(roundSystem.leader(round))
-      leader.send(LeaderInbound().withClientRequest(clientRequest))
+      // If there are no batchers, then we send to a proposer
+      val proposer = proposers(rand.nextInt(proposers.size))
+      proposer.send(LeaderInbound().withClientRequest(clientRequest))
     } else {
       // If there are batchers, then we send to a randomly selected batcher.
-      // The batchers will take care of forwarding our message to a leader.
+      // The batchers will take care of forwarding our message to a proposer.
       //
       // TODO(mwhittaker): Abstract out the policy that determines which
       // batcher we propose to.

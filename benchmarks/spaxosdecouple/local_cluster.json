@@ -2,6 +2,8 @@
   "1": {
     "clients": ["localhost"],
     "batchers": ["localhost"],
+    "proposers": ["localhost"],
+    "disseminators": ["localhost"],
     "leaders": ["localhost"],
     "proxy_leaders": ["localhost"],
     "acceptors": ["localhost"],

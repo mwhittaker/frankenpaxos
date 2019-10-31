@@ -42,14 +42,14 @@ object AcceptorOptions {
 class AcceptorMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_acceptor_requests_total")
+    .name("spaxosdecouple_acceptor_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("multipaxos_acceptor_requests_latency")
+    .name("spaxosdecouple_acceptor_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()

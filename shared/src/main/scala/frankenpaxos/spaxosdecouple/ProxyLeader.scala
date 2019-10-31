@@ -49,14 +49,14 @@ object ProxyLeaderOptions {
 class ProxyLeaderMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_proxy_leader_requests_total")
+    .name("spaxosdecouple_proxy_leader_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("multipaxos_proxy_leader_requests_latency")
+    .name("spaxosdecouple_proxy_leader_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
@@ -226,8 +226,7 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         pending.phase2a.commandBatchOrNoop.value match {
           case CommandBatchOrNoop.Value.CommandBatch(batch) =>
             val group = disseminators(Math.abs(batch.batchId.batchId.hashCode()) % disseminators.size)
-            val r = scala.util.Random
-            val randomDisseminator = group(r.nextInt(group.size))
+            val randomDisseminator = group(rand.nextInt(group.size))
             randomDisseminator.send(DisseminatorInbound().withValueChosen(ValueChosen(slot = phase2b.slot, commandBatchOrNoop = pending.phase2a.commandBatchOrNoop)))
           case CommandBatchOrNoop.Value.Noop(Noop()) =>
             replicas.foreach(_.send(ReplicaInbound().withChosen(Chosen(slot = phase2b.slot, commandBatchOrNoop = RequestBatchOrNoop(RequestBatchOrNoop.Value.Noop(Noop()))))))

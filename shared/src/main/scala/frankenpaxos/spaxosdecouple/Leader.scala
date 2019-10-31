@@ -53,27 +53,27 @@ object LeaderOptions {
 class LeaderMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_leader_requests_total")
+    .name("spaxosdecouple_leader_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("multipaxos_leader_requests_latency")
+    .name("spaxosdecouple_leader_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
 
   val leaderChangesTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_leader_leader_changes_total")
+    .name("spaxosdecouple_leader_leader_changes_total")
     .help("Total number of leader changes.")
     .register()
 
   val resendPhase1asTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_leader_resend_phase1as_total")
+    .name("spaxosdecouple_leader_resend_phase1as_total")
     .help("Total number of times the leader resent phase 1a messages.")
     .register()
 }

@@ -42,14 +42,14 @@ object DisseminatorOptions {
 class DisseminatorMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("spaxos_decouple_disseminator_requests_total")
+    .name("spaxosdecouple_disseminator_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("spaxos_decouple_disseminator_requests_latency")
+    .name("spaxosdecouple_disseminator_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()

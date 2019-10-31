@@ -40,6 +40,11 @@ class ClientOptions(NamedTuple):
 class BatcherOptions(NamedTuple):
     batch_size: int = 1
 
+class ProposerOptions(NamedTuple):
+    pass
+
+class DisseminatorOptions(NamedTuple):
+    pass
 
 class ElectionOptions(NamedTuple):
     ping_period: datetime.timedelta = datetime.timedelta(seconds=1)
@@ -83,13 +88,23 @@ class Input(NamedTuple):
     num_warmup_clients_per_proc: int
     num_clients_per_proc: int
     num_batchers: int
+    num_proposers: int
+    num_disseminator_groups: int
     num_leaders: int
     num_proxy_leaders: int
     num_acceptor_groups: int
     num_replicas: int
     num_proxy_replicas: int
     distribution_scheme: DistributionScheme
-    jvm_heap_size: str
+    client_jvm_heap_size: str
+    batcher_jvm_heap_size: str
+    proposer_jvm_heap_size: str
+    disseminator_jvm_heap_size: str
+    leader_jvm_heap_size: str
+    proxy_leader_jvm_heap_size: str
+    acceptor_jvm_heap_size: str
+    replica_jvm_heap_size: str
+    proxy_replica_jvm_heap_size: str
 
     # Benchmark parameters. ####################################################
     warmup_duration: datetime.timedelta
@@ -107,6 +122,14 @@ class Input(NamedTuple):
     # Batcher options. #########################################################
     batcher_options: BatcherOptions
     batcher_log_level: str
+
+    # Proposer options. #########################################################
+    proposer_options: ProposerOptions
+    proposer_log_level: str
+
+    # Disseminator options. #########################################################
+    disseminator_options: DisseminatorOptions
+    disseminator_log_level: str
 
     # Leader options. ##########################################################
     leader_options: LeaderOptions
@@ -137,7 +160,7 @@ Output = benchmark.RecorderOutput
 
 
 # Networks #####################################################################
-class MultiPaxosNet:
+class SPaxosDecoupleNet:
     def __init__(self, cluster_file: str, key_filename: Optional[str],
                  input: Input) -> None:
         self._key_filename = key_filename
@@ -159,6 +182,8 @@ class MultiPaxosNet:
     class Placement(NamedTuple):
         clients: List[host.Endpoint]
         batchers: List[host.Endpoint]
+        proposers: List[host.Endpoint]
+        disseminators: List[List[host.Endpoint]]
         leaders: List[host.Endpoint]
         leader_elections: List[host.Endpoint]
         proxy_leaders: List[host.Endpoint]
@@ -177,8 +202,10 @@ class MultiPaxosNet:
 
         def chunks(xs, n):
             # https://stackoverflow.com/a/312464/3187068
+            result = []
             for i in range(0, len(xs), n):
-                yield xs[i:i + n]
+                result.append(xs[i:i + n])
+            return result
 
         n = 2 * self._input.f + 1
         return self.Placement(
@@ -188,6 +215,12 @@ class MultiPaxosNet:
             batchers=portify(
                 cycle_take_n(self._input.num_batchers,
                              self._cluster['batchers'])),
+            proposers=portify(
+                cycle_take_n(self._input.num_proposers,
+                             self._cluster['proposers'])),
+            disseminators=chunks(portify(
+                cycle_take_n(self._input.num_disseminator_groups * n,
+                             self._cluster['disseminators'])), n),
             leaders=portify(
                 cycle_take_n(self._input.num_leaders,
                              self._cluster['leaders'])),
@@ -216,6 +249,10 @@ class MultiPaxosNet:
                 'host': e.host.ip(),
                 'port': e.port
             } for e in self.placement().batchers],
+            'proposer_address': [{
+                'host': e.host.ip(),
+                'port': e.port
+            } for e in self.placement().proposers],
             'leader_address': [{
                 'host': e.host.ip(),
                 'port': e.port
@@ -234,6 +271,12 @@ class MultiPaxosNet:
                     'port': e.port
                 } for e in group]
             } for group in self.placement().acceptors],
+            'disseminator_address': [{
+                'disseminator_address': [{
+                    'host': e.host.ip(),
+                    'port': e.port
+                } for e in group]
+            } for group in self.placement().disseminators],
             'replica_address': [{
                 'host': e.host.ip(),
                 'port': e.port
@@ -247,15 +290,15 @@ class MultiPaxosNet:
 
 
 # Suite ########################################################################
-class MultiPaxosSuite(benchmark.Suite[Input, Output]):
+class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
     def run_benchmark(self, bench: benchmark.BenchmarkDirectory,
                       args: Dict[Any, Any], input: Input) -> Output:
-        net = MultiPaxosNet(args['cluster'], args['identity_file'], input)
+        net = SPaxosDecoupleNet(args['cluster'], args['identity_file'], input)
         return self._run_benchmark(bench, args, input, net)
 
     def _run_benchmark(self, bench: benchmark.BenchmarkDirectory,
                        args: Dict[Any, Any], input: Input,
-                       net: MultiPaxosNet) -> Output:
+                       net: SPaxosDecoupleNet) -> Output:
         # Write config file.
         config = net.config()
         config_filename = bench.abspath('config.pbtxt')
@@ -263,82 +306,18 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                            proto_util.message_to_pbtext(config))
         bench.log('Config file config.pbtxt written.')
 
-        # If we're monitoring the code, run garbage collection verbosely.
-        java = ['java']
-        if input.monitored:
-            java += [
-                '-verbose:gc',
-                '-XX:-PrintGC',
-                '-XX:+PrintHeapAtGC',
-                '-XX:+PrintGCDetails',
-                '-XX:+PrintGCTimeStamps',
-                '-XX:+PrintGCDateStamps',
-            ]
-        # Increase the heap size.
-        # TODO(mwhittaker): Right now, not much thought has been put into the
-        # heap size. Think more carefully about this. We may want, for example,
-        # to increase the size of the young generation.
-        java += [f'-Xms{input.jvm_heap_size}', f'-Xmx{input.jvm_heap_size}']
-
-        # Launch batchers.
-        batcher_procs: List[proc.Proc] = []
-        for (i, batcher) in enumerate(net.placement().batchers):
-            p = bench.popen(
-                host=batcher.host,
-                label=f'batcher_{i}',
-                cmd=java + [
-                    '-cp',
-                    os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.BatcherMain',
-                    '--index',
-                    str(i),
-                    '--config',
-                    config_filename,
-                    '--log_level',
-                    input.batcher_log_level,
-                    '--prometheus_host',
-                    batcher.host.ip(),
-                    '--prometheus_port',
-                    str(batcher.port + 1) if input.monitored else '-1',
-                    '--options.batchSize',
-                    str(input.batcher_options.batch_size),
-                ],
-            )
-            if input.profiled:
-                p = perf_util.JavaPerfProc(bench, batcher.host, p,
-                                           f'batcher_{i}')
-            batcher_procs.append(p)
-        bench.log('Batchers started.')
-
-        # Launch proxy_leaders.
-        proxy_leader_procs: List[proc.Proc] = []
-        for (i, proxy_leader) in enumerate(net.placement().proxy_leaders):
-            p = bench.popen(
-                host=proxy_leader.host,
-                label=f'proxy_leader_{i}',
-                cmd=java + [
-                    '-cp',
-                    os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.ProxyLeaderMain',
-                    '--index',
-                    str(i),
-                    '--config',
-                    config_filename,
-                    '--log_level',
-                    input.proxy_leader_log_level,
-                    '--prometheus_host',
-                    proxy_leader.host.ip(),
-                    '--prometheus_port',
-                    str(proxy_leader.port + 1) if input.monitored else '-1',
-                    '--options.flushPhase2asEveryN',
-                    str(input.proxy_leader_options.flush_phase2as_every_n),
-                ],
-            )
-            if input.profiled:
-                p = perf_util.JavaPerfProc(bench, proxy_leader.host, p,
-                                           f'proxy_leader_{i}')
-            proxy_leader_procs.append(p)
-        bench.log('ProxyLeaders started.')
+        def java(heap_size: str) -> List[str]:
+            cmd = ['java', f'-Xms{heap_size}', f'-Xmx{heap_size}']
+            if input.monitored:
+                cmd += [
+                    '-verbose:gc',
+                    '-XX:-PrintGC',
+                    '-XX:+PrintHeapAtGC',
+                    '-XX:+PrintGCDetails',
+                    '-XX:+PrintGCTimeStamps',
+                    '-XX:+PrintGCDateStamps',
+                ]
+            return cmd
 
         # Launch acceptors.
         acceptor_procs: List[proc.Proc] = []
@@ -347,10 +326,10 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                 p = bench.popen(
                     host=acceptor.host,
                     label=f'acceptor_{group_index}_{i}',
-                    cmd=java + [
+                    cmd=java(input.acceptor_jvm_heap_size) + [
                         '-cp',
                         os.path.abspath(args['jar']),
-                        'frankenpaxos.multipaxos.AcceptorMain',
+                        'frankenpaxos.spaxosdecouple.AcceptorMain',
                         '--group_index',
                         str(group_index),
                         '--index',
@@ -371,16 +350,135 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                 acceptor_procs.append(p)
         bench.log('Acceptors started.')
 
+        # Launch disseminators.
+        disseminator_procs: List[proc.Proc] = []
+        for (group_index, group) in enumerate(net.placement().disseminators):
+            for (i, disseminator) in enumerate(group):
+                p = bench.popen(
+                    host=disseminator.host,
+                    label=f'disseminator_{group_index}_{i}',
+                    cmd=java(input.disseminator_jvm_heap_size) + [
+                        '-cp',
+                        os.path.abspath(args['jar']),
+                        'frankenpaxos.spaxosdecouple.DisseminatorMain',
+                        '--group_index',
+                        str(group_index),
+                        '--index',
+                        str(i),
+                        '--config',
+                        config_filename,
+                        '--log_level',
+                        input.disseminator_log_level,
+                        '--prometheus_host',
+                        disseminator.host.ip(),
+                        '--prometheus_port',
+                        str(disseminator.port + 1) if input.monitored else '-1',
+                    ],
+                )
+                if input.profiled:
+                    p = perf_util.JavaPerfProc(bench, disseminator.host, p,
+                                               f'disseminator_{group_index}_{i}')
+                disseminator_procs.append(p)
+        bench.log('Disseminators started.')
+
+        # Launch batchers.
+        batcher_procs: List[proc.Proc] = []
+        for (i, batcher) in enumerate(net.placement().batchers):
+            p = bench.popen(
+                host=batcher.host,
+                label=f'batcher_{i}',
+                cmd=java(input.batcher_jvm_heap_size) + [
+                    '-cp',
+                    os.path.abspath(args['jar']),
+                    'frankenpaxos.spaxosdecouple.BatcherMain',
+                    '--index',
+                    str(i),
+                    '--config',
+                    config_filename,
+                    '--log_level',
+                    input.batcher_log_level,
+                    '--prometheus_host',
+                    batcher.host.ip(),
+                    '--prometheus_port',
+                    str(batcher.port + 1) if input.monitored else '-1',
+                    '--options.batchSize',
+                    str(input.batcher_options.batch_size),
+                ],
+            )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, batcher.host, p,
+                                           f'batcher_{i}')
+            batcher_procs.append(p)
+        bench.log('Batchers started.')
+
+        # Launch proposers.
+        proposer_procs: List[proc.Proc] = []
+        for (i, batcher) in enumerate(net.placement().proposers):
+            p = bench.popen(
+                host=proposer.host,
+                label=f'proposer_{i}',
+                cmd=java(input.proposer_jvm_heap_size) + [
+                    '-cp',
+                    os.path.abspath(args['jar']),
+                    'frankenpaxos.spaxosdecouple.BatcherMain',
+                    '--index',
+                    str(i),
+                    '--config',
+                    config_filename,
+                    '--log_level',
+                    input.batcher_log_level,
+                    '--prometheus_host',
+                    proposer.host.ip(),
+                    '--prometheus_port',
+                    str(proposer.port + 1) if input.monitored else '-1',
+                ],
+            )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, proposer.host, p,
+                                           f'proposer_{i}')
+            proposer_procs.append(p)
+        bench.log('Proposers started.')
+
+        # Launch proxy_leaders.
+        proxy_leader_procs: List[proc.Proc] = []
+        for (i, proxy_leader) in enumerate(net.placement().proxy_leaders):
+            p = bench.popen(
+                host=proxy_leader.host,
+                label=f'proxy_leader_{i}',
+                cmd=java(input.proxy_leader_jvm_heap_size) + [
+                    '-cp',
+                    os.path.abspath(args['jar']),
+                    'frankenpaxos.spaxosdecouple.ProxyLeaderMain',
+                    '--index',
+                    str(i),
+                    '--config',
+                    config_filename,
+                    '--log_level',
+                    input.proxy_leader_log_level,
+                    '--prometheus_host',
+                    proxy_leader.host.ip(),
+                    '--prometheus_port',
+                    str(proxy_leader.port + 1) if input.monitored else '-1',
+                    '--options.flushPhase2asEveryN',
+                    str(input.proxy_leader_options.flush_phase2as_every_n),
+                ],
+            )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, proxy_leader.host, p,
+                                           f'proxy_leader_{i}')
+            proxy_leader_procs.append(p)
+        bench.log('ProxyLeaders started.')
+
         # Launch replicas.
         replica_procs: List[proc.Proc] = []
         for (i, replica) in enumerate(net.placement().replicas):
             p = bench.popen(
                 host=replica.host,
                 label=f'replica_{i}',
-                cmd=java + [
+                cmd=java(input.replica_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.ReplicaMain',
+                    'frankenpaxos.spaxosdecouple.ReplicaMain',
                     '--index',
                     str(i),
                     '--config',
@@ -422,10 +520,10 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=proxy_replica.host,
                 label=f'proxy_replica_{i}',
-                cmd=java + [
+                cmd=java(input.proxy_replica_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.ProxyReplicaMain',
+                    'frankenpaxos.spaxosdecouple.ProxyReplicaMain',
                     '--index',
                     str(i),
                     '--config',
@@ -452,10 +550,10 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             p = bench.popen(
                 host=leader.host,
                 label=f'leader_{i}',
-                cmd=java + [
+                cmd=java(input.leader_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.LeaderMain',
+                    'frankenpaxos.spaxosdecouple.LeaderMain',
                     '--index',
                     str(i),
                     '--config',
@@ -491,32 +589,32 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
         if input.monitored:
             prometheus_config = prometheus.prometheus_config(
                 int(input.prometheus_scrape_interval.total_seconds() * 1000), {
-                    'multipaxos_client': [
+                    'spaxosdecouple_client': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().clients
                     ],
-                    'multipaxos_batcher': [
+                    'spaxosdecouple_batcher': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().batchers
                     ],
-                    'multipaxos_leader': [
+                    'spaxosdecouple_leader': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().leaders
                     ],
-                    'multipaxos_proxy_leader': [
+                    'spaxosdecouple_proxy_leader': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().proxy_leaders
                     ],
-                    'multipaxos_acceptor': [
+                    'spaxosdecouple_acceptor': [
                         f'{e.host.ip()}:{e.port+1}'
                         for group in net.placement().acceptors
                         for e in group
                     ],
-                    'multipaxos_replica': [
+                    'spaxosdecouple_replica': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().replicas
                     ],
-                    'multipaxos_proxy_replica': [
+                    'spaxosdecouple_proxy_replica': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().proxy_replicas
                     ],
@@ -551,11 +649,10 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                 # TODO(mwhittaker): For now, we don't run clients with large
                 # heaps and verbose garbage collection because they are all
                 # colocated on one machine.
-                cmd=[
-                    'java',
+                cmd=java(input.client_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.ClientMain',
+                    'frankenpaxos.spaxosdecouple.ClientMain',
                     '--host',
                     client.host.ip(),
                     '--port',
@@ -599,7 +696,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
         for p in client_procs:
             p.wait()
         for p in (batcher_procs + leader_procs + proxy_leader_procs +
-                  acceptor_procs + replica_procs + proxy_replica_procs):
+                  acceptor_procs + replica_procs + proxy_replica_procs + proposer_procs + disseminator_procs):
             p.kill()
         bench.log('Clients finished and processes terminated.')
 

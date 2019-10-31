@@ -44,21 +44,21 @@ object BatcherOptions {
 class BatcherMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_batcher_requests_total")
+    .name("spaxosdecouple_batcher_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("multipaxos_batcher_requests_latency")
+    .name("spaxosdecouple_batcher_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
 
   val batchesSent: Counter = collectors.counter
     .build()
-    .name("multipaxos_batcher_batches_sent")
+    .name("spaxosdecouple_batcher_batches_sent")
     .help("Total number of batches sent.")
     .register()
 }
@@ -156,8 +156,7 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     growingBatch += clientRequest
     if (growingBatch.size >= options.batchSize) {
-      val r = scala.util.Random
-      val proposer = proposers(r.nextInt(config.numProposers))
+      val proposer = proposers(rand.nextInt(config.numProposers))
 
       proposer.send(ProposerInbound().withRequestBatch(
         RequestBatch(growingBatch)

@@ -1,8 +1,8 @@
-from .multipaxos import *
+from .spaxosdecouple import *
 
 
 def main(args) -> None:
-    class SmokeMultiPaxosSuite(MultiPaxosSuite):
+    class SmokeSPaxosDecoupleSuite(SPaxosDecoupleSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -13,20 +13,28 @@ def main(args) -> None:
                     num_client_procs = 1,
                     num_warmup_clients_per_proc = 1,
                     num_clients_per_proc = 1,
-                    num_batchers = 2,
+                    num_batchers = num_batchers,
                     num_leaders = 2,
                     num_proxy_leaders = 2,
                     num_acceptor_groups = 2,
                     num_replicas = 2,
                     num_proxy_replicas = 2,
                     distribution_scheme = DistributionScheme.HASH,
-                    jvm_heap_size = '100m',
+                    client_jvm_heap_size = '100m',
+                    batcher_jvm_heap_size = '100m',
+                    proposer_jvm_heap_size = '100m',
+                    disseminator_jvm_heap_size = '100m',
+                    leader_jvm_heap_size = '100m',
+                    proxy_leader_jvm_heap_size = '100m',
+                    acceptor_jvm_heap_size = '100m',
+                    replica_jvm_heap_size = '100m',
+                    proxy_replica_jvm_heap_size = '100m',
                     warmup_duration = datetime.timedelta(seconds=2),
                     warmup_timeout = datetime.timedelta(seconds=3),
                     warmup_sleep = datetime.timedelta(seconds=0),
                     duration = datetime.timedelta(seconds=2),
                     timeout = datetime.timedelta(seconds=3),
-                    client_lag = datetime.timedelta(seconds=0),
+                    client_lag = datetime.timedelta(seconds=3),
                     state_machine = 'Noop',
                     workload = workload.StringWorkload(size_mean=1, size_std=0),
                     profiled = args.profile,
@@ -72,20 +80,22 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
+                for num_batchers in [0, 2]
             ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
+                'num_batchers': input.num_batchers,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = SmokeMultiPaxosSuite()
+    suite = SmokeSPaxosDecoupleSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'multipaxos_smoke') as dir:
+                                  'spaxosdecouple_smoke') as dir:
         suite.run_suite(dir)
 
 
