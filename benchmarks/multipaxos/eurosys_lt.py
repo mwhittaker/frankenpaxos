@@ -11,7 +11,10 @@ def main(args) -> None:
                 Input(
                     f = 1,
                     num_client_procs = num_client_procs,
-                    num_warmup_clients_per_proc = num_clients_per_proc,
+                    num_warmup_clients_per_proc =
+                        num_clients_per_proc
+                        if num_clients_per_proc > 1
+                        else 10,
                     num_clients_per_proc = num_clients_per_proc,
                     num_batchers = num_batchers,
                     num_leaders = 2,
@@ -96,12 +99,13 @@ def main(args) -> None:
                     proxy_replica_flush_every_n
                 ) in [
                     ( 1,   1, 0, 30, 3, 5, 10, 0, 1, 1, 1),
-                    ( 1,  10, 0, 30, 3, 5, 10, 0, 5, 1, 1),
+                    ( 1,  10, 0, 30, 3, 5, 10, 0, 1, 1, 1),
                     ( 5,  10, 0, 30, 3, 5, 10, 0, 5, 5, 1),
                     ( 5,  20, 0, 30, 3, 5, 10, 0, 10, 10, 1),
                     ( 6,  50, 0, 30, 3, 5, 10, 0, 10, 10, 1),
                     ( 6, 100, 0, 30, 3, 5, 10, 0, 10, 10, 1),
                     (10, 100, 0, 30, 3, 5, 10, 0, 10, 10, 1),
+                    (20, 100, 0, 30, 3, 5, 10, 0, 10, 10, 1),
 
                     # ( 1,   1, 3, 1, 1, 1, 1),
                     # ( 1,  10, 3, 5, 1, 1, 1),
