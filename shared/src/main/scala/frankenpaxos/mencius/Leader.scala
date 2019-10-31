@@ -268,6 +268,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // The number of Phase2a messages since the last flush.
   private var numPhase2asSentSinceLastFlush: Int = 0
 
+  // A Mencius leader sends messages to ProxyLeaders one at a time.
+  // `currentProxyLeader` is the proxy leader that is currently being sent to.
+  // We initialize the first currentProxyLeader randomly so that different
+  // leaders have the opportunity to send to different proxy leaders. Note that
+  // this value is only used if config.distributionScheme is Hash.
+  private var currentProxyLeader: Int = rand.nextInt(proxyLeaders.size)
+
   // The leader's state.
   @JSExport
   protected var state: State = if (index == 0) {
@@ -338,7 +345,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   private def getProxyLeader(): Chan[ProxyLeader[Transport]] = {
     config.distributionScheme match {
-      case Hash      => proxyLeaders(rand.nextInt(proxyLeaders.size))
+      case Hash      => proxyLeaders(currentProxyLeader)
       case Colocated => proxyLeaders(groupIndex)
     }
   }
@@ -395,7 +402,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
     val proxyLeaderIndex = timed("processClientRequestBatch/getProxyLeader") {
       config.distributionScheme match {
-        case Hash      => rand.nextInt(proxyLeaders.size)
+        case Hash      => currentProxyLeader
         case Colocated => index
       }
     }
@@ -418,6 +425,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       timed("processClientRequestBatch/send") {
         send(config.proxyLeaderAddresses(proxyLeaderIndex), bytes)
       }
+      currentProxyLeader += 1
+      if (currentProxyLeader >= config.numProxyLeaders) {
+        currentProxyLeader = 0
+      }
     } else {
       timed("processClientRequestBatch/sendNoFlush") {
         sendNoFlush(config.proxyLeaderAddresses(proxyLeaderIndex), bytes)
@@ -427,9 +438,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
     if (numPhase2asSentSinceLastFlush >= options.flushPhase2asEveryN) {
       timed("processClientRequestBatch/flush") {
-        proxyLeaders.foreach(_.flush())
+        config.distributionScheme match {
+          case Hash      => proxyLeaders(currentProxyLeader).flush()
+          case Colocated => proxyLeaders(groupIndex).flush()
+        }
       }
       numPhase2asSentSinceLastFlush = 0
+      currentProxyLeader += 1
+      if (currentProxyLeader >= config.numProxyLeaders) {
+        currentProxyLeader = 0
+      }
     }
 
     // Update our slot.

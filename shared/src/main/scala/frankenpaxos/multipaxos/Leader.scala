@@ -316,10 +316,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
     if (numPhase2asSentSinceLastFlush >= options.flushPhase2asEveryN) {
       timed("processClientRequestBatch/flush") {
-        // DO_NOT_SUBMIT(mwhittaker): Remove or clean up.
-        proxyLeaders(currentProxyLeader).flush()
-        // DO_NOT_SUBMIT(mwhittaker): Restore.
-        // proxyLeaders.foreach(_.flush())
+        config.distributionScheme match {
+          case Hash      => proxyLeaders(currentProxyLeader).flush()
+          case Colocated => proxyLeaders(index).flush()
+        }
       }
       numPhase2asSentSinceLastFlush = 0
       currentProxyLeader += 1
