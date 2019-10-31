@@ -612,7 +612,8 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             for i in range(input.num_client_procs)
         ]
         return benchmark.parse_recorder_data(
-            bench, client_csvs, drop_prefix=datetime.timedelta(seconds=0))
+            bench, client_csvs, drop_prefix=datetime.timedelta(seconds=0),
+            save_data=False)
 
 
 def get_parser() -> argparse.ArgumentParser:
