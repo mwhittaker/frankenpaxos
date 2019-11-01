@@ -403,7 +403,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     val proxyLeaderIndex = timed("processClientRequestBatch/getProxyLeader") {
       config.distributionScheme match {
         case Hash      => currentProxyLeader
-        case Colocated => index
+        case Colocated => groupIndex
       }
     }
 
