@@ -7,7 +7,7 @@ def main(args) -> None:
             return vars(args)
 
         def inputs(self) -> Collection[Input]:
-            return ([
+            return [
                 Input(
                     f = 1,
                     num_client_procs = num_client_procs,
@@ -105,9 +105,7 @@ def main(args) -> None:
                     (0, 6, 1, 2, 2, 0, 10, 10, 1),
                     (0, 7, 1, 2, 2, 0, 10, 10, 1),
                     (0, 8, 1, 2, 2, 0, 10, 10, 1),
-                    (0, 9, 1, 2, 2, 0, 10, 10, 1),
-                    (0, 10, 1, 2, 2, 0, 10, 10, 1),
-                    (0, 10, 2, 2, 2, 0, 10, 10, 1),
+                    (0, 8, 2, 2, 2, 0, 10, 10, 1),
 
                     # ( 1,   1, 2, 23, 3, 5, 10, 1, 1, 1, 1),
                     # ( 1,  10, 2, 23, 3, 5, 10, 1, 1, 1, 1),
@@ -119,7 +117,7 @@ def main(args) -> None:
                     # (20, 100, 4, 23, 3, 5, 10, 20, 1, 1, 1),
                     # (20, 200, 8, 23, 3, 5, 10, 40, 1, 1, 1),
                 ]
-            ] * 3)[24:]
+            ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({

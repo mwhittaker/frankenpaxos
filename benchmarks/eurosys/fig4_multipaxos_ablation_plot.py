@@ -75,7 +75,7 @@ def barchart(output_filename: str,
     x_pos = range(len(data))
     ax.bar(x_pos, data, yerr=yerr, align='center', capsize=10)
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(labels, rotation=-45)
+    ax.set_xticklabels(labels, rotation=-45, ha='left')
     ax.set_title('')
     ax.set_xlabel('')
     ax.set_ylabel('Throughput (commands per second)')
@@ -147,8 +147,6 @@ def main(args) -> None:
             '6 proxy leaders',
             '7 proxy leaders',
             '8 proxy leaders',
-            '9 proxy leaders',
-            '10 proxy leaders',
             '2 acceptor groups',
         ],
         data = [
@@ -159,11 +157,9 @@ def main(args) -> None:
             avg_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 5]),
             avg_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 6]),
             avg_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 7]),
-            avg_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 8]),
-            avg_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 9]),
-            avg_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 10) &
+            avg_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 8) &
                                   (unbatched_df['num_acceptor_groups'] == 1)]),
-            avg_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 10) &
+            avg_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 8) &
                                   (unbatched_df['num_acceptor_groups'] == 2)]),
         ],
         yerr = [
@@ -174,11 +170,9 @@ def main(args) -> None:
             std_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 5]),
             std_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 6]),
             std_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 7]),
-            std_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 8]),
-            std_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 9]),
-            std_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 10) &
+            std_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 8) &
                                   (unbatched_df['num_acceptor_groups'] == 1)]),
-            std_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 10) &
+            std_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 8) &
                                   (unbatched_df['num_acceptor_groups'] == 2)]),
         ]
     )
