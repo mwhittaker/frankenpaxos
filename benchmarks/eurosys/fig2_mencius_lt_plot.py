@@ -49,7 +49,7 @@ def main(args) -> None:
     unbatched_mencius_df = add_num_clients(pd.read_csv(args.unbatched_mencius_results))
     unbatched_unreplicated_df = add_num_clients(pd.read_csv(args.unbatched_unreplicated_results))
     batched_coupled_df = add_num_clients(pd.read_csv(args.batched_coupled_mencius_results))
-    # batched_mencius_df = add_num_clients(pd.read_csv(args.batched_mencius_results))
+    batched_mencius_df = add_num_clients(pd.read_csv(args.batched_mencius_results))
     batched_unreplicated_df = add_num_clients(pd.read_csv(args.batched_unreplicated_results))
 
     make_figure(
@@ -62,8 +62,7 @@ def main(args) -> None:
     make_figure(
         args.output_batched,
         batched_coupled_df,
-        # batched_mencius_df,
-        batched_unreplicated_df,
+        batched_mencius_df,
         batched_unreplicated_df,
     )
 
