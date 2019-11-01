@@ -93,6 +93,10 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
         yield chan[Leader[Transport]](address, Leader.serializer)
     }
 
+  // Batcher index.
+  logger.check(config.batcherAddresses.contains(address))
+  private val index = config.batcherAddresses.indexOf(address)
+
   // Mencius deploys some number `n` of leader groups. `round` is a buffer of
   // length `n`. `round(i)` is the round that this batcher thinks the leader of
   // group `i` is in. This value is not always accurate. It's just the
@@ -166,7 +170,10 @@ class Batcher[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     growingBatch += clientRequest.command
     if (growingBatch.size >= options.batchSize) {
-      val leaderGroupIndex = rand.nextInt(leaders.size)
+      val leaderGroupIndex = config.distributionScheme match {
+        case Hash      => rand.nextInt(leaders.size)
+        case Colocated => index
+      }
       val leader = leaders(leaderGroupIndex)(
         roundSystem(leaderGroupIndex).leader(round(leaderGroupIndex))
       )
