@@ -4,7 +4,6 @@ matplotlib.use('pdf')
 font = {'size': 14}
 matplotlib.rc('font', **font)
 
-from .. import parser_util
 from typing import Any, List
 import argparse
 import matplotlib.pyplot as plt
