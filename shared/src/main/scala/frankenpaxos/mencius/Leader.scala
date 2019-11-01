@@ -274,6 +274,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // leaders have the opportunity to send to different proxy leaders. Note that
   // this value is only used if config.distributionScheme is Hash.
   private var currentProxyLeader: Int = rand.nextInt(proxyLeaders.size)
+  logger.info(s"Leader currentProxyLeader is initially $currentProxyLeader.")
 
   // The leader's state.
   @JSExport
@@ -458,7 +459,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // our slot after updating it, not before.
     numCommandsSinceHighWatermarkSend += 1
     if (numCommandsSinceHighWatermarkSend >= options.sendHighWatermarkEveryN) {
-      getProxyLeader().send(
+      // We want to make sure we send watermarks on a different channel than
+      // the current proxy leader to avoid messing up the flushing.
+      val watermarkProxyLeaderIndex = config.distributionScheme match {
+        case Hash =>
+          if (currentProxyLeader + 1 == config.proxyLeaderAddresses.size) {
+            0
+          } else {
+            currentProxyLeader + 1
+          }
+        case Colocated =>
+          groupIndex
+      }
+      proxyLeaders(watermarkProxyLeaderIndex).send(
         ProxyLeaderInbound()
           .withHighWatermark(HighWatermark(nextSlot = nextSlot))
       )
