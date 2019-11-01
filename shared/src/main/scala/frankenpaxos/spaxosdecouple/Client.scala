@@ -101,6 +101,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.batcherAddresses)
       yield chan[Batcher[Transport]](address, Batcher.serializer)
 
+  // Leader channels.
+  private val leaders: Seq[Chan[Leader[Transport]]] =
+    for (address <- config.leaderAddresses)
+      yield chan[Leader[Transport]](address, Leader.serializer)
+
   // Proposer channels.
   private val proposers: Seq[Chan[Proposer[Transport]]] =
     for (address <- config.proposerAddresses)
@@ -158,7 +163,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     if (config.numBatchers == 0) {
       // If there are no batchers, then we send to a proposer
       val proposer = proposers(rand.nextInt(proposers.size))
-      proposer.send(LeaderInbound().withClientRequest(clientRequest))
+      proposer.send(ProposerInbound().withClientRequest(clientRequest))
     } else {
       // If there are batchers, then we send to a randomly selected batcher.
       // The batchers will take care of forwarding our message to a proposer.
