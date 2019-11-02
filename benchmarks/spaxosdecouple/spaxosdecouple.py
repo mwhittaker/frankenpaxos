@@ -413,7 +413,7 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
 
         # Launch proposers.
         proposer_procs: List[proc.Proc] = []
-        for (i, batcher) in enumerate(net.placement().proposers):
+        for (i, proposer) in enumerate(net.placement().proposers):
             p = bench.popen(
                 host=proposer.host,
                 label=f'proposer_{i}',
