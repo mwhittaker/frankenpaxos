@@ -420,13 +420,13 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                 cmd=java(input.proposer_jvm_heap_size) + [
                     '-cp',
                     os.path.abspath(args['jar']),
-                    'frankenpaxos.spaxosdecouple.BatcherMain',
+                    'frankenpaxos.spaxosdecouple.ProposerMain',
                     '--index',
                     str(i),
                     '--config',
                     config_filename,
                     '--log_level',
-                    input.batcher_log_level,
+                    input.proposer_log_level,
                     '--prometheus_host',
                     proposer.host.ip(),
                     '--prometheus_port',
@@ -597,6 +597,10 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().batchers
                     ],
+                    'spaxosdecouple_proposer': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().proposers
+                    ],
                     'spaxosdecouple_leader': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().leaders
@@ -608,6 +612,11 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                     'spaxosdecouple_acceptor': [
                         f'{e.host.ip()}:{e.port+1}'
                         for group in net.placement().acceptors
+                        for e in group
+                    ],
+                    'spaxosdecouple_disseminator': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for group in net.placement().disseminators
                         for e in group
                     ],
                     'spaxosdecouple_replica': [
