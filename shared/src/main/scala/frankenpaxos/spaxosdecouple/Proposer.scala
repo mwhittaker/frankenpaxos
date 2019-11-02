@@ -4,9 +4,9 @@ import collection.mutable
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.monitoring.Collectors
-import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.{Collectors, Counter, PrometheusCollectors, Summary}
 import frankenpaxos.roundsystem.RoundSystem
+import frankenpaxos.spaxosdecouple.ProposerInbound.Request
 
 import scala.scalajs.js.annotation._
 
@@ -25,12 +25,26 @@ object Proposer {
 
 @JSExportAll
 class ProposerMetrics(collectors: Collectors) {
+  val requestsTotal: Counter = collectors.counter
+    .build()
+    .name("spaxosdecouple_proposer_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("spaxosdecouple_proposer_requests_latency")
+    .labelNames("type")
+    .help("Latency (in milliseconds) of a request.")
+    .register()
 }
 
 @JSExportAll
 case class ProposerOptions(
                             batchSize: Int,
                             measureLatencies: Boolean
+
 )
 
 @JSExportAll
@@ -92,18 +106,46 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var pendingResendBatches = mutable.Buffer[UniqueId]()
 
+  // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    if (options.measureLatencies) {
+      val startNanos = System.nanoTime
+      val x = e
+      val stopNanos = System.nanoTime
+      metrics.requestsLatency
+        .labels(label)
+        .observe((stopNanos - startNanos).toDouble / 1000000)
+      x
+    } else {
+      e
+    }
+  }
+
 // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
-    import ProposerInbound.Request
-    inbound.request match {
-      case Request.ClientRequest(r)  => handleClientRequest(src, r)
-      case Request.Acknowledge(r)    => handleAcknowledge(src, r)
-      case Request.LeaderInfo(r)     => handleLeaderInfo(src, r)
-      case Request.RequestBatch(r)   => handleRequestBatch(src, r)
-      case Request.Empty => {
-        logger.fatal("Empty AcceptorInbound encountered.")
+    val label =
+      inbound.request match {
+        case Request.ClientRequest(r)  => "ClientRequest"
+        case Request.Acknowledge(r)    => "Acknowledge"
+        case Request.LeaderInfo(r)     => "LeaderInfo"
+        case Request.RequestBatch(r)   => "RequestBatch"
+        case Request.Empty => {
+          logger.fatal("Empty AcceptorInbound encountered.")
+        }
+      }
+    metrics.requestsTotal.labels(label).inc()
+    timed(label) {
+      inbound.request match {
+        case Request.ClientRequest(r)  => handleClientRequest(src, r)
+        case Request.Acknowledge(r)    => handleAcknowledge(src, r)
+        case Request.LeaderInfo(r)     => handleLeaderInfo(src, r)
+        case Request.RequestBatch(r)   => handleRequestBatch(src, r)
+        case Request.Empty => {
+          logger.fatal("Empty AcceptorInbound encountered.")
+        }
       }
     }
+
   }
 
   def handleRequestBatch(src: Transport#Address, requestBatch: RequestBatch): Unit = {
