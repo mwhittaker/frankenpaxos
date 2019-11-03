@@ -206,7 +206,7 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
     val id: BatchId = forward.batchId
     idRequestMap.put(id, forward.requestBatch)
 
-    val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
+    val proposer = proposers(forward.proposerIndex)
 
     if (options.flushAcknowledgeEveryN == 1) {
       proposer.send(ProposerInbound().withAcknowledge(Acknowledge(CommandBatch(id))))
