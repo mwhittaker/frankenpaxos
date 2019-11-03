@@ -25,6 +25,8 @@ def main(args) -> None:
                             spaxosdecouple.DistributionScheme.COLOCATED,
                     client_jvm_heap_size = '100m',
                     batcher_jvm_heap_size = '100m',
+		    proposer_jvm_heap_size = '100m',
+		    disseminator_jvm_heap_size = '100m',
                     leader_jvm_heap_size = '100m',
                     proxy_leader_jvm_heap_size = '100m',
                     acceptor_jvm_heap_size = '100m',

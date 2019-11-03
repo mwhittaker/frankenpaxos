@@ -7,7 +7,7 @@ def main(args) -> None:
             return vars(args)
 
         def inputs(self) -> Collection[spaxosdecouple.Input]:
-            return [
+            return ([
                 spaxosdecouple.Input(
                     f = 1,
                     num_client_procs = num_client_procs,
@@ -32,8 +32,8 @@ def main(args) -> None:
                     acceptor_jvm_heap_size = '32g',
                     replica_jvm_heap_size = '32g',
                     proxy_replica_jvm_heap_size = '32g',
-                    warmup_duration = datetime.timedelta(seconds=20),
-                    warmup_timeout = datetime.timedelta(seconds=30),
+                    warmup_duration = datetime.timedelta(seconds=5),
+                    warmup_timeout = datetime.timedelta(seconds=10),
                     warmup_sleep = datetime.timedelta(seconds=5),
                     duration = datetime.timedelta(seconds=8),
                     timeout = datetime.timedelta(seconds=13),
@@ -102,12 +102,12 @@ def main(args) -> None:
                     proxy_replica_flush_every_n
                 ) in [
                     ( 1,   1, 0, 0, 1, 1, 1),
-                    #( 1,  10, 0, 0, 5, 1, 1),
-                    #( 5,  10, 0, 0, 10, 1, 1),
-                    #( 5,  20, 0, 0, 10, 10, 10),
-                    #( 6,  50, 0, 0, 10, 10, 10),
-                    #( 6, 100, 0, 0, 10, 10, 10),
-                    #(10, 100, 0, 0, 10, 10, 10),
+                    ( 1,  10, 0, 0, 5, 1, 1),
+                    ( 5,  10, 0, 0, 10, 1, 1),
+                    ( 5,  20, 0, 0, 10, 10, 10),
+                    ( 6,  50, 0, 0, 10, 10, 10),
+                    ( 6, 100, 0, 0, 10, 10, 10),
+                    (10, 100, 0, 0, 10, 10, 10),
 
                     #( 1,   1, 3, 1, 1, 1, 1),
                     #( 1,  10, 3, 5, 1, 1, 1),
@@ -119,7 +119,7 @@ def main(args) -> None:
                     #(20, 100, 3, 20, 1, 1, 20),
                     #(20, 200, 3, 40, 1, 1, 40),
                 ]
-            ] * 3
+            ] * 3)[12:]
 
         def summary(self, input: spaxosdecouple.Input,
                     output: spaxosdecouple.Output) -> str:
