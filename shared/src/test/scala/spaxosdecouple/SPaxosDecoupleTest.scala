@@ -5,8 +5,8 @@ import org.scalatest.FlatSpec
 
 class SPaxosDecoupleTest extends FlatSpec {
   "A SPaxosDecouple instance" should "work correctly" in {
-    val runLength = 250
-    val numRuns = 500
+    val runLength = 500
+    val numRuns = 1000
     info(s"runLength = $runLength, numRuns = $numRuns")
 
     for {

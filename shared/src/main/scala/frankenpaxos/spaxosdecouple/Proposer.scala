@@ -85,13 +85,11 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   type DisseminatorId = Int
 
-  // The acknowledge messages received from Execution Service
-  @JSExport
-  protected val acks: mutable.Map[CommandBatch, mutable.Map[Transport#Address, Acknowledge]] = mutable.Map[CommandBatch, mutable.Map[Transport#Address, Acknowledge]]()
+  sealed trait State
+  case class PendingAcks(acks: mutable.Map[Transport#Address, Acknowledge]) extends State
+  case object Stable extends State
 
-  // Stable ids
-  @JSExport
-  protected var stableBatches: mutable.Buffer[CommandBatch] = mutable.Buffer()
+  val states = mutable.Map[CommandBatch, State]()
 
   private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
 
@@ -99,12 +97,6 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   protected var disseminatorQuorumSize: Int = config.f + 1
 
   protected var round: Int = 0
-
-  @JSExport
-  protected var growingBatch = mutable.Buffer[UniqueId]()
-
-  @JSExport
-  protected var pendingResendBatches = mutable.Buffer[UniqueId]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -130,7 +122,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         case Request.LeaderInfo(r)     => "LeaderInfo"
         case Request.RequestBatch(r)   => "RequestBatch"
         case Request.Empty => {
-          logger.fatal("Empty AcceptorInbound encountered.")
+          logger.fatal("Empty ProposerInbound encountered.")
         }
       }
     metrics.requestsTotal.labels(label).inc()
@@ -141,7 +133,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         case Request.LeaderInfo(r)     => handleLeaderInfo(src, r)
         case Request.RequestBatch(r)   => handleRequestBatch(src, r)
         case Request.Empty => {
-          logger.fatal("Empty AcceptorInbound encountered.")
+          logger.fatal("Empty ProposerInbound encountered.")
         }
       }
     }
@@ -152,6 +144,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     val id: BatchId = BatchId(java.util.UUID.randomUUID.toString)
     val group = disseminators(Math.abs(id.batchId.hashCode()) % disseminators.size)
     group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+    states(CommandBatch(id)) = PendingAcks(acks = mutable.Map())
   }
 
   def handleClientRequest(src: Transport#Address, clientRequest: ClientRequest) = {
@@ -162,22 +155,24 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     for (disseminator <- group) {
       disseminator.send(DisseminatorInbound().withForward(Forward(requestBatch, id)))
     }
+
+    states(CommandBatch(id)) = PendingAcks(acks = mutable.Map())
   }
 
   def handleAcknowledge(src: Transport#Address, acknowledge: Acknowledge) = {
-    val disseminatorMap: mutable.Map[Transport#Address, Acknowledge] = acks.getOrElse(acknowledge.commandBatch, mutable.Map())
-    disseminatorMap.put(src, acknowledge)
-
-    acks.put(acknowledge.commandBatch, disseminatorMap)
-
-    if (acks.getOrElse(acknowledge.commandBatch, mutable.Map()).size >= disseminatorQuorumSize && !stableBatches.contains(acknowledge.commandBatch)) {
-      stableBatches.append(acknowledge.commandBatch)
-
-      val leader = leaders(roundSystem.leader(round))
-      leader.send(
-        LeaderInbound().withClientRequestBatch(
-          ClientRequestBatch(acknowledge.commandBatch))
-      )
+    states.get(acknowledge.commandBatch) match {
+      case None => logger.fatal("")
+      case Some(Stable) =>
+      case Some(PendingAcks(acks)) =>
+        acks.put(src, acknowledge)
+        if (acks.size >= disseminatorQuorumSize) {
+          val leader = leaders(roundSystem.leader(round))
+          leader.send(
+            LeaderInbound().withClientRequestBatch(
+              ClientRequestBatch(acknowledge.commandBatch))
+          )
+        }
+        states(acknowledge.commandBatch) = Stable
     }
   }
 
