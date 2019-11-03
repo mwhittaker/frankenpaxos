@@ -28,13 +28,17 @@ object Disseminator {
 
 @JSExportAll
 case class DisseminatorOptions(
-    measureLatencies: Boolean
+    measureLatencies: Boolean,
+    flushChosensEveryN: Int,
+    flushAcknowledgeEveryN: Int
 )
 
 @JSExportAll
 object DisseminatorOptions {
   val default = DisseminatorOptions(
-    measureLatencies = true
+    measureLatencies = true,
+    flushChosensEveryN = 1,
+    flushAcknowledgeEveryN = 1
   )
 }
 
@@ -84,6 +88,10 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.leaderAddresses)
       yield chan[Leader[Transport]](address, Leader.serializer)
 
+  private val proposers: Seq[Chan[Proposer[Transport]]] =
+    for (address <- config.proposerAddresses)
+      yield chan[Proposer[Transport]](address, Proposer.serializer)
+
   private val replicas: Seq[Chan[Replica[Transport]]] =
     for (address <- config.replicaAddresses)
       yield chan[Replica[Transport]](address, Replica.serializer)
@@ -105,6 +113,11 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExport
   protected var requestsDisseminated: mutable.Set[RequestBatch] = mutable.Set()
+
+  // The number of Chosen messages since the last flush.
+  private var numChosenSentSinceLastFlush: Int = 0
+
+  private var numAcknowledgeSentSinceLastFlush: Int = 0
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -150,7 +163,7 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     var requestBatch: RequestBatchOrNoop = null
 
-      valueChosen.commandBatchOrNoop.value match {
+    valueChosen.commandBatchOrNoop.value match {
       case CommandBatchOrNoop.Value.CommandBatch(batch) =>
         if (idRequestMap.contains(batch.batchId)) {
           requestBatch = RequestBatchOrNoop(
@@ -168,29 +181,45 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
 
     // If this disseminator had the batch notify the replicas and send the actual batch of commands
     if (requestBatch != null) {
-      for (replica <- replicas) {
-        replica.send(ReplicaInbound().withChosen(Chosen(
-          slot = valueChosen.slot,
-          requestBatch
-        )))
+      if (options.flushChosensEveryN == 1) {
+        replicas.foreach(_.send(ReplicaInbound().withChosen(Chosen(slot = valueChosen.slot, requestBatch))))
+      } else {
+        replicas.foreach(_.sendNoFlush(ReplicaInbound().withChosen(Chosen(slot = valueChosen.slot, requestBatch))))
+        numChosenSentSinceLastFlush += 1
       }
     }
 
+    if (numChosenSentSinceLastFlush >= options.flushChosensEveryN) {
+      for (replica <- replicas) {
+        replica.flush()
+      }
+      numChosenSentSinceLastFlush = 0
+    }
   }
 
   private def handleForward(
       src: Transport#Address,
       forward: Forward
   ): Unit = {
-    //if (!requestsDisseminated.contains(forward.requestBatch)) {
-      requestsDisseminated.add(forward.requestBatch)
+    requestsDisseminated.add(forward.requestBatch)
 
-      val id: BatchId = forward.batchId
-      idRequestMap.put(id, forward.requestBatch)
+    val id: BatchId = forward.batchId
+    idRequestMap.put(id, forward.requestBatch)
 
-      val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
-      proposer.send(ProposerInbound().withAcknowledge(Acknowledge(
-        CommandBatch(id))))
-    //}
+    val proposer = chan[Proposer[Transport]](src, Proposer.serializer)
+
+    if (options.flushAcknowledgeEveryN == 1) {
+      proposer.send(ProposerInbound().withAcknowledge(Acknowledge(CommandBatch(id))))
+    } else {
+      proposer.sendNoFlush(ProposerInbound().withAcknowledge(Acknowledge(CommandBatch(id))))
+      numAcknowledgeSentSinceLastFlush += 1
+    }
+
+    if (numAcknowledgeSentSinceLastFlush >= options.flushAcknowledgeEveryN) {
+      for (proposer <- proposers) {
+        proposer.flush()
+      }
+      numAcknowledgeSentSinceLastFlush = 0
+    }
   }
 }

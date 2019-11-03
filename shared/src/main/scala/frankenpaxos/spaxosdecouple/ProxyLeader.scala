@@ -34,14 +34,16 @@ case class ProxyLeaderOptions(
     // `flushPhase2asEveryN` is 1, then the proxy leader flushes after every
     // send.
     flushPhase2asEveryN: Int,
-    measureLatencies: Boolean
+    measureLatencies: Boolean,
+    flushValueChosensEveryN: Int,
 )
 
 @JSExportAll
 object ProxyLeaderOptions {
   val default = ProxyLeaderOptions(
     flushPhase2asEveryN = 1,
-    measureLatencies = true
+    measureLatencies = true,
+    flushValueChosensEveryN = 1
   )
 }
 
@@ -122,6 +124,9 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
 
   // The number of Phase2a messages since the last flush.
   private var numPhase2asSentSinceLastFlush: Int = 0
+
+  // The number of ValueChosen messages since the last flush.
+  private var numValueChosenSentSinceLastFlush: Int = 0
 
   @JSExport
   protected var states = mutable.Map[SlotRound, State]()
@@ -227,7 +232,19 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
           case CommandBatchOrNoop.Value.CommandBatch(batch) =>
             val group = disseminators(Math.abs(batch.batchId.batchId.hashCode()) % disseminators.size)
             val randomDisseminator = group(rand.nextInt(group.size))
-            randomDisseminator.send(DisseminatorInbound().withValueChosen(ValueChosen(slot = phase2b.slot, commandBatchOrNoop = pending.phase2a.commandBatchOrNoop)))
+            if (numValueChosenSentSinceLastFlush == 1) {
+              randomDisseminator.send(DisseminatorInbound().withValueChosen(ValueChosen(slot = phase2b.slot, commandBatchOrNoop = pending.phase2a.commandBatchOrNoop)))
+            } else {
+              randomDisseminator.sendNoFlush(DisseminatorInbound().withValueChosen(ValueChosen(slot = phase2b.slot, commandBatchOrNoop = pending.phase2a.commandBatchOrNoop)))
+              numValueChosenSentSinceLastFlush += 1
+              if (numValueChosenSentSinceLastFlush >= options.flushValueChosensEveryN) {
+                for (group <- disseminators; disseminator <- group) {
+                  disseminator.flush()
+                }
+                numValueChosenSentSinceLastFlush = 0
+              }
+            }
+
           case CommandBatchOrNoop.Value.Noop(Noop()) =>
             replicas.foreach(_.send(ReplicaInbound().withChosen(Chosen(slot = phase2b.slot, commandBatchOrNoop = RequestBatchOrNoop(RequestBatchOrNoop.Value.Noop(Noop()))))))
           case CommandBatchOrNoop.Value.Empty =>

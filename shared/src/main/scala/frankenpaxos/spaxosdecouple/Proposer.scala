@@ -43,14 +43,15 @@ class ProposerMetrics(collectors: Collectors) {
 @JSExportAll
 case class ProposerOptions(
                             batchSize: Int,
-                            measureLatencies: Boolean
-
+                            measureLatencies: Boolean,
+                            flushForwardsEveryN: Int,
+                            flushClientRequestsEveryN: Int
 )
 
 @JSExportAll
 object ProposerOptions {
   val default = ProposerOptions(batchSize = 100,
-    measureLatencies = true)
+    measureLatencies = true, flushForwardsEveryN = 1, flushClientRequestsEveryN = 1)
 }
 
 @JSExportAll
@@ -98,6 +99,12 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   protected var round: Int = 0
 
+  // The number of Forward messages since the last flush.
+  private var numForwardSentSinceLastFlush: Int = 0
+
+  // The number of ClientRequest messages since the last flush.
+  private var numClientRequestSentSinceLastFlush: Int = 0
+
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
     if (options.measureLatencies) {
@@ -143,7 +150,19 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   def handleRequestBatch(src: Transport#Address, requestBatch: RequestBatch): Unit = {
     val id: BatchId = BatchId(java.util.UUID.randomUUID.toString)
     val group = disseminators(Math.abs(id.batchId.hashCode()) % disseminators.size)
-    group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+
+    if (options.flushForwardsEveryN == 1) {
+      group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+    } else {
+      group.foreach(_.sendNoFlush(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+      numForwardSentSinceLastFlush += 1
+      if (numForwardSentSinceLastFlush >= options.flushForwardsEveryN) {
+        for (group <- disseminators; disseminator <- group) {
+          disseminator.flush()
+        }
+        numForwardSentSinceLastFlush = 0
+      }
+    }
     states(CommandBatch(id)) = PendingAcks(acks = mutable.Map())
   }
 
@@ -152,8 +171,17 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     val group = disseminators(id.batchId.hashCode() % disseminators.size)
     val requestBatch = RequestBatch(Seq(clientRequest))
 
-    for (disseminator <- group) {
-      disseminator.send(DisseminatorInbound().withForward(Forward(requestBatch, id)))
+    if (options.flushForwardsEveryN == 1) {
+      group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+    } else {
+      group.foreach(_.sendNoFlush(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+      numForwardSentSinceLastFlush += 1
+      if (numForwardSentSinceLastFlush >= options.flushForwardsEveryN) {
+        for (group <- disseminators; disseminator <- group) {
+          disseminator.flush()
+        }
+        numForwardSentSinceLastFlush = 0
+      }
     }
 
     states(CommandBatch(id)) = PendingAcks(acks = mutable.Map())
@@ -167,10 +195,24 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
         acks.put(src, acknowledge)
         if (acks.size >= disseminatorQuorumSize) {
           val leader = leaders(roundSystem.leader(round))
-          leader.send(
-            LeaderInbound().withClientRequestBatch(
-              ClientRequestBatch(acknowledge.commandBatch))
-          )
+          if (options.flushClientRequestsEveryN == 1) {
+            leader.send(
+              LeaderInbound().withClientRequestBatch(
+                ClientRequestBatch(acknowledge.commandBatch))
+            )
+          } else {
+            leader.sendNoFlush(
+              LeaderInbound().withClientRequestBatch(
+                ClientRequestBatch(acknowledge.commandBatch))
+            )
+            numClientRequestSentSinceLastFlush += 1
+          }
+
+          if (numClientRequestSentSinceLastFlush >= options.flushClientRequestsEveryN) {
+            leader.flush()
+            numClientRequestSentSinceLastFlush = 0
+          }
+
           states(acknowledge.commandBatch) = Stable
         }
     }
