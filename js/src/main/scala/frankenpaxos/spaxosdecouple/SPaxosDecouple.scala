@@ -97,7 +97,7 @@ class SPaxosDecouple {
       logger = new JsLogger(),
       config = config,
       options = BatcherOptions.default.copy(
-        batchSize = 2
+        batchSize = 1
       ),
       metrics = new BatcherMetrics(FakeCollectors)
     )

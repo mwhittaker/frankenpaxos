@@ -161,7 +161,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   def handleAcknowledge(src: Transport#Address, acknowledge: Acknowledge) = {
     states.get(acknowledge.commandBatch) match {
-      case None => logger.fatal("")
+      case None => logger.fatal("error")
       case Some(Stable) =>
       case Some(PendingAcks(acks)) =>
         acks.put(src, acknowledge)
@@ -171,8 +171,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
             LeaderInbound().withClientRequestBatch(
               ClientRequestBatch(acknowledge.commandBatch))
           )
+          states(acknowledge.commandBatch) = Stable
         }
-        states(acknowledge.commandBatch) = Stable
     }
   }
 
