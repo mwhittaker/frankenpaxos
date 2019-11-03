@@ -48,9 +48,15 @@ def main(args) -> None:
                         batch_size = batch_size,
                     ),
                     batcher_log_level = args.log_level,
-                    proposer_options = spaxosdecouple.ProposerOptions(),
+                    proposer_options = spaxosdecouple.ProposerOptions(
+                        flushForwardsEveryN = leader_flush_every_n,
+                        flushClientRequestsEveryN = leader_flush_every_n
+                    ),
                     proposer_log_level = args.log_level,
-                    disseminator_options = spaxosdecouple.DisseminatorOptions(),
+                    disseminator_options = spaxosdecouple.DisseminatorOptions(
+                        flushChosensEveryN = leader_flush_every_n,
+                        flushAcknowledgeEveryN = leader_flush_every_n
+                    ),
                     disseminator_log_level = args.log_level,
                     leader_options = spaxosdecouple.LeaderOptions(
                         resend_phase1as_period = datetime.timedelta(seconds=60),
@@ -66,6 +72,7 @@ def main(args) -> None:
                     leader_log_level = args.log_level,
                     proxy_leader_options = spaxosdecouple.ProxyLeaderOptions(
                         flush_phase2as_every_n = proxy_leader_flush_every_n,
+                        flushValueChosensEveryN = proxy_leader_flush_every_n
                     ),
                     proxy_leader_log_level = args.log_level,
                     acceptor_options = spaxosdecouple.AcceptorOptions(),
