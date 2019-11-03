@@ -42,6 +42,8 @@ object ProxyLeaderMain extends App {
     // Options.
     opt[Int]("options.flushPhase2asEveryN")
       .optionAction((x, o) => o.copy(flushPhase2asEveryN = x))
+    opt[Int]("options.flushValueChosensEveryN")
+      .optionAction((x, o) => o.copy(flushValueChosensEveryN = x))
   }
 
   // Parse flags.

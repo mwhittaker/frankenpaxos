@@ -18,6 +18,13 @@ object DisseminatorMain extends App {
       options: DisseminatorOptions = DisseminatorOptions.default
   )
 
+  implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def optionAction(
+                      f: (A, DisseminatorOptions) => DisseminatorOptions
+                    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => flags.copy(options = f(x, flags.options)))
+  }
+
   val parser = new scopt.OptionParser[Flags]("") {
     help("help")
 
@@ -33,6 +40,11 @@ object DisseminatorMain extends App {
     opt[Int]("prometheus_port")
       .action((x, f) => f.copy(prometheusPort = x))
       .text(s"-1 to disable")
+
+    opt[Int]("options.flushChosensEveryN")
+      .optionAction((x, o) => o.copy(flushChosensEveryN = x))
+    opt[Int]("options.flushAcknowledgeEveryN")
+      .optionAction((x, o) => o.copy(flushAcknowledgeEveryN = x))
   }
 
   // Parse flags.

@@ -41,10 +41,12 @@ class BatcherOptions(NamedTuple):
     batch_size: int = 1
 
 class ProposerOptions(NamedTuple):
-    pass
+    flush_forwards_every_n: int = 1,
+    flush_client_requests_every_n: int = 1
 
 class DisseminatorOptions(NamedTuple):
-    pass
+    flush_chosens_every_n: int = 1,
+    flush_acknowledge_every_n: int = 1
 
 class ElectionOptions(NamedTuple):
     ping_period: datetime.timedelta = datetime.timedelta(seconds=1)
@@ -59,7 +61,8 @@ class LeaderOptions(NamedTuple):
 
 
 class ProxyLeaderOptions(NamedTuple):
-    flush_phase2as_every_n: int = 1
+    flush_phase2as_every_n: int = 1,
+    flush_value_chosens_every_n: int = 1
 
 
 class AcceptorOptions(NamedTuple):
@@ -431,6 +434,8 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                     proposer.host.ip(),
                     '--prometheus_port',
                     str(proposer.port + 1) if input.monitored else '-1',
+                    '--options.flushForwardsEveryN',
+                    str(input.proposer_options.flush_forwards_every_n),
                 ],
             )
             if input.profiled:
