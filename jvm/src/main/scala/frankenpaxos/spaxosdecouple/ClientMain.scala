@@ -144,7 +144,7 @@ object ClientMain extends App {
 
   // Warm up the protocol.
   implicit val context = transport.executionContext
-  val warmupFutures = for (pseudonym <- 0 to flags.numWarmupClients)
+  val warmupFutures = for (pseudonym <- 0 until flags.numWarmupClients)
     yield BenchmarkUtil.runFor(() => warmupRun(pseudonym), flags.warmupDuration)
   try {
     logger.info("Client warmup started.")
@@ -160,7 +160,7 @@ object ClientMain extends App {
   Thread.sleep(flags.warmupSleep.toMillis())
 
   // Run the benchmark.
-  val futures = for (pseudonym <- 0 to flags.numClients)
+  val futures = for (pseudonym <- flags.numWarmupClients until flags.numWarmupClients + flags.numClients)
     yield BenchmarkUtil.runFor(() => run(pseudonym), flags.duration)
   try {
     logger.info("Clients started.")
