@@ -152,9 +152,9 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     val group = disseminators(Math.abs(id.batchId.hashCode()) % disseminators.size)
 
     if (options.flushForwardsEveryN == 1) {
-      group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+      group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id, proposerId))))
     } else {
-      group.foreach(_.sendNoFlush(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+      group.foreach(_.sendNoFlush(DisseminatorInbound().withForward(Forward(requestBatch, id, proposerId))))
       numForwardSentSinceLastFlush += 1
       if (numForwardSentSinceLastFlush >= options.flushForwardsEveryN) {
         for (group <- disseminators; disseminator <- group) {
@@ -172,9 +172,9 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     val requestBatch = RequestBatch(Seq(clientRequest))
 
     if (options.flushForwardsEveryN == 1) {
-      group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+      group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id, proposerId))))
     } else {
-      group.foreach(_.sendNoFlush(DisseminatorInbound().withForward(Forward(requestBatch, id))))
+      group.foreach(_.sendNoFlush(DisseminatorInbound().withForward(Forward(requestBatch, id, proposerId))))
       numForwardSentSinceLastFlush += 1
       if (numForwardSentSinceLastFlush >= options.flushForwardsEveryN) {
         for (group <- disseminators; disseminator <- group) {

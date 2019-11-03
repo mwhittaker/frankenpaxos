@@ -97,6 +97,7 @@ message Forward {
 
   required RequestBatch request_batch = 1;
   required BatchId batch_id = 2;
+  required int32 proposer_index = 3;
 }
 
 message Acknowledge {
