@@ -41,11 +41,11 @@ class BatcherOptions(NamedTuple):
     batch_size: int = 1
 
 class ProposerOptions(NamedTuple):
-    flush_forwards_every_n: int = 1,
+    flush_forwards_every_n: int = 1
     flush_client_requests_every_n: int = 1
 
 class DisseminatorOptions(NamedTuple):
-    flush_chosens_every_n: int = 1,
+    flush_chosens_every_n: int = 1
     flush_acknowledge_every_n: int = 1
 
 class ElectionOptions(NamedTuple):
@@ -61,7 +61,7 @@ class LeaderOptions(NamedTuple):
 
 
 class ProxyLeaderOptions(NamedTuple):
-    flush_phase2as_every_n: int = 1,
+    flush_phase2as_every_n: int = 1
     flush_value_chosens_every_n: int = 1
 
 
@@ -376,6 +376,10 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                         disseminator.host.ip(),
                         '--prometheus_port',
                         str(disseminator.port + 1) if input.monitored else '-1',
+                        '--options.flushChosensEveryN',
+                        str(input.disseminator_options.flush_chosens_every_n),
+                        '--options.flushAcknowledgeEveryN',
+                        str(input.disseminator_options.flush_acknowledge_every_n),
                     ],
                 )
                 if input.profiled:
@@ -436,6 +440,8 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                     str(proposer.port + 1) if input.monitored else '-1',
                     '--options.flushForwardsEveryN',
                     str(input.proposer_options.flush_forwards_every_n),
+                    '--options.flushClientRequestsEveryN',
+                    str(input.proposer_options.flush_client_requests_every_n),
                 ],
             )
             if input.profiled:
@@ -466,6 +472,8 @@ class SPaxosDecoupleSuite(benchmark.Suite[Input, Output]):
                     str(proxy_leader.port + 1) if input.monitored else '-1',
                     '--options.flushPhase2asEveryN',
                     str(input.proxy_leader_options.flush_phase2as_every_n),
+                    '--options.flushValueChosensEveryN',
+                    str(input.proxy_leader_options.flush_value_chosens_every_n),
                 ],
             )
             if input.profiled:
