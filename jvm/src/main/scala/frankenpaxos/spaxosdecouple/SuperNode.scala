@@ -50,10 +50,10 @@ object SuperNodeMain extends App {
       )
 
     def proposerOptionAction(
-                             f: (A, BatcherOptions) => BatcherOptions
+                             f: (A, ProposerOptions) => ProposerOptions
                            ): scopt.OptionDef[A, Flags] =
       o.action(
-        (x, flags) => flags.copy(batcherOptions = f(x, flags.batcherOptions))
+        (x, flags) => flags.copy(proposerOptions = f(x, flags.proposerOptions))
       )
 
     def leaderOptionAction(
@@ -79,10 +79,10 @@ object SuperNodeMain extends App {
       )
 
     def disseminatorOptionAction(
-                              f: (A, AcceptorOptions) => AcceptorOptions
+                              f: (A, DisseminatorOptions) => DisseminatorOptions
                             ): scopt.OptionDef[A, Flags] =
       o.action(
-        (x, flags) => flags.copy(acceptorOptions = f(x, flags.acceptorOptions))
+        (x, flags) => flags.copy(disseminatorOptions = f(x, flags.disseminatorOptions))
       )
 
     def replicaOptionAction(
@@ -146,6 +146,20 @@ object SuperNodeMain extends App {
     // ProxyLeader options.
     opt[Int]("proxy_leader.flushPhase2asEveryN")
       .proxyLeaderOptionAction((x, o) => o.copy(flushPhase2asEveryN = x))
+    opt[Int]("proxy_leader.flushValueChosensEveryN")
+      .proxyLeaderOptionAction((x, o) => o.copy(flushValueChosensEveryN = x))
+
+    // Proposer options.
+    opt[Int]("proposer.flushForwardsEveryN")
+      .proposerOptionAction((x, o) => o.copy(flushForwardsEveryN = x))
+    opt[Int]("proposer.flushClientRequestsEveryN")
+      .proposerOptionAction((x, o) => o.copy(flushClientRequestsEveryN = x))
+
+    // Disseminator Options
+    opt[Int]("disseminator.flushChosensEveryN")
+      .disseminatorOptionAction((x, o) => o.copy(flushChosensEveryN = x))
+    opt[Int]("disseminator.flushAcknowledgeEveryN")
+      .disseminatorOptionAction((x, o) => o.copy(flushAcknowledgeEveryN = x))
 
     // Acceptor options.
 

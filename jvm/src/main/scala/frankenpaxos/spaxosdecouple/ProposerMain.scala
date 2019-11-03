@@ -38,6 +38,11 @@ object ProposerMain extends App {
     opt[Int]("prometheus_port")
       .action((x, f) => f.copy(prometheusPort = x))
       .text(s"-1 to disable")
+
+    opt[Int]("options.flushForwardsEveryN")
+      .optionAction((x, o) => o.copy(flushForwardsEveryN = x))
+    opt[Int]("options.flushClientRequestsEveryN")
+      .optionAction((x, o) => o.copy(flushClientRequestsEveryN = x))
   }
 
   // Parse flags.

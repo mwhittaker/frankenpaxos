@@ -107,6 +107,20 @@ class SuperSPaxosDecoupleSuite(benchmark.Suite[spaxosdecouple.Input, spaxosdecou
                 # ProxyLeader options.
                 '--proxy_leader.flushPhase2asEveryN',
                 str(input.proxy_leader_options.flush_phase2as_every_n),
+                '--proxy_leader.flushValueChosensEveryN',
+                str(input.proxy_leader_options.flush_value_chosens_every_n),
+
+                # Proposer options
+                '--proposer.flushForwardsEveryN',
+                str(input.proposer_options.flush_forwards_every_n),
+                '--proposer.flushClientRequestsEveryN',
+                str(input.proposer_options.flush_client_requests_every_n),
+
+                # Disseminator Options
+                '--disseminator.flushChosensEveryN',
+                str(input.disseminator_options.flush_chosens_every_n),
+                '--disseminator.flushAcknowledgeEveryN',
+                str(input.disseminator_options.flush_acknowledge_every_n),
 
                 # Acceptor options.
 
