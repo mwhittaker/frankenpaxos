@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1572736889765,
+  "iteration": 1572856129296,
   "links": [],
   "panels": [
     {
@@ -516,6 +516,13 @@
           "intervalFactor": 1,
           "legendFormat": "Total Inbound ({{instance}})",
           "refId": "B"
+        },
+        {
+          "expr": "rate(spaxosdecouple_disseminator_command_not_found_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Command not found ({{instance}})",
+          "refId": "C"
         }
       ],
       "thresholds": [],
@@ -1480,9 +1487,9 @@
       {
         "allValue": null,
         "current": {
-          "selected": true,
-          "text": "jvm_classes_loaded",
-          "value": "jvm_classes_loaded"
+          "selected": false,
+          "text": "jvm_gc_collection_seconds_sum",
+          "value": "jvm_gc_collection_seconds_sum"
         },
         "datasource": "Prometheus",
         "definition": "metrics(.*)",
@@ -1513,7 +1520,7 @@
             "value": "jvm_buffer_pool_used_bytes"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "jvm_classes_loaded",
             "value": "jvm_classes_loaded"
           },
@@ -1533,7 +1540,7 @@
             "value": "jvm_gc_collection_seconds_count"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "jvm_gc_collection_seconds_sum",
             "value": "jvm_gc_collection_seconds_sum"
           },
@@ -1862,11 +1869,11 @@
       {
         "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "tags": [],
-          "text": "All",
+          "text": "spaxosdecouple_leader",
           "value": [
-            "$__all"
+            "spaxosdecouple_leader"
           ]
         },
         "datasource": "Prometheus",
@@ -1878,7 +1885,7 @@
         "name": "job",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": "All",
             "value": "$__all"
           },
@@ -1898,7 +1905,7 @@
             "value": "spaxosdecouple_client"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "spaxosdecouple_leader",
             "value": "spaxosdecouple_leader"
           },
@@ -1960,8 +1967,8 @@
     ]
   },
   "time": {
-    "from": "2019-11-02T23:24:20.376Z",
-    "to": "2019-11-02T23:24:49.271Z"
+    "from": "2019-11-04T08:48:02.032Z",
+    "to": "2019-11-04T08:48:12.703Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1991,6 +1998,5 @@
   "timezone": "",
   "title": "SPaxos",
   "uid": "yfndCwAZk",
-  "version": 3
+  "version": 1
 }
-

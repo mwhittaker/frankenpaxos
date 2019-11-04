@@ -165,23 +165,29 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     )
 
     if (options.flushForwardsEveryN == 1) {
-      group.foreach(
-        _.send(
-          DisseminatorInbound()
-            .withForward(Forward(requestBatch, id, proposerId))
+      timed("handleRequestBatch/send") {
+        group.foreach(
+          _.send(
+            DisseminatorInbound()
+              .withForward(Forward(requestBatch, id, proposerId))
+          )
         )
-      )
+      }
     } else {
-      group.foreach(
-        _.sendNoFlush(
-          DisseminatorInbound()
-            .withForward(Forward(requestBatch, id, proposerId))
+      timed("handleRequestBatch/sendNoFlush") {
+        group.foreach(
+          _.sendNoFlush(
+            DisseminatorInbound()
+              .withForward(Forward(requestBatch, id, proposerId))
+          )
         )
-      )
+      }
       numForwardSentSinceLastFlush += 1
       if (numForwardSentSinceLastFlush >= options.flushForwardsEveryN) {
-        for (group <- disseminators; disseminator <- group) {
-          disseminator.flush()
+        timed("handleRequestBatch/flush") {
+          for (group <- disseminators; disseminator <- group) {
+            disseminator.flush()
+          }
         }
         numForwardSentSinceLastFlush = 0
       }
