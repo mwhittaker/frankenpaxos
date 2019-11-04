@@ -57,7 +57,7 @@ object ProposerMain extends App {
   val logger = new PrintLogger(flags.logLevel)
   val config = ConfigUtil.fromFile(flags.configFile.getAbsolutePath())
   val proposer = new Proposer[NettyTcpTransport](
-    address = config.batcherAddresses(flags.index),
+    address = config.proposerAddresses(flags.index),
     transport = new NettyTcpTransport(logger),
     logger = logger,
     config = config,
