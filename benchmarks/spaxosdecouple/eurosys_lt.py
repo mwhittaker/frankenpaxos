@@ -24,14 +24,14 @@ def main(args) -> None:
                     distribution_scheme = \
                             DistributionScheme.HASH,
                     client_jvm_heap_size = '16g',
-                    batcher_jvm_heap_size = '32g',
-                    leader_jvm_heap_size = '32g',
-                    proposer_jvm_heap_size = '32g',
-                    disseminator_jvm_heap_size = '32g',
-                    proxy_leader_jvm_heap_size = '32g',
-                    acceptor_jvm_heap_size = '32g',
-                    replica_jvm_heap_size = '32g',
-                    proxy_replica_jvm_heap_size = '32g',
+                    batcher_jvm_heap_size = '8g',
+                    leader_jvm_heap_size = '8g',
+                    proposer_jvm_heap_size = '8g',
+                    disseminator_jvm_heap_size = '8g',
+                    proxy_leader_jvm_heap_size = '8g',
+                    acceptor_jvm_heap_size = '8g',
+                    replica_jvm_heap_size = '8g',
+                    proxy_replica_jvm_heap_size = '8g',
                     warmup_duration = datetime.timedelta(seconds=20),
                     warmup_timeout = datetime.timedelta(seconds=30),
                     warmup_sleep = datetime.timedelta(seconds=5),
@@ -49,13 +49,13 @@ def main(args) -> None:
                     ),
                     batcher_log_level = args.log_level,
                     proposer_options = ProposerOptions(
-                        flush_forwards_every_n = leader_flush_every_n,
-                        flush_client_requests_every_n = leader_flush_every_n
+                        flush_forwards_every_n = proxy_leader_flush_every_n,
+                        flush_client_requests_every_n = proxy_leader_flush_every_n
                     ),
                     proposer_log_level = args.log_level,
                     disseminator_options = DisseminatorOptions(
-                        flush_chosens_every_n = leader_flush_every_n,
-                        flush_acknowledge_every_n = leader_flush_every_n
+                        flush_chosens_every_n = proxy_leader_flush_every_n,
+                        flush_acknowledge_every_n = proxy_leader_flush_every_n
                     ),
                     disseminator_log_level = args.log_level,
                     leader_options = LeaderOptions(
@@ -108,13 +108,13 @@ def main(args) -> None:
                     proxy_leader_flush_every_n,
                     proxy_replica_flush_every_n
                 ) in [
-                    ( 1,   1, 0, 0, 1, 1, 1),
-                    ( 1,  10, 0, 0, 5, 1, 1),
-                    ( 5,  10, 0, 0, 10, 1, 1),
-                    ( 5,  20, 0, 0, 10, 10, 10),
-                    ( 6,  50, 0, 0, 10, 10, 10),
-                    ( 6, 100, 0, 0, 10, 10, 10),
-                    (10, 100, 0, 0, 10, 10, 10),
+                    #( 1,   1, 0, 0, 2, 1, 1),
+                    #( 1,  10, 0, 0, 2, 1, 1),
+                    #( 5,  10, 0, 0, 10, 1, 1),
+                    #( 5,  20, 0, 0, 10, 10, 10),
+                    #( 6,  50, 0, 0, 10, 10, 10),
+                    #( 6, 100, 0, 0, 10, 10, 10),
+                    #(10, 100, 0, 0, 10, 10, 10),
 
                     #( 1,   1, 3, 1, 1, 1, 1),
                     #( 1,  10, 3, 5, 1, 1, 1),
@@ -123,8 +123,8 @@ def main(args) -> None:
                     #( 6,  50, 3, 10, 1, 1, 10),
                     #( 6, 100, 3, 10, 1, 1, 10),
                     #(10, 100, 3, 10, 1, 1, 10),
-                    #(20, 100, 3, 20, 1, 1, 20),
-                    #(20, 200, 3, 40, 1, 1, 40),
+                    (20, 100, 3, 20, 1, 1, 20),
+                    (20, 200, 3, 40, 1, 1, 40),
                 ]
             ] * 3
 

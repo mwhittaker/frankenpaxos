@@ -49,13 +49,13 @@ def main(args) -> None:
                     ),
                     batcher_log_level = args.log_level,
                     proposer_options = spaxosdecouple.ProposerOptions(
-                        flush_forwards_every_n = leader_flush_every_n,
-                        flush_client_requests_every_n = leader_flush_every_n
+                        flush_forwards_every_n = proxy_leader_flush_every_n,
+                        flush_client_requests_every_n = proxy_leader_flush_every_n,
                     ),
                     proposer_log_level = args.log_level,
                     disseminator_options = spaxosdecouple.DisseminatorOptions(
-                        flush_chosens_every_n = leader_flush_every_n,
-                        flush_acknowledge_every_n = leader_flush_every_n
+                        flush_chosens_every_n = proxy_leader_flush_every_n,
+                        flush_acknowledge_every_n = proxy_leader_flush_every_n,
                     ),
                     disseminator_log_level = args.log_level,
                     leader_options = spaxosdecouple.LeaderOptions(
@@ -72,7 +72,7 @@ def main(args) -> None:
                     leader_log_level = args.log_level,
                     proxy_leader_options = spaxosdecouple.ProxyLeaderOptions(
                         flush_phase2as_every_n = proxy_leader_flush_every_n,
-                        flush_value_chosens_every_n = proxy_leader_flush_every_n
+                        flush_value_chosens_every_n = proxy_leader_flush_every_n,
                     ),
                     proxy_leader_log_level = args.log_level,
                     acceptor_options = spaxosdecouple.AcceptorOptions(),
@@ -108,13 +108,13 @@ def main(args) -> None:
                     proxy_leader_flush_every_n,
                     proxy_replica_flush_every_n
                 ) in [
-                    ( 1,   1, 0, 0, 1, 1, 1),
-                    ( 1,  10, 0, 0, 5, 1, 1),
-                    ( 5,  10, 0, 0, 10, 1, 1),
-                    ( 5,  20, 0, 0, 10, 10, 10),
-                    ( 6,  50, 0, 0, 10, 10, 10),
-                    ( 6, 100, 0, 0, 10, 10, 10),
-                    (10, 100, 0, 0, 10, 10, 10),
+                    #( 1,   1, 0, 0, 1, 1, 1),
+                    #( 1,  10, 0, 0, 5, 1, 1),
+                    #( 5,  10, 0, 0, 10, 1, 1),
+                    #( 5,  20, 0, 0, 10, 10, 10),
+                    #( 6,  50, 0, 0, 10, 10, 10),
+                    #( 6, 100, 0, 0, 10, 10, 10),
+                    #(10, 100, 0, 0, 10, 10, 10),
 
                     #( 1,   1, 3, 1, 1, 1, 1),
                     #( 1,  10, 3, 5, 1, 1, 1),
@@ -123,10 +123,10 @@ def main(args) -> None:
                     #( 6,  50, 3, 10, 1, 1, 10),
                     #( 6, 100, 3, 10, 1, 1, 10),
                     #(10, 100, 3, 10, 1, 1, 10),
-                    #(20, 100, 3, 20, 1, 1, 20),
-                    #(20, 200, 3, 40, 1, 1, 40),
+                    (20, 100, 3, 20, 1, 1, 20),
+                    (20, 200, 3, 40, 1, 1, 40),
                 ]
-            ] * 3)[12:]
+            ] * 3)[0:]
 
         def summary(self, input: spaxosdecouple.Input,
                     output: spaxosdecouple.Output) -> str:
