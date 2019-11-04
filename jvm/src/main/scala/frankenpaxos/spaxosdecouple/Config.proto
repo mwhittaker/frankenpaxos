@@ -1,0 +1,42 @@
+syntax = "proto2";
+
+package frankenpaxos.spaxosdecouple;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.spaxosdecouple"
+  flat_package: true
+};
+
+message HostPortProto {
+  required string host = 1;
+  required int32 port = 2;
+}
+
+enum DistributionSchemeProto {
+  HASH = 0;
+  COLOCATED = 1;
+}
+
+message AcceptorGroup {
+  repeated HostPortProto acceptor_address = 6;
+}
+
+message DisseminatorGroup {
+  repeated HostPortProto disseminator_address = 7;
+}
+
+message NettyConfigProto {
+  required int32 f = 1;
+  repeated HostPortProto batcher_address = 2;
+  repeated HostPortProto leader_address = 3;
+  repeated HostPortProto leader_election_address = 4;
+  repeated HostPortProto proxy_leader_address = 5;
+  repeated AcceptorGroup acceptor_address = 6;
+  repeated HostPortProto replica_address = 7;
+  repeated HostPortProto proxy_replica_address = 8;
+  required DistributionSchemeProto distribution_scheme = 9;
+  repeated HostPortProto proposer_address = 10;
+  repeated DisseminatorGroup disseminator_address = 11;
+}

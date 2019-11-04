@@ -1,0 +1,242 @@
+syntax = "proto2";
+
+package frankenpaxos.spaxos;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.spaxos"
+  flat_package: true
+};
+
+
+// Helper messages. ////////////////////////////////////////////////////////////
+// Every instance is of the form `leader_index.instance_number` where
+// `leader_index` is the unique index of the leader and `instance_number` is a
+// monotonically increasing integer. In the EPaxos paper, for example, these
+// are written like R.1 or Q.2.
+message Instance {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 replica_index = 1;
+  required int32 instance_number = 2;
+}
+
+// Every ballot has the form `ordering.replica_index` where `ordering` is a
+// monotonically increasing integer and `replica_index` is the unique index of
+// the replica.
+message Ballot {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 ordering = 1;
+  required int32 replica_index = 2;
+}
+
+// A special noop command that does not affect the state machine.
+message Noop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+// A client issued command.
+message Command {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The client's address.
+  required bytes client_address = 1;
+
+  // Clients use pseudonyms to simulate multiple clients. See Fast MultiPaxos
+  // for more explanation.
+  required int32 client_pseudonym = 2;
+
+  // Clients annotate every command with a unique and monotonically increasing
+  // id. The pair of (client address, client id) uniquely identify a command.
+  required int32 client_id = 3;
+
+  // The actual command.
+  required bytes command = 4;
+}
+
+message UniqueId {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The client's address.
+  required bytes client_address = 1;
+
+  // Clients use pseudonyms to simulate multiple clients. See Fast MultiPaxos
+  // for more explanation.
+  required int32 client_pseudonym = 2;
+
+  // Clients annotate every command with a unique and monotonically increasing
+  // id. The pair of (client address, client id) uniquely identify a command.
+  required int32 client_id = 3;
+}
+
+message CommandOrNoop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    Command command = 1;
+    Noop noop = 2;
+  }
+}
+
+// TODO(mwhittaker): Do we need all these statuses?
+enum CommandStatus {
+  NotSeen = 0;
+  PreAccepted = 1;
+  Accepted = 2;
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required UniqueId unique_id = 1;
+  required bytes command = 2;
+}
+
+message Forward {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required ClientRequest client_request = 1;
+}
+
+message Acknowledge {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required UniqueId unique_id = 1;
+}
+
+message Decide {
+  // The index of the log for the command
+  required int32 slot = 1;
+
+  required UniqueId unique_id = 2;
+}
+
+// The designated "any" value.
+message AnyVal {}
+
+// An infinite suffix of any's. See Phase2a.
+message AnyValSuffix {}
+
+
+message Phase1a {
+  required int32 round = 1;
+
+  // The leader knows that all entries in slots less than chosenWatermark have
+  // been chosen. Acceptors do not have to include slots below chosenWatermark
+  // in their phase1b response.
+  required int32 chosenWatermark = 2;
+
+  // The leader also knows that every slot in chosenSlot has been chosen. As
+  // with chosenWatermark, an acceptor does not have to include a slot in a
+  // phase1b response if the leader already knows its chosen.
+  repeated int32 chosenSlot = 3;
+}
+
+message Phase1bVote {
+  required int32 slot = 1;
+  required int32 voteRound = 2;
+  oneof value {
+     UniqueId unique_id = 3;
+     Noop noop = 4;
+  }
+}
+
+message Phase1b {
+  required int32 replica_id = 1;
+  required int32 round = 2;
+  repeated Phase1bVote vote = 3;
+}
+
+message Phase1bNack {
+  required int32 replica_id = 1;
+  required int32 round = 2;
+}
+
+message Phase2a {
+  required int32 slot = 1;
+  required int32 round = 2;
+  oneof value {
+     UniqueId unique_id = 3;
+     Noop noop = 4;
+  }
+}
+
+message Phase2aBuffer {
+  repeated Phase2a phase2a = 1;
+}
+
+message Phase2b {
+  required int32 replica_id = 1;
+  required int32 slot = 2;
+  required int32 round = 3;
+  oneof vote {
+    UniqueId unique_id = 4;
+    Noop noop = 5;
+  }
+}
+
+message Phase2bBuffer {
+  repeated Phase2b phase2b = 1;
+}
+
+message ValueChosen {
+  required int32 slot = 1;
+  oneof value {
+    UniqueId unique_id = 2;
+    Noop noop = 3;
+  }
+}
+
+message ValueChosenBuffer {
+  repeated ValueChosen value_chosen = 1;
+}
+
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 client_pseudonym = 1;
+  required int32 client_id = 2;
+  // The result of executing the command.
+  required bytes result = 3;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ReplicaInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientRequest client_request = 1;
+    Forward forward = 2;
+    Acknowledge acknowledge = 3;
+    Decide decide = 4;
+    Phase1a phase1a = 6;
+    Phase2aBuffer phase2a_buffer = 7;
+    Phase1bNack phase1b_nack = 8;
+    Phase2bBuffer phase2b_buffer = 9;
+    ValueChosenBuffer value_chosen_buffer = 10;
+    Phase1b phase1b = 11;
+  }
+}
+
+message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientReply client_reply = 1;
+  }
+}
