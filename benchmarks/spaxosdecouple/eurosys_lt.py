@@ -14,26 +14,26 @@ def main(args) -> None:
                     num_warmup_clients_per_proc = num_clients_per_proc,
                     num_clients_per_proc = num_clients_per_proc,
                     num_batchers = num_batchers,
-                    num_leaders = 2,
-                    num_proposers = 3,
-                    num_disseminator_groups = 1,
-                    num_proxy_leaders = 3,
-                    num_acceptor_groups = 1,
-                    num_replicas = 3,
-                    num_proxy_replicas = 3,
+                    num_leaders = num_leaders,
+                    num_proposers = num_proposers,
+                    num_disseminator_groups = num_disseminator_groups,
+                    num_proxy_leaders = num_proxy_leaders,
+                    num_acceptor_groups = num_acceptor_groups,
+                    num_replicas = num_replicas,
+                    num_proxy_replicas = num_proxy_replicas,
                     distribution_scheme = \
                             DistributionScheme.HASH,
                     client_jvm_heap_size = '16g',
-                    batcher_jvm_heap_size = '8g',
-                    leader_jvm_heap_size = '8g',
-                    proposer_jvm_heap_size = '8g',
-                    disseminator_jvm_heap_size = '8g',
-                    proxy_leader_jvm_heap_size = '8g',
-                    acceptor_jvm_heap_size = '8g',
-                    replica_jvm_heap_size = '8g',
-                    proxy_replica_jvm_heap_size = '8g',
-                    warmup_duration = datetime.timedelta(seconds=20),
-                    warmup_timeout = datetime.timedelta(seconds=30),
+                    batcher_jvm_heap_size = '32g',
+                    leader_jvm_heap_size = '32g',
+                    proposer_jvm_heap_size = '32g',
+                    disseminator_jvm_heap_size = '32g',
+                    proxy_leader_jvm_heap_size = '32g',
+                    acceptor_jvm_heap_size = '32g',
+                    replica_jvm_heap_size = '32g',
+                    proxy_replica_jvm_heap_size = '32g',
+                    warmup_duration = datetime.timedelta(seconds=5),
+                    warmup_timeout = datetime.timedelta(seconds=10),
                     warmup_sleep = datetime.timedelta(seconds=5),
                     duration = datetime.timedelta(seconds=8),
                     timeout = datetime.timedelta(seconds=13),
@@ -49,13 +49,17 @@ def main(args) -> None:
                     ),
                     batcher_log_level = args.log_level,
                     proposer_options = ProposerOptions(
-                        flush_forwards_every_n = proxy_leader_flush_every_n,
-                        flush_client_requests_every_n = proxy_leader_flush_every_n
+                        flush_forwards_every_n = \
+                            proposer_flush_forwards_every_n,
+                        flush_client_requests_every_n = \
+                            proposer_flush_client_requests_every_n
                     ),
                     proposer_log_level = args.log_level,
                     disseminator_options = DisseminatorOptions(
-                        flush_chosens_every_n = proxy_leader_flush_every_n,
-                        flush_acknowledge_every_n = proxy_leader_flush_every_n
+                        flush_chosens_every_n = \
+                            disseminator_flush_chosens_every_n,
+                        flush_acknowledge_every_n = \
+                            disseminator_flush_acknowledge_every_n,
                     ),
                     disseminator_log_level = args.log_level,
                     leader_options = LeaderOptions(
@@ -103,18 +107,23 @@ def main(args) -> None:
                     num_client_procs,
                     num_clients_per_proc,
                     num_batchers,
+                    num_leaders,
+                    num_proposers,
+                    num_disseminator_groups,
+                    num_proxy_leaders,
+                    num_acceptor_groups,
+                    num_replicas,
+                    num_proxy_replicas,
                     batch_size,
                     leader_flush_every_n,
                     proxy_leader_flush_every_n,
-                    proxy_replica_flush_every_n
+                    proxy_replica_flush_every_n,
+                    proposer_flush_forwards_every_n,
+                    proposer_flush_client_requests_every_n,
+                    disseminator_flush_chosens_every_n,
+                    disseminator_flush_acknowledge_every_n
                 ) in [
-                    #( 1,   1, 0, 0, 2, 1, 1),
-                    #( 1,  10, 0, 0, 2, 1, 1),
-                    #( 5,  10, 0, 0, 10, 1, 1),
-                    #( 5,  20, 0, 0, 10, 10, 10),
-                    #( 6,  50, 0, 0, 10, 10, 10),
-                    #( 6, 100, 0, 0, 10, 10, 10),
-                    #(10, 100, 0, 0, 10, 10, 10),
+                    (10, 200, 0, 2, 13, 4, 14, 2, 2, 7, 0, 10, 1, 1, 1, 1, 1, 1),
 
                     #( 1,   1, 3, 1, 1, 1, 1),
                     #( 1,  10, 3, 5, 1, 1, 1),
@@ -123,25 +132,39 @@ def main(args) -> None:
                     #( 6,  50, 3, 10, 1, 1, 10),
                     #( 6, 100, 3, 10, 1, 1, 10),
                     #(10, 100, 3, 10, 1, 1, 10),
-                    (20, 100, 3, 20, 1, 1, 20),
-                    (20, 200, 3, 40, 1, 1, 40),
+                    # (20, 100, 3, 20, 1, 1, 20),
+                    # (20, 200, 3, 40, 1, 1, 40),
                 ]
             ] * 3
 
         def summary(self, input: Input,
                     output: Output) -> str:
             return str({
-                'f': input.f,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'num_batchers': input.num_batchers,
+                'num_leaders': input.num_leaders,
+                'num_proposers': input.num_proposers,
+                'num_disseminator_groups': input.num_disseminator_groups,
+                'num_proxy_leaders': input.num_proxy_leaders,
+                'num_acceptor_groups': input.num_acceptor_groups,
+                'num_replicas': input.num_replicas,
+                'num_proxy_replicas': input.num_proxy_replicas,
                 'batch_size': input.batcher_options.batch_size,
-                'leader_flush_every_n':
-                input.leader_options.flush_phase2as_every_n,
-                'proxy_leader_flush_every_n':
-                input.proxy_leader_options.flush_phase2as_every_n,
-                'proxy_replica_flush_every_n':
-                input.proxy_replica_options.flush_every_n,
+                'leader_flush_every_n': \
+                        input.leader_options.flush_phase2as_every_n,
+                'proxy_leader_flush_every_n': \
+                        input.proxy_leader_options.flush_phase2as_every_n,
+                'proxy_replica_flush_every_n': \
+                        input.proxy_replica_options.flush_every_n,
+                'proposer_flush_forwards_every_n': \
+                        input.proposer_options.flush_forwards_every_n,
+                'proposer_flush_client_requests_every_n': \
+                        input.proposer_options.flush_client_requests_every_n,
+                'disseminator_flush_chosens_every_n': \
+                        input.disseminator_options.flush_chosens_every_n,
+                'disseminator_flush_acknowledge_every_n': \
+                        input.disseminator_options.flush_acknowledge_every_n,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.7}',
             })

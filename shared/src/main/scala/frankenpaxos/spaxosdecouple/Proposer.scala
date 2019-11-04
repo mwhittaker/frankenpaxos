@@ -4,7 +4,12 @@ import collection.mutable
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.monitoring.{Collectors, Counter, PrometheusCollectors, Summary}
+import frankenpaxos.monitoring.{
+  Collectors,
+  Counter,
+  PrometheusCollectors,
+  Summary
+}
 import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.spaxosdecouple.ProposerInbound.Request
 
@@ -42,16 +47,18 @@ class ProposerMetrics(collectors: Collectors) {
 
 @JSExportAll
 case class ProposerOptions(
-                            batchSize: Int,
-                            measureLatencies: Boolean,
-                            flushForwardsEveryN: Int,
-                            flushClientRequestsEveryN: Int
+    batchSize: Int,
+    measureLatencies: Boolean,
+    flushForwardsEveryN: Int,
+    flushClientRequestsEveryN: Int
 )
 
 @JSExportAll
 object ProposerOptions {
   val default = ProposerOptions(batchSize = 100,
-    measureLatencies = true, flushForwardsEveryN = 1, flushClientRequestsEveryN = 1)
+                                measureLatencies = true,
+                                flushForwardsEveryN = 1,
+                                flushClientRequestsEveryN = 1)
 }
 
 @JSExportAll
@@ -87,7 +94,8 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   type DisseminatorId = Int
 
   sealed trait State
-  case class PendingAcks(acks: mutable.Map[Transport#Address, Acknowledge]) extends State
+  case class PendingAcks(acks: mutable.Map[Transport#Address, Acknowledge])
+      extends State
   case object Stable extends State
 
   val states = mutable.Map[CommandBatch, State]()
@@ -124,10 +132,10 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     val label =
       inbound.request match {
-        case Request.ClientRequest(r)  => "ClientRequest"
-        case Request.Acknowledge(r)    => "Acknowledge"
-        case Request.LeaderInfo(r)     => "LeaderInfo"
-        case Request.RequestBatch(r)   => "RequestBatch"
+        case Request.ClientRequest(r) => "ClientRequest"
+        case Request.Acknowledge(r)   => "Acknowledge"
+        case Request.LeaderInfo(r)    => "LeaderInfo"
+        case Request.RequestBatch(r)  => "RequestBatch"
         case Request.Empty => {
           logger.fatal("Empty ProposerInbound encountered.")
         }
@@ -135,10 +143,10 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     metrics.requestsTotal.labels(label).inc()
     timed(label) {
       inbound.request match {
-        case Request.ClientRequest(r)  => handleClientRequest(src, r)
-        case Request.Acknowledge(r)    => handleAcknowledge(src, r)
-        case Request.LeaderInfo(r)     => handleLeaderInfo(src, r)
-        case Request.RequestBatch(r)   => handleRequestBatch(src, r)
+        case Request.ClientRequest(r) => handleClientRequest(src, r)
+        case Request.Acknowledge(r)   => handleAcknowledge(src, r)
+        case Request.LeaderInfo(r)    => handleLeaderInfo(src, r)
+        case Request.RequestBatch(r)  => handleRequestBatch(src, r)
         case Request.Empty => {
           logger.fatal("Empty ProposerInbound encountered.")
         }
@@ -147,14 +155,29 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   }
 
-  def handleRequestBatch(src: Transport#Address, requestBatch: RequestBatch): Unit = {
+  def handleRequestBatch(
+      src: Transport#Address,
+      requestBatch: RequestBatch
+  ): Unit = {
     val id: BatchId = BatchId(java.util.UUID.randomUUID.toString)
-    val group = disseminators(Math.abs(id.batchId.hashCode()) % disseminators.size)
+    val group = disseminators(
+      Math.abs(id.batchId.hashCode()) % disseminators.size
+    )
 
     if (options.flushForwardsEveryN == 1) {
-      group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id, proposerId))))
+      group.foreach(
+        _.send(
+          DisseminatorInbound()
+            .withForward(Forward(requestBatch, id, proposerId))
+        )
+      )
     } else {
-      group.foreach(_.sendNoFlush(DisseminatorInbound().withForward(Forward(requestBatch, id, proposerId))))
+      group.foreach(
+        _.sendNoFlush(
+          DisseminatorInbound()
+            .withForward(Forward(requestBatch, id, proposerId))
+        )
+      )
       numForwardSentSinceLastFlush += 1
       if (numForwardSentSinceLastFlush >= options.flushForwardsEveryN) {
         for (group <- disseminators; disseminator <- group) {
@@ -166,19 +189,42 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
     states(CommandBatch(id)) = PendingAcks(acks = mutable.Map())
   }
 
-  def handleClientRequest(src: Transport#Address, clientRequest: ClientRequest) = {
-    val id: BatchId = BatchId(java.util.UUID.randomUUID.toString)
-    val group = disseminators(id.batchId.hashCode() % disseminators.size)
+  def handleClientRequest(
+      src: Transport#Address,
+      clientRequest: ClientRequest
+  ) = {
+    val id: BatchId = timed("handleClientRequest/randomUUID") {
+      BatchId(java.util.UUID.randomUUID.toString)
+    }
+    val group = disseminators(
+      Math.abs(id.batchId.hashCode()) % disseminators.size
+    )
     val requestBatch = RequestBatch(Seq(clientRequest))
 
     if (options.flushForwardsEveryN == 1) {
-      group.foreach(_.send(DisseminatorInbound().withForward(Forward(requestBatch, id, proposerId))))
+      timed("handleClientRequest/send") {
+        group.foreach(
+          _.send(
+            DisseminatorInbound()
+              .withForward(Forward(requestBatch, id, proposerId))
+          )
+        )
+      }
     } else {
-      group.foreach(_.sendNoFlush(DisseminatorInbound().withForward(Forward(requestBatch, id, proposerId))))
+      timed("handleClientRequest/sendNoFlush") {
+        group.foreach(
+          _.sendNoFlush(
+            DisseminatorInbound()
+              .withForward(Forward(requestBatch, id, proposerId))
+          )
+        )
+      }
       numForwardSentSinceLastFlush += 1
       if (numForwardSentSinceLastFlush >= options.flushForwardsEveryN) {
-        for (group <- disseminators; disseminator <- group) {
-          disseminator.flush()
+        timed("handleClientRequest/flush") {
+          for (group <- disseminators; disseminator <- group) {
+            disseminator.flush()
+          }
         }
         numForwardSentSinceLastFlush = 0
       }
@@ -189,7 +235,7 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
 
   def handleAcknowledge(src: Transport#Address, acknowledge: Acknowledge) = {
     states.get(acknowledge.commandBatch) match {
-      case None => logger.fatal("error")
+      case None         => logger.fatal("error")
       case Some(Stable) =>
       case Some(PendingAcks(acks)) =>
         acks.put(src, acknowledge)
@@ -198,12 +244,14 @@ class Proposer[Transport <: frankenpaxos.Transport[Transport]](
           if (options.flushClientRequestsEveryN == 1) {
             leader.send(
               LeaderInbound().withClientRequestBatch(
-                ClientRequestBatch(acknowledge.commandBatch))
+                ClientRequestBatch(acknowledge.commandBatch)
+              )
             )
           } else {
             leader.sendNoFlush(
               LeaderInbound().withClientRequestBatch(
-                ClientRequestBatch(acknowledge.commandBatch))
+                ClientRequestBatch(acknowledge.commandBatch)
+              )
             )
             numClientRequestSentSinceLastFlush += 1
           }

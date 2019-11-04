@@ -14,7 +14,8 @@ import scala.scalajs.js.annotation._
 import scala.util.Random
 
 @JSExportAll
-object DisseminatorInboundSerializer extends ProtoSerializer[DisseminatorInbound] {
+object DisseminatorInboundSerializer
+    extends ProtoSerializer[DisseminatorInbound] {
   type A = DisseminatorInbound
   override def toBytes(x: A): Array[Byte] = super.toBytes(x)
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
@@ -57,6 +58,13 @@ class DisseminatorMetrics(collectors: Collectors) {
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
+
+  val commandNotFoundTotal: Counter = collectors.counter
+    .build()
+    .name("spaxosdecouple_disseminator_command_not_found_total")
+    .help("Total number of commands not found.")
+    .register()
+
 }
 
 @JSExportAll
@@ -111,9 +119,6 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var idRequestMap: mutable.Map[BatchId, RequestBatch] = mutable.Map()
 
-  @JSExport
-  protected var requestsDisseminated: mutable.Set[RequestBatch] = mutable.Set()
-
   // The number of Chosen messages since the last flush.
   private var numChosenSentSinceLastFlush: Int = 0
 
@@ -141,7 +146,7 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
     val label =
       inbound.request match {
         case Request.ValueChosen(_) => "ValueChosen"
-        case Request.Forward(_) => "Forward"
+        case Request.Forward(_)     => "Forward"
         case Request.Empty =>
           logger.fatal("Empty DisseminatorInbound encountered.")
       }
@@ -150,7 +155,7 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
     timed(label) {
       inbound.request match {
         case Request.ValueChosen(r) => handleValueChosen(src, r)
-        case Request.Forward(r) => handleForward(src, r)
+        case Request.Forward(r)     => handleForward(src, r)
         case Request.Empty =>
           logger.fatal("Empty DisseminatorInbound encountered.")
       }
@@ -167,14 +172,19 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
       case CommandBatchOrNoop.Value.CommandBatch(batch) =>
         if (idRequestMap.contains(batch.batchId)) {
           requestBatch = RequestBatchOrNoop(
-            RequestBatchOrNoop.Value.CommandBatch(idRequestMap.get(batch.batchId).get))
+            RequestBatchOrNoop.Value
+              .CommandBatch(idRequestMap.get(batch.batchId).get)
+          )
         } else {
           // This disseminator does not have the batch send the chosen command to another disseminator
+          metrics.commandNotFoundTotal.inc()
           val nextIndex = (index + 1) % disseminators(groupIndex).size
-          disseminators(groupIndex)(nextIndex).send(DisseminatorInbound().withValueChosen(valueChosen))
+          disseminators(groupIndex)(nextIndex)
+            .send(DisseminatorInbound().withValueChosen(valueChosen))
         }
 
-      case CommandBatchOrNoop.Value.Noop(Noop()) => requestBatch = RequestBatchOrNoop(RequestBatchOrNoop.Value.Noop(Noop()))
+      case CommandBatchOrNoop.Value.Noop(Noop()) =>
+        requestBatch = RequestBatchOrNoop(RequestBatchOrNoop.Value.Noop(Noop()))
       case CommandBatchOrNoop.Value.Empty =>
         logger.fatal("Empty CommandBatchOrNoop encountered.")
     }
@@ -182,16 +192,32 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
     // If this disseminator had the batch notify the replicas and send the actual batch of commands
     if (requestBatch != null) {
       if (options.flushChosensEveryN == 1) {
-        replicas.foreach(_.send(ReplicaInbound().withChosen(Chosen(slot = valueChosen.slot, requestBatch))))
+        timed("handleValueChosen/send") {
+          replicas.foreach(
+            _.send(
+              ReplicaInbound()
+                .withChosen(Chosen(slot = valueChosen.slot, requestBatch))
+            )
+          )
+        }
       } else {
-        replicas.foreach(_.sendNoFlush(ReplicaInbound().withChosen(Chosen(slot = valueChosen.slot, requestBatch))))
+        timed("handleValueChosen/sendNoFlush") {
+          replicas.foreach(
+            _.sendNoFlush(
+              ReplicaInbound()
+                .withChosen(Chosen(slot = valueChosen.slot, requestBatch))
+            )
+          )
+        }
         numChosenSentSinceLastFlush += 1
       }
     }
 
     if (numChosenSentSinceLastFlush >= options.flushChosensEveryN) {
-      for (replica <- replicas) {
-        replica.flush()
+      timed("handleValueChosen/flush") {
+        for (replica <- replicas) {
+          replica.flush()
+        }
       }
       numChosenSentSinceLastFlush = 0
     }
@@ -201,23 +227,33 @@ class Disseminator[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       forward: Forward
   ): Unit = {
-    requestsDisseminated.add(forward.requestBatch)
-
     val id: BatchId = forward.batchId
-    idRequestMap.put(id, forward.requestBatch)
+    timed("handleForward/store command") {
+      idRequestMap.put(id, forward.requestBatch)
+    }
 
     val proposer = proposers(forward.proposerIndex)
 
     if (options.flushAcknowledgeEveryN == 1) {
-      proposer.send(ProposerInbound().withAcknowledge(Acknowledge(CommandBatch(id))))
+      timed("handleForward/send") {
+        proposer.send(
+          ProposerInbound().withAcknowledge(Acknowledge(CommandBatch(id)))
+        )
+      }
     } else {
-      proposer.sendNoFlush(ProposerInbound().withAcknowledge(Acknowledge(CommandBatch(id))))
+      timed("handleForward/sendNoFlush") {
+        proposer.sendNoFlush(
+          ProposerInbound().withAcknowledge(Acknowledge(CommandBatch(id)))
+        )
+      }
       numAcknowledgeSentSinceLastFlush += 1
     }
 
     if (numAcknowledgeSentSinceLastFlush >= options.flushAcknowledgeEveryN) {
-      for (proposer <- proposers) {
-        proposer.flush()
+      timed("handleForward/flush") {
+        for (proposer <- proposers) {
+          proposer.flush()
+        }
       }
       numAcknowledgeSentSinceLastFlush = 0
     }

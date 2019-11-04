@@ -160,8 +160,9 @@ object ClientMain extends App {
   Thread.sleep(flags.warmupSleep.toMillis())
 
   // Run the benchmark.
-  val futures = for (pseudonym <- flags.numWarmupClients until flags.numWarmupClients + flags.numClients)
-    yield BenchmarkUtil.runFor(() => run(pseudonym), flags.duration)
+  val futures =
+    for (pseudonym <- flags.numWarmupClients until flags.numWarmupClients + flags.numClients)
+      yield BenchmarkUtil.runFor(() => run(pseudonym), flags.duration)
   try {
     logger.info("Clients started.")
     concurrent.Await.result(Future.sequence(futures), flags.timeout)
