@@ -129,10 +129,10 @@ def main(args) -> None:
         labels = [
             'coupled',
             'decoupled',
-            '3 proxy replicas',
-            '4 proxy replicas',
-            '5 proxy replicas',
-            '6 proxy replicas',
+            '3 unbatchers',
+            '4 unbatchers',
+            '5 unbatchers',
+            '6 unbatchers',
         ],
         data = [
             avg_tput(batched_super_df),

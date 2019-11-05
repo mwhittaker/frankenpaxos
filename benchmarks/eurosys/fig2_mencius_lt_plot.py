@@ -18,11 +18,14 @@ def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
+def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, marker: str,
+                            label: str) -> None:
     grouped = df.groupby('num_clients')
     throughput = grouped['stop_throughput_1s.p90'].agg(np.mean).sort_index()
     latency = grouped['latency.median_ms'].agg(np.mean).sort_index()
-    ax.plot(throughput, latency, '.-', label=label, linewidth=2)
+    print(throughput)
+    print(latency)
+    ax.plot(throughput / 1000, latency, marker, label=label, linewidth=2)
 
 
 def make_figure(output_filename: str,
@@ -30,12 +33,16 @@ def make_figure(output_filename: str,
                 mencius_df: pd.DataFrame,
                 unreplicated_df: pd.DataFrame) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    plot_latency_throughput(coupled_df, ax, 'Coupled Mencius')
-    plot_latency_throughput(mencius_df, ax, 'Decoupled Mencius')
-    plot_latency_throughput(unreplicated_df, ax, 'Unreplicated')
+
+    print('Coupled Mencius')
+    plot_latency_throughput(coupled_df, ax, '^-', 'Mencius')
+    print('Mencius')
+    plot_latency_throughput(mencius_df, ax, 'o-', 'Compartmentalized Mencius')
+    print('Unreplicated')
+    plot_latency_throughput(unreplicated_df, ax, 's-', 'Unreplicated')
 
     ax.set_title('')
-    ax.set_xlabel('Throughput (commands per second)')
+    ax.set_xlabel('Throughput (thousands of commands per second)')
     ax.set_ylabel('Median latency (ms)')
     ax.legend(loc='best')
     ax.grid()
