@@ -54,6 +54,7 @@ message MatchRequest {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
+  required AcceptorGroup acceptor_group = 2;
 }
 
 message MatchReply {
@@ -61,7 +62,7 @@ message MatchReply {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
-  required int32 acceptor_index = 2;
+  required int32 matchmaker_index = 2;
   repeated AcceptorGroup acceptor_group = 3;
 }
 
