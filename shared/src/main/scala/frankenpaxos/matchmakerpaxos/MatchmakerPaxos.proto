@@ -30,7 +30,8 @@ message AcceptorGroup {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  repeated bytes address = 1;
+  required int32 round = 1;
+  repeated int32 address_index = 2;
 }
 
 message Phase1bVote {
@@ -53,8 +54,7 @@ message MatchRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 round = 1;
-  required AcceptorGroup acceptor_group = 2;
+  required AcceptorGroup acceptor_group = 1;
 }
 
 message MatchReply {
@@ -129,11 +129,12 @@ message ClientInbound {
 
 message LeaderInbound {
   oneof request {
-    MatchReply match_reply = 1;
-    Phase1b phase1b = 2;
-    Phase2b phase2b = 3;
-    MatchmakerNack matchmaker_nack = 4;
-    AcceptorNack acceptor_nack = 5;
+    ClientRequest client_request = 1;
+    MatchReply match_reply = 2;
+    Phase1b phase1b = 3;
+    Phase2b phase2b = 4;
+    MatchmakerNack matchmaker_nack = 5;
+    AcceptorNack acceptor_nack = 6;
   }
 }
 

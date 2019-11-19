@@ -6,13 +6,13 @@ import scala.scalajs.js.annotation.JSExportAll
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     leaderAddresses: Seq[Transport#Address],
-    matchmakerAddresses: Seq[Seq[Transport#Address]],
+    matchmakerAddresses: Seq[Transport#Address],
     // Matchmaker Paxos doesn't require a fixed pre-determined set of
     // acceptors. A leader is free to select _any_ set of acceptors that it
     // pleases. To keep things simple, here we fix a set of acceptors and have
     // each leader pick a random subset of f+1 of them. This is not
     // fundamental, just a simplification.
-    acceptorAddresses: Seq[Seq[Transport#Address]]
+    acceptorAddresses: Seq[Transport#Address]
 ) {
   val quorumSize = f + 1
   val numLeaders = leaderAddresses.size
