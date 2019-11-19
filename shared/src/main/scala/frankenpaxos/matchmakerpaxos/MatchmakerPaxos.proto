@@ -78,7 +78,7 @@ message Phase1b {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
-  required int32 acceptor_id = 2;
+  required int32 acceptor_index = 2;
   optional Phase1bVote vote = 3;
 }
 
@@ -95,7 +95,7 @@ message Phase2b {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
-  required int32 acceptor_id = 2;
+  required int32 acceptor_index = 2;
 }
 
 
