@@ -254,12 +254,27 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         clients += chan[Client[Transport]](src, Client.serializer)
 
       case matchmaking: Matchmaking =>
+        // We do a leader change because clients force liveness. This isn't the
+        // best way to enforce liveness (it kind of sticks, actually), but it's
+        // the simplest.
+        round = roundSystem.nextClassicRound(leaderIndex = index, round = round)
+        startPhase1(round, clientRequest.v)
         clients += chan[Client[Transport]](src, Client.serializer)
 
       case phase1: Phase1 =>
+        // We do a leader change because clients force liveness. This isn't the
+        // best way to enforce liveness (it kind of sticks, actually), but it's
+        // the simplest.
+        round = roundSystem.nextClassicRound(leaderIndex = index, round = round)
+        startPhase1(round, clientRequest.v)
         clients += chan[Client[Transport]](src, Client.serializer)
 
       case phase2: Phase2 =>
+        // We do a leader change because clients force liveness. This isn't the
+        // best way to enforce liveness (it kind of sticks, actually), but it's
+        // the simplest.
+        round = roundSystem.nextClassicRound(leaderIndex = index, round = round)
+        startPhase1(round, clientRequest.v)
         clients += chan[Client[Transport]](src, Client.serializer)
 
       case chosen: Chosen =>
@@ -340,24 +355,41 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           }
         }
 
-        // Send phase1s to all acceptors.
-        //
-        // TODO(mwhittaker): Add thriftiness. Thriftiness is a bit more
-        // complicated with Matchmakers since different acceptor groups can
-        // overlap.
-        for (index <- acceptorIndices) {
-          val acceptor = acceptors(index)
-          acceptor.send(AcceptorInbound().withPhase1A(Phase1a(round = round)))
-        }
+        // If there are no pending rounds, then we're done already! We can skip
+        // straight to phase 2. Otherwise, we have to go through phase 1.
+        if (pendingRounds.isEmpty) {
+          // Send Phase2as.
+          for (index <- matchmaking.writeAcceptorGroup) {
+            acceptors(index).send(
+              AcceptorInbound().withPhase2A(
+                Phase2a(round = round, value = matchmaking.v)
+              )
+            )
+          }
 
-        // Update our state.
-        state = Phase1(
-          v = matchmaking.v,
-          writeAcceptorGroup = matchmaking.writeAcceptorGroup,
-          acceptorToRounds = acceptorToRounds.toMap,
-          pendingRounds = pendingRounds,
-          phase1bs = mutable.Map()
-        )
+          // Update our state.
+          state = Phase2(v = matchmaking.v, phase2bs = mutable.Map())
+        } else {
+
+          // Send phase1s to all acceptors.
+          //
+          // TODO(mwhittaker): Add thriftiness. Thriftiness is a bit more
+          // complicated with Matchmakers since different acceptor groups can
+          // overlap.
+          for (index <- acceptorIndices) {
+            val acceptor = acceptors(index)
+            acceptor.send(AcceptorInbound().withPhase1A(Phase1a(round = round)))
+          }
+
+          // Update our state.
+          state = Phase1(
+            v = matchmaking.v,
+            writeAcceptorGroup = matchmaking.writeAcceptorGroup,
+            acceptorToRounds = acceptorToRounds.toMap,
+            pendingRounds = pendingRounds,
+            phase1bs = mutable.Map()
+          )
+        }
     }
   }
 

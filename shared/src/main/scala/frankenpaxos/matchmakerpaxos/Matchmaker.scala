@@ -131,7 +131,8 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     // the matchmaker would have to re-send replies to requests that it has
     // already processed. We don't do this though. Client re-sends address this
     // liveness issue, so matchmakers are free to ignore this request.
-    if (matchRequest.acceptorGroup.round <= acceptorGroups.lastKey) {
+    if (!acceptorGroups.isEmpty &&
+        matchRequest.acceptorGroup.round <= acceptorGroups.lastKey) {
       logger.debug(
         s"Matchmaker received a MatchRequest in round " +
           s"${matchRequest.acceptorGroup.round} but has already processed a " +
