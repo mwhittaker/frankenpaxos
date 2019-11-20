@@ -161,6 +161,58 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private def getRandomAcceptors(n: Int): Set[AcceptorIndex] =
     rand.shuffle(List() ++ (0 until n)).take(config.quorumSize).toSet
 
+  // Start Phase 1 with the given round and value.
+  private def startPhase1(newRound: Int, v: String): Unit = {
+    round = newRound
+    val acceptors = getRandomAcceptors(config.numAcceptors)
+    val matchRequest = MatchRequest(
+      acceptorGroup =
+        AcceptorGroup(round = round, acceptorIndex = acceptors.toSeq)
+    )
+    matchmakers.foreach(
+      _.send(MatchmakerInbound().withMatchRequest(matchRequest))
+    )
+
+    // Update our state.
+    state = Matchmaking(
+      v = v,
+      writeAcceptorGroup = acceptors,
+      matchReplies = mutable.Map()
+    )
+  }
+
+  private def handleNack(nackRound: Int): Unit = {
+    if (nackRound <= round) {
+      logger.debug(
+        s"Leader received a nack in round $nackRound but is " +
+          s"already in round $round. The nack is being ignored."
+      )
+      return
+    }
+
+    // TODO(mwhittaker): We should have sleeps here to avoid dueling.
+    state match {
+      case Inactive =>
+        // Do nothing. We're not trying to get anything chosen anyway.
+        ()
+      case matchmaking: Matchmaking =>
+        round =
+          roundSystem.nextClassicRound(leaderIndex = index, round = nackRound)
+        startPhase1(round, matchmaking.v)
+      case phase1: Phase1 =>
+        round =
+          roundSystem.nextClassicRound(leaderIndex = index, round = nackRound)
+        startPhase1(round, phase1.v)
+      case phase2: Phase2 =>
+        round =
+          roundSystem.nextClassicRound(leaderIndex = index, round = nackRound)
+        startPhase1(round, phase2.v)
+      case chosen: Chosen =>
+        // Do nothing. We've already chosen the value.
+        ()
+    }
+  }
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import LeaderInbound.Request
@@ -197,24 +249,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     state match {
       case Inactive =>
-        // Bump our round, select a write acceptor group, and send to the
-        // matchmakers.
         round = roundSystem.nextClassicRound(leaderIndex = index, round = round)
-        val acceptors = getRandomAcceptors(config.numAcceptors)
-        val matchRequest = MatchRequest(
-          acceptorGroup =
-            AcceptorGroup(round = round, acceptorIndex = acceptors.toSeq)
-        )
-        matchmakers.foreach(
-          _.send(MatchmakerInbound().withMatchRequest(matchRequest))
-        )
-
-        // Update our state.
-        state = Matchmaking(
-          v = clientRequest.v,
-          writeAcceptorGroup = acceptors,
-          matchReplies = mutable.Map()
-        )
+        startPhase1(round, clientRequest.v)
         clients += chan[Client[Transport]](src, Client.serializer)
 
       case matchmaking: Matchmaking =>
@@ -426,19 +462,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def handleAcceptorNack(
-      src: Transport#Address,
-      nack: AcceptorNack
-  ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
-  }
-
   private def handleMatchmakerNack(
       src: Transport#Address,
       nack: MatchmakerNack
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    handleNack(nack.round)
+  }
+
+  private def handleAcceptorNack(
+      src: Transport#Address,
+      nack: AcceptorNack
+  ): Unit = {
+    handleNack(nack.round)
   }
 }
