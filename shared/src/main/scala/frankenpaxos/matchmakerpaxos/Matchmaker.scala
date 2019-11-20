@@ -131,11 +131,12 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     // the matchmaker would have to re-send replies to requests that it has
     // already processed. We don't do this though. Client re-sends address this
     // liveness issue, so matchmakers are free to ignore this request.
-    if (matchRequest.round <= acceptorGroups.lastKey) {
+    if (matchRequest.acceptorGroup.round <= acceptorGroups.lastKey) {
       logger.debug(
-        s"Matchmaker received a MatchRequest in round ${matchRequest.round} " +
-          s"but has already processed a MatchRequest in round " +
-          s"${acceptorGroups.lastKey}, so the request is being ignored."
+        s"Matchmaker received a MatchRequest in round " +
+          s"${matchRequest.acceptorGroup.round} but has already processed a " +
+          s"MatchRequest in round ${acceptorGroups.lastKey}, so the request " +
+          s"is being ignored."
       )
       leader.send(
         LeaderInbound()
@@ -148,12 +149,13 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     leader.send(
       LeaderInbound().withMatchReply(
         MatchReply(
-          round = matchRequest.round,
+          round = matchRequest.acceptorGroup.round,
           matchmakerIndex = index,
           acceptorGroup = acceptorGroups.values.toSeq
         )
       )
     )
-    acceptorGroups(matchRequest.round) = matchRequest.acceptorGroup
+    acceptorGroups(matchRequest.acceptorGroup.round) =
+      matchRequest.acceptorGroup
   }
 }

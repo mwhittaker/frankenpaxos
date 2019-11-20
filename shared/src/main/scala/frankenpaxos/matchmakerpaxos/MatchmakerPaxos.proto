@@ -31,7 +31,7 @@ message AcceptorGroup {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
-  repeated int32 address_index = 2;
+  repeated int32 acceptor_index = 2;
 }
 
 message Phase1bVote {
@@ -97,7 +97,6 @@ message Phase2b {
   required int32 round = 1;
   required int32 acceptor_index = 2;
 }
-
 
 message ClientReply {
   option (scalapb.message).annotations =
