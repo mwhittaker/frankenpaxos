@@ -135,9 +135,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var round: Round = -1
 
-  // The leader's state.
-  @JSExport
-  protected var state: State = Inactive
+  // The leader's state. Public for testing.
+  var state: State = Inactive
 
   // A list of the clients awaiting a response.
   private val clients = mutable.Buffer[Chan[Client[Transport]]]()

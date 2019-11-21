@@ -84,8 +84,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.leaderAddresses)
       yield chan[Leader[Transport]](address, Leader.serializer)
 
-  @JSExport
-  protected var state: State = Inactive
+  // Public for testing.
+  var state: State = Inactive
 
   // Timers ////////////////////////////////////////////////////////////////////
   private def makeResendClientRequestTimer(
