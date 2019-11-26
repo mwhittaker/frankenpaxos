@@ -27,4 +27,38 @@ class SimpleMajorityTest extends FlatSpec with Matchers {
     qs.isWriteQuorum(Set(0, 1, 2, 3)) shouldBe true
     qs.isWriteQuorum(Set(0, 1, 2, 3, 4)) shouldBe true
   }
+
+  it should "compute read quorum supersets correctly" in {
+    val qs = new SimpleMajority(Set(0, 1, 2, 3, 4))
+    qs.isSuperSetOfReadQuorum(Set()) shouldBe false
+    qs.isSuperSetOfReadQuorum(Set(0)) shouldBe false
+    qs.isSuperSetOfReadQuorum(Set(0, 1)) shouldBe false
+    qs.isSuperSetOfReadQuorum(Set(0, 1, 2)) shouldBe true
+    qs.isSuperSetOfReadQuorum(Set(0, 1, 2, 3)) shouldBe true
+    qs.isSuperSetOfReadQuorum(Set(0, 1, 2, 3, 4)) shouldBe true
+
+    qs.isSuperSetOfReadQuorum(Set(5)) shouldBe false
+    qs.isSuperSetOfReadQuorum(Set(0, 5)) shouldBe false
+    qs.isSuperSetOfReadQuorum(Set(0, 1, 5)) shouldBe false
+    qs.isSuperSetOfReadQuorum(Set(0, 1, 2, 5)) shouldBe true
+    qs.isSuperSetOfReadQuorum(Set(0, 1, 2, 3, 5)) shouldBe true
+    qs.isSuperSetOfReadQuorum(Set(0, 1, 2, 3, 4, 5)) shouldBe true
+  }
+
+  it should "compute write quorum supersets correctly" in {
+    val qs = new SimpleMajority(Set(0, 1, 2, 3, 4))
+    qs.isSuperSetOfWriteQuorum(Set()) shouldBe false
+    qs.isSuperSetOfWriteQuorum(Set(0)) shouldBe false
+    qs.isSuperSetOfWriteQuorum(Set(0, 1)) shouldBe false
+    qs.isSuperSetOfWriteQuorum(Set(0, 1, 2)) shouldBe true
+    qs.isSuperSetOfWriteQuorum(Set(0, 1, 2, 3)) shouldBe true
+    qs.isSuperSetOfWriteQuorum(Set(0, 1, 2, 3, 4)) shouldBe true
+
+    qs.isSuperSetOfWriteQuorum(Set(5)) shouldBe false
+    qs.isSuperSetOfWriteQuorum(Set(0, 5)) shouldBe false
+    qs.isSuperSetOfWriteQuorum(Set(0, 1, 5)) shouldBe false
+    qs.isSuperSetOfWriteQuorum(Set(0, 1, 2, 5)) shouldBe true
+    qs.isSuperSetOfWriteQuorum(Set(0, 1, 2, 3, 5)) shouldBe true
+    qs.isSuperSetOfWriteQuorum(Set(0, 1, 2, 3, 4, 5)) shouldBe true
+  }
 }

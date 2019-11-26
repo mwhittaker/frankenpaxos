@@ -11,6 +11,10 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
+import frankenpaxos.quorums.QuorumSystem
+import frankenpaxos.quorums.QuorumSystemProto
+import frankenpaxos.quorums.SimpleMajority
+import frankenpaxos.quorums.UnanimousWrites
 import frankenpaxos.roundsystem.RoundSystem
 import scala.scalajs.js.annotation._
 import scala.util.Random
@@ -22,7 +26,6 @@ object LeaderInboundSerializer extends ProtoSerializer[LeaderInbound] {
   override def fromBytes(bytes: Array[Byte]): A = super.fromBytes(bytes)
   override def toPrettyString(x: A): String = super.toPrettyString(x)
 }
-
 @JSExportAll
 object Leader {
   val serializer = LeaderInboundSerializer
@@ -86,14 +89,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Matchmaking(
       v: String,
-      writeAcceptorGroup: Set[AcceptorIndex],
+      quorumSystem: QuorumSystem[Int],
       matchReplies: mutable.Map[MatchmakerIndex, MatchReply]
   ) extends State
 
   @JSExportAll
   case class Phase1(
       v: String,
-      writeAcceptorGroup: Set[AcceptorIndex],
+      quorumSystem: QuorumSystem[Int],
+      previousQuorumSystems: Map[Round, QuorumSystem[Int]],
       acceptorToRounds: Map[AcceptorIndex, mutable.Set[Round]],
       pendingRounds: mutable.Set[Round],
       phase1bs: mutable.Map[AcceptorIndex, Phase1b]
@@ -102,6 +106,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Phase2(
       v: String,
+      quorumSystem: QuorumSystem[Int],
       phase2bs: mutable.Map[AcceptorIndex, Phase2b]
   ) extends State
 
@@ -156,17 +161,46 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // Given acceptors a_0, ..., a_{n-1}, randomly select f+1 of the acceptors.
-  private def getRandomAcceptors(n: Int): Set[AcceptorIndex] =
-    rand.shuffle(List() ++ (0 until n)).take(config.quorumSize).toSet
+  // Given acceptors a_0, ..., a_{n-1}, randomly create a quorum system.
+  //
+  // TODO(mwhittaker): For now, we select a quorum system at random because it
+  // is the simplest thing to do. In full generality, we should pass in the
+  // policy by which we choose quorums.
+  private def getRandomQuorumSystem(
+      n: Int
+  ): (QuorumSystem[AcceptorIndex], QuorumSystemProto) = {
+    val seed = rand.nextLong()
+
+    // We randomly pick between simple majority quorums and unanimous write
+    // quorums. The thing is, though, that we can only use simple majority
+    // quorums if we have at least 2*f+1 acceptors.
+    if (config.numAcceptors >= 2 * config.f + 1 && rand.nextBoolean()) {
+      val quorumSystem = new SimpleMajority(
+        rand
+          .shuffle(List() ++ (0 until n))
+          .take(2 * config.f + 1)
+          .toSet,
+        seed
+      )
+      (quorumSystem, QuorumSystem.toProto(quorumSystem))
+    } else {
+      val quorumSystem = new UnanimousWrites(
+        rand.shuffle(List() ++ (0 until n)).take(config.quorumSize).toSet,
+        seed
+      )
+      (quorumSystem, QuorumSystem.toProto(quorumSystem))
+    }
+  }
 
   // Start Phase 1 with the given round and value.
   private def startPhase1(newRound: Int, v: String): Unit = {
     round = newRound
-    val acceptors = getRandomAcceptors(config.numAcceptors)
+    val (quorumSystem, quorumSystemProto) = getRandomQuorumSystem(
+      config.numAcceptors
+    )
     val matchRequest = MatchRequest(
       acceptorGroup =
-        AcceptorGroup(round = round, acceptorIndex = acceptors.toSeq)
+        AcceptorGroup(round = round, quorumSystem = quorumSystemProto)
     )
     matchmakers.foreach(
       _.send(MatchmakerInbound().withMatchRequest(matchRequest))
@@ -175,7 +209,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // Update our state.
     state = Matchmaking(
       v = v,
-      writeAcceptorGroup = acceptors,
+      quorumSystem = quorumSystem,
       matchReplies = mutable.Map()
     )
   }
@@ -315,15 +349,27 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Compute the following:
         //
-        //   - pendingRounds: the set of all rounds for which some acceptor
-        //     group was returned.
-        //   - acceptorIndices: the set of all returned acceptor indices, in
-        //     any round.
+        //   - pendingRounds: the set of all rounds for which some quorum
+        //     system was returned. We need to intersect the quorum systems in
+        //     these rounds.
+        //   - previousQuorumSystems: the quorum system for every round in
+        //     pendingRounds.
+        //   - acceptorIndices: the union of a read quorum for every round in
+        //     `pendingRounds`. These are the acceptors to which we send a
+        //     Phase 1a message.
+        //
+        //     TODO(mwhittaker): We only need to send to enough acceptors to
+        //     form a read quorum for every round in `pendingRounds`. I think
+        //     this might be some complicated NP complete problem or something,
+        //     so we just take a union of a read set from every quorum. There
+        //     might be a better way to do this.
         //   - acceptorToRounds: an index mapping each acceptor's index to the
-        //     set of rounds that it appears in.
+        //     set of rounds that it appears in. When we receive a Phase 1b
+        //     from an acceptor, this index allows us to quickly figure out
+        //     which rounds to update.
         //
         // For example, imagine a leader receives the following two responses
-        // from the matchmakers:
+        // from the matchmakers with all quorums being unanimous write quorums:
         //
         //     0   1   2   3
         //   +---+---+---+---+
@@ -339,6 +385,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         //   - acceptorIndices = {0, 1, 2, 3, 4}
         //   - acceptorToRounds = {0->[0,3], 1->[0], 2->[1], 3->[1], 4->[3]}
         val pendingRounds = mutable.Set[Round]()
+        val previousQuorumSystems = mutable.Map[Round, QuorumSystem[Int]]()
         val acceptorIndices = mutable.Set[AcceptorIndex]()
         val acceptorToRounds = mutable.Map[AcceptorIndex, mutable.Set[Round]]()
         for {
@@ -346,8 +393,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           group <- reply.acceptorGroup
         } {
           pendingRounds += group.round
-          for (index <- group.acceptorIndex) {
-            acceptorIndices += index
+          val quorumSystem = QuorumSystem.fromProto(group.quorumSystem)
+          previousQuorumSystems(group.round) = quorumSystem
+          acceptorIndices ++= quorumSystem.randomReadQuorum()
+
+          for (index <- quorumSystem.nodes) {
             acceptorToRounds
               .getOrElseUpdate(index, mutable.Set[Round]())
               .add(group.round)
@@ -358,7 +408,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // straight to phase 2. Otherwise, we have to go through phase 1.
         if (pendingRounds.isEmpty) {
           // Send Phase2as.
-          for (index <- matchmaking.writeAcceptorGroup) {
+          for (index <- matchmaking.quorumSystem.randomWriteQuorum()) {
             acceptors(index).send(
               AcceptorInbound().withPhase2A(
                 Phase2a(round = round, value = matchmaking.v)
@@ -367,9 +417,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           }
 
           // Update our state.
-          state = Phase2(v = matchmaking.v, phase2bs = mutable.Map())
+          state = Phase2(v = matchmaking.v,
+                         quorumSystem = matchmaking.quorumSystem,
+                         phase2bs = mutable.Map())
         } else {
-
           // Send phase1s to all acceptors.
           //
           // TODO(mwhittaker): Add thriftiness. Thriftiness is a bit more
@@ -383,7 +434,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           // Update our state.
           state = Phase1(
             v = matchmaking.v,
-            writeAcceptorGroup = matchmaking.writeAcceptorGroup,
+            quorumSystem = matchmaking.quorumSystem,
+            previousQuorumSystems = previousQuorumSystems.toMap,
             acceptorToRounds = acceptorToRounds.toMap,
             pendingRounds = pendingRounds,
             phase1bs = mutable.Map()
@@ -415,14 +467,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
-        // Wait until we've heard from at least every pending round.
-        //
-        // TODO(mwhittaker): In this implementation of matchmakers, we assume
-        // that every acceptor group consists of just f+1 acceptors. If we
-        // don't make this assumption, then the logic here gets quite a bit
-        // more complicated.
+        // Wait until we have a read quorum for every pending round.
+        logger.checkGt(phase1.pendingRounds.size, 0)
         phase1.phase1bs(phase1b.acceptorIndex) = phase1b
-        phase1.pendingRounds --= phase1.acceptorToRounds(phase1b.acceptorIndex)
+        for (round <- phase1.acceptorToRounds(phase1b.acceptorIndex)) {
+          if (phase1
+                .previousQuorumSystems(round)
+                .isSuperSetOfReadQuorum(phase1.phase1bs.keys.toSet)) {
+            phase1.pendingRounds.remove(round)
+          }
+        }
         if (!phase1.pendingRounds.isEmpty) {
           return
         }
@@ -436,14 +490,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Send Phase2as.
-        for (index <- phase1.writeAcceptorGroup) {
+        for (index <- phase1.quorumSystem.randomWriteQuorum()) {
           acceptors(index).send(
             AcceptorInbound().withPhase2A(Phase2a(round = round, value = v))
           )
         }
 
         // Update our state.
-        state = Phase2(v = v, phase2bs = mutable.Map())
+        state = Phase2(v = v,
+                       quorumSystem = phase1.quorumSystem,
+                       phase2bs = mutable.Map())
     }
   }
 
@@ -470,14 +526,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
-        // Wait until we've heard from every acceptor.
-        //
-        // TODO(mwhittaker): In this implementation of matchmakers, we assume
-        // that every acceptor group consists of just f+1 acceptors. If we
-        // don't make this assumption, then the logic here gets quite a bit
-        // more complicated.
+        // Wait until we've heard from a write quorum.
         phase2.phase2bs(phase2b.acceptorIndex) = phase2b
-        if (phase2.phase2bs.size < config.quorumSize) {
+        if (!phase2.quorumSystem.isWriteQuorum(phase2.phase2bs.keys.toSet)) {
           return
         }
 

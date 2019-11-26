@@ -147,9 +147,11 @@ const leader_info = {
         <div v-if="node.actor.state.constructor.name.includes('Matchmaking')">
           Matchmaking
           <fp-object>
-            <fp-field :name="'v'" :value="node.actor.state.v"></fp-field>
-            <fp-field :name="'writeAcceptorGroup'"
-                      :value="node.actor.state.writeAcceptorGroup">
+            <fp-field :name="'v'">
+              {{node.actor.state.v}}
+            </fp-field>
+            <fp-field :name="'quorumSystem'">
+              {{node.actor.state.quorumSystem}}
             </fp-field>
             <fp-field :name="'matchReplies'">
               <frankenpaxos-map :map="node.actor.state.matchReplies">
@@ -161,16 +163,22 @@ const leader_info = {
         <div v-if="node.actor.state.constructor.name.includes('Phase1')">
           Phase1
           <fp-object>
-            <fp-field :name="'v'" :value="node.actor.state.v"></fp-field>
-            <fp-field :name="'writeAcceptorGroup'"
-                      :value="node.actor.state.writeAcceptorGroup">
+            <fp-field :name="'v'">
+              {{node.actor.state.v}}
+            </fp-field>
+            <fp-field :name="'quorumSystem'">
+              {{node.actor.state.quorumSystem}}
+            </fp-field>
+            <fp-field :name="'previousQuorumSystems'">
+              <frankenpaxos-map :map="node.actor.state.previousQuorumSystems">
+              </frankenpaxos-map>
             </fp-field>
             <fp-field :name="'acceptorToRounds'">
               <frankenpaxos-map :map="node.actor.state.acceptorToRounds">
               </frankenpaxos-map>
             </fp-field>
-            <fp-field :name="'pendingRounds'"
-                      :value="node.actor.state.pendingRounds">
+            <fp-field :name="'pendingRounds'">
+              {{node.actor.state.pendingRounds}}
             </fp-field>
             <fp-field :name="'phase1bs'">
               <frankenpaxos-map :map="node.actor.state.phase1bs">
@@ -182,7 +190,12 @@ const leader_info = {
         <div v-if="node.actor.state.constructor.name.includes('Phase2')">
           Phase2
           <fp-object>
-            <fp-field :name="'v'" :value="node.actor.state.v"></fp-field>
+            <fp-field :name="'v'">
+              {{node.actor.state.v}}
+            </fp-field>
+            <fp-field :name="'quorumSystem'">
+              {{node.actor.state.quorumSystem}}
+            </fp-field>
             <fp-field :name="'phase2bs'">
               <frankenpaxos-map :map="node.actor.state.phase2bs">
               </frankenpaxos-map>
@@ -191,7 +204,7 @@ const leader_info = {
         </div>
 
         <div v-if="node.actor.state.constructor.name.includes('Chosen')">
-          Phase2
+          Chosen
           <fp-object>
             <fp-field :name="'v'" :value="node.actor.state.v"></fp-field>
           </fp-object>

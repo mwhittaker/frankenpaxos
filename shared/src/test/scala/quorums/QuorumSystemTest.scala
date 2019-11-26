@@ -43,6 +43,8 @@ class QuorumSystemTest extends FlatSpec {
         val quorum = qs.randomReadQuorum()
         assert(qs.isReadQuorum(quorum),
                s"Read quorum $quorum is not a read quorum.")
+        assert(qs.isSuperSetOfReadQuorum(quorum),
+               s"Read quorum $quorum is not a superset of a read quorum.")
       }
     }
     testAll(test)
@@ -54,6 +56,8 @@ class QuorumSystemTest extends FlatSpec {
         val quorum = qs.randomWriteQuorum()
         assert(qs.isWriteQuorum(quorum),
                s"Write quorum $quorum is not a write quorum.")
+        assert(qs.isSuperSetOfWriteQuorum(quorum),
+               s"Write quorum $quorum is not a superset of a write quorum.")
       }
     }
     testAll(test)

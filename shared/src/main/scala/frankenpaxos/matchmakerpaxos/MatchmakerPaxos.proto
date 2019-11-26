@@ -19,6 +19,7 @@ syntax = "proto2";
 package frankenpaxos.matchmakerpaxos;
 
 import "scalapb/scalapb.proto";
+import "frankenpaxos/quorums/QuorumSystem.proto";
 
 option (scalapb.options) = {
   package_name: "frankenpaxos.matchmakerpaxos"
@@ -31,7 +32,7 @@ message AcceptorGroup {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
-  repeated int32 acceptor_index = 2;
+  required quorums.QuorumSystemProto quorum_system = 2;
 }
 
 message Phase1bVote {

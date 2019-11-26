@@ -1,13 +1,17 @@
 package frankenpaxos.quorums
 
-class UnanimousWrites[T](members: Set[T], seed: Long = System.currentTimeMillis)
-    extends QuorumSystem[T] {
+class UnanimousWrites[T](
+    private[quorums] val members: Set[T],
+    seed: Long = System.currentTimeMillis
+) extends QuorumSystem[T] {
   require(
     !members.isEmpty,
     "You cannot construct a SimpleMajority quorum system without any members."
   )
 
   private val rand = new scala.util.Random(seed)
+
+  override def toString(): String = s"UnanimousWrites(members=$members)"
 
   override def nodes(): Set[T] = members
 
@@ -31,4 +35,10 @@ class UnanimousWrites[T](members: Set[T], seed: Long = System.currentTimeMillis)
 
     nodes == members
   }
+
+  override def isSuperSetOfReadQuorum(nodes: Set[T]): Boolean =
+    nodes.exists(members.contains)
+
+  override def isSuperSetOfWriteQuorum(nodes: Set[T]): Boolean =
+    members.subsetOf(nodes)
 }

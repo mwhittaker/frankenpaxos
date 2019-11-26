@@ -19,4 +19,35 @@ trait QuorumSystem[T] {
   def randomWriteQuorum(): Set[T]
   def isReadQuorum(nodes: Set[T]): Boolean
   def isWriteQuorum(nodes: Set[T]): Boolean
+  def isSuperSetOfReadQuorum(nodes: Set[T]): Boolean
+  def isSuperSetOfWriteQuorum(nodes: Set[T]): Boolean
+}
+
+object QuorumSystem {
+  def toProto(quorumSystem: SimpleMajority[Int]): QuorumSystemProto = {
+    QuorumSystemProto().withSimpleMajorityProto(
+      SimpleMajorityProto(members = quorumSystem.members.toSeq)
+    )
+  }
+
+  def toProto(quorumSystem: UnanimousWrites[Int]): QuorumSystemProto = {
+    QuorumSystemProto().withUnanimousWritesProto(
+      UnanimousWritesProto(members = quorumSystem.members.toSeq)
+    )
+  }
+
+  def fromProto(
+      proto: QuorumSystemProto,
+      seed: Long = System.currentTimeMillis
+  ): QuorumSystem[Int] = {
+    import QuorumSystemProto.Value
+    proto.value match {
+      case Value.SimpleMajorityProto(proto) =>
+        new SimpleMajority(proto.members.toSet, seed)
+      case Value.UnanimousWritesProto(proto) =>
+        new UnanimousWrites(proto.members.toSet, seed)
+      case Value.Empty =>
+        throw new IllegalArgumentException("Empty QuorumSystemProto.")
+    }
+  }
 }

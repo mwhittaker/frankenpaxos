@@ -1,0 +1,28 @@
+syntax = "proto2";
+
+package frankenpaxos.quorums;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.quorums"
+  flat_package: true
+};
+
+message SimpleMajorityProto {
+  repeated int32 members = 1;
+}
+
+message UnanimousWritesProto {
+  repeated int32 members = 1;
+}
+
+message QuorumSystemProto {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    SimpleMajorityProto simple_majority_proto = 1;
+    UnanimousWritesProto unanimous_writes_proto = 2;
+  }
+}
