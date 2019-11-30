@@ -108,7 +108,7 @@ message MatchRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required Configuration acceptor_group = 1;
+  required Configuration configuration = 1;
 }
 
 message MatchReply {
@@ -117,7 +117,7 @@ message MatchReply {
 
   required int32 round = 1;
   required int32 matchmaker_index = 2;
-  repeated Configuration acceptor_group = 3;
+  repeated Configuration configuration = 3;
 }
 
 message Phase1a {
