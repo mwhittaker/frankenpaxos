@@ -1,0 +1,275 @@
+// A protocol cheatsheet, similar to [1].
+//
+//   Client    Leader  Matchmaker Acceptor  Replica
+//     |         | ------> |         |         |     MatchRequest
+//     |         | <------ |         |         |     MatchReply
+//     |         | --------^-------> |         |     Phase1a
+//     |         | <-------^-------- |         |     Phase1b
+//     | ------> |         |         |         |     ClientRequest
+//     |         | --------^-------> |         |     Phase2a
+//     |         | <-------^-------- |         |     Phase2b
+//     |         | --------^---------^-------> |     Chosen
+//     |         | -----.  |         |         |     ChosenWatermark
+//     |         | <----'  |         |         |
+//     | <-------^---------^---------^-------- |     ClientReply
+//
+//   Client    Leader  Matchmaker Acceptor  Replica
+//     | <------ |         |         |         |     NotLeader
+//     | ------> |         |         |         |     LeaderInfoRequest
+//     | <------ |         |         |         |     LeaderInfoReply
+//     |         | <------ |         |         |     MatchmakerNack
+//     |         | <------ |         |         |     Stopped
+//     |         | <-------^-------- |         |     AcceptorNack
+//
+//   Client    Leader  Matchmaker Acceptor  Replica
+//     |         | ------> |         |         |     StopRequest
+//     |         | <------ |         |         |     StopReply
+//     |         | --------^-------> |         |     BootstrapEpochRequest
+//     |         | <-------^-------- |         |     BootstrapEpochReply
+//     |         | ------> |         |         |     Phase1a
+//     |         | <------ |         |         |     Phase1b
+//     |         | ------> |         |         |     Phase2a
+//     |         | <------ |         |         |     Phase2b
+//     |         | -----.  |         |         |     StartEpoch
+//     |         | <----'  |         |         |
+//     |         | --------^-------> |         |     StartEpoch
+//
+// TODO(mwhittaker): Add garbage collection. This will require us to have
+// replicas ack the execution of commands so that the leader knows when things
+// are safe to GC.
+//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+
+syntax = "proto2";
+
+package frankenpaxos.matchmakermultipaxos;
+
+import "scalapb/scalapb.proto";
+import "frankenpaxos/quorums/QuorumSystem.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.matchmakermultipaxos"
+  flat_package: true
+};
+
+// Helper messages. ////////////////////////////////////////////////////////////
+message Noop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message CommandId {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // A client's address, pseudonym, and id uniquely identify a command.
+  required bytes client_address = 1;
+  required int32 client_pseudonym = 2;
+  required int32 client_id = 3;
+}
+
+message Command {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes command = 2;
+}
+
+message CommandOrNoop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    Command command = 1;
+    Noop noop = 2;
+  }
+}
+
+message Configuration {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required quorums.QuorumSystemProto quorum_system = 2;
+}
+
+message Phase1bSlotInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 vote_round = 2;
+  required CommandOrNoop vote_value = 3;
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message MatchRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Configuration acceptor_group = 1;
+}
+
+message MatchReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required int32 matchmaker_index = 2;
+  repeated Configuration acceptor_group = 3;
+}
+
+message Phase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+
+  // The leader knows that all entries in slots less than `chosenWatermark`
+  // have been chosen. Acceptors do not have to include slots below
+  // `chosenWatermark` in their phase1b response.
+  //
+  // The leader may know that some entries larger than `chosenWatermark` have
+  // also been chosen, but that's okay. It's not unsafe for acceptors to return
+  // too much information.
+  required int32 chosen_watermark = 2;
+}
+
+message Phase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required int32 acceptor_index = 2;
+  repeated Phase1bSlotInfo info = 3;
+}
+
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Command command = 1;
+}
+
+message Phase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 round = 2;
+  required CommandOrNoop value = 3;
+}
+
+message Phase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 round = 2;
+  required int32 acceptor_index = 3;
+}
+
+message Chosen {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required CommandOrNoop value = 2;
+}
+
+message ChosenWatermark {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // All slots less than `watermark` have been chosen.
+  required int32 watermark = 1;
+}
+
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes result = 2;
+}
+
+message NotLeader {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The round of the leader (hopefully).
+  required int32 round = 1;
+}
+
+message MatchmakerNack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message Stopped {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // TODO(mwhittaker): Implement.
+}
+
+message AcceptorNack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  oneof request {
+    ClientReply client_reply = 1;
+    NotLeader not_leader = 2;
+    LeaderInfoReply leader_info_reply = 3;
+  }
+}
+
+message LeaderInbound {
+  oneof request {
+    MatchReply match_reply = 1;
+    ClientRequest client_request = 2;
+    Phase1b phase1b = 3;
+    Phase2b phase2b = 4;
+    ChosenWatermark chosen_watermark = 5;
+    MatchmakerNack matchmaker_nack = 6;
+    Stopped stopped = 7;
+    AcceptorNack acceptor_nack = 8;
+  }
+}
+
+message MatchmakerInbound {
+  oneof request {
+    MatchRequest match_request = 1;
+  }
+}
+
+message AcceptorInbound {
+  oneof request {
+    Phase1a phase1a = 1;
+    Phase2a phase2a = 2;
+  }
+}
+
+message ReplicaInbound {
+  oneof request {
+    Chosen chosen = 1;
+  }
+}
