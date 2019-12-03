@@ -78,14 +78,52 @@ class LeaderMetrics(collectors: Collectors) {
 
   val staleMatchRepliesTotal: Counter = collectors.counter
     .build()
-    .name("matchmakermultipaxos_leader_staleMatchReplies_total")
+    .name("matchmakermultipaxos_leader_stale_match_replies_total")
     .help("Total number of stale MatchReplies received.")
     .register()
 
-  val leaderChangesTotal: Counter = collectors.counter
+  val stalePhase1bsTotal: Counter = collectors.counter
     .build()
-    .name("matchmakermultipaxos_leader_leader_changes_total")
-    .help("Total number of leader changes.")
+    .name("matchmakermultipaxos_leader_stale_phase1bs_total")
+    .help("Total number of stale Phase1bs received.")
+    .register()
+
+  val stalePhase2bsTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_stale_phase2bs_total")
+    .help("Total number of stale Phase2bs received.")
+    .register()
+
+  val phase2bAlreadyChosenTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_phase2b_already_chosen_total")
+    .help(
+      "Total number of Phase2bs received for a slot that was already chosen."
+    )
+    .register()
+
+  val staleMatchmakerNackTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_stale_matchmaker_nack_total")
+    .help("Total number of stale MatchmakerNacks received.")
+    .register()
+
+  val staleAcceptorNackTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_stale_acceptor_nack_total")
+    .help("Total number of stale AcceptorNacks received.")
+    .register()
+
+  val stopBeingLeaderTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_stop_being_leader_total")
+    .help("Total number of times a node stops being a leader.")
+    .register()
+
+  val becomeLeaderTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_become_leader_total")
+    .help("Total number of times a node becomes the leader.")
     .register()
 
   val resendMatchRequestsTotal: Counter = collectors.counter
@@ -248,13 +286,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     options = options.electionOptions
   )
   election.register((leaderIndex) => {
-    leaderChange(leaderIndex == index)
+    if (leaderIndex == index) {
+      becomeLeader(
+        roundSystem.nextClassicRound(leaderIndex = index, round = round)
+      )
+    } else {
+      stopBeingLeader()
+    }
   })
 
   // The leader's state.
   @JSExport
   protected var state: State = if (index == 0) {
-    startMatchmaking(0, mutable.Buffer())
+    startMatchmaking(round = 0, pendingClientRequests = mutable.Buffer())
   } else {
     Inactive
   }
@@ -267,7 +311,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       s"resendMatchRequests",
       options.resendMatchRequestsPeriod,
       () => {
-        metrics.resendPhase1asTotal.inc()
+        metrics.resendMatchRequestsTotal.inc()
         matchmakers.foreach(
           _.send(MatchmakerInbound().withMatchRequest(matchRequest))
         )
@@ -392,7 +436,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       (quorumSystem, QuorumSystem.toProto(quorumSystem))
     } else {
       val quorumSystem = new UnanimousWrites(
-        rand.shuffle(List() ++ (0 until n)).take(config.quorumSize).toSet,
+        rand.shuffle(List() ++ (0 until n)).take(config.f + 1).toSet,
         seed
       )
       (quorumSystem, QuorumSystem.toProto(quorumSystem))
@@ -408,10 +452,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       config.numAcceptors
     )
     val matchRequest = MatchRequest(
-      configuration = Configuration(
-        round = round,
-        quorumSystem = quorumSystemProto
-      )
+      configuration =
+        Configuration(round = round, quorumSystem = quorumSystemProto)
     )
     matchmakers.foreach(
       _.send(MatchmakerInbound().withMatchRequest(matchRequest))
@@ -448,36 +490,44 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     phase2.phase2bs(slot) = mutable.Map()
   }
 
-  private def leaderChange(isLeader: Boolean): Unit = {
-    logger.checkGt(newRound, round)
-    metrics.leaderChangesTotal.inc()
+  private def stopBeingLeader(): Unit = {
+    metrics.stopBeingLeaderTotal.inc()
 
-    val newRound =
-      roundSystem.nextClassicRound(leaderIndex = index, round = round)
-    (state, isLeader) match {
-      case (Inactive, false) =>
+    state match {
+      case Inactive =>
         // Do nothing.
         {}
-      case (matchmaking: Matchmaking, false) =>
+      case matchmaking: Matchmaking =>
         matchmaking.resendMatchRequests.stop()
         state = Inactive
-      case (phase1: Phase1, false) =>
+      case phase1: Phase1 =>
         phase1.resendPhase1as.stop()
         state = Inactive
-      case (phase2: Phase2, false) =>
+      case phase2: Phase2 =>
         phase2.resendPhase2as.stop()
         state = Inactive
+    }
+  }
 
-      case (Inactive, true) =>
+  private def becomeLeader(newRound: Round): Unit = {
+    logger.checkGt(newRound, round)
+    logger.check(roundSystem.leader(newRound) == index)
+    metrics.becomeLeaderTotal.inc()
+
+    state match {
+      case Inactive =>
         round = newRound
         state = startMatchmaking(round, mutable.Buffer())
-      case (matchmaking: Matchmaking, true) =>
+      case matchmaking: Matchmaking =>
+        matchmaking.resendMatchRequests.stop()
         round = newRound
         state = startMatchmaking(round, matchmaking.pendingClientRequests)
-      case (phase1: Phase1, true) =>
+      case phase1: Phase1 =>
+        phase1.resendPhase1as.stop()
         round = newRound
         state = startMatchmaking(round, phase1.pendingClientRequests)
-      case (phase2: Phase2, true) =>
+      case phase2: Phase2 =>
+        phase2.resendPhase2as.stop()
         round = newRound
         state = startMatchmaking(round, mutable.Buffer())
     }
@@ -554,6 +604,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
+        // Stop our timers.
+        matchmaking.resendMatchRequests.stop()
+
         // Compute the following:
         //
         //   - pendingRounds: the set of all rounds for which some quorum
@@ -589,13 +642,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Then,
         //
         //   - pendingRounds = {0, 1, 3}
-        //   - acceptorIndices = {0, 1, 2, 3, 4}
+        //   - previousQuorumSystems = {0 -> [0, 1], 1 -> [2, 3], 3 -> [0, 4]}
+        //   - acceptorIndices = {0, 3, 4}
         //   - acceptorToRounds = {0->[0,3], 1->[0], 2->[1], 3->[1], 4->[3]}
         val pendingRounds = mutable.Set[Round]()
         val previousQuorumSystems =
           mutable.Map[Round, QuorumSystem[AcceptorIndex]]()
         val acceptorIndices = mutable.Set[AcceptorIndex]()
         val acceptorToRounds = mutable.Map[AcceptorIndex, mutable.Set[Round]]()
+
         for {
           reply <- matchmaking.matchReplies.values
           configuration <- reply.configuration
@@ -615,29 +670,27 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // If there are no pending rounds, then we're done already! We can skip
         // straight to phase 2. Otherwise, we have to go through phase 1.
         if (pendingRounds.isEmpty) {
-          // TODO(mwhittaker): Implement.
-          ???
+          nextSlot = chosenWatermark
+          val phase2 = Phase2(
+            quorumSystem = matchmaking.quorumSystem,
+            values = mutable.Map(),
+            phase2bs = mutable.Map(),
+            chosen = mutable.Set(),
+            numChosenSinceLastWatermarkSend = 0,
+            resendPhase2as = makeResendPhase2asTimer()
+          )
+          state = phase2
 
-          // // Send Phase2as.
-          // for (index <- matchmaking.quorumSystem.randomWriteQuorum()) {
-          //   acceptors(index).send(
-          //     AcceptorInbound().withPhase2A(
-          //       Phase2a(round = round, value = matchmaking.v)
-          //     )
-          //   )
-          // }
-          //
-          // // Update our state.
-          // state = Phase2(v = matchmaking.v,
-          //                quorumSystem = matchmaking.quorumSystem,
-          //                phase2bs = mutable.Map())
+          // Process any pending client requests.
+          for (clientRequest <- matchmaking.pendingClientRequests) {
+            processClientRequest(phase2, clientRequest)
+          }
         } else {
           // Send phase1s to acceptors.
           val phase1a =
             Phase1a(round = round, chosenWatermark = chosenWatermark)
           for (index <- acceptorIndices) {
-            val acceptor = acceptors(index)
-            acceptor.send(AcceptorInbound().withPhase1A(phase1a))
+            acceptors(index).send(AcceptorInbound().withPhase1A(phase1a))
           }
 
           // Update our state.
@@ -673,6 +726,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             s"A leader received a Phase1b message in round ${phase1b.round} " +
               s"but is in round $round. The Phase1b is being ignored."
           )
+          metrics.stalePhase1bsTotal.inc()
           // We can't receive phase 1bs from the future.
           logger.checkLt(phase1b.round, round)
           return
@@ -691,6 +745,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         if (!phase1.pendingRounds.isEmpty) {
           return
         }
+
+        // Stop our timers.
+        phase1.resendPhase1as.stop()
 
         // Find the largest slot with a vote, or -1 if there are no votes.
         val slotInfos = phase1.phase1bs.values.flatMap(_.info)
@@ -761,7 +818,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
-    // TODO(mwhittaker): Implement.
     state match {
       case Inactive | _: Matchmaking | _: Phase1 =>
         logger.debug(
@@ -776,6 +832,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             s"A leader received a Phase2b message in round ${phase2b.round} " +
               s"but is in round $round. The Phase2b is being ignored."
           )
+          metrics.stalePhase2bsTotal.inc()
           // We can't receive phase 2bs from the future.
           logger.checkLt(phase2b.round, round)
           return
@@ -789,6 +846,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               s"but that slot has already been chosen. The Phase2b message " +
               s"is being ignored."
           )
+          metrics.phase2bAlreadyChosenTotal.inc()
+          return
         }
 
         // Wait until we have a write quorum.
@@ -819,16 +878,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           chosenWatermark += 1
         }
 
-        // If we don't have any pending values, then we don't have to run the
-        // re-send Phase2as timer. There's nothing to resend.
-        if (phase2.values.isEmpty) {
-          phase2.resendPhase2as.stop()
-        }
-
         // Otherwise, we are waiting on at least one value to get chosen. If
         // we've updated the chosenWatermark, then we reset the timer.
         if (oldChosenWatermark != chosenWatermark) {
           phase2.resendPhase2as.reset()
+        }
+
+        // If we don't have any pending values, then we don't have to run the
+        // re-send Phase2as timer. There's nothing to resend.
+        if (phase2.values.isEmpty) {
+          phase2.resendPhase2as.stop()
         }
 
         // Broadcast chosenWatermark to other leaders, if needed.
@@ -897,6 +956,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           s"${nack.round} but is already in round $round. The Nack is being " +
           s"ignored."
       )
+      metrics.staleMatchmakerNackTotal.inc()
       return
     }
 
@@ -905,9 +965,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         round = nack.round
 
       case _: Matchmaking =>
-        round =
+        val newRound =
           roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
-        leaderChange(isLeader = true)
+        becomeLeader(newRound)
 
       case _: Phase1 | _: Phase2 =>
         logger.debug(
@@ -950,9 +1010,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case _: Phase1 | _: Phase2 =>
-        round =
+        val newRound =
           roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
-        leaderChange(isLeader = true)
+        becomeLeader(newRound)
     }
   }
 
