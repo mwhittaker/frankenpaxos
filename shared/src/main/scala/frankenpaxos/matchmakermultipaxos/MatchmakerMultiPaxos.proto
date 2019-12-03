@@ -34,6 +34,12 @@
 //     |         | <----'  |         |         |
 //     |         | --------^-------> |         |     StartEpoch
 //
+// TODO(mwhittaker): Add recovery. If a replica notices a hole in its log, it
+// should send a recover to the leader and to the other replicas. The replicas
+// should respond if it has the missing entry. The leader should do a leader
+// change with a smaller than usual chosenWatermark to make sure the value gets
+// chosen appropriately.
+
 // TODO(mwhittaker): Add garbage collection. This will require us to have
 // replicas ack the execution of commands so that the leader knows when things
 // are safe to GC.
@@ -245,13 +251,14 @@ message ClientInbound {
 message LeaderInbound {
   oneof request {
     MatchReply match_reply = 1;
-    ClientRequest client_request = 2;
-    Phase1b phase1b = 3;
+    Phase1b phase1b = 2;
+    ClientRequest client_request = 3;
     Phase2b phase2b = 4;
-    ChosenWatermark chosen_watermark = 5;
-    MatchmakerNack matchmaker_nack = 6;
-    Stopped stopped = 7;
-    AcceptorNack acceptor_nack = 8;
+    LeaderInfoRequest leader_info_request = 5;
+    ChosenWatermark chosen_watermark = 6;
+    MatchmakerNack matchmaker_nack = 7;
+    Stopped stopped = 8;
+    AcceptorNack acceptor_nack = 9;
   }
 }
 

@@ -77,6 +77,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     metrics: AcceptorMetrics = new AcceptorMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   config.checkValid()
+  logger.check(config.acceptorAddresses.contains(address))
 
   // Types /////////////////////////////////////////////////////////////////////
   override type InboundMessage = AcceptorInbound
