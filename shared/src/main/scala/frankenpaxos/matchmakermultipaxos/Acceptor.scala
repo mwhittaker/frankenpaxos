@@ -158,7 +158,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         s"An acceptor received a Phase1a message in round ${phase1a.round} " +
           s"but is in round $round."
       )
-      leader.send(LeaderInbound().withNack(Nack(round = round)))
+      leader.send(LeaderInbound().withAcceptorNack(AcceptorNack(round = round)))
       metrics.phase1NacksSentTotal.inc()
       return
     }
@@ -194,7 +194,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         s"An acceptor received a Phase2a message in round ${phase2a.round} " +
           s"but is in round $round."
       )
-      leader.send(LeaderInbound().withNack(Nack(round = round)))
+      leader.send(LeaderInbound().withAcceptorNack(AcceptorNack(round = round)))
       metrics.phase2NacksSentTotal.inc()
       return
     }
