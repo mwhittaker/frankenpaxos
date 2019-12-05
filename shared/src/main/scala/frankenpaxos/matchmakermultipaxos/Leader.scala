@@ -548,6 +548,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.MatchmakerNack(_)    => "MatchmakerNack"
         case Request.Stopped(_)           => "Stopped"
         case Request.AcceptorNack(_)      => "AcceptorNack"
+        case Request.Recover(_)           => "Recover"
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -564,6 +565,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.MatchmakerNack(r)    => handleMatchmakerNack(src, r)
         case Request.Stopped(r)           => handleStopped(src, r)
         case Request.AcceptorNack(r)      => handleAcceptorNack(src, r)
+        case Request.Recover(r)           => handleRecover(src, r)
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -1012,22 +1014,27 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // TODO(mwhittaker): Add back recovery.
-  // private def handleRecover(
-  //     src: Transport#Address,
-  //     recover: Recover
-  // ): Unit = {
-  //   // Note that we don't actually use `recover.slot` anywhere. This is
-  //   // actually ok. If there is a slot in the log that needs recovering, then
-  //   // some slot above that slot was chosen. This means that when the leader
-  //   // runs phase 1, it will see this larger slot and recover all instances
-  //   // below it, including `recover.slot`.
-  //   state match {
-  //     case Inactive =>
-  //     // Do nothing. The active leader will recover.
-  //     case _: Phase1 | Phase2 =>
-  //       // Leader change to make sure the slot is chosen.
-  //       leaderChange(isNewLeader = true)
-  //   }
-  // }
+  private def handleRecover(
+      src: Transport#Address,
+      recover: Recover
+  ): Unit = {
+    state match {
+      case Inactive =>
+        // Do nothing. The active leader will recover.
+        {}
+
+      case _: Matchmaking | _: Phase1 | _: Phase2 =>
+        // If our chosen watermark is larger than the slot we're trying to
+        // recover, then we won't get the value chosen again. We have to lower
+        // our watermark so that the protocol gets the value chosen again.
+        if (chosenWatermark > recover.slot) {
+          chosenWatermark = recover.slot
+        }
+
+        // Leader change to make sure the slot is chosen.
+        val newRound =
+          roundSystem.nextClassicRound(leaderIndex = index, round = round)
+        becomeLeader(newRound)
+    }
+  }
 }

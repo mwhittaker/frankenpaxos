@@ -1,5 +1,7 @@
 // A protocol cheatsheet, similar to [1].
 //
+// Normal case operation.
+//
 //   Client    Leader  Matchmaker Acceptor  Replica
 //     |         | ------> |         |         |     MatchRequest
 //     |         | <------ |         |         |     MatchReply
@@ -13,6 +15,8 @@
 //     |         | <----'  |         |         |
 //     | <-------^---------^---------^-------- |     ClientReply
 //
+// Abnormal case operation.
+//
 //   Client    Leader  Matchmaker Acceptor  Replica
 //     | <------ |         |         |         |     NotLeader
 //     | ------> |         |         |         |     LeaderInfoRequest
@@ -20,6 +24,9 @@
 //     |         | <------ |         |         |     MatchmakerNack
 //     |         | <------ |         |         |     Stopped
 //     |         | <-------^-------- |         |     AcceptorNack
+//     |         | <-------^---------^-------- |     Recover
+//
+// Matchmaker reconfiguration.
 //
 //   Client    Leader  Matchmaker Acceptor  Replica
 //     |         | ------> |         |         |     StopRequest
@@ -239,6 +246,17 @@ message AcceptorNack {
   required int32 round = 1;
 }
 
+message Recover {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // Replicas execute logs in prefix order. Thus, if the log permanently has a
+  // hole in it, the algorithm remains forever blocked. To solve this, if a
+  // replica notices a hole in its log for a certain amount of time, it sends a
+  // Recover message to the leader to get the hole plugged.
+  required int32 slot = 1;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ClientInbound {
   oneof request {
@@ -259,6 +277,7 @@ message LeaderInbound {
     MatchmakerNack matchmaker_nack = 7;
     Stopped stopped = 8;
     AcceptorNack acceptor_nack = 9;
+    Recover recover = 10;
   }
 }
 

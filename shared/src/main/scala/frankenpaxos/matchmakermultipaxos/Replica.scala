@@ -139,6 +139,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // Replica index.
   private val index = config.replicaAddresses.indexOf(address)
 
+  // Leader channels.
+  private val leaders: Seq[Chan[Leader[Transport]]] =
+    for (address <- config.leaderAddresses)
+      yield chan[Leader[Transport]](address, Leader.serializer)
+
   // The log of commands. We implement the log as a BufferMap as opposed to
   // something like a SortedMap for efficiency. `log` is public for testing.
   @JSExport
@@ -168,30 +173,29 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   protected var clientTable =
     mutable.Map[(ByteString, ClientPseudonym), (ClientId, ByteString)]()
 
-  // TODO(mwhittaker): Add back.
   // A timer to send Recover messages to the leaders. The timer is optional
   // because if we set the `options.unsafeDontRecover` flag to true, then we
   // don't even bother setting up this timer.
-  // private val recoverTimer: Option[Transport#Timer] =
-  //   if (options.unsafeDontRecover) {
-  //     None
-  //   } else {
-  //     Some(
-  //       timer(
-  //         "recover",
-  //         frankenpaxos.Util.randomDuration(options.recoverLogEntryMinPeriod,
-  //                                          options.recoverLogEntryMaxPeriod),
-  //         () => {
-  //           getProxyReplica().send(
-  //             ProxyReplicaInbound().withRecover(
-  //               Recover(slot = executedWatermark)
-  //             )
-  //           )
-  //           metrics.recoversSentTotal.inc()
-  //         }
-  //       )
-  //     )
-  //   }
+  private val recoverTimer: Option[Transport#Timer] =
+    if (options.unsafeDontRecover) {
+      None
+    } else {
+      lazy val t: Transport#Timer = timer(
+        "recover",
+        frankenpaxos.Util.randomDuration(options.recoverLogEntryMinPeriod,
+                                         options.recoverLogEntryMaxPeriod),
+        () => {
+          leaders.foreach(
+            _.send(
+              LeaderInbound().withRecover(Recover(slot = executedWatermark))
+            )
+          )
+          metrics.recoversSentTotal.inc()
+          t.start()
+        }
+      )
+      Some(t)
+    }
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -321,9 +325,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       chosen: Chosen
   ): Unit = {
-    // TODO(mwhittaker): Add back.
     // If `numChosen != executedWatermark`, then the recover timer is running.
-    // val recoverTimerRunning = numChosen != executedWatermark
+    val isRecoverTimerRunning = numChosen != executedWatermark
+    val oldExecutedWatermark = executedWatermark
 
     log.get(chosen.slot) match {
       case Some(_) =>
@@ -337,16 +341,21 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
     executeLog()
 
-    // TODO(mwhittaker): Add back.
-    // If `numChosen != executedWatermark`, then there's a hole in the log. We
-    // start or stop the timer depending on whether it is already running. If
-    // `options.unsafeDontRecover`, though, we skip all this.
-    // if (options.unsafeDontRecover) {
-    //   // Do nothing.
-    // } else if (!recoverTimerRunning && numChosen != executedWatermark) {
-    //   recoverTimer.foreach(_.start())
-    // } else if (recoverTimerRunning && numChosen == executedWatermark) {
-    //   recoverTimer.foreach(_.stop())
-    // }
+    // The recover timer should be running if there are more chosen commands
+    // than executed commands. If the recover timer should be running, it's
+    // either for a slot for which the timer was already running
+    // (shouldRecoverTimerBeReset = false) or for a new slot for which the
+    // timer wasn't yet running (shouldRecoverTimerBeReset = true).
+    val shouldRecoverTimerBeRunning = numChosen != executedWatermark
+    val shouldRecoverTimerBeReset = oldExecutedWatermark != executedWatermark
+    if (isRecoverTimerRunning) {
+      (shouldRecoverTimerBeRunning, shouldRecoverTimerBeReset) match {
+        case (true, true)  => recoverTimer.foreach(_.reset())
+        case (true, false) => // Do nothing.
+        case (false, _)    => recoverTimer.foreach(_.stop())
+      }
+    } else if (shouldRecoverTimerBeRunning) {
+      recoverTimer.foreach(_.start())
+    }
   }
 }
