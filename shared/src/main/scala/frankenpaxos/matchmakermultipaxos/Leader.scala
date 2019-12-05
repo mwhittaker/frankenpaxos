@@ -759,9 +759,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Now, we iterate from chosenWatermark to maxSlot proposing safe
         // values to the acceptors to fill in the log.
         val values = mutable.Map[Slot, CommandOrNoop]()
+        val phase2bs = mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]]()
         for (slot <- chosenWatermark to maxSlot) {
           val value = safeValue(phase1.phase1bs.values, slot)
           values(slot) = value
+          phase2bs(slot) = mutable.Map()
           val phase2a = Phase2a(slot = slot, round = round, value = value)
           for (index <- phase1.quorumSystem.randomWriteQuorum()) {
             acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
@@ -777,7 +779,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         val phase2 = Phase2(
           quorumSystem = phase1.quorumSystem,
           values = values,
-          phase2bs = mutable.Map(),
+          phase2bs = phase2bs,
           chosen = mutable.Set(),
           numChosenSinceLastWatermarkSend = 0,
           resendPhase2as = makeResendPhase2asTimer()
