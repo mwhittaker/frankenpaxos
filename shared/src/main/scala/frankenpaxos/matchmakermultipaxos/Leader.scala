@@ -376,7 +376,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         t.start()
       }
     )
-    t.start()
     t
   }
 

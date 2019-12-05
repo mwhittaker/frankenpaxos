@@ -294,8 +294,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           executedWatermark += 1
 
         case None =>
-        // We have to execute the log in prefix order, so if we hit an empty
-        // slot, we have to stop executing.
+          // We have to execute the log in prefix order, so if we hit an empty
+          // slot, we have to stop executing.
+          return
       }
     }
   }
