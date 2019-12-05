@@ -365,7 +365,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 }
 
               case None =>
-                logger.fatal(
+                logger.debug(
                   s"The resendPhase2as timer was triggered but there is no " +
                     s"pending value for slot $chosenWatermark (the chosen " +
                     s"watermark)."
@@ -376,6 +376,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         t.start()
       }
     )
+    t.start()
     t
   }
 
@@ -883,12 +884,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // we've updated the chosenWatermark, then we reset the timer.
         if (oldChosenWatermark != chosenWatermark) {
           phase2.resendPhase2as.reset()
-        }
-
-        // If we don't have any pending values, then we don't have to run the
-        // re-send Phase2as timer. There's nothing to resend.
-        if (phase2.values.isEmpty) {
-          phase2.resendPhase2as.stop()
         }
 
         // Broadcast chosenWatermark to other leaders, if needed.
