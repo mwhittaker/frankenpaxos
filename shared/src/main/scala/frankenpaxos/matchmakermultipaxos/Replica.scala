@@ -122,8 +122,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val stateMachine: StateMachine,
     config: Config[Transport],
     options: ReplicaOptions = ReplicaOptions.default,
-    metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors),
-    seed: Long = System.currentTimeMillis()
+    metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
 ) extends Actor(address, transport, logger) {
   config.checkValid()
   logger.check(config.replicaAddresses.contains(address))
@@ -137,10 +136,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   type Slot = Int
 
   // Fields ////////////////////////////////////////////////////////////////////
-  // A random number generator instantiated from `seed`. This allows us to
-  // perform deterministic randomized tests.
-  private val rand = new Random(seed)
-
   // Replica index.
   private val index = config.replicaAddresses.indexOf(address)
 
