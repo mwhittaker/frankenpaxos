@@ -111,6 +111,15 @@ class ReplicaMetrics(collectors: Collectors) {
     .name("matchmakermultipaxos_replica_recovers_sent_total")
     .help("Total number of recover messages sent.")
     .register()
+
+  val failedRecoverTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_replica_failed_recover_total")
+    .help(
+      "Total number of times a replica received a Recover message that it " +
+        "could not recover."
+    )
+    .register()
 }
 
 @JSExportAll
@@ -139,10 +148,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // Replica index.
   private val index = config.replicaAddresses.indexOf(address)
 
+  // Other replicas.
+  private val otherReplicas: Seq[Chan[Replica[Transport]]] =
+    for (a <- config.replicaAddresses if a != address)
+      yield chan[Replica[Transport]](a, Replica.serializer)
+
   // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
-    for (address <- config.leaderAddresses)
-      yield chan[Leader[Transport]](address, Leader.serializer)
+    for (a <- config.leaderAddresses)
+      yield chan[Leader[Transport]](a, Leader.serializer)
 
   // The log of commands. We implement the log as a BufferMap as opposed to
   // something like a SortedMap for efficiency. `log` is public for testing.
@@ -185,11 +199,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         frankenpaxos.Util.randomDuration(options.recoverLogEntryMinPeriod,
                                          options.recoverLogEntryMaxPeriod),
         () => {
-          leaders.foreach(
-            _.send(
-              LeaderInbound().withRecover(Recover(slot = executedWatermark))
-            )
-          )
+          // Ideally, we would send to the replicas first and then send to the
+          // leaders if that fails, but recover is almost never run so its not
+          // necessary to optimize it.
+          val recover = Recover(slot = executedWatermark)
+          otherReplicas.foreach(_.send(ReplicaInbound().withRecover(recover)))
+          leaders.foreach(_.send(LeaderInbound().withRecover(recover)))
           metrics.recoversSentTotal.inc()
           t.start()
         }
@@ -306,7 +321,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Chosen(_) => "Chosen"
+        case Request.Chosen(_)                   => "Chosen"
+        case Request.Recover(_)                  => "Recover"
+        case Request.ExecutedWatermarkRequest(_) => "ExecutedWatermarkRequest"
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -314,7 +331,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.Chosen(r) => handleChosen(src, r)
+        case Request.Chosen(r)  => handleChosen(src, r)
+        case Request.Recover(r) => handleRecover(src, r)
+        case Request.ExecutedWatermarkRequest(r) =>
+          handleExecutedWatermarkRequest(src, r)
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -357,5 +377,35 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     } else if (shouldRecoverTimerBeRunning) {
       recoverTimer.foreach(_.start())
     }
+  }
+
+  private def handleRecover(
+      src: Transport#Address,
+      recover: Recover
+  ): Unit = {
+    log.get(recover.slot) match {
+      case None =>
+        metrics.failedRecoverTotal.inc()
+
+      case Some(value) =>
+        val replica = chan[Replica[Transport]](src, Replica.serializer)
+        replica.send(
+          ReplicaInbound()
+            .withChosen(Chosen(slot = recover.slot, value = value))
+        )
+    }
+  }
+
+  private def handleExecutedWatermarkRequest(
+      src: Transport#Address,
+      executedWatermarkRequest: ExecutedWatermarkRequest
+  ): Unit = {
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
+    leader.send(
+      LeaderInbound().withExecutedWatermarkReply(
+        ExecutedWatermarkReply(replicaIndex = index,
+                               executedWatermark = executedWatermark)
+      )
+    )
   }
 }

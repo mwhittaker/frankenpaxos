@@ -25,6 +25,18 @@
 //     |         | <------ |         |         |     Stopped
 //     |         | <-------^-------- |         |     AcceptorNack
 //     |         | <-------^---------^-------- |     Recover
+//     |         |         |         |    .--- |     Recover
+//     |         |         |         |    '--> |
+//
+// Garbage collection.
+//
+//   Client    Leader  Matchmaker Acceptor  Replica
+//     |         | --------^---------^-------> |     ExecutedWatermarkRequest
+//     |         | <-------^---------^-------- |     ExecutedWatermarkReply
+//     |         | --------^-------> |         |     Persisted
+//     |         | <-------^-------- |         |     PersistedAck
+//     |         | ------> |         |         |     GarbageCollect
+//     |         | <------ |         |         |     GarbageCollectAck
 //
 // Matchmaker reconfiguration.
 //
@@ -116,7 +128,7 @@ message Phase1bSlotInfo {
   required CommandOrNoop vote_value = 3;
 }
 
-// Protocol messages. //////////////////////////////////////////////////////////
+// Normal case operations. /////////////////////////////////////////////////////
 message MatchRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -130,7 +142,12 @@ message MatchReply {
 
   required int32 round = 1;
   required int32 matchmaker_index = 2;
-  repeated Configuration configuration = 3;
+  // All configurations in rounds less than `gc_watermark` have been garbage
+  // collected and should be ignored by the leader.  Note that `configuration`
+  // won't include a configuration in a round less than `gc_watermark`, but
+  // other MatchReplies received by the leader might.
+  required int32 gc_watermark = 3;
+  repeated Configuration configuration = 4;
 }
 
 message Phase1a {
@@ -207,6 +224,7 @@ message ClientReply {
   required bytes result = 2;
 }
 
+// Abnormal case operations. ///////////////////////////////////////////////////
 message NotLeader {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -229,6 +247,7 @@ message MatchmakerNack {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
+  // The leader should retry with a round at least as large as round.
   required int32 round = 1;
 }
 
@@ -257,6 +276,53 @@ message Recover {
   required int32 slot = 1;
 }
 
+// Garbage Collection. /////////////////////////////////////////////////////////
+message ExecutedWatermarkRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message ExecutedWatermarkReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // Replica `replica_index` has executed all commands in slots less than
+  // `executed_watermark`.
+  required int32 replica_index = 1;
+  required int32 executed_watermark = 2;
+}
+
+message Persisted {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // All commands in slots less than persisted_watermark have been stored on at
+  // least f + 1 replicas.
+  required int32 persisted_watermark = 1;
+}
+
+message PersistedAck {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 acceptor_index = 1;
+}
+
+message GarbageCollect {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // Garbage collect all rounds less than `gc_watermark`.
+  required int32 gc_watermark = 1;
+}
+
+message GarbageCollectAck {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 matchmaker_index = 1;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ClientInbound {
   oneof request {
@@ -278,12 +344,16 @@ message LeaderInbound {
     Stopped stopped = 8;
     AcceptorNack acceptor_nack = 9;
     Recover recover = 10;
+    ExecutedWatermarkReply executed_watermark_reply = 11;
+    PersistedAck persisted_ack = 12;
+    GarbageCollectAck garbage_collect_ack = 13;
   }
 }
 
 message MatchmakerInbound {
   oneof request {
     MatchRequest match_request = 1;
+    GarbageCollect garbage_collect = 2;
   }
 }
 
@@ -297,5 +367,7 @@ message AcceptorInbound {
 message ReplicaInbound {
   oneof request {
     Chosen chosen = 1;
+    Recover recover = 2;
+    ExecutedWatermarkRequest executed_watermark_request = 3;
   }
 }

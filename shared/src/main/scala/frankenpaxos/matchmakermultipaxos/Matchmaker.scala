@@ -68,10 +68,24 @@ class MatchmakerMetrics(collectors: Collectors) {
     )
     .register()
 
-  val numNacksSentTotal: Counter = collectors.counter
+  val nacksSentTotal: Counter = collectors.counter
     .build()
-    .name("matchmakermultipaxos_matchmaker_num_nacks_sent_total")
+    .name("matchmakermultipaxos_matchmaker_nacks_sent_total")
     .help("Total number of nacks sent.")
+    .register()
+
+  // The number of configurations is a Gauge instead of a Counter because the
+  // number of configurations can decrease when we garbage collect.
+  val gcWatermark: Gauge = collectors.gauge
+    .build()
+    .name("matchmakermultipaxos_matchmaker_gc_watermark")
+    .help("The GC watermark.")
+    .register()
+
+  val staleGarbageCollectsTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_matchmaker_stale_garbage_collects_total")
+    .help("Total number of stale GarbageCollects received.")
     .register()
 }
 
@@ -95,11 +109,14 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   // Fields ////////////////////////////////////////////////////////////////////
   private val index = config.matchmakerAddresses.indexOf(address)
 
+  @JSExport
+  protected var gcWatermark: Int = 0
+
   // TODO(mwhittaker): If matchmakers are a bottleneck, we can try replacing
   // this sorted set with a regular set and with an int recording the largest
   // round in the set.
   @JSExport
-  protected val configurations = mutable.SortedMap[Round, Configuration]()
+  protected var configurations = mutable.SortedMap[Round, Configuration]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -121,8 +138,8 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     import MatchmakerInbound.Request
 
     val label = inbound.request match {
-      case Request.MatchRequest(_) =>
-        "MatchRequest"
+      case Request.MatchRequest(_)   => "MatchRequest"
+      case Request.GarbageCollect(_) => "GarbageCollect"
       case Request.Empty =>
         logger.fatal("Empty MatchmakerInbound encountered.")
     }
@@ -130,8 +147,8 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.MatchRequest(r) =>
-          handleMatchRequest(src, r)
+        case Request.MatchRequest(r)   => handleMatchRequest(src, r)
+        case Request.GarbageCollect(r) => handleGarbageCollect(src, r)
         case Request.Empty =>
           logger.fatal("Empty MatchmakerInbound encountered.")
       }
@@ -145,25 +162,41 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     val leader = chan[Leader[Transport]](src, Leader.serializer)
 
     // A matchmaker only processes a match request if the request's round is
-    // larger than any previously seen. Otherwise, a nack is sent back.
+    // larger than any previously seen and at least as large as the
+    // gcWatermark. Otherwise, a nack is sent back.
     //
     // It's possible to implement things so that leaders re-send MatchRequests
     // if they haven't received a MatchReply for a while. If we did this, then
     // the matchmaker would have to re-send replies to requests that it has
     // already processed. We don't do this though.
+    if (matchRequest.configuration.round < gcWatermark) {
+      logger.debug(
+        s"Matchmaker received a MatchRequest in round " +
+          s"${matchRequest.configuration.round} but has a gcWatermark of " +
+          s"$gcWatermark, so the request is being ignored, and a nack is " +
+          s"being sent."
+      )
+      leader.send(
+        LeaderInbound()
+          .withMatchmakerNack(MatchmakerNack(round = gcWatermark - 1))
+      )
+      metrics.nacksSentTotal.inc()
+      return
+    }
+
     if (!configurations.isEmpty &&
         matchRequest.configuration.round <= configurations.lastKey) {
       logger.debug(
         s"Matchmaker received a MatchRequest in round " +
           s"${matchRequest.configuration.round} but has already processed a " +
           s"MatchRequest in round ${configurations.lastKey}, so the request " +
-          s"is being ignored."
+          s"is being ignored, and a nack is being sent back."
       )
       leader.send(
         LeaderInbound()
           .withMatchmakerNack(MatchmakerNack(round = configurations.lastKey))
       )
-      metrics.numNacksSentTotal.inc()
+      metrics.nacksSentTotal.inc()
       return
     }
 
@@ -173,6 +206,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
         MatchReply(
           round = matchRequest.configuration.round,
           matchmakerIndex = index,
+          gcWatermark = gcWatermark,
           configuration = configurations.values.toSeq
         )
       )
@@ -180,5 +214,28 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     configurations(matchRequest.configuration.round) =
       matchRequest.configuration
     metrics.numConfigurations.set(configurations.size)
+  }
+
+  private def handleGarbageCollect(
+      src: Transport#Address,
+      garbageCollect: GarbageCollect
+  ): Unit = {
+    // Ignore stale GarbageCollect commands.
+    if (garbageCollect.gcWatermark <= gcWatermark) {
+      logger.debug(
+        s"Matchmaker received a GarbageCollect with gcWatermark " +
+          s"${garbageCollect.gcWatermark}, but its gcWatermark is already " +
+          s"$gcWatermark. The GarbageCollect is being ignored."
+      )
+      metrics.staleGarbageCollectsTotal.inc()
+      return
+    }
+
+    // Update our gcWatermark and garbage collect configurations.
+    gcWatermark = garbageCollect.gcWatermark
+    configurations = configurations.dropWhile({
+      case (round, _) => round < gcWatermark
+    })
+    metrics.gcWatermark.set(gcWatermark)
   }
 }
