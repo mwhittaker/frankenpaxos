@@ -21,7 +21,7 @@ class MatchmakerMultiPaxos(val f: Int, seed: Long) {
   val numLeaders = f + 1
   val numMatchmakers = 2 * f + 1
   val numAcceptors = 2 * (2 * f + 1)
-  val numReplicas = f + 1
+  val numReplicas = 2 * f + 1
 
   val config = Config[FakeTransport](
     f = f,

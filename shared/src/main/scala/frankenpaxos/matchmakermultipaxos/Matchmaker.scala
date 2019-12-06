@@ -218,19 +218,21 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       garbageCollect: GarbageCollect
   ): Unit = {
-    // Ignore stale GarbageCollect commands.
-    if (garbageCollect.gcWatermark <= gcWatermark) {
-      logger.debug(
-        s"Matchmaker received a GarbageCollect with gcWatermark " +
-          s"${garbageCollect.gcWatermark}, but its gcWatermark is already " +
-          s"$gcWatermark. The GarbageCollect is being ignored."
+    // Send back an ack. Note that we don't ignore stale requests. If we did
+    // this, then it's possible a leader with a stale gcWatermark would be
+    // completely ignored by the acceptors, which is not what we want.
+    gcWatermark = Math.max(gcWatermark, garbageCollect.gcWatermark)
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
+    leader.send(
+      LeaderInbound().withGarbageCollectAck(
+        GarbageCollectAck(
+          matchmakerIndex = index,
+          gcWatermark = gcWatermark
+        )
       )
-      metrics.staleGarbageCollectsTotal.inc()
-      return
-    }
+    )
 
-    // Update our gcWatermark and garbage collect configurations.
-    gcWatermark = garbageCollect.gcWatermark
+    // Garbage collect configurations.
     configurations = configurations.dropWhile({
       case (round, _) => round < gcWatermark
     })

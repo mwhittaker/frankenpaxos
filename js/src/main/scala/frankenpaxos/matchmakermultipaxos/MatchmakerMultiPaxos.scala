@@ -41,7 +41,8 @@ class MatchmakerMultiPaxos {
     ),
     replicaAddresses = Seq(
       JsTransportAddress("Replica 1"),
-      JsTransportAddress("Replica 2")
+      JsTransportAddress("Replica 2"),
+      JsTransportAddress("Replica 3")
     )
   )
 
@@ -141,6 +142,7 @@ class MatchmakerMultiPaxos {
   }
   val replica1 = replicas(0)
   val replica2 = replicas(1)
+  val replica3 = replicas(2)
 }
 
 @JSExportAll

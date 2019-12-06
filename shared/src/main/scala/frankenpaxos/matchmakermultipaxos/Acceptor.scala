@@ -264,19 +264,22 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       persisted: Persisted
   ): Unit = {
-    // Ignore stale Persisted commands.
-    if (persisted.persistedWatermark <= persistedWatermark) {
-      logger.debug(
-        s"Matchmaker received a Persisted with persistedWatermark " +
-          s"${persisted.persistedWatermark}, but its persistedWatermark is " +
-          s"already $persistedWatermark. The Persisted is being ignored."
+    // Send back an ack. Note that we don't ignore stale persisted requests. If
+    // we did this, then it's possible a leader with a stale persistedWatermark
+    // would be completely ignored by the acceptors, which is not what we want.
+    persistedWatermark =
+      Math.max(persistedWatermark, persisted.persistedWatermark)
+    val leader = chan[Leader[Transport]](src, Leader.serializer)
+    leader.send(
+      LeaderInbound().withPersistedAck(
+        PersistedAck(
+          acceptorIndex = index,
+          persistedWatermark = persistedWatermark
+        )
       )
-      metrics.stalePersistedTotal.inc()
-      return
-    }
+    )
 
-    // Update our persistedWatermark and garbage collect slots.
-    persistedWatermark = persisted.persistedWatermark
+    // Garbage collect slots.
     states = states.dropWhile({
       case (slots, _) => round < persistedWatermark
     })

@@ -214,6 +214,15 @@ const leader_info = {
             <fp-field :name="'resendPhase2as'">
               {{state.resendPhase2as}}
             </fp-field>
+            <fp-field :name="'chosenWatermark'">
+              {{state.chosenWatermark}}
+            </fp-field>
+            <fp-field :name="'maxSlot'">
+              {{state.maxSlot}}
+            </fp-field>
+            <fp-field :name="'gc'">
+              {{state.gc}}
+            </fp-field>
           </fp-object>
         </div>
       </div>
@@ -249,6 +258,10 @@ const matchmaker_info = {
   template: `
     <div>
       <div>
+        gcWatermark = {{node.actor.gcWatermark}}
+      </div>
+
+      <div>
         configurations =
         <frankenpaxos-map :map="node.actor.configurations" v-slot="{value: c}">
           <fp-object>
@@ -270,6 +283,10 @@ const acceptor_info = {
     <div>
       <div>
         round = {{node.actor.round}}
+      </div>
+
+      <div>
+        persistedWatermark = {{node.actor.persistedWatermark}}
       </div>
 
       <div>
@@ -440,7 +457,8 @@ function make_nodes(MatchmakerMultiPaxos, snap) {
   // Replicas.
   const replicas = [
     {replica: MatchmakerMultiPaxos.replica1, y: 250},
-    {replica: MatchmakerMultiPaxos.replica2, y: 450},
+    {replica: MatchmakerMultiPaxos.replica2, y: 350},
+    {replica: MatchmakerMultiPaxos.replica3, y: 450},
   ]
   for (const [index, {replica, y}] of replicas.entries()) {
     const color = flat_blue;

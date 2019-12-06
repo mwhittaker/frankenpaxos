@@ -39,6 +39,9 @@ case class LeaderOptions(
     resendMatchRequestsPeriod: java.time.Duration,
     resendPhase1asPeriod: java.time.Duration,
     resendPhase2asPeriod: java.time.Duration,
+    resendExecutedWatermarkRequestsPeriod: java.time.Duration,
+    resendPersistedPeriod: java.time.Duration,
+    resendGarbageCollectsPeriod: java.time.Duration,
     // The active leader sends a chosen watermark to all the other leaders
     // after every `sendChosenWatermarkEveryN` chosen commands. This ensures
     // that during a leader change, all the leaders have a relatively up to
@@ -54,6 +57,9 @@ object LeaderOptions {
     resendMatchRequestsPeriod = java.time.Duration.ofSeconds(5),
     resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
     resendPhase2asPeriod = java.time.Duration.ofSeconds(5),
+    resendExecutedWatermarkRequestsPeriod = java.time.Duration.ofSeconds(5),
+    resendPersistedPeriod = java.time.Duration.ofSeconds(5),
+    resendGarbageCollectsPeriod = java.time.Duration.ofSeconds(5),
     sendChosenWatermarkEveryN = 100,
     electionOptions = ElectionOptions.default,
     measureLatencies = true
@@ -143,6 +149,34 @@ class LeaderMetrics(collectors: Collectors) {
     .name("matchmakermultipaxos_leader_resend_phase2as_total")
     .help("Total number of times the leader resent Phase2a messages.")
     .register()
+
+  val resendExecutedWatermarkRequestsTotal: Counter = collectors.counter
+    .build()
+    .name(
+      "matchmakermultipaxos_leader_resend_executed_watermark_requests_total"
+    )
+    .help(
+      "Total number of times the leader resent ExecutedWatermarkRequest messages."
+    )
+    .register()
+
+  val resendPeristedTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_resend_persisted_total")
+    .help("Total number of times the leader resent Persisted messages.")
+    .register()
+
+  val resendPersistedTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_resend_persisted_total")
+    .help("Total number of times the leader resent Persisted messages.")
+    .register()
+
+  val resendGarbageCollectsTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_resend_garbage_collect_total")
+    .help("Total number of times the leader resent GarbageCollect messages.")
+    .register()
 }
 
 @JSExportAll
@@ -163,6 +197,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   override val serializer = LeaderInboundSerializer
 
   type AcceptorIndex = Int
+  type ReplicaIndex = Int
   type MatchmakerIndex = Int
   type Round = Int
   type Slot = Int
@@ -205,6 +240,46 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       resendPhase1as: Transport#Timer
   ) extends State
 
+  // When a leader enters phase 2 in round i, it attempts to garbage collect
+  // configurations in round less than i. To do so, it does the following:
+  //
+  //   1. Upon transitioning from phase 1 to phase 2, the leader uses a given
+  //      chosenWatermark and a computes a given maxSlot.
+  //   2. The leader repeatedly queries the replicas until at least f+1 have
+  //      executed commands up through and including chosenWatermark.
+  //   3. The leader informs the acceptors that these slots have been persisted
+  //      on the replicas.
+  //   4. The leader waits for all slots up to and including maxSlot have been
+  //      chosen.
+  //   5. The leader sends a garbage collect command to the matchmakers and
+  //      waits to hear back all the acks.
+  @JSExportAll
+  sealed trait GarbageCollection
+
+  @JSExportAll
+  case class QueryingReplicas(
+      executedWatermarkReplies: mutable.Set[ReplicaIndex],
+      resendExecutedWatermarkRequests: Transport#Timer
+  ) extends GarbageCollection
+
+  @JSExportAll
+  case class PushingToAcceptors(
+      persistedAcks: mutable.Set[AcceptorIndex],
+      resendPersisted: Transport#Timer
+  ) extends GarbageCollection
+
+  @JSExportAll
+  case object WaitingForLargerChosenWatermark extends GarbageCollection
+
+  @JSExportAll
+  case class GarbageCollecting(
+      garbageCollectAcks: mutable.Set[MatchmakerIndex],
+      resendGarbageCollects: Transport#Timer
+  ) extends GarbageCollection
+
+  @JSExportAll
+  case object Done extends GarbageCollection
+
   @JSExportAll
   case class Phase2(
       // The quorum system that this leader uses to get values chosen.
@@ -221,17 +296,21 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // A timer to resend Phase2as, for liveness. This timer is reset every
       // time the chosenWatermark is incremented. If the timer is fired, then
       // Phase2as are only sent for the smallest pending command.
-      resendPhase2as: Transport#Timer
+      resendPhase2as: Transport#Timer,
+      // See above for a description of these values.
+      chosenWatermark: Int,
+      maxSlot: Int,
+      gc: GarbageCollection
   ) extends State
 
-  // Fields ////////////////////////////////////////////////////////////////////
-  // A random number generator instantiated from `seed`. This allows us to
-  // perform deterministic randomized tests.
+// Fields ////////////////////////////////////////////////////////////////////
+// A random number generator instantiated from `seed`. This allows us to
+// perform deterministic randomized tests.
   private val rand = new Random(seed)
 
   private val index = config.leaderAddresses.indexOf(address)
 
-  // Channels to all the _other_ leaders.
+// Channels to all the _other_ leaders.
   private val otherLeaders: Seq[Chan[Leader[Transport]]] =
     for (a <- config.leaderAddresses if a != address)
       yield chan[Leader[Transport]](a, Leader.serializer)
@@ -373,6 +452,62 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             }
         }
 
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendExecutedWatermarkRequestsTimer(): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendExecutedWatermarkRequests",
+      options.resendExecutedWatermarkRequestsPeriod,
+      () => {
+        metrics.resendExecutedWatermarkRequestsTotal.inc()
+        replicas.foreach(
+          _.send(
+            ReplicaInbound()
+              .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
+          )
+        )
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendPersistedTimer(
+      persisted: Persisted,
+      indices: Set[AcceptorIndex]
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendPersisted",
+      options.resendPersistedPeriod,
+      () => {
+        metrics.resendPersistedTotal.inc()
+        indices.foreach(
+          acceptors(_).send(AcceptorInbound().withPersisted(persisted))
+        )
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendGarbageCollectsTimer(
+      garbageCollect: GarbageCollect
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendGarbageCollects",
+      options.resendGarbageCollectsPeriod,
+      () => {
+        metrics.resendGarbageCollectsTotal.inc()
+        matchmakers.foreach(
+          _.send(MatchmakerInbound().withGarbageCollect(garbageCollect))
+        )
         t.start()
       }
     )
@@ -539,16 +674,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.MatchReply(_)        => "MatchReply"
-        case Request.Phase1B(_)           => "Phase1b"
-        case Request.ClientRequest(_)     => "ClientRequest"
-        case Request.Phase2B(_)           => "Phase2b"
-        case Request.LeaderInfoRequest(_) => "LeaderInfoRequest"
-        case Request.ChosenWatermark(_)   => "ChosenWatermark"
-        case Request.MatchmakerNack(_)    => "MatchmakerNack"
-        case Request.Stopped(_)           => "Stopped"
-        case Request.AcceptorNack(_)      => "AcceptorNack"
-        case Request.Recover(_)           => "Recover"
+        case Request.MatchReply(_)             => "MatchReply"
+        case Request.Phase1B(_)                => "Phase1b"
+        case Request.ClientRequest(_)          => "ClientRequest"
+        case Request.Phase2B(_)                => "Phase2b"
+        case Request.LeaderInfoRequest(_)      => "LeaderInfoRequest"
+        case Request.ChosenWatermark(_)        => "ChosenWatermark"
+        case Request.MatchmakerNack(_)         => "MatchmakerNack"
+        case Request.Stopped(_)                => "Stopped"
+        case Request.AcceptorNack(_)           => "AcceptorNack"
+        case Request.Recover(_)                => "Recover"
+        case Request.ExecutedWatermarkReply(_) => "ExecutedWatermarkReply"
+        case Request.PersistedAck(_)           => "PersistedAck"
+        case Request.GarbageCollectAck(_)      => "GarbageCollectAck"
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -566,6 +704,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Stopped(r)           => handleStopped(src, r)
         case Request.AcceptorNack(r)      => handleAcceptorNack(src, r)
         case Request.Recover(r)           => handleRecover(src, r)
+        case Request.ExecutedWatermarkReply(r) =>
+          handleExecutedWatermarkReply(src, r)
+        case Request.GarbageCollectAck(r) => handleGarbageCollectAck(src, r)
+        case Request.PersistedAck(r)      => handlePersistedAck(src, r)
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -672,6 +814,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // If there are no pending rounds, then we're done already! We can skip
         // straight to phase 2. Otherwise, we have to go through phase 1.
         if (pendingRounds.isEmpty) {
+          // In this case, we can issue GarbageCollect commands immediately
+          // because we no values have been chosen in any log entry in any
+          // round less than us. However, we didn't receive any configurations
+          // anyway, so there is no need to garbage collect in the first place.
           nextSlot = chosenWatermark
           val phase2 = Phase2(
             quorumSystem = matchmaking.quorumSystem,
@@ -679,7 +825,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             phase2bs = mutable.Map(),
             chosen = mutable.Set(),
             numChosenSinceLastWatermarkSend = 0,
-            resendPhase2as = makeResendPhase2asTimer()
+            resendPhase2as = makeResendPhase2asTimer(),
+            chosenWatermark = chosenWatermark,
+            maxSlot = -1,
+            gc = Done
           )
           state = phase2
 
@@ -777,6 +926,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // slot is maxSlot + 1 (or chosenWatermark if maxSlot + 1 is smaller).
         nextSlot = Math.max(chosenWatermark, maxSlot + 1)
 
+        // Send ExecutedWatermarkRequests to the replicas.
+        replicas.foreach(
+          _.send(
+            ReplicaInbound()
+              .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
+          )
+        )
+
         // Update our state.
         phase1.resendPhase1as.stop()
         val phase2 = Phase2(
@@ -785,7 +942,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           phase2bs = phase2bs,
           chosen = mutable.Set(),
           numChosenSinceLastWatermarkSend = 0,
-          resendPhase2as = makeResendPhase2asTimer()
+          resendPhase2as = makeResendPhase2asTimer(),
+          chosenWatermark = chosenWatermark,
+          maxSlot = maxSlot,
+          gc = QueryingReplicas(
+            executedWatermarkReplies = mutable.Set(),
+            resendExecutedWatermarkRequests =
+              makeResendExecutedWatermarkRequestsTimer()
+          )
         )
         state = phase2
 
@@ -902,9 +1066,28 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           }
           numChosenSinceLastWatermarkSend = 0
         }
-        state = phase2.copy(
-          numChosenSinceLastWatermarkSend = numChosenSinceLastWatermarkSend
-        )
+
+        // Check if we're now ready to send garbage collect commands.
+        if (phase2.gc == WaitingForLargerChosenWatermark &&
+            chosenWatermark > phase2.maxSlot) {
+          val garbageCollect = GarbageCollect(gcWatermark = round)
+          matchmakers.foreach(
+            _.send(MatchmakerInbound().withGarbageCollect(garbageCollect))
+          )
+
+          state = phase2.copy(
+            gc = GarbageCollecting(
+              garbageCollectAcks = mutable.Set(),
+              resendGarbageCollects =
+                makeResendGarbageCollectsTimer(garbageCollect)
+            ),
+            numChosenSinceLastWatermarkSend = numChosenSinceLastWatermarkSend
+          )
+        } else {
+          state = phase2.copy(
+            numChosenSinceLastWatermarkSend = numChosenSinceLastWatermarkSend
+          )
+        }
     }
   }
 
@@ -1035,6 +1218,166 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         val newRound =
           roundSystem.nextClassicRound(leaderIndex = index, round = round)
         becomeLeader(newRound)
+    }
+  }
+
+  private def handleExecutedWatermarkReply(
+      src: Transport#Address,
+      executedWatermarkReply: ExecutedWatermarkReply
+  ): Unit = {
+    state match {
+      case Inactive | _: Matchmaking | _: Phase1 =>
+        logger.debug(
+          s"Leader received an ExecutedWatermarkReply but is not querying " +
+            s"replicas. Its state is $state. The ExecutedWatermarkReply is " +
+            s"being ignored."
+        )
+
+      case phase2: Phase2 =>
+        phase2.gc match {
+          case _: PushingToAcceptors | _: GarbageCollecting |
+              WaitingForLargerChosenWatermark | Done =>
+            logger.debug(
+              s"Leader received an ExecutedWatermarkReply but is not " +
+                s"querying replicas. Its state is $state. The " +
+                s"ExecutedWatermarkReply is being ignored."
+            )
+
+          case gc: QueryingReplicas =>
+            // Ignore lagging replies.
+            if (executedWatermarkReply.executedWatermark < chosenWatermark) {
+              return
+            }
+
+            // Wait until we have persisted on at least f+1 replicas.
+            gc.executedWatermarkReplies.add(executedWatermarkReply.replicaIndex)
+            if (gc.executedWatermarkReplies.size < config.f + 1) {
+              return
+            }
+
+            // Stop our timer.
+            gc.resendExecutedWatermarkRequests.stop()
+
+            // Notify the acceptors.
+            val persisted = Persisted(
+              persistedWatermark = phase2.chosenWatermark
+            )
+            phase2.quorumSystem.nodes.foreach(
+              acceptors(_).send(AcceptorInbound().withPersisted(persisted))
+            )
+
+            // Update our state.
+            state = phase2.copy(
+              gc = PushingToAcceptors(
+                persistedAcks = mutable.Set(),
+                resendPersisted =
+                  makeResendPersistedTimer(persisted, phase2.quorumSystem.nodes)
+              )
+            )
+        }
+    }
+  }
+
+  private def handlePersistedAck(
+      src: Transport#Address,
+      persistedAck: PersistedAck
+  ): Unit = {
+    state match {
+      case Inactive | _: Matchmaking | _: Phase1 =>
+        logger.debug(
+          s"Leader received an PersistedAck but is not persisting to " +
+            s"acceptors. Its state is $state. The PersistedAck is " +
+            s"being ignored."
+        )
+
+      case phase2: Phase2 =>
+        phase2.gc match {
+          case _: QueryingReplicas | _: GarbageCollecting |
+              WaitingForLargerChosenWatermark | Done =>
+            logger.debug(
+              s"Leader received an PersistedAck but is not " +
+                s"persisting to acceptors. Its state is $state. The " +
+                s"PersistedAck is being ignored."
+            )
+
+          case gc: PushingToAcceptors =>
+            // Ignore stale replies.
+            if (persistedAck.persistedWatermark < phase2.chosenWatermark) {
+              return
+            }
+
+            // Wait until we have received responses from a write quorum of
+            // acceptors.
+            gc.persistedAcks.add(persistedAck.acceptorIndex)
+            if (!phase2.quorumSystem.isWriteQuorum(gc.persistedAcks.toSet)) {
+              return
+            }
+
+            // Stop our timer.
+            gc.resendPersisted.stop()
+
+            // Wait until every command up to and including maxSlot has been
+            // chosen.
+            if (chosenWatermark <= phase2.maxSlot) {
+              state = phase2.copy(gc = WaitingForLargerChosenWatermark)
+              return
+            }
+
+            // Send garbage collect command.
+            val garbageCollect = GarbageCollect(gcWatermark = round)
+            matchmakers.foreach(
+              _.send(MatchmakerInbound().withGarbageCollect(garbageCollect))
+            )
+
+            // Update our state.
+            state = phase2.copy(
+              gc = GarbageCollecting(
+                garbageCollectAcks = mutable.Set(),
+                resendGarbageCollects =
+                  makeResendGarbageCollectsTimer(garbageCollect)
+              )
+            )
+        }
+    }
+  }
+
+  private def handleGarbageCollectAck(
+      src: Transport#Address,
+      garbageCollectAck: GarbageCollectAck
+  ): Unit = {
+    state match {
+      case Inactive | _: Matchmaking | _: Phase1 =>
+        logger.debug(
+          s"Leader received a GarbageCollectAck but is not garbage " +
+            s"collecting. Its state is $state. The GarbageCollectAck is " +
+            s"being ignored."
+        )
+
+      case phase2: Phase2 =>
+        phase2.gc match {
+          case _: QueryingReplicas | _: PushingToAcceptors |
+              WaitingForLargerChosenWatermark | Done =>
+            logger.debug(
+              s"Leader received a GarbageCollectAck but is not " +
+                s"garbage collecting. Its state is $state. The " +
+                s"GarbageCollectAck is being ignored."
+            )
+
+          case gc: GarbageCollecting =>
+            // Ignore stale replies.
+            if (garbageCollectAck.gcWatermark < round) {
+              return
+            }
+
+            // Wait until we have received responses from f+1 matchmakers.
+            gc.garbageCollectAcks.add(garbageCollectAck.matchmakerIndex)
+            if (gc.garbageCollectAcks.size < config.f + 1) {
+              return
+            }
+
+            gc.resendGarbageCollects.stop()
+            state = phase2.copy(gc = Done)
+        }
     }
   }
 }

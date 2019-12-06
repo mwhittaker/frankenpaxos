@@ -45,11 +45,9 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
       numAcceptors >= f + 1,
       s"numAcceptors must be >= f+1 (${f + 1}). It's $numAcceptors."
     )
-    // TODO(mwhittaker): After we introduce GC and replica stabilization, we'll
-    // have to change this to >= 2*f+1.
     require(
-      numReplicas >= f + 1,
-      s"numReplicas must be >= f+1 (${f + 1}). It's $numReplicas."
+      numReplicas >= 2 * f + 1,
+      s"numReplicas must be >= 2*f+1 (${2 * f + 1}). It's $numReplicas."
     )
   }
 }
