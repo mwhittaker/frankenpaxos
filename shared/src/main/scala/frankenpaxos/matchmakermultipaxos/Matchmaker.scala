@@ -74,8 +74,6 @@ class MatchmakerMetrics(collectors: Collectors) {
     .help("Total number of nacks sent.")
     .register()
 
-  // The number of configurations is a Gauge instead of a Counter because the
-  // number of configurations can decrease when we garbage collect.
   val gcWatermark: Gauge = collectors.gauge
     .build()
     .name("matchmakermultipaxos_matchmaker_gc_watermark")

@@ -172,7 +172,11 @@ message Phase1b {
 
   required int32 round = 1;
   required int32 acceptor_index = 2;
-  repeated Phase1bSlotInfo info = 3;
+  // All commands in slots less than persisted_watermark have already been
+  // chosen and persisted on at least f+1 replicas. There is no need to run
+  // Phase 2 for these slots since they are already chosen.
+  required int32 persisted_watermark = 3;
+  repeated Phase1bSlotInfo info = 4;
 }
 
 message ClientRequest {
@@ -198,6 +202,7 @@ message Phase2b {
   required int32 slot = 1;
   required int32 round = 2;
   required int32 acceptor_index = 3;
+  required bool persisted = 4;
 }
 
 message Chosen {
@@ -361,6 +366,7 @@ message AcceptorInbound {
   oneof request {
     Phase1a phase1a = 1;
     Phase2a phase2a = 2;
+    Persisted persisted = 3;
   }
 }
 

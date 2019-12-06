@@ -7,6 +7,7 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.RoundSystem
@@ -65,6 +66,27 @@ class AcceptorMetrics(collectors: Collectors) {
     .name("matchmakermultipaxos_acceptor_phase2_nacks_sent_total")
     .help("Total number of nacks sent in Phase 2.")
     .register()
+
+  val stalePersistedTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_acceptor_stale_persisted_total")
+    .help("Total number of stale Persisted messages received.")
+    .register()
+
+  val persistedWatermark: Gauge = collectors.gauge
+    .build()
+    .name("matchmakermultipaxos_acceptor_persisted_watermark")
+    .help("The persisted watermark.")
+    .register()
+
+  val phase2aPersistedTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_acceptor_phase2a_persisted_total")
+    .help(
+      "Total number of Phase2a messages that an acceptor received for a " +
+        "persisted slot."
+    )
+    .register()
 }
 
 @JSExportAll
@@ -106,6 +128,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   protected var round: Int = -1
 
   @JSExport
+  protected var persistedWatermark: Int = 0
+
+  @JSExport
   protected var states = mutable.SortedMap[Slot, State]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
@@ -129,8 +154,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Phase1A(_) => "Phase1a"
-        case Request.Phase2A(_) => "Phase2a"
+        case Request.Phase1A(_)   => "Phase1a"
+        case Request.Phase2A(_)   => "Phase2a"
+        case Request.Persisted(_) => "Persisted"
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -138,8 +164,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.Phase1A(r) => handlePhase1a(src, r)
-        case Request.Phase2A(r) => handlePhase2a(src, r)
+        case Request.Phase1A(r)   => handlePhase1a(src, r)
+        case Request.Phase2A(r)   => handlePhase2a(src, r)
+        case Request.Persisted(r) => handlePersisted(src, r)
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -169,6 +196,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     val phase1b = Phase1b(
       round = round,
       acceptorIndex = index,
+      persistedWatermark = persistedWatermark,
       info = states
         .iteratorFrom(phase1a.chosenWatermark)
         .map({
@@ -187,6 +215,22 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       phase2a: Phase2a
   ): Unit = {
     val leader = chan[Leader[Transport]](src, Leader.serializer)
+
+    // If we receive a Phase2a for a slot that we know has been persited, we do
+    // not vote for it. Instead, we notify the leader that the value has
+    // already been persisted.
+    if (phase2a.slot < persistedWatermark) {
+      leader.send(
+        LeaderInbound().withPhase2B(
+          Phase2b(slot = phase2a.slot,
+                  round = phase2a.round,
+                  acceptorIndex = index,
+                  persisted = true)
+        )
+      )
+      metrics.phase2aPersistedTotal.inc()
+      return
+    }
 
     // If we receive an out of date round, we send back a nack to the leader.
     if (phase2a.round < round) {
@@ -208,8 +252,34 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     )
     leader.send(
       LeaderInbound().withPhase2B(
-        Phase2b(slot = phase2a.slot, round = round, acceptorIndex = index)
+        Phase2b(slot = phase2a.slot,
+                round = round,
+                acceptorIndex = index,
+                persisted = false)
       )
     )
+  }
+
+  private def handlePersisted(
+      src: Transport#Address,
+      persisted: Persisted
+  ): Unit = {
+    // Ignore stale Persisted commands.
+    if (persisted.persistedWatermark <= persistedWatermark) {
+      logger.debug(
+        s"Matchmaker received a Persisted with persistedWatermark " +
+          s"${persisted.persistedWatermark}, but its persistedWatermark is " +
+          s"already $persistedWatermark. The Persisted is being ignored."
+      )
+      metrics.stalePersistedTotal.inc()
+      return
+    }
+
+    // Update our persistedWatermark and garbage collect slots.
+    persistedWatermark = persisted.persistedWatermark
+    states = states.dropWhile({
+      case (slots, _) => round < persistedWatermark
+    })
+    metrics.persistedWatermark.set(persistedWatermark)
   }
 }
