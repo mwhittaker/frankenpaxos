@@ -1166,6 +1166,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     ???
   }
 
+  // TODO(mwhittaker): If we receive a nack, we perform a leader change. When
+  // we perform this leader change, we lose all the pending commands. We might
+  // want to leader change but put all the pending commands in the pending
+  // list. This is not perfect though since the other leaders may also have
+  // pending commands that we don't know about. Ultimately, we need good client
+  // resend periods, which is not ideal, but it is what it is.
   private def handleAcceptorNack(
       src: Transport#Address,
       nack: AcceptorNack
