@@ -22,7 +22,6 @@
 //     | ------> |         |         |         |     LeaderInfoRequest
 //     | <------ |         |         |         |     LeaderInfoReply
 //     |         | <------ |         |         |     MatchmakerNack
-//     |         | <------ |         |         |     Stopped
 //     |         | <-------^-------- |         |     AcceptorNack
 //     |         | <-------^---------^-------- |     Recover
 //     |         |         |         |    .--- |     Recover
@@ -40,24 +39,25 @@
 //
 // Matchmaker reconfiguration.
 //
-//   Client    Leader  Matchmaker Acceptor  Replica
-//     |         | ------> |         |         |     StopRequest
-//     |         | <------ |         |         |     StopReply
-//     |         | --------^-------> |         |     BootstrapEpochRequest
-//     |         | <-------^-------- |         |     BootstrapEpochReply
-//     |         | ------> |         |         |     Phase1a
-//     |         | <------ |         |         |     Phase1b
-//     |         | ------> |         |         |     Phase2a
-//     |         | <------ |         |         |     Phase2b
-//     |         | -----.  |         |         |     StartEpoch
-//     |         | <----'  |         |         |
-//     |         | --------^-------> |         |     StartEpoch
+//   Client    Leader Reconfigurer Matchmaker Acceptor  Replica
+//     |         | <-------^-------- |         |         |     IsStopped
+//     |         | <-------^-------- |         |         |     MatchChosen
+//     |         | ------> |         |         |         |     Reconfigure
+//     |         |         | ------> |         |         |     Stop
+//     |         |         | <------ |         |         |     StopAck
+//     |         |         | ------> |         |         |     Bootstrap
+//     |         |         | <------ |         |         |     BootstrapAck
+//     |         |         | ------> |         |         |     MatchPhase1a
+//     |         |         | <------ |         |         |     MatchPhase1b
+//     |         |         | ------> |         |         |     MatchPhase2a
+//     |         |         | <------ |         |         |     MatchPhase2b
+//     |         |         | ------> |         |         |     MatchChosen
+//     |         | <------ |         |         |         |     MatchChosen
+//     |         |         | ----.   |         |         |     MatchChosen
+//     |         |         | <---'   |         |         |
+//     |         |         | <------ |         |         |     MatchChosen
+//     |         |         | <------ |         |         |     MatchNack
 //
-// TODO(mwhittaker): Add recovery. If a replica notices a hole in its log, it
-// should send a recover to the leader and to the other replicas. The replicas
-// should respond if it has the missing entry. The leader should do a leader
-// change with a smaller than usual chosenWatermark to make sure the value gets
-// chosen appropriately.
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
@@ -115,6 +115,14 @@ message Configuration {
   required quorums.QuorumSystemProto quorum_system = 2;
 }
 
+message MatchmakerConfiguration {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 epoch = 1;
+  repeated int32 matchmaker_index = 2;
+}
+
 message Phase1bSlotInfo {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -124,26 +132,36 @@ message Phase1bSlotInfo {
   required CommandOrNoop vote_value = 3;
 }
 
+message MatchPhase1bVote {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 vote_round = 1;
+  required MatchmakerConfiguration vote_value = 2;
+}
+
 // Normal case operations. /////////////////////////////////////////////////////
 message MatchRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required Configuration configuration = 1;
+  required int32 epoch = 1;
+  required Configuration configuration = 2;
 }
 
 message MatchReply {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 round = 1;
-  required int32 matchmaker_index = 2;
+  required int32 epoch = 1;
+  required int32 round = 2;
+  required int32 matchmaker_index = 3;
   // All configurations in rounds less than `gc_watermark` have been garbage
   // collected and should be ignored by the leader.  Note that `configuration`
   // won't include a configuration in a round less than `gc_watermark`, but
   // other MatchReplies received by the leader might.
-  required int32 gc_watermark = 3;
-  repeated Configuration configuration = 4;
+  required int32 gc_watermark = 4;
+  repeated Configuration configuration = 5;
 }
 
 message Phase1a {
@@ -252,13 +270,6 @@ message MatchmakerNack {
   required int32 round = 1;
 }
 
-message Stopped {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  // TODO(mwhittaker): Implement.
-}
-
 message AcceptorNack {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -314,16 +325,118 @@ message GarbageCollect {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
+  required int32 epoch = 1;
   // Garbage collect all rounds less than `gc_watermark`.
-  required int32 gc_watermark = 1;
+  required int32 gc_watermark = 2;
 }
 
 message GarbageCollectAck {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
+  required int32 epoch = 1;
+  required int32 matchmaker_index = 2;
+  required int32 gc_watermark = 3;
+}
+
+// Matchmaker reconfiguration. /////////////////////////////////////////////////
+message IsStopped {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message Reconfigure {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated int32 matchmaker_index = 1;
+}
+
+message Stop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 epoch = 1;
+}
+
+message StopAck {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
   required int32 matchmaker_index = 1;
-  required int32 gc_watermark = 2;
+  required int32 epoch = 2;
+  repeated Configuration configuration = 3;
+}
+
+message Bootstrap {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 epoch = 1;
+  required int32 gcWatermark = 2;
+  repeated Configuration configuration = 3;
+}
+
+message BootstrapAck {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 matchmaker_index = 1;
+  required int32 epoch = 2;
+}
+
+message MatchPhase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 epoch = 1;
+  required int32 round = 2;
+}
+
+message MatchPhase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 epoch = 1;
+  required int32 round = 2;
+  required int32 matchmaker_index = 3;
+  optional MatchPhase1bVote vote = 4;
+}
+
+message MatchPhase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 epoch = 1;
+  required int32 round = 2;
+  required MatchmakerConfiguration value = 3;
+}
+
+message MatchPhase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 epoch = 1;
+  required int32 round = 2;
+  required int32 matchmaker_index = 3;
+}
+
+message MatchChosen {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 epoch = 1;
+  required MatchmakerConfiguration value = 2;
+}
+
+// TODO(mwhittaker): We have MatchmakerNack and MatchNack, and they're
+// different. Name them better. It's confusing.
+message MatchNack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The reconfigurer should retry with a round at least as large as round.
+  required int32 round = 1;
 }
 
 // Inbound messages. ///////////////////////////////////////////////////////////
@@ -344,12 +457,25 @@ message LeaderInbound {
     LeaderInfoRequest leader_info_request = 5;
     ChosenWatermark chosen_watermark = 6;
     MatchmakerNack matchmaker_nack = 7;
-    Stopped stopped = 8;
-    AcceptorNack acceptor_nack = 9;
-    Recover recover = 10;
-    ExecutedWatermarkReply executed_watermark_reply = 11;
-    PersistedAck persisted_ack = 12;
-    GarbageCollectAck garbage_collect_ack = 13;
+    AcceptorNack acceptor_nack = 8;
+    Recover recover = 9;
+    ExecutedWatermarkReply executed_watermark_reply = 10;
+    PersistedAck persisted_ack = 11;
+    GarbageCollectAck garbage_collect_ack = 12;
+    IsStopped is_stopped = 13;
+    MatchChosen match_chosen = 14;
+  }
+}
+
+message ReconfigurerInbound {
+  oneof request {
+    Reconfigure reconfigure = 1;
+    StopAck stop_ack = 2;
+    BootstrapAck bootstrap_ack = 3;
+    MatchPhase1b match_phase1b = 4;
+    MatchPhase2b match_phase2b = 5;
+    MatchChosen match_chosen = 6;
+    MatchNack match_nack = 7;
   }
 }
 
@@ -357,6 +483,11 @@ message MatchmakerInbound {
   oneof request {
     MatchRequest match_request = 1;
     GarbageCollect garbage_collect = 2;
+    Stop stop = 3;
+    Bootstrap bootstrap = 4;
+    MatchPhase1a match_phase1a = 5;
+    MatchPhase2a match_phase2a = 6;
+    MatchChosen match_chosen = 7;
   }
 }
 

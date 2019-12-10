@@ -7,6 +7,7 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     leaderAddresses: Seq[Transport#Address],
     leaderElectionAddresses: Seq[Transport#Address],
+    reconfigurerAddresses: Seq[Transport#Address],
     // TODO(mwhittaker): When we implement matchmaker reconfiguration, we'll
     // probably do something similar to what we did with the acceptors.
     matchmakerAddresses: Seq[Transport#Address],
@@ -20,6 +21,7 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
 ) {
   val quorumSize = f + 1
   val numLeaders = leaderAddresses.size
+  val numReconfigurers = reconfigurerAddresses.size
   val numMatchmakers = matchmakerAddresses.size
   val numAcceptors = acceptorAddresses.size
   val numReplicas = replicaAddresses.size
@@ -34,6 +36,10 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
       leaderElectionAddresses.size == numLeaders,
       s"The number of election addresses must be the same as the number of " +
         s"leaders ($numLeaders). It's ${leaderElectionAddresses.size}."
+    )
+    require(
+      numReconfigurers >= f + 1,
+      s"numReconfigurers must be >= f + 1 (${f + 1}). It's $numReconfigurers."
     )
     // TODO(mwhittaker): We'll have to update this to >= 2*f+1 after we
     // introduce matchmaker reconfiguration.
