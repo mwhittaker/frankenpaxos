@@ -35,12 +35,20 @@ object Reconfigurer {
 
 @JSExportAll
 case class ReconfigurerOptions(
+    resendStopsPeriod: java.time.Duration,
+    resendBootstrapsPeriod: java.time.Duration,
+    resendMatchPhase1asPeriod: java.time.Duration,
+    resendMatchPhase2asPeriod: java.time.Duration,
     measureLatencies: Boolean
 )
 
 @JSExportAll
 object ReconfigurerOptions {
   val default = ReconfigurerOptions(
+    resendStopsPeriod = java.time.Duration.ofSeconds(5),
+    resendBootstrapsPeriod = java.time.Duration.ofSeconds(5),
+    resendMatchPhase1asPeriod = java.time.Duration.ofSeconds(5),
+    resendMatchPhase2asPeriod = java.time.Duration.ofSeconds(5),
     measureLatencies = true
   )
 }
@@ -59,6 +67,30 @@ class ReconfigurerMetrics(collectors: Collectors) {
     .name("matchmakermultipaxos_reconfigurer_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
+    .register()
+
+  val resendStopsTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_reconfigurer_resend_stops_total")
+    .help("Total number of times the leader resent Stop messages.")
+    .register()
+
+  val resendBootstrapsTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_reconfigurer_resend_bootstraps_total")
+    .help("Total number of times the leader resent Bootstrap messages.")
+    .register()
+
+  val resendMatchPhase1asTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_reconfigurer_resend_matchPhase1as_total")
+    .help("Total number of times the leader resent MatchPhase1a messages.")
+    .register()
+
+  val resendMatchPhase2asTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_reconfigurer_resend_matchPhase2as_total")
+    .help("Total number of times the leader resent MatchPhase2a messages.")
     .register()
 }
 
@@ -79,9 +111,159 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = ReconfigurerInbound
   override val serializer = ReconfigurerInboundSerializer
 
-  // Fields ////////////////////////////////////////////////////////////////////
+  type MatchmakerIndex = Int
+
+  @JSExportAll
+  sealed trait State
+
+  @JSExportAll
+  case class Idle(
+      configuration: MatchmakerConfiguration
+  ) extends State
+
+  @JSExportAll
+  case class Stopping(
+      configuration: MatchmakerConfiguration,
+      newConfiguration: MatchmakerConfiguration,
+      stopAcks: mutable.Map[MatchmakerIndex, StopAck],
+      resendStops: Transport#Timer
+  ) extends State
+
+  @JSExportAll
+  case class Bootstrapping(
+      configuration: MatchmakerConfiguration,
+      newConfiguration: MatchmakerConfiguration,
+      bootstrapAcks: mutable.Map[MatchmakerIndex, BootstrapAck],
+      resendBootstraps: Transport#Timer
+  ) extends State
+
+  @JSExportAll
+  case class Phase1(
+      configuration: MatchmakerConfiguration,
+      newConfiguration: MatchmakerConfiguration,
+      round: Int,
+      matchPhase1bs: mutable.Map[MatchmakerIndex, MatchPhase1b],
+      resendMatchPhase1as: Transport#Timer
+  ) extends State
+
+  @JSExportAll
+  case class Phase2(
+      configuration: MatchmakerConfiguration,
+      newConfiguration: MatchmakerConfiguration,
+      round: Int,
+      matchPhase2bs: mutable.Map[MatchmakerIndex, MatchPhase2b],
+      resendMatchPhase2as: Transport#Timer
+  ) extends State
+
+// Fields ////////////////////////////////////////////////////////////////////
+  private val index = config.leaderAddresses.indexOf(address)
+
+// Leader channels.
+  private val leaders: Seq[Chan[Leader[Transport]]] =
+    for (a <- config.leaderAddresses)
+      yield chan[Leader[Transport]](a, Leader.serializer)
+
+  // Other Recofingurer channels.
+  private val otherReconfigurers: Seq[Chan[Reconfigurer[Transport]]] =
+    for (a <- config.reconfigurerAddresses if a != address)
+      yield chan[Reconfigurer[Transport]](a, Reconfigurer.serializer)
+
+  // Matchmaker channels.
+  private val matchmakers: Seq[Chan[Matchmaker[Transport]]] =
+    for (a <- config.matchmakerAddresses)
+      yield chan[Matchmaker[Transport]](a, Matchmaker.serializer)
+
+  // For simplicity, we use a round robin round system for the reconfigurers.
+  private val roundSystem =
+    new RoundSystem.ClassicRoundRobin(config.numReconfigurers)
+
+  var state: State = Idle(
+    MatchmakerConfiguration(
+      epoch = 0,
+      matchmakerIndex = 0 until (2 * config.f + 1)
+    )
+  )
 
   // Timers ////////////////////////////////////////////////////////////////////
+  private def makeResendStopsTimer(
+      stop: Stop,
+      matchmakerIndices: Set[MatchmakerIndex]
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendStops",
+      options.resendStopsPeriod,
+      () => {
+        metrics.resendStopsTotal.inc()
+        for (index <- matchmakerIndices) {
+          matchmakers(index).send(MatchmakerInbound().withStop(stop))
+        }
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendBootstrapsTimer(
+      bootstrap: Bootstrap,
+      matchmakerIndices: Set[MatchmakerIndex]
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendBootstraps",
+      options.resendBootstrapsPeriod,
+      () => {
+        metrics.resendBootstrapsTotal.inc()
+        for (index <- matchmakerIndices) {
+          matchmakers(index).send(MatchmakerInbound().withBootstrap(bootstrap))
+        }
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendMatchPhase1asTimer(
+      matchPhase1a: MatchPhase1a,
+      matchmakerIndices: Set[MatchmakerIndex]
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendMatchPhase1as",
+      options.resendMatchPhase1asPeriod,
+      () => {
+        metrics.resendMatchPhase1asTotal.inc()
+        for (index <- matchmakerIndices) {
+          matchmakers(index).send(
+            MatchmakerInbound().withMatchPhase1A(matchPhase1a)
+          )
+        }
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendMatchPhase2asTimer(
+      matchPhase2a: MatchPhase2a,
+      matchmakerIndices: Set[MatchmakerIndex]
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendMatchPhase2as",
+      options.resendMatchPhase2asPeriod,
+      () => {
+        metrics.resendMatchPhase2asTotal.inc()
+        for (index <- matchmakerIndices) {
+          matchmakers(index).send(
+            MatchmakerInbound().withMatchPhase2A(matchPhase2a)
+          )
+        }
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -110,6 +292,7 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         case Request.MatchPhase1B(_) => "MatchPhase1b"
         case Request.MatchPhase2B(_) => "MatchPhase2b"
         case Request.MatchChosen(_)  => "MatchChosen"
+        case Request.MatchNack(_)    => "MatchNack"
         case Request.Empty =>
           logger.fatal("Empty ReconfigurerInbound encountered.")
       }
@@ -133,44 +316,296 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       reconfigure: Reconfigure
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    state match {
+      case idle: Idle =>
+        val leader = chan[Leader[Transport]](src, Leader.serializer)
+        if (reconfigure.epoch < idle.configuration.epoch) {
+          // The reconfigure is stale. We have a more recent configuration.
+          leader.send(
+            LeaderInbound().withMatchChosen(
+              MatchChosen(epoch = idle.configuration.epoch - 1,
+                          value = idle.configuration)
+            )
+          )
+          return
+        }
+
+        // Sends stops to the matchmakers.
+        val stop = Stop(epoch = idle.configuration.epoch)
+        reconfigure.matchmakerIndex.foreach(
+          matchmakers(_).send(MatchmakerInbound().withStop(stop))
+        )
+
+        // Update our state.
+        state = Stopping(
+          configuration = MatchmakerConfiguration(
+            epoch = reconfigure.epoch,
+            matchmakerIndex = reconfigure.matchmakerIndex
+          ),
+          newConfiguration = MatchmakerConfiguration(
+            epoch = reconfigure.epoch + 1,
+            matchmakerIndex = reconfigure.newMatchmakerIndex
+          ),
+          stopAcks = mutable.Map(),
+          resendStops =
+            makeResendStopsTimer(stop, reconfigure.matchmakerIndex.toSet)
+        )
+
+      case _: Stopping | _: Bootstrapping | _: Phase1 | _: Phase2 =>
+        logger.debug(
+          s"Reconfigurer received a Reconfigurer command while it is " +
+            s"reconfiguring. Its state is $state. The Reconfigure command is " +
+            s"being ignored."
+        )
+    }
   }
 
   private def handleStopAck(src: Transport#Address, stopAck: StopAck): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    state match {
+      case _: Idle | _: Bootstrapping | _: Phase1 | _: Phase2 =>
+        logger.debug(
+          s"Reconfigurer received a StopAck command but its state is " +
+            s"$state. The StopAck command is being ignored."
+        )
+
+      case stopping: Stopping =>
+        // Ignore incorrect epochs.
+        if (stopAck.epoch != stopping.configuration.epoch) {
+          return
+        }
+
+        // Wait until we have a quorum of responses.
+        stopping.stopAcks(stopAck.matchmakerIndex) = stopAck
+        if (stopping.stopAcks.size < config.f + 1) {
+          return
+        }
+
+        // Stop our timer.
+        stopping.resendStops.stop()
+
+        // Union logs and send to new matchmakers.
+        val gcWatermark = stopping.stopAcks.values.map(_.gcWatermark).max
+        val configurations =
+          stopping.stopAcks.values.flatMap(_.configuration).toSet.toSeq
+        val bootstrap = Bootstrap(
+          epoch = stopping.newConfiguration.epoch,
+          gcWatermark = gcWatermark,
+          configuration = configurations
+        )
+        for (index <- stopping.newConfiguration.matchmakerIndex) {
+          matchmakers(index).send(
+            MatchmakerInbound().withBootstrap(bootstrap)
+          )
+        }
+
+        // Update our state.
+        state = Bootstrapping(
+          configuration = stopping.configuration,
+          newConfiguration = stopping.newConfiguration,
+          bootstrapAcks = mutable.Map(),
+          resendBootstraps = makeResendBootstrapsTimer(
+            bootstrap,
+            stopping.newConfiguration.matchmakerIndex.toSet
+          )
+        )
+    }
   }
 
   private def handleBootstrapAck(
       src: Transport#Address,
       bootstrapAck: BootstrapAck
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    state match {
+      case _: Idle | _: Stopping | _: Phase1 | _: Phase2 =>
+        logger.debug(
+          s"Reconfigurer received a BootstrapAck command but its state is " +
+            s"$state. The BootstrapAck command is being ignored."
+        )
+
+      case bootstrapping: Bootstrapping =>
+        // Ignore incorrect epochs.
+        if (bootstrapAck.epoch != bootstrapping.configuration.epoch) {
+          return
+        }
+
+        // Wait until we've heard back from all of them.
+        bootstrapping.bootstrapAcks(bootstrapAck.matchmakerIndex) = bootstrapAck
+        if (bootstrapping.bootstrapAcks.size < 2 * config.f + 1) {
+          return
+        }
+
+        // Stop our timer.
+        bootstrapping.resendBootstraps.stop()
+
+        // Send Phase1as, pick round
+        val round =
+          roundSystem.nextClassicRound(leaderIndex = index, round = -1)
+        val matchPhase1a = MatchPhase1a(
+          epoch = bootstrapping.configuration.epoch,
+          round = round
+        )
+        for (index <- bootstrapping.configuration.matchmakerIndex) {
+          matchmakers(index).send(
+            MatchmakerInbound().withMatchPhase1A(matchPhase1a)
+          )
+        }
+
+        // Update our state.
+        state = Phase1(
+          configuration = bootstrapping.configuration,
+          newConfiguration = bootstrapping.newConfiguration,
+          round = round,
+          matchPhase1bs = mutable.Map(),
+          resendMatchPhase1as = makeResendMatchPhase1asTimer(
+            matchPhase1a,
+            bootstrapping.configuration.matchmakerIndex.toSet
+          )
+        )
+    }
   }
 
   private def handleMatchPhase1b(
       src: Transport#Address,
       matchPhase1b: MatchPhase1b
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    state match {
+      case _: Idle | _: Stopping | _: Bootstrapping | _: Phase2 =>
+        logger.debug(
+          s"Reconfigurer received a MatchPhase1b command but its state is " +
+            s"$state. The MatchPhase1b command is being ignored."
+        )
+
+      case phase1: Phase1 =>
+        // Ignore incorrect epochs.
+        if (matchPhase1b.epoch != phase1.configuration.epoch) {
+          return
+        }
+
+        // Ignore stale rounds.
+        if (matchPhase1b.round != phase1.round) {
+          logger.checkLt(matchPhase1b.round, phase1.round)
+          return
+        }
+
+        // Wait until we've heard back from a quorum of matchmakers.
+        phase1.matchPhase1bs(matchPhase1b.matchmakerIndex) = matchPhase1b
+        if (phase1.matchPhase1bs.size < config.f + 1) {
+          return
+        }
+
+        // Stop our timer.
+        phase1.resendMatchPhase1as.stop()
+
+        // Select safe value and propose in phase 2.
+        val votes = phase1.matchPhase1bs.values.flatMap(_.vote)
+        val value = if (votes.isEmpty) {
+          phase1.newConfiguration
+        } else {
+          votes.maxBy(_.voteRound).voteValue
+        }
+        val matchPhase2a = MatchPhase2a(
+          epoch = phase1.configuration.epoch,
+          round = phase1.round,
+          value = value
+        )
+        for (index <- phase1.configuration.matchmakerIndex) {
+          matchmakers(index).send(
+            MatchmakerInbound().withMatchPhase2A(matchPhase2a)
+          )
+        }
+
+        // Update our state.
+        state = Phase2(
+          configuration = phase1.configuration,
+          newConfiguration = value,
+          round = phase1.round,
+          matchPhase2bs = mutable.Map(),
+          resendMatchPhase2as = makeResendMatchPhase2asTimer(
+            matchPhase2a,
+            phase1.configuration.matchmakerIndex.toSet
+          )
+        )
+    }
   }
 
   private def handleMatchPhase2b(
       src: Transport#Address,
       matchPhase2b: MatchPhase2b
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    state match {
+      case _: Idle | _: Stopping | _: Bootstrapping | _: Phase1 =>
+        logger.debug(
+          s"Reconfigurer received a StopAck command but its state is " +
+            s"$state. The StopAck command is being ignored."
+        )
+
+      case phase2: Phase2 =>
+        // Ignore incorrect epochs.
+        if (matchPhase2b.epoch != phase2.configuration.epoch) {
+          return
+        }
+
+        // Ignore stale rounds.
+        if (matchPhase2b.round != phase2.round) {
+          logger.checkLt(matchPhase2b.round, phase2.round)
+          return
+        }
+
+        // Wait until we've heard back from a quorum of matchmakers.
+        phase2.matchPhase2bs(matchPhase2b.matchmakerIndex) = matchPhase2b
+        if (phase2.matchPhase2bs.size < config.f + 1) {
+          return
+        }
+
+        // Stop our timer.
+        phase2.resendMatchPhase2as.stop()
+
+        // Inform the matchmakers, the other reconfigurers, and the leaders.
+        val matchChosen = MatchChosen(
+          epoch = phase2.configuration.epoch,
+          value = phase2.newConfiguration
+        )
+        leaders.foreach(_.send(LeaderInbound().withMatchChosen(matchChosen)))
+        otherReconfigurers.foreach(
+          _.send(ReconfigurerInbound().withMatchChosen(matchChosen))
+        )
+        for (index <- phase2.configuration.matchmakerIndex) {
+          matchmakers(index).send(
+            MatchmakerInbound().withMatchChosen(matchChosen)
+          )
+        }
+
+        // Update our state.
+        state = Idle(configuration = phase2.newConfiguration)
+    }
   }
 
   private def handleMatchChosen(
       src: Transport#Address,
       matchChosen: MatchChosen
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    // Ignore stale MatchChosens.
+    val epoch = state match {
+      case idle: Idle                   => idle.configuration.epoch
+      case stopping: Stopping           => stopping.configuration.epoch
+      case bootstrapping: Bootstrapping => bootstrapping.configuration.epoch
+      case phase1: Phase1               => phase1.configuration.epoch
+      case phase2: Phase2               => phase2.configuration.epoch
+    }
+    if (matchChosen.value.epoch <= epoch) {
+      return
+    }
+
+    // Stop any running timers.
+    state match {
+      case idle: Idle                   =>
+      case stopping: Stopping           => stopping.resendStops.stop()
+      case bootstrapping: Bootstrapping => bootstrapping.resendBootstraps.stop()
+      case phase1: Phase1               => phase1.resendMatchPhase1as.stop()
+      case phase2: Phase2               => phase2.resendMatchPhase2as.stop()
+    }
+
+    // Update our state.
+    state = Idle(matchChosen.value)
   }
 }

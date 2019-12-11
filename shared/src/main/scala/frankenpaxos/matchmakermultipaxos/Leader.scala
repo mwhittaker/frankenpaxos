@@ -303,14 +303,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       gc: GarbageCollection
   ) extends State
 
-// Fields ////////////////////////////////////////////////////////////////////
-// A random number generator instantiated from `seed`. This allows us to
-// perform deterministic randomized tests.
+  // Fields ////////////////////////////////////////////////////////////////////
+  // A random number generator instantiated from `seed`. This allows us to
+  // perform deterministic randomized tests.
   private val rand = new Random(seed)
 
   private val index = config.leaderAddresses.indexOf(address)
 
-// Channels to all the _other_ leaders.
+  // Channels to all the _other_ leaders.
   private val otherLeaders: Seq[Chan[Leader[Transport]]] =
     for (a <- config.leaderAddresses if a != address)
       yield chan[Leader[Transport]](a, Leader.serializer)

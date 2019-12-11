@@ -116,7 +116,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
   case class Chosen(value: MatchmakerConfiguration) extends AcceptorState
 
-  // Fields ////////////////////////////////////////////////////////////////////
+// Fields ////////////////////////////////////////////////////////////////////
   private val index = config.matchmakerAddresses.indexOf(address)
 
   @JSExport
@@ -125,7 +125,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var acceptorStates = mutable.SortedMap[Epoch, AcceptorState]()
 
-  // Helpers ///////////////////////////////////////////////////////////////////
+// Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
     if (options.measureLatencies) {
       val startNanos = System.nanoTime
@@ -140,7 +140,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // Handlers //////////////////////////////////////////////////////////////////
+// Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import MatchmakerInbound.Request
 
@@ -343,6 +343,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
           ReconfigurerInbound().withStopAck(
             StopAck(matchmakerIndex = index,
                     epoch = stop.epoch,
+                    gcWatermark = normal.gcWatermark,
                     configuration = normal.configurations.values.toSeq)
           )
         )
@@ -357,6 +358,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
           ReconfigurerInbound().withStopAck(
             StopAck(matchmakerIndex = index,
                     epoch = stop.epoch,
+                    gcWatermark = stopped.gcWatermark,
                     configuration = stopped.configurations.values.toSeq)
           )
         )

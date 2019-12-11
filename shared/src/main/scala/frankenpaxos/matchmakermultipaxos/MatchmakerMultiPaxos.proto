@@ -349,7 +349,9 @@ message Reconfigure {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  repeated int32 matchmaker_index = 1;
+  required int32 epoch = 1;
+  repeated int32 matchmaker_index = 2;
+  repeated int32 new_matchmaker_index = 3;
 }
 
 message Stop {
@@ -365,7 +367,8 @@ message StopAck {
 
   required int32 matchmaker_index = 1;
   required int32 epoch = 2;
-  repeated Configuration configuration = 3;
+  required int32 gcWatermark = 3;
+  repeated Configuration configuration = 4;
 }
 
 message Bootstrap {
