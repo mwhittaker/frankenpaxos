@@ -37,6 +37,7 @@ case class LeaderOptions(
     // Leaders use timeouts to re-send requests and ensure liveness. These
     // durations determine how long a leader waits before re-sending a request.
     resendMatchRequestsPeriod: java.time.Duration,
+    resendReconfigurePeriod: java.time.Duration,
     resendPhase1asPeriod: java.time.Duration,
     resendPhase2asPeriod: java.time.Duration,
     resendExecutedWatermarkRequestsPeriod: java.time.Duration,
@@ -55,6 +56,7 @@ case class LeaderOptions(
 object LeaderOptions {
   val default = LeaderOptions(
     resendMatchRequestsPeriod = java.time.Duration.ofSeconds(5),
+    resendReconfigurePeriod = java.time.Duration.ofSeconds(5),
     resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
     resendPhase2asPeriod = java.time.Duration.ofSeconds(5),
     resendExecutedWatermarkRequestsPeriod = java.time.Duration.ofSeconds(5),
@@ -138,6 +140,12 @@ class LeaderMetrics(collectors: Collectors) {
     .help("Total number of times the leader resent MatchRequest messages.")
     .register()
 
+  val resendReconfigureTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_resend_reconfigure_total")
+    .help("Total number of times the leader resent Reconfigure messages.")
+    .register()
+
   val resendPhase1asTotal: Counter = collectors.counter
     .build()
     .name("matchmakermultipaxos_leader_resend_phase1as_total")
@@ -210,8 +218,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExportAll
   case class Matchmaking(
+      // The matchmakers used to matchmake.
+      matchmakerConfiguration: MatchmakerConfiguration,
       // The quorum system that this leader intends to use to get values chosen.
       quorumSystem: QuorumSystem[AcceptorIndex],
+      quorumSystemProto: QuorumSystemProto,
       // The MatchReplies received from the matchmakers.
       matchReplies: mutable.Map[MatchmakerIndex, MatchReply],
       // Any pending client requests. These client requests will be processed
@@ -219,6 +230,20 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       pendingClientRequests: mutable.Buffer[ClientRequest],
       // A timer to resend match requests, for liveness.
       resendMatchRequests: Transport#Timer
+  ) extends State
+
+  @JSExportAll
+  case class WaitingForReconfigure(
+      // The matchmakers previously used to matchmake.
+      matchmakerConfiguration: MatchmakerConfiguration,
+      // The quorum system that this leader intends to use to get values chosen.
+      quorumSystem: QuorumSystem[AcceptorIndex],
+      quorumSystemProto: QuorumSystemProto,
+      // Any pending client requests. These client requests will be processed
+      // as soon as the leader enters Phase 2.
+      pendingClientRequests: mutable.Buffer[ClientRequest],
+      // A timer to resend Reconfigure, for liveness.
+      resendReconfigure: Transport#Timer
   ) extends State
 
   @JSExportAll
@@ -273,6 +298,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExportAll
   case class GarbageCollecting(
+      matchmakerConfiguration: MatchmakerConfiguration,
       garbageCollectAcks: mutable.Set[MatchmakerIndex],
       resendGarbageCollects: Transport#Timer
   ) extends GarbageCollection
@@ -314,6 +340,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private val otherLeaders: Seq[Chan[Leader[Transport]]] =
     for (a <- config.leaderAddresses if a != address)
       yield chan[Leader[Transport]](a, Leader.serializer)
+
+  // Reconfigurer channels.
+  private val reconfigurers: Seq[Chan[Reconfigurer[Transport]]] =
+    for (a <- config.reconfigurerAddresses)
+      yield chan[Reconfigurer[Transport]](a, Reconfigurer.serializer)
 
   // Matchmaker channels.
   private val matchmakers: Seq[Chan[Matchmaker[Transport]]] =
@@ -374,10 +405,20 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   })
 
+  // The latest matchmakerConfiguration that this leader knows about.
+  @JSExport
+  protected var matchmakerConfiguration: MatchmakerConfiguration =
+    MatchmakerConfiguration(epoch = 0,
+                            matchmakerIndex = 0 until (2 * config.f + 1))
+
   // The leader's state.
   @JSExport
   protected var state: State = if (index == 0) {
-    startMatchmaking(round = 0, pendingClientRequests = mutable.Buffer())
+    val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
+    startMatchmaking(round = 0,
+                     pendingClientRequests = mutable.Buffer(),
+                     qs,
+                     qsp)
   } else {
     Inactive
   }
@@ -394,6 +435,23 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         matchmakers.foreach(
           _.send(MatchmakerInbound().withMatchRequest(matchRequest))
         )
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendReconfigureTimer(
+      reconfigure: Reconfigure
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendReconfigure",
+      options.resendReconfigurePeriod,
+      () => {
+        metrics.resendReconfigureTotal.inc()
+        val reconfigurer = reconfigurers(rand.nextInt(reconfigurers.size))
+        reconfigurer.send(ReconfigurerInbound().withReconfigure(reconfigure))
         t.start()
       }
     )
@@ -428,7 +486,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         metrics.resendPhase2asTotal.inc()
 
         state match {
-          case Inactive | _: Matchmaking | _: Phase1 =>
+          case Inactive | _: Matchmaking | _: WaitingForReconfigure |
+              _: Phase1 =>
             logger.fatal(
               s"The resendPhase2as timer was triggered but the leader is " +
                 s"not in Phase2. Its state is $state."
@@ -578,25 +637,37 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  // Given matchmakers a_0, ..., a_{n-1}, randomly choose a subset of 2f+1 them.
+  //
+  // TODO(mwhittaker): For now, we select a set of matchmakers at random
+  // because it is the simplest thing to do. In full generality, we should pass
+  // in the policy by which we choose quorums.
+  private def getRandomMatchmakers(n: Int): Set[MatchmakerIndex] =
+    rand.shuffle(List() ++ (0 until n)).take(2 * config.f + 1).toSet
+
   private def startMatchmaking(
       round: Round,
-      pendingClientRequests: mutable.Buffer[ClientRequest]
+      pendingClientRequests: mutable.Buffer[ClientRequest],
+      quorumSystem: QuorumSystem[AcceptorIndex],
+      quorumSystemProto: QuorumSystemProto
   ): Matchmaking = {
     // Send MatchRequests to the matchmakers.
-    val (quorumSystem, quorumSystemProto) = getRandomQuorumSystem(
-      config.numAcceptors
-    )
     val matchRequest = MatchRequest(
+      epoch = matchmakerConfiguration.epoch,
       configuration =
         Configuration(round = round, quorumSystem = quorumSystemProto)
     )
-    matchmakers.foreach(
-      _.send(MatchmakerInbound().withMatchRequest(matchRequest))
-    )
+    for (index <- matchmakerConfiguration.matchmakerIndex) {
+      matchmakers(index).send(
+        MatchmakerInbound().withMatchRequest(matchRequest)
+      )
+    }
 
     // Return our state.
     Matchmaking(
+      matchmakerConfiguration = matchmakerConfiguration,
       quorumSystem = quorumSystem,
+      quorumSystemProto = quorumSystemProto,
       matchReplies = mutable.Map(),
       pendingClientRequests = pendingClientRequests,
       resendMatchRequests = makeResendMatchRequestsTimer(matchRequest)
@@ -635,6 +706,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case matchmaking: Matchmaking =>
         matchmaking.resendMatchRequests.stop()
         state = Inactive
+      case waitingForReconfigure: WaitingForReconfigure =>
+        waitingForReconfigure.resendReconfigure.stop()
+        state = Inactive
       case phase1: Phase1 =>
         phase1.resendPhase1as.stop()
         state = Inactive
@@ -649,23 +723,26 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     logger.check(roundSystem.leader(newRound) == index)
     metrics.becomeLeaderTotal.inc()
 
-    state match {
+    round = newRound
+    val pendingClientRequests: mutable.Buffer[ClientRequest] = state match {
       case Inactive =>
-        round = newRound
-        state = startMatchmaking(round, mutable.Buffer())
+        return
       case matchmaking: Matchmaking =>
         matchmaking.resendMatchRequests.stop()
-        round = newRound
-        state = startMatchmaking(round, matchmaking.pendingClientRequests)
+        matchmaking.pendingClientRequests
+      case waitingForReconfigure: WaitingForReconfigure =>
+        waitingForReconfigure.resendReconfigure.stop()
+        waitingForReconfigure.pendingClientRequests
       case phase1: Phase1 =>
         phase1.resendPhase1as.stop()
-        round = newRound
-        state = startMatchmaking(round, phase1.pendingClientRequests)
+        phase1.pendingClientRequests
       case phase2: Phase2 =>
         phase2.resendPhase2as.stop()
-        round = newRound
-        state = startMatchmaking(round, mutable.Buffer())
+        mutable.Buffer()
     }
+
+    val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
+    state = startMatchmaking(round, pendingClientRequests, qs, qsp)
   }
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -681,12 +758,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.LeaderInfoRequest(_)      => "LeaderInfoRequest"
         case Request.ChosenWatermark(_)        => "ChosenWatermark"
         case Request.MatchmakerNack(_)         => "MatchmakerNack"
-        case Request.Stopped(_)                => "Stopped"
         case Request.AcceptorNack(_)           => "AcceptorNack"
         case Request.Recover(_)                => "Recover"
         case Request.ExecutedWatermarkReply(_) => "ExecutedWatermarkReply"
-        case Request.PersistedAck(_)           => "PersistedAck"
         case Request.GarbageCollectAck(_)      => "GarbageCollectAck"
+        case Request.PersistedAck(_)           => "PersistedAck"
+        case Request.Stopped(_)                => "Stopped"
+        case Request.MatchChosen(_)            => "MatchChosen"
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -701,13 +779,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.LeaderInfoRequest(r) => handleLeaderInfoRequest(src, r)
         case Request.ChosenWatermark(r)   => handleChosenWatermark(src, r)
         case Request.MatchmakerNack(r)    => handleMatchmakerNack(src, r)
-        case Request.Stopped(r)           => handleStopped(src, r)
         case Request.AcceptorNack(r)      => handleAcceptorNack(src, r)
         case Request.Recover(r)           => handleRecover(src, r)
         case Request.ExecutedWatermarkReply(r) =>
           handleExecutedWatermarkReply(src, r)
         case Request.GarbageCollectAck(r) => handleGarbageCollectAck(src, r)
         case Request.PersistedAck(r)      => handlePersistedAck(src, r)
+        case Request.Stopped(r)           => handleStopped(src, r)
+        case Request.MatchChosen(r)       => handleMatchChosen(src, r)
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -719,7 +798,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       matchReply: MatchReply
   ): Unit = {
     state match {
-      case Inactive | _: Phase1 | _: Phase2 =>
+      case Inactive | _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
         logger.debug(
           s"Leader received a MatchReply but is not currently in the " +
             s"Matchmaking phase (its state is $state). The MatchReply is " +
@@ -727,8 +806,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case matchmaking: Matchmaking =>
-        // TODO(mwhittaker): Rethink this once we implement matchmaker
-        // reconfiguration.
+        // Ignore stale epochs.
+        if (matchReply.epoch != matchmaking.matchmakerConfiguration.epoch) {
+          logger.debug(
+            s"Leader received a MatchReply in epoch ${matchReply.epoch} but " +
+              s"is already in epoch " +
+              s"${matchmaking.matchmakerConfiguration.epoch}. The MatchReply " +
+              s"is being ignored."
+          )
+          return
+        }
 
         // Ignore stale rounds.
         if (matchReply.round != round) {
@@ -864,7 +951,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase1b: Phase1b
   ): Unit = {
     state match {
-      case Inactive | _: Matchmaking | _: Phase2 =>
+      case Inactive | _: Matchmaking | _: WaitingForReconfigure | _: Phase2 =>
         logger.debug(
           s"Leader received a Phase1b message but is not in Phase1. Its " +
             s"state is $state. The Phase1b message is being ignored."
@@ -976,6 +1063,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // We'll process the client request after we've finished phase 1.
         matchmaking.pendingClientRequests += clientRequest
 
+      case waitingForReconfigure: WaitingForReconfigure =>
+        // We'll process the client request after we've finished phase 1.
+        waitingForReconfigure.pendingClientRequests += clientRequest
+
       case phase1: Phase1 =>
         // We'll process the client request after we've finished phase 1.
         phase1.pendingClientRequests += clientRequest
@@ -987,7 +1078,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handlePhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
     state match {
-      case Inactive | _: Matchmaking | _: Phase1 =>
+      case Inactive | _: Matchmaking | _: WaitingForReconfigure | _: Phase1 =>
         logger.debug(
           s"Leader received a Phase2b message but is not in Phase2. Its " +
             s"state is $state. The Phase2b message is being ignored."
@@ -1070,13 +1161,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Check if we're now ready to send garbage collect commands.
         if (phase2.gc == WaitingForLargerChosenWatermark &&
             chosenWatermark > phase2.maxSlot) {
-          val garbageCollect = GarbageCollect(gcWatermark = round)
+          val garbageCollect = GarbageCollect(epoch =
+                                                matchmakerConfiguration.epoch,
+                                              gcWatermark = round)
           matchmakers.foreach(
             _.send(MatchmakerInbound().withGarbageCollect(garbageCollect))
           )
 
           state = phase2.copy(
             gc = GarbageCollecting(
+              matchmakerConfiguration = matchmakerConfiguration,
               garbageCollectAcks = mutable.Set(),
               resendGarbageCollects =
                 makeResendGarbageCollectsTimer(garbageCollect)
@@ -1100,7 +1194,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // We're inactive, so we ignore the leader info request. The active
       // leader will respond to the request.
 
-      case _: Matchmaking | _: Phase1 | _: Phase2 =>
+      case _: Matchmaking | _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
         val client = chan[Client[Transport]](src, Client.serializer)
         client.send(
           ClientInbound().withLeaderInfoReply(LeaderInfoReply(round = round))
@@ -1116,7 +1210,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Inactive =>
         chosenWatermark = Math.max(chosenWatermark, msg.watermark)
 
-      case _: Matchmaking | _: Phase1 | _: Phase2 =>
+      case _: Matchmaking | _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
         // We ignore these watermarks if we are trying to become an active
         // leader. Otherwise, things get too complicated. It's very unlikely
         // we'll ever get these messages anyway.
@@ -1150,20 +1244,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
         becomeLeader(newRound)
 
-      case _: Phase1 | _: Phase2 =>
+      case _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
         logger.debug(
           s"Leader received a MatchmakerNack with round ${nack.round} but is " +
             s"not matchmaking. Its state is $state. The nack is being ignored."
         )
     }
-  }
-
-  private def handleStopped(
-      src: Transport#Address,
-      stopped: Stopped
-  ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
   }
 
   // TODO(mwhittaker): If we receive a nack, we perform a leader change. When
@@ -1189,7 +1275,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Inactive =>
         round = nack.round
 
-      case _: Matchmaking =>
+      case _: Matchmaking | _: WaitingForReconfigure =>
         logger.debug(
           s"Leader received an AcceptorNack with round ${nack.round} but is " +
             s"not in Phase 1 or 2. Its state is $state. The nack is being " +
@@ -1212,7 +1298,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Do nothing. The active leader will recover.
         {}
 
-      case _: Matchmaking | _: Phase1 | _: Phase2 =>
+      case _: Matchmaking | _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
         // If our chosen watermark is larger than the slot we're trying to
         // recover, then we won't get the value chosen again. We have to lower
         // our watermark so that the protocol gets the value chosen again.
@@ -1232,7 +1318,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       executedWatermarkReply: ExecutedWatermarkReply
   ): Unit = {
     state match {
-      case Inactive | _: Matchmaking | _: Phase1 =>
+      case Inactive | _: Matchmaking | _: WaitingForReconfigure | _: Phase1 =>
         logger.debug(
           s"Leader received an ExecutedWatermarkReply but is not querying " +
             s"replicas. Its state is $state. The ExecutedWatermarkReply is " +
@@ -1289,7 +1375,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       persistedAck: PersistedAck
   ): Unit = {
     state match {
-      case Inactive | _: Matchmaking | _: Phase1 =>
+      case Inactive | _: Matchmaking | _: WaitingForReconfigure | _: Phase1 =>
         logger.debug(
           s"Leader received an PersistedAck but is not persisting to " +
             s"acceptors. Its state is $state. The PersistedAck is " +
@@ -1330,7 +1416,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             }
 
             // Send garbage collect command.
-            val garbageCollect = GarbageCollect(gcWatermark = round)
+            val garbageCollect = GarbageCollect(
+              epoch = matchmakerConfiguration.epoch,
+              gcWatermark = round
+            )
             matchmakers.foreach(
               _.send(MatchmakerInbound().withGarbageCollect(garbageCollect))
             )
@@ -1338,6 +1427,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             // Update our state.
             state = phase2.copy(
               gc = GarbageCollecting(
+                matchmakerConfiguration = matchmakerConfiguration,
                 garbageCollectAcks = mutable.Set(),
                 resendGarbageCollects =
                   makeResendGarbageCollectsTimer(garbageCollect)
@@ -1352,7 +1442,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       garbageCollectAck: GarbageCollectAck
   ): Unit = {
     state match {
-      case Inactive | _: Matchmaking | _: Phase1 =>
+      case Inactive | _: Matchmaking | _: WaitingForReconfigure | _: Phase1 =>
         logger.debug(
           s"Leader received a GarbageCollectAck but is not garbage " +
             s"collecting. Its state is $state. The GarbageCollectAck is " +
@@ -1371,6 +1461,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
           case gc: GarbageCollecting =>
             // Ignore stale replies.
+            if (garbageCollectAck.epoch != gc.matchmakerConfiguration.epoch) {
+              return
+            }
             if (garbageCollectAck.gcWatermark < round) {
               return
             }
@@ -1384,6 +1477,68 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             gc.resendGarbageCollects.stop()
             state = phase2.copy(gc = Done)
         }
+    }
+  }
+
+  private def handleStopped(
+      src: Transport#Address,
+      stopped: Stopped
+  ): Unit = {
+    state match {
+      case Inactive | _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
+        logger.debug(
+          s"Leader received a Stopped but is not collecting. Its state is " +
+            s"$state. The Stopped is being ignored."
+        )
+
+      case matchmaking: Matchmaking =>
+        // Ignore stale messages.
+        if (stopped.epoch != matchmaking.matchmakerConfiguration.epoch) {
+          return
+        }
+
+        val reconfigure = Reconfigure(
+          epoch = matchmaking.matchmakerConfiguration.epoch,
+          matchmakerIndex = matchmaking.matchmakerConfiguration.matchmakerIndex,
+          newMatchmakerIndex =
+            getRandomMatchmakers(config.numReconfigurers).toSeq
+        )
+        val reconfigurer = reconfigurers(rand.nextInt(reconfigurers.size))
+        reconfigurer.send(ReconfigurerInbound().withReconfigure(reconfigure))
+
+        state = WaitingForReconfigure(
+          matchmakerConfiguration = matchmaking.matchmakerConfiguration,
+          quorumSystem = matchmaking.quorumSystem,
+          quorumSystemProto = matchmaking.quorumSystemProto,
+          pendingClientRequests = matchmaking.pendingClientRequests,
+          resendReconfigure = makeResendReconfigureTimer(reconfigure)
+        )
+    }
+  }
+
+  private def handleMatchChosen(
+      src: Transport#Address,
+      matchChosen: MatchChosen
+  ): Unit = {
+    if (matchChosen.value.epoch > matchmakerConfiguration.epoch) {
+      matchmakerConfiguration = matchChosen.value
+    }
+
+    state match {
+      case Inactive | _: Matchmaking | _: Phase1 | _: Phase2 =>
+        // Do nothing.
+        ()
+
+      case waitingForReconfigure: WaitingForReconfigure =>
+        if (matchChosen.value.epoch <
+              waitingForReconfigure.matchmakerConfiguration.epoch) {
+          return
+        }
+        waitingForReconfigure.resendReconfigure.stop()
+        startMatchmaking(round,
+                         waitingForReconfigure.pendingClientRequests,
+                         waitingForReconfigure.quorumSystem,
+                         waitingForReconfigure.quorumSystemProto)
     }
   }
 }

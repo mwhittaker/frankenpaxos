@@ -8,8 +8,8 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     leaderAddresses: Seq[Transport#Address],
     leaderElectionAddresses: Seq[Transport#Address],
     reconfigurerAddresses: Seq[Transport#Address],
-    // TODO(mwhittaker): When we implement matchmaker reconfiguration, we'll
-    // probably do something similar to what we did with the acceptors.
+    // As with acceptorAddresses, we don't _need_ a fixed set of matchmakers,
+    // but we assume it to make things simpler.
     matchmakerAddresses: Seq[Transport#Address],
     // Matchmaker Paxos doesn't require a fixed pre-determined set of
     // acceptors. A leader is free to select _any_ set of acceptors that it
@@ -41,11 +41,9 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
       numReconfigurers >= f + 1,
       s"numReconfigurers must be >= f + 1 (${f + 1}). It's $numReconfigurers."
     )
-    // TODO(mwhittaker): We'll have to update this to >= 2*f+1 after we
-    // introduce matchmaker reconfiguration.
     require(
-      numMatchmakers == 2 * f + 1,
-      s"numMatchmakers must be 2*f + 1 (${2 * f + 1}). It's $numMatchmakers."
+      numMatchmakers >= 2 * f + 1,
+      s"numMatchmakers must be >= 2*f + 1 (${2 * f + 1}). It's $numMatchmakers."
     )
     require(
       numAcceptors >= f + 1,

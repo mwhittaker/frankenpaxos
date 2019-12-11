@@ -101,7 +101,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       configurations: mutable.SortedMap[Round, Configuration]
   ) extends MatchmakerState
 
-  case class Stopped(
+  case class HasStopped(
       gcWatermark: Int,
       configurations: mutable.SortedMap[Round, Configuration]
   ) extends MatchmakerState
@@ -196,14 +196,16 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
       case normal: Normal => normal
 
-      case stopped: Stopped =>
+      case stopped: HasStopped =>
         // If we're currently stopped, then the leader has to give up on this
         // epoch and move to the next epoch. If we know the next epoch, we let
         // the leader know what it is. Otherwise, we just let them know that
         // we're stopped.
         acceptorStates(matchRequest.epoch) match {
           case _: NotChosen =>
-            leader.send(LeaderInbound().withIsStopped(IsStopped()))
+            leader.send(
+              LeaderInbound().withStopped(Stopped(matchRequest.epoch))
+            )
           case chosen: Chosen =>
             leader.send(
               LeaderInbound().withMatchChosen(
@@ -287,10 +289,12 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
       case normal: Normal => normal
 
-      case stopped: Stopped =>
+      case stopped: HasStopped =>
         acceptorStates(garbageCollect.epoch) match {
           case _: NotChosen =>
-            leader.send(LeaderInbound().withIsStopped(IsStopped()))
+            leader.send(
+              LeaderInbound().withStopped(Stopped(garbageCollect.epoch))
+            )
           case chosen: Chosen =>
             leader.send(
               LeaderInbound().withMatchChosen(
@@ -347,11 +351,12 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
                     configuration = normal.configurations.values.toSeq)
           )
         )
-        matchmakerStates(stop.epoch) = Stopped(gcWatermark = normal.gcWatermark,
-                                               configurations =
-                                                 normal.configurations)
+        matchmakerStates(stop.epoch) = HasStopped(
+          gcWatermark = normal.gcWatermark,
+          configurations = normal.configurations
+        )
 
-      case stopped: Stopped =>
+      case stopped: HasStopped =>
         // Note that we're already stopped, but for liveness we send back a
         // StopAck anyway. Sending redundant StopAcks is safe.
         reconfigurer.send(
@@ -414,7 +419,9 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
           )
           reconfigurer.send(
             ReconfigurerInbound()
-              .withMatchNack(MatchNack(round = notChosen.round))
+              .withMatchNack(
+                MatchNack(epoch = matchPhase1a.epoch, round = notChosen.round)
+              )
           )
           return
         }
@@ -469,7 +476,9 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
           )
           reconfigurer.send(
             ReconfigurerInbound()
-              .withMatchNack(MatchNack(round = notChosen.round))
+              .withMatchNack(
+                MatchNack(epoch = matchPhase2a.epoch, round = notChosen.round)
+              )
           )
           return
         }
@@ -511,11 +520,11 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     matchmakerStates(matchChosen.epoch) match {
       case pending: Pending =>
         matchmakerStates(matchChosen.epoch) =
-          Stopped(pending.gcWatermark, pending.configurations)
+          HasStopped(pending.gcWatermark, pending.configurations)
       case normal: Normal =>
         matchmakerStates(matchChosen.epoch) =
-          Stopped(normal.gcWatermark, normal.configurations)
-      case _: Stopped =>
+          HasStopped(normal.gcWatermark, normal.configurations)
+      case _: HasStopped =>
         // Do nothing.
         ()
     }
@@ -526,7 +535,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       case pending: Pending =>
         matchmakerStates(matchChosen.value.epoch) =
           Normal(pending.gcWatermark, pending.configurations)
-      case _: Normal | _: Stopped =>
+      case _: Normal | _: HasStopped =>
         // Do nothing.
         ()
     }

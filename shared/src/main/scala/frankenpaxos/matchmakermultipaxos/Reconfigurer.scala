@@ -306,6 +306,7 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         case Request.MatchPhase1B(r) => handleMatchPhase1b(src, r)
         case Request.MatchPhase2B(r) => handleMatchPhase2b(src, r)
         case Request.MatchChosen(r)  => handleMatchChosen(src, r)
+        case Request.MatchNack(r)    => handleMatchNack(src, r)
         case Request.Empty =>
           logger.fatal("Empty ReconfigurerInbound encountered.")
       }
@@ -607,5 +608,73 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
 
     // Update our state.
     state = Idle(matchChosen.value)
+  }
+
+  private def handleMatchNack(
+      src: Transport#Address,
+      nack: MatchNack
+  ): Unit = {
+    // MatchNacks are only relevant in Phase 1 and 2.
+    val (round, epoch) = state match {
+      case _: Idle | _: Stopping | _: Bootstrapping =>
+        return
+      case phase1: Phase1 =>
+        (phase1.round, phase1.configuration.epoch)
+      case phase2: Phase2 =>
+        (phase2.round, phase2.configuration.epoch)
+    }
+
+    // Ignore stale requests.
+    if (nack.epoch != epoch) {
+      logger.debug(
+        s"Leader received a nack in epoch ${nack.epoch} but is " +
+          s"already in epoch $epoch. The nack is being ignored."
+      )
+      return
+    }
+    if (nack.round <= round) {
+      logger.debug(
+        s"Leader received a nack in round ${nack.round} but is " +
+          s"already in round $round. The nack is being ignored."
+      )
+      return
+    }
+
+    // Re-enter Phase 1, but in a larger round.
+    // TODO(mwhittaker): We should have sleeps here to avoid dueling.
+    val (configuration, newConfiguration) = state match {
+      case _: Idle | _: Stopping | _: Bootstrapping =>
+        logger.fatal("Unreachable.")
+      case phase1: Phase1 =>
+        phase1.resendMatchPhase1as.stop()
+        (phase1.configuration, phase1.newConfiguration)
+      case phase2: Phase2 =>
+        phase2.resendMatchPhase2as.stop()
+        (phase2.configuration, phase2.newConfiguration)
+    }
+
+    val newRound =
+      roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
+    val matchPhase1a = MatchPhase1a(
+      epoch = configuration.epoch,
+      round = newRound
+    )
+    for (index <- configuration.matchmakerIndex) {
+      matchmakers(index).send(
+        MatchmakerInbound().withMatchPhase1A(matchPhase1a)
+      )
+    }
+
+    state = Phase1(
+      configuration = configuration,
+      newConfiguration = newConfiguration,
+      round = newRound,
+      matchPhase1bs = mutable.Map(),
+      resendMatchPhase1as = makeResendMatchPhase1asTimer(
+        matchPhase1a,
+        configuration.matchmakerIndex.toSet
+      )
+    )
+
   }
 }

@@ -19,7 +19,8 @@ class MatchmakerMultiPaxos(val f: Int, seed: Long) {
   val transport = new FakeTransport(logger)
   val numClients = 2
   val numLeaders = f + 1
-  val numMatchmakers = 2 * f + 1
+  val numReconfigurers = f + 1
+  val numMatchmakers = 2 * (2 * f + 1)
   val numAcceptors = 2 * (2 * f + 1)
   val numReplicas = 2 * f + 1
 
@@ -29,6 +30,8 @@ class MatchmakerMultiPaxos(val f: Int, seed: Long) {
       (1 to numLeaders).map(i => FakeTransportAddress(s"Leader $i")),
     leaderElectionAddresses =
       (1 to numLeaders).map(i => FakeTransportAddress(s"LeaderElection $i")),
+    reconfigurerAddresses = (1 to numReconfigurers)
+      .map(i => FakeTransportAddress(s"Reconfigurer $i")),
     matchmakerAddresses =
       (1 to numMatchmakers).map(i => FakeTransportAddress(s"Matchmaker $i")),
     acceptorAddresses =
@@ -62,6 +65,18 @@ class MatchmakerMultiPaxos(val f: Int, seed: Long) {
       ),
       metrics = new LeaderMetrics(FakeCollectors),
       seed = seed
+    )
+  }
+
+  // Reconfigurers.
+  val reconfigurers = for (address <- config.reconfigurerAddresses) yield {
+    new Reconfigurer[FakeTransport](
+      address = address,
+      transport = transport,
+      logger = new FakeLogger(),
+      config = config,
+      options = ReconfigurerOptions.default,
+      metrics = new ReconfigurerMetrics(FakeCollectors)
     )
   }
 

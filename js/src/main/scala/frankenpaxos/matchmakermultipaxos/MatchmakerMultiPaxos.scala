@@ -26,10 +26,17 @@ class MatchmakerMultiPaxos {
       JsTransportAddress("LeaderElection 1"),
       JsTransportAddress("LeaderElection 2")
     ),
+    reconfigurerAddresses = Seq(
+      JsTransportAddress("Reconfigurer 1"),
+      JsTransportAddress("Reconfigurer 2")
+    ),
     matchmakerAddresses = Seq(
       JsTransportAddress("Matchmaker 1"),
       JsTransportAddress("Matchmaker 2"),
-      JsTransportAddress("Matchmaker 3")
+      JsTransportAddress("Matchmaker 3"),
+      JsTransportAddress("Matchmaker 4"),
+      JsTransportAddress("Matchmaker 5"),
+      JsTransportAddress("Matchmaker 6")
     ),
     acceptorAddresses = Seq(
       JsTransportAddress("Acceptor 1"),
@@ -87,6 +94,21 @@ class MatchmakerMultiPaxos {
   val leader1 = leaders(0)
   val leader2 = leaders(1)
 
+  // Reconfigurers.
+  val reconfigurers = for (address <- config.reconfigurerAddresses)
+    yield {
+      new Reconfigurer[JsTransport](
+        address = address,
+        transport = transport,
+        logger = new JsLogger(),
+        config = config,
+        options = ReconfigurerOptions.default,
+        metrics = new ReconfigurerMetrics(FakeCollectors)
+      )
+    }
+  val reconfigurer1 = reconfigurers(0)
+  val reconfigurer2 = reconfigurers(1)
+
   // Matchmakers.
   val matchmakers = for (address <- config.matchmakerAddresses)
     yield {
@@ -102,6 +124,9 @@ class MatchmakerMultiPaxos {
   val matchmaker1 = matchmakers(0)
   val matchmaker2 = matchmakers(1)
   val matchmaker3 = matchmakers(2)
+  val matchmaker4 = matchmakers(3)
+  val matchmaker5 = matchmakers(4)
+  val matchmaker6 = matchmakers(5)
 
   // Acceptors.
   val acceptors = for (address <- config.acceptorAddresses)

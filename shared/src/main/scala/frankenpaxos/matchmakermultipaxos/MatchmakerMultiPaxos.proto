@@ -40,7 +40,7 @@
 // Matchmaker reconfiguration.
 //
 //   Client    Leader Reconfigurer Matchmaker Acceptor  Replica
-//     |         | <-------^-------- |         |         |     IsStopped
+//     |         | <-------^-------- |         |         |     Stopped
 //     |         | <-------^-------- |         |         |     MatchChosen
 //     |         | ------> |         |         |         |     Reconfigure
 //     |         |         | ------> |         |         |     Stop
@@ -340,9 +340,11 @@ message GarbageCollectAck {
 }
 
 // Matchmaker reconfiguration. /////////////////////////////////////////////////
-message IsStopped {
+message Stopped {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 epoch = 1;
 }
 
 message Reconfigure {
@@ -439,7 +441,8 @@ message MatchNack {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   // The reconfigurer should retry with a round at least as large as round.
-  required int32 round = 1;
+  required int32 epoch = 1;
+  required int32 round = 2;
 }
 
 // Inbound messages. ///////////////////////////////////////////////////////////
@@ -465,7 +468,7 @@ message LeaderInbound {
     ExecutedWatermarkReply executed_watermark_reply = 10;
     PersistedAck persisted_ack = 11;
     GarbageCollectAck garbage_collect_ack = 12;
-    IsStopped is_stopped = 13;
+    Stopped stopped = 13;
     MatchChosen match_chosen = 14;
   }
 }
