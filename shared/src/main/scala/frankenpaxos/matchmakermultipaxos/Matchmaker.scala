@@ -292,7 +292,9 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       garbageCollect: GarbageCollect
   ): Unit = {
-    logger.check(matchmakerStates.contains(garbageCollect.epoch))
+    if (!matchmakerStates.contains(garbageCollect.epoch)) {
+      return
+    }
 
     val leader = chan[Leader[Transport]](src, Leader.serializer)
     val normal: Normal = matchmakerStates(garbageCollect.epoch) match {
