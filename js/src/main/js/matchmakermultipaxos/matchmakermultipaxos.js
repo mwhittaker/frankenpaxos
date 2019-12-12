@@ -49,6 +49,23 @@ const phase1b_component = {
   `,
 }
 
+const matchmaker_configuration_component = {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <fp-object>
+      <fp-field :name="'epoch'">
+        {{value.epoch}}
+      </fp-field>
+      <fp-field :name="'matchmakerIndex'">
+        {{value.matchmakerIndex}}
+      </fp-field>
+    </fp-object>
+  `,
+}
+
 // Node components /////////////////////////////////////////////////////////////
 const client_info = {
   props: {
@@ -121,6 +138,7 @@ const leader_info = {
 
   components: {
     'phase1b': phase1b_component,
+    'matchmaker-configuration': matchmaker_configuration_component,
   },
 
   template: `
@@ -138,6 +156,12 @@ const leader_info = {
       </div>
 
       <div>
+        matchmakerConfiguration =
+        <matchmaker-configuration :value="node.actor.matchmakerConfiguration">
+        </matchmaker-configuration>
+      </div>
+
+      <div>
         state =
         <div v-if="node.actor.state.constructor.name.includes('Inactive')">
           Inactive
@@ -146,7 +170,14 @@ const leader_info = {
         <div v-if="node.actor.state.constructor.name.includes('Matchmaking')">
           Matchmaking
           <fp-object :value="node.actor.state" v-slot="{let: state}">
+            <fp-field :name="'matchmakerConfiguration'">
+              <matchmaker-configuration :value="state.matchmakerConfiguration">
+              </matchmaker-configuration>
+            </fp-field>
             <fp-field :name="'quorumSystem'">{{state.quorumSystem}}</fp-field>
+            <fp-field :name="'quorumSystemProto'">
+              {{state.quorumSystemProto}}
+            </fp-field>
             <fp-field :name="'matchReplies'">
               <frankenpaxos-map :map="state.matchReplies">
               </frankenpaxos-map>
@@ -157,6 +188,27 @@ const leader_info = {
             </fp-field>
             <fp-field :name="'resendMatchRequests'">
               {{state.resendMatchRequests}}
+            </fp-field>
+          </fp-object>
+        </div>
+
+        <div v-if="node.actor.state.constructor.name.includes('WaitingForReconfigure')">
+          WaitingForReconfigure
+          <fp-object :value="node.actor.state" v-slot="{let: state}">
+            <fp-field :name="'matchmakerConfiguration'">
+              <matchmaker-configuration :value="state.matchmakerConfiguration">
+              </matchmaker-configuration>
+            </fp-field>
+            <fp-field :name="'quorumSystem'">{{state.quorumSystem}}</fp-field>
+            <fp-field :name="'quorumSystemProto'">
+              {{state.quorumSystemProto}}
+            </fp-field>
+            <fp-field :name="'pendingClientRequests'">
+              <frankenpaxos-horizontal-seq :seq="state.pendingClientRequests">
+              </frankenpaxos-horizontal-seq>
+            </fp-field>
+            <fp-field :name="'resendReconfigure'">
+              {{state.resendReconfigure}}
             </fp-field>
           </fp-object>
         </div>
@@ -250,6 +302,163 @@ const election_info = {
   `,
 }
 
+const reconfigurer_info = {
+  props: {
+    node: Object,
+  },
+
+  data: function() {
+    return {
+      epoch: "",
+      m1: "",
+      m2: "",
+      m3: "",
+      new_m1: "",
+      new_m2: "",
+      new_m3: "",
+    };
+  },
+
+  methods: {
+    reconfigure: function() {
+      if (this.epoch === "" || this.m1 === "" || this.m2 === "" ||
+          this.m3 === "" || this.new_m1 === "" || this.new_m2 === "" ||
+          this.new_m3 === "") {
+        return;
+      }
+      this.node.actor.reconfigureF1(parseInt(this.epoch), parseInt(this.m1),
+          parseInt(this.m2), parseInt(this.m3), parseInt(this.new_m1),
+          parseInt(this.new_m2), parseInt(this.new_m3));
+    },
+  },
+
+  components: {
+    'matchmaker-configuration': matchmaker_configuration_component,
+  },
+
+  template: `
+    <div>
+      <button v-on:click="reconfigure">Reconfigure</button>
+      <div>
+        <span>epoch</span> <input v-model="epoch"></input>
+      </div>
+      <div>
+        <span>old</span>
+        <input v-model="m1"></input>
+        <input v-model="m2"></input>
+        <input v-model="m3"></input>
+      </div>
+      <div>
+        <span>new</span>
+        <input v-model="new_m1"></input>
+        <input v-model="new_m2"></input>
+        <input v-model="new_m3"></input>
+      </div>
+
+      state =
+      <div v-if="node.actor.state.constructor.name.includes('Idle')">
+        Idle
+        <fp-object :value="node.actor.state" v-slot="{let: state}">
+          <fp-field :name="'matchmakerConfiguration'">
+            <matchmaker-configuration :value="state.configuration">
+            </matchmaker-configuration>
+          </fp-field>
+        </fp-object>
+      </div>
+
+      <div v-if="node.actor.state.constructor.name.includes('Stopping')">
+        Stopping
+        <fp-object :value="node.actor.state" v-slot="{let: state}">
+          <fp-field :name="'configuration'">
+            <matchmaker-configuration :value="state.configuration">
+            </matchmaker-configuration>
+          </fp-field>
+          <fp-field :name="'newConfiguration'">
+            <matchmaker-configuration :value="state.newConfiguration">
+            </matchmaker-configuration>
+          </fp-field>
+          <fp-field :name="'stopAcks'">
+            <frankenpaxos-map :map="state.stopAcks">
+            </frankenpaxos-map>
+          </fp-field>
+          <fp-field :name="'resendStops'">
+            {{state.resendStops}}
+          </fp-field>
+        </fp-object>
+      </div>
+
+      <div v-if="node.actor.state.constructor.name.includes('Bootstrapping')">
+        Bootstrapping
+        <fp-object :value="node.actor.state" v-slot="{let: state}">
+          <fp-field :name="'configuration'">
+            <matchmaker-configuration :value="state.configuration">
+            </matchmaker-configuration>
+          </fp-field>
+          <fp-field :name="'newConfiguration'">
+            <matchmaker-configuration :value="state.newConfiguration">
+            </matchmaker-configuration>
+          </fp-field>
+          <fp-field :name="'bootstrapAcks'">
+            <frankenpaxos-map :map="state.bootstrapAcks">
+            </frankenpaxos-map>
+          </fp-field>
+          <fp-field :name="'resendBootstraps'">
+            {{state.resendBootstraps}}
+          </fp-field>
+        </fp-object>
+      </div>
+
+      <div v-if="node.actor.state.constructor.name.includes('Phase1')">
+        Phase1
+        <fp-object :value="node.actor.state" v-slot="{let: state}">
+          <fp-field :name="'configuration'">
+            <matchmaker-configuration :value="state.configuration">
+            </matchmaker-configuration>
+          </fp-field>
+          <fp-field :name="'newConfiguration'">
+            <matchmaker-configuration :value="state.newConfiguration">
+            </matchmaker-configuration>
+          </fp-field>
+          <fp-field :name="'round'">
+            {{state.round}}
+          </fp-field>
+          <fp-field :name="'matchPhase1bs'">
+            <frankenpaxos-map :map="state.matchPhase1bs">
+            </frankenpaxos-map>
+          </fp-field>
+          <fp-field :name="'resendMatchPhase1as'">
+            {{state.resendMatchPhase1as}}
+          </fp-field>
+        </fp-object>
+      </div>
+
+      <div v-if="node.actor.state.constructor.name.includes('Phase2')">
+        Phase2
+        <fp-object :value="node.actor.state" v-slot="{let: state}">
+          <fp-field :name="'configuration'">
+            <matchmaker-configuration :value="state.configuration">
+            </matchmaker-configuration>
+          </fp-field>
+          <fp-field :name="'newConfiguration'">
+            <matchmaker-configuration :value="state.newConfiguration">
+            </matchmaker-configuration>
+          </fp-field>
+          <fp-field :name="'round'">
+            {{state.round}}
+          </fp-field>
+          <fp-field :name="'matchPhase2bs'">
+            <frankenpaxos-map :map="state.matchPhase2bs">
+            </frankenpaxos-map>
+          </fp-field>
+          <fp-field :name="'resendMatchPhase2as'">
+            {{state.resendMatchPhase2as}}
+          </fp-field>
+        </fp-object>
+      </div>
+    </div>
+  `,
+};
+
 const matchmaker_info = {
   props: {
     node: Object,
@@ -258,16 +467,81 @@ const matchmaker_info = {
   template: `
     <div>
       <div>
-        gcWatermark = {{node.actor.gcWatermark}}
+        matchmakerStates =
+        <frankenpaxos-map
+          :map="node.actor.matchmakerStates"
+          v-slot="{value: state}">
+
+          <div v-if="state.constructor.name.includes('Pending')">
+            Pending
+            <fp-object :value="state">
+              <fp-field :name="'gcWatermark'">
+                {{state.gcWatermark}}
+              </fp-field>
+              <fp-field :name="'configurations'">
+                <frankenpaxos-map :map="state.configurations">
+                </frankenpaxos-map>
+              </fp-field>
+            </fp-object>
+          </div>
+
+          <div v-if="state.constructor.name.includes('Normal')">
+            Normal
+            <fp-object :value="state">
+              <fp-field :name="'gcWatermark'">
+                {{state.gcWatermark}}
+              </fp-field>
+              <fp-field :name="'configurations'">
+                <frankenpaxos-map :map="state.configurations">
+                </frankenpaxos-map>
+              </fp-field>
+            </fp-object>
+          </div>
+
+          <div v-if="state.constructor.name.includes('HasStopped')">
+            HasStopped
+            <fp-object :value="state">
+              <fp-field :name="'gcWatermark'">
+                {{state.gcWatermark}}
+              </fp-field>
+              <fp-field :name="'configurations'">
+                <frankenpaxos-map :map="state.configurations">
+                </frankenpaxos-map>
+              </fp-field>
+            </fp-object>
+          </div>
+        </frankenpaxos-map>
       </div>
 
       <div>
-        configurations =
-        <frankenpaxos-map :map="node.actor.configurations" v-slot="{value: c}">
-          <fp-object>
-            <fp-field :name="'round'">{{c.round}}</fp-field>
-            <fp-field :name="'quorumSystem'">{{c.quorumSystem}}</fp-field>
-          </fp-object>
+        acceptorStates =
+        <frankenpaxos-map
+          :map="node.actor.acceptorStates"
+          v-slot="{value: state}">
+
+          <div v-if="state.constructor.name.includes('NotChosen')">
+            NotChosen
+            <fp-object :value="state">
+              <fp-field :name="'round'">
+                {{state.round}}
+              </fp-field>
+              <fp-field :name="'voteRound'">
+                {{state.voteRound}}
+              </fp-field>
+              <fp-field :name="'voteValue'">
+                {{state.voteValue}}
+              </fp-field>
+            </fp-object>
+          </div>
+
+          <div v-if="state.constructor.name.includes('YesChosen')">
+            Chosen
+            <fp-object :value="state">
+              <fp-field :name="'value'">
+                {{state.value}}
+              </fp-field>
+            </fp-object>
+          </div>
         </frankenpaxos-map>
       </div>
     </div>
@@ -362,9 +636,10 @@ function make_nodes(MatchmakerMultiPaxos, snap) {
 
   const client_x = 100;
   const leader_x = 200;
-  const matchmaker_x = 300;
-  const acceptor_x = 400;
-  const replica_x = 500;
+  const reconfigurer_x = 300;
+  const matchmaker_x = 400;
+  const acceptor_x = 500;
+  const replica_x = 600;
 
   const nodes = {};
 
@@ -413,11 +688,32 @@ function make_nodes(MatchmakerMultiPaxos, snap) {
     };
   }
 
+  // Reconfigurers.
+  const reconfigurers = [
+    {reconfigurer: MatchmakerMultiPaxos.reconfigurer1, y: 300},
+    {reconfigurer: MatchmakerMultiPaxos.reconfigurer2, y: 400},
+  ]
+  for (const [index, {reconfigurer, y}] of reconfigurers.entries()) {
+    const color = flat_dark_blue;
+    nodes[reconfigurer.address] = {
+      actor: reconfigurer,
+      color: color,
+      component: reconfigurer_info,
+      svgs: [
+        snap.circle(reconfigurer_x, y, 20).attr(colored(color)),
+        snap.text(reconfigurer_x, y, (index + 1).toString()).attr(number_style),
+      ],
+    };
+  }
+
   // Matchmakers.
   const matchmakers = [
-    {matchmaker: MatchmakerMultiPaxos.matchmaker1, y: 250},
-    {matchmaker: MatchmakerMultiPaxos.matchmaker2, y: 350},
-    {matchmaker: MatchmakerMultiPaxos.matchmaker3, y: 450},
+    {matchmaker: MatchmakerMultiPaxos.matchmaker1, y: 100},
+    {matchmaker: MatchmakerMultiPaxos.matchmaker2, y: 200},
+    {matchmaker: MatchmakerMultiPaxos.matchmaker3, y: 300},
+    {matchmaker: MatchmakerMultiPaxos.matchmaker4, y: 400},
+    {matchmaker: MatchmakerMultiPaxos.matchmaker5, y: 500},
+    {matchmaker: MatchmakerMultiPaxos.matchmaker6, y: 600},
   ]
   for (const [index, {matchmaker, y}] of matchmakers.entries()) {
     const color = flat_green;

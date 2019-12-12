@@ -155,10 +155,10 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
       resendMatchPhase2as: Transport#Timer
   ) extends State
 
-// Fields ////////////////////////////////////////////////////////////////////
-  private val index = config.leaderAddresses.indexOf(address)
+  // Fields ////////////////////////////////////////////////////////////////////
+  private val index = config.reconfigurerAddresses.indexOf(address)
 
-// Leader channels.
+  // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
     for (a <- config.leaderAddresses)
       yield chan[Leader[Transport]](a, Leader.serializer)
@@ -277,6 +277,47 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
       x
     } else {
       e
+    }
+  }
+
+  // Reconfigure is like `handleReconfigure` except we don't assume it comes
+  // from a leader. This is mostly used to trigger reconfigurations from the
+  // command line.
+  private def reconfigure(reconfigure: Reconfigure): Unit = {
+    state match {
+      case idle: Idle =>
+        if (reconfigure.epoch < idle.configuration.epoch) {
+          // The reconfigure is stale. We ignore it.
+          return
+        }
+
+        // Sends stops to the matchmakers.
+        val stop = Stop(epoch = idle.configuration.epoch)
+        reconfigure.matchmakerIndex.foreach(
+          matchmakers(_).send(MatchmakerInbound().withStop(stop))
+        )
+
+        // Update our state.
+        state = Stopping(
+          configuration = MatchmakerConfiguration(
+            epoch = reconfigure.epoch,
+            matchmakerIndex = reconfigure.matchmakerIndex
+          ),
+          newConfiguration = MatchmakerConfiguration(
+            epoch = reconfigure.epoch + 1,
+            matchmakerIndex = reconfigure.newMatchmakerIndex
+          ),
+          stopAcks = mutable.Map(),
+          resendStops =
+            makeResendStopsTimer(stop, reconfigure.matchmakerIndex.toSet)
+        )
+
+      case _: Stopping | _: Bootstrapping | _: Phase1 | _: Phase2 =>
+        logger.debug(
+          s"Reconfigurer received a Reconfigurer command while it is " +
+            s"reconfiguring. Its state is $state. The Reconfigure command is " +
+            s"being ignored."
+        )
     }
   }
 
@@ -425,7 +466,12 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
 
       case bootstrapping: Bootstrapping =>
         // Ignore incorrect epochs.
-        if (bootstrapAck.epoch != bootstrapping.configuration.epoch) {
+        if (bootstrapAck.epoch != bootstrapping.newConfiguration.epoch) {
+          logger.debug(
+            s"Reconfigurer received a BootstrapAck in epoch " +
+              s"${bootstrapAck.epoch} but is already in epoch " +
+              s"${bootstrapping.configuration.epoch}."
+          )
           return
         }
 
@@ -570,7 +616,8 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         otherReconfigurers.foreach(
           _.send(ReconfigurerInbound().withMatchChosen(matchChosen))
         )
-        for (index <- phase2.configuration.matchmakerIndex) {
+        for (index <- Set() ++ phase2.configuration.matchmakerIndex ++
+               phase2.newConfiguration.matchmakerIndex) {
           matchmakers(index).send(
             MatchmakerInbound().withMatchChosen(matchChosen)
           )
@@ -675,6 +722,25 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         configuration.matchmakerIndex.toSet
       )
     )
+  }
 
+  // API ///////////////////////////////////////////////////////////////////////
+  // For the JS frontend.
+  def reconfigureF1(
+      epoch: Int,
+      matchmaker1: Int,
+      matchmaker2: Int,
+      matchmaker3: Int,
+      newMatchmaker1: Int,
+      newMatchmaker2: Int,
+      newMatchmaker3: Int
+  ): Unit = {
+    reconfigure(
+      Reconfigure(
+        epoch = epoch,
+        matchmakerIndex = Seq(matchmaker1, matchmaker2, matchmaker3),
+        newMatchmakerIndex = Seq(newMatchmaker1, newMatchmaker2, newMatchmaker3)
+      )
+    )
   }
 }

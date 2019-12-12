@@ -425,16 +425,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // Timers ////////////////////////////////////////////////////////////////////
   private def makeResendMatchRequestsTimer(
-      matchRequest: MatchRequest
+      matchRequest: MatchRequest,
+      matchmakerIndices: Set[Int]
   ): Transport#Timer = {
     lazy val t: Transport#Timer = timer(
       s"resendMatchRequests",
       options.resendMatchRequestsPeriod,
       () => {
         metrics.resendMatchRequestsTotal.inc()
-        matchmakers.foreach(
-          _.send(MatchmakerInbound().withMatchRequest(matchRequest))
-        )
+        for (index <- matchmakerIndices) {
+          matchmakers(index).send(
+            MatchmakerInbound().withMatchRequest(matchRequest)
+          )
+        }
         t.start()
       }
     )
@@ -670,7 +673,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       quorumSystemProto = quorumSystemProto,
       matchReplies = mutable.Map(),
       pendingClientRequests = pendingClientRequests,
-      resendMatchRequests = makeResendMatchRequestsTimer(matchRequest)
+      resendMatchRequests = makeResendMatchRequestsTimer(
+        matchRequest,
+        matchmakerConfiguration.matchmakerIndex.toSet
+      )
     )
   }
 
@@ -726,7 +732,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     round = newRound
     val pendingClientRequests: mutable.Buffer[ClientRequest] = state match {
       case Inactive =>
-        return
+        mutable.Buffer()
       case matchmaking: Matchmaking =>
         matchmaking.resendMatchRequests.stop()
         matchmaking.pendingClientRequests

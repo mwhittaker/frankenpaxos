@@ -89,34 +89,41 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   type Round = Int
   type Epoch = Int
 
+  @JSExportAll
   sealed trait MatchmakerState
 
+  @JSExportAll
   case class Pending(
       gcWatermark: Int,
       configurations: mutable.SortedMap[Round, Configuration]
   ) extends MatchmakerState
 
+  @JSExportAll
   case class Normal(
       gcWatermark: Int,
       configurations: mutable.SortedMap[Round, Configuration]
   ) extends MatchmakerState
 
+  @JSExportAll
   case class HasStopped(
       gcWatermark: Int,
       configurations: mutable.SortedMap[Round, Configuration]
   ) extends MatchmakerState
 
+  @JSExportAll
   sealed trait AcceptorState
 
+  @JSExportAll
   case class NotChosen(
       round: Int,
       voteRound: Int,
       voteValue: Option[MatchmakerConfiguration]
   ) extends AcceptorState
 
-  case class Chosen(value: MatchmakerConfiguration) extends AcceptorState
+  @JSExportAll
+  case class YesChosen(value: MatchmakerConfiguration) extends AcceptorState
 
-// Fields ////////////////////////////////////////////////////////////////////
+  // Fields ////////////////////////////////////////////////////////////////////
   private val index = config.matchmakerAddresses.indexOf(address)
 
   @JSExport
@@ -125,7 +132,13 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var acceptorStates = mutable.SortedMap[Epoch, AcceptorState]()
 
-// Helpers ///////////////////////////////////////////////////////////////////
+  if (index < 2 * config.f + 1) {
+    matchmakerStates(0) =
+      Pending(gcWatermark = 0, configurations = mutable.SortedMap())
+    acceptorStates(0) = NotChosen(round = -1, voteRound = -1, voteValue = None)
+  }
+
+  // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
     if (options.measureLatencies) {
       val startNanos = System.nanoTime
@@ -140,7 +153,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-// Handlers //////////////////////////////////////////////////////////////////
+  // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import MatchmakerInbound.Request
 
@@ -206,7 +219,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
             leader.send(
               LeaderInbound().withStopped(Stopped(matchRequest.epoch))
             )
-          case chosen: Chosen =>
+          case chosen: YesChosen =>
             leader.send(
               LeaderInbound().withMatchChosen(
                 MatchChosen(epoch = matchRequest.epoch, value = chosen.value)
@@ -295,7 +308,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
             leader.send(
               LeaderInbound().withStopped(Stopped(garbageCollect.epoch))
             )
-          case chosen: Chosen =>
+          case chosen: YesChosen =>
             leader.send(
               LeaderInbound().withMatchChosen(
                 MatchChosen(epoch = garbageCollect.epoch, value = chosen.value)
@@ -445,7 +458,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
         acceptorStates(matchPhase1a.epoch) =
           notChosen.copy(round = matchPhase1a.round)
 
-      case chosen: Chosen =>
+      case chosen: YesChosen =>
         reconfigurer.send(
           ReconfigurerInbound()
             .withMatchChosen(
@@ -499,7 +512,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
           voteValue = Some(matchPhase2a.value)
         )
 
-      case chosen: Chosen =>
+      case chosen: YesChosen =>
         reconfigurer.send(
           ReconfigurerInbound()
             .withMatchChosen(
@@ -515,29 +528,35 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     // Update the epoch in which the value was chosen. Stopping the matchmaker
     // isn't strictly required, but it makes sense to do. It can only help.
-    acceptorStates(matchChosen.epoch) = Chosen(matchChosen.value)
-    logger.check(matchmakerStates.contains(matchChosen.epoch))
-    matchmakerStates(matchChosen.epoch) match {
-      case pending: Pending =>
-        matchmakerStates(matchChosen.epoch) =
-          HasStopped(pending.gcWatermark, pending.configurations)
-      case normal: Normal =>
-        matchmakerStates(matchChosen.epoch) =
-          HasStopped(normal.gcWatermark, normal.configurations)
-      case _: HasStopped =>
-        // Do nothing.
-        ()
+    val oldEpoch = matchChosen.epoch
+    if (acceptorStates.contains(oldEpoch)) {
+      acceptorStates(oldEpoch) = YesChosen(matchChosen.value)
+      matchmakerStates(oldEpoch) match {
+        case pending: Pending =>
+          matchmakerStates(oldEpoch) =
+            HasStopped(pending.gcWatermark, pending.configurations)
+        case normal: Normal =>
+          matchmakerStates(oldEpoch) =
+            HasStopped(normal.gcWatermark, normal.configurations)
+        case _: HasStopped =>
+          // Do nothing.
+          ()
+      }
     }
 
     // Update the chosen epoch.
-    logger.check(matchmakerStates.contains(matchChosen.value.epoch))
-    matchmakerStates(matchChosen.value.epoch) match {
-      case pending: Pending =>
-        matchmakerStates(matchChosen.value.epoch) =
-          Normal(pending.gcWatermark, pending.configurations)
-      case _: Normal | _: HasStopped =>
-        // Do nothing.
-        ()
+    val newEpoch = matchChosen.value.epoch
+    if (matchmakerStates.contains(newEpoch)) {
+      matchmakerStates(newEpoch) match {
+        case pending: Pending =>
+          matchmakerStates(newEpoch) =
+            Normal(pending.gcWatermark, pending.configurations)
+          acceptorStates(newEpoch) =
+            NotChosen(round = -1, voteRound = -1, voteValue = None)
+        case _: Normal | _: HasStopped =>
+          // Do nothing.
+          ()
+      }
     }
   }
 }
