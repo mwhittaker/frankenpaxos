@@ -229,6 +229,8 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
         return
     }
 
+    // TODO(mwhittaker): Fix this now that we do do re-sends.
+
     // A matchmaker only processes a match request if the request's round is
     // larger than any previously seen and at least as large as the
     // gcWatermark. Otherwise, a nack is sent back.

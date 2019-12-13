@@ -1506,8 +1506,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         val reconfigure = Reconfigure(
           epoch = matchmaking.matchmakerConfiguration.epoch,
           matchmakerIndex = matchmaking.matchmakerConfiguration.matchmakerIndex,
-          newMatchmakerIndex =
-            getRandomMatchmakers(config.numReconfigurers).toSeq
+          newMatchmakerIndex = getRandomMatchmakers(config.numMatchmakers).toSeq
         )
         val reconfigurer = reconfigurers(rand.nextInt(reconfigurers.size))
         reconfigurer.send(ReconfigurerInbound().withReconfigure(reconfigure))
@@ -1531,20 +1530,31 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     state match {
-      case Inactive | _: Matchmaking | _: Phase1 | _: Phase2 =>
+      case Inactive | _: Phase1 | _: Phase2 =>
         // Do nothing.
         ()
 
+      case matchmaking: Matchmaking =>
+        if (matchChosen.value.epoch <=
+              matchmaking.matchmakerConfiguration.epoch) {
+          return
+        }
+        matchmaking.resendMatchRequests.stop()
+        state = startMatchmaking(round,
+                                 matchmaking.pendingClientRequests,
+                                 matchmaking.quorumSystem,
+                                 matchmaking.quorumSystemProto)
+
       case waitingForReconfigure: WaitingForReconfigure =>
-        if (matchChosen.value.epoch <
+        if (matchChosen.value.epoch <=
               waitingForReconfigure.matchmakerConfiguration.epoch) {
           return
         }
         waitingForReconfigure.resendReconfigure.stop()
-        startMatchmaking(round,
-                         waitingForReconfigure.pendingClientRequests,
-                         waitingForReconfigure.quorumSystem,
-                         waitingForReconfigure.quorumSystemProto)
+        state = startMatchmaking(round,
+                                 waitingForReconfigure.pendingClientRequests,
+                                 waitingForReconfigure.quorumSystem,
+                                 waitingForReconfigure.quorumSystemProto)
     }
   }
 }
