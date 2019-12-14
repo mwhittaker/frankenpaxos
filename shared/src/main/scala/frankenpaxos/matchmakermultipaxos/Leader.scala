@@ -891,9 +891,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         val acceptorIndices = mutable.Set[AcceptorIndex]()
         val acceptorToRounds = mutable.Map[AcceptorIndex, mutable.Set[Round]]()
 
+        val gcWatermark = matchmaking.matchReplies.values.map(_.gcWatermark).max
         for {
           reply <- matchmaking.matchReplies.values
           configuration <- reply.configuration
+          if configuration.round >= gcWatermark
         } {
           pendingRounds += configuration.round
           val quorumSystem = QuorumSystem.fromProto(configuration.quorumSystem)
