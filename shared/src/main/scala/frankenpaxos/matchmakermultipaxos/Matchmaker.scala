@@ -135,6 +135,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   //     +---+
   //
   // MatchRequests for entries below the reconfigureWatermark are nacked.
+  @JSExportAll
   case class Log(
       gcWatermark: Int,
       reconfigureWatermark: Int,
@@ -520,10 +521,20 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
         acceptorStates(bootstrap.epoch) =
           NotChosen(round = -1, voteRound = -1, voteValue = None)
 
-      case Some(state) =>
+      case Some(pending: Pending) =>
+        pending.logs(bootstrap.reconfigurerIndex) = Log(
+          gcWatermark = bootstrap.gcWatermark,
+          reconfigureWatermark = bootstrap.configuration.size,
+          configurations = mutable.SortedMap() ++
+            bootstrap.configuration.map(c => c.round -> c)
+        )
+        logger.check(acceptorStates.contains(bootstrap.epoch))
+
+      case Some(_: Normal) | Some(_: HasStopped) =>
         logger.debug(
           s"Matchmaker received a Bootstrap request in epoch " +
-            s"${bootstrap.epoch}, but is already in state $state. The state " +
+            s"${bootstrap.epoch}, but is already in state " +
+            s"${matchmakerStates.get(bootstrap.epoch)}. The state " +
             s"is not changed, but for liveness, an ack is being sent back."
         )
     }

@@ -1033,7 +1033,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
         // Update our state.
-        phase1.resendPhase1as.stop()
         val phase2 = Phase2(
           quorumSystem = phase1.quorumSystem,
           values = values,
@@ -1495,9 +1494,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       stopped: Stopped
   ): Unit = {
-    // TODO(mwhittaker): If a leader receives a Stopped command during garbage
-    // collection, then it should just quit.
-
     state match {
       case Inactive | _: WaitingForReconfigure | _: Phase1 =>
         logger.debug(
@@ -1510,6 +1506,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         if (stopped.epoch != matchmaking.matchmakerConfiguration.epoch) {
           return
         }
+        matchmaking.resendMatchRequests.stop()
 
         val reconfigure = Reconfigure(
           matchmakerConfiguration = matchmaking.matchmakerConfiguration,
@@ -1544,6 +1541,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               )
               return
             }
+            garbageCollecting.resendGarbageCollects.stop()
 
             // We sent a GC command, but the current configuration is stopped.
             // We just give up for simplicity since the scenario is unlikely

@@ -309,26 +309,19 @@ const reconfigurer_info = {
 
   data: function() {
     return {
-      epoch: "",
       m1: "",
       m2: "",
       m3: "",
-      new_m1: "",
-      new_m2: "",
-      new_m3: "",
     };
   },
 
   methods: {
     reconfigure: function() {
-      if (this.epoch === "" || this.m1 === "" || this.m2 === "" ||
-          this.m3 === "" || this.new_m1 === "" || this.new_m2 === "" ||
-          this.new_m3 === "") {
+      if (this.m1 === "" || this.m2 === "" || this.m3 === "" ) {
         return;
       }
-      this.node.actor.reconfigureF1(parseInt(this.epoch), parseInt(this.m1),
-          parseInt(this.m2), parseInt(this.m3), parseInt(this.new_m1),
-          parseInt(this.new_m2), parseInt(this.new_m3));
+      this.node.actor.reconfigureF1(parseInt(this.m1),
+          parseInt(this.m2), parseInt(this.m3));
     },
   },
 
@@ -340,19 +333,9 @@ const reconfigurer_info = {
     <div>
       <button v-on:click="reconfigure">Reconfigure</button>
       <div>
-        <span>epoch</span> <input v-model="epoch"></input>
-      </div>
-      <div>
-        <span>old</span>
         <input v-model="m1"></input>
         <input v-model="m2"></input>
         <input v-model="m3"></input>
-      </div>
-      <div>
-        <span>new</span>
-        <input v-model="new_m1"></input>
-        <input v-model="new_m2"></input>
-        <input v-model="new_m3"></input>
       </div>
 
       state =
@@ -474,15 +457,20 @@ const matchmaker_info = {
 
           <div v-if="state.constructor.name.includes('Pending')">
             Pending
-            <fp-object :value="state">
-              <fp-field :name="'gcWatermark'">
-                {{state.gcWatermark}}
-              </fp-field>
-              <fp-field :name="'configurations'">
-                <frankenpaxos-map :map="state.configurations">
-                </frankenpaxos-map>
-              </fp-field>
-            </fp-object>
+            <frankenpaxos-map :map="state.logs" v-slot="{value: log}">
+              <fp-object>
+                <fp-field :name="'gcWatermark'">
+                  {{log.gcWatermark}}
+                </fp-field>
+                <fp-field :name="'reconfigureWatermark'">
+                  {{log.reconfigureWatermark}}
+                </fp-field>
+                <fp-field :name="'configurations'">
+                  <frankenpaxos-map :map="log.configurations">
+                  </frankenpaxos-map>
+                </fp-field>
+              </fp-object>
+            </frankenpaxos-map>
           </div>
 
           <div v-if="state.constructor.name.includes('Normal')">
@@ -490,6 +478,9 @@ const matchmaker_info = {
             <fp-object :value="state">
               <fp-field :name="'gcWatermark'">
                 {{state.gcWatermark}}
+              </fp-field>
+              <fp-field :name="'reconfigureWatermark'">
+                {{state.reconfigureWatermark}}
               </fp-field>
               <fp-field :name="'configurations'">
                 <frankenpaxos-map :map="state.configurations">
@@ -503,6 +494,9 @@ const matchmaker_info = {
             <fp-object :value="state">
               <fp-field :name="'gcWatermark'">
                 {{state.gcWatermark}}
+              </fp-field>
+              <fp-field :name="'reconfigureWatermark'">
+                {{state.reconfigureWatermark}}
               </fp-field>
               <fp-field :name="'configurations'">
                 <frankenpaxos-map :map="state.configurations">
