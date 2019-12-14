@@ -408,8 +408,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // The latest matchmakerConfiguration that this leader knows about.
   @JSExport
   protected var matchmakerConfiguration: MatchmakerConfiguration =
-    MatchmakerConfiguration(epoch = 0,
-                            matchmakerIndex = 0 until (2 * config.f + 1))
+    MatchmakerConfiguration(
+      epoch = 0,
+      reconfigurerIndex = -1,
+      matchmakerIndex = 0 until (2 * config.f + 1)
+    )
 
   // The leader's state.
   @JSExport
@@ -656,7 +659,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Matchmaking = {
     // Send MatchRequests to the matchmakers.
     val matchRequest = MatchRequest(
-      epoch = matchmakerConfiguration.epoch,
+      matchmakerConfiguration = matchmakerConfiguration,
       configuration =
         Configuration(round = round, quorumSystem = quorumSystemProto)
     )
@@ -1167,8 +1170,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Check if we're now ready to send garbage collect commands.
         if (phase2.gc == WaitingForLargerChosenWatermark &&
             chosenWatermark > phase2.maxSlot) {
-          val garbageCollect = GarbageCollect(epoch =
-                                                matchmakerConfiguration.epoch,
+          val garbageCollect = GarbageCollect(matchmakerConfiguration =
+                                                matchmakerConfiguration,
                                               gcWatermark = round)
           matchmakers.foreach(
             _.send(MatchmakerInbound().withGarbageCollect(garbageCollect))
@@ -1423,7 +1426,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
             // Send garbage collect command.
             val garbageCollect = GarbageCollect(
-              epoch = matchmakerConfiguration.epoch,
+              matchmakerConfiguration = matchmakerConfiguration,
               gcWatermark = round
             )
             matchmakers.foreach(
@@ -1490,11 +1493,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       stopped: Stopped
   ): Unit = {
+    // TODO(mwhittaker): If a leader receives a Stopped command during garbage
+    // collection, then it should just quit.
+
     state match {
-      case Inactive | _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
+      case Inactive | _: WaitingForReconfigure | _: Phase1 =>
         logger.debug(
-          s"Leader received a Stopped but is not collecting. Its state is " +
-            s"$state. The Stopped is being ignored."
+          s"Leader received a Stopped but its state is $state. The Stopped " +
+            s"is being ignored."
         )
 
       case matchmaking: Matchmaking =>
@@ -1504,8 +1510,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         val reconfigure = Reconfigure(
-          epoch = matchmaking.matchmakerConfiguration.epoch,
-          matchmakerIndex = matchmaking.matchmakerConfiguration.matchmakerIndex,
+          matchmakerConfiguration = matchmaking.matchmakerConfiguration,
           newMatchmakerIndex = getRandomMatchmakers(config.numMatchmakers).toSeq
         )
         val reconfigurer = reconfigurers(rand.nextInt(reconfigurers.size))
@@ -1518,7 +1523,33 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           pendingClientRequests = matchmaking.pendingClientRequests,
           resendReconfigure = makeResendReconfigureTimer(reconfigure)
         )
+
+      case phase2: Phase2 =>
+        phase2.gc match {
+          case _: QueryingReplicas | _: PushingToAcceptors |
+              WaitingForLargerChosenWatermark | Done =>
+            logger.debug(
+              s"Leader received a Stopped but its state is $state. The " +
+                s"Stopped is being ignored."
+            )
+
+          case garbageCollecting: GarbageCollecting =>
+            if (stopped.epoch !=
+                  garbageCollecting.matchmakerConfiguration.epoch) {
+              logger.debug(
+                s"Leader received a Stopped but its state is $state. The " +
+                  s"Stopped is being ignored."
+              )
+              return
+            }
+
+            // We sent a GC command, but the current configuration is stopped.
+            // We just give up for simplicity since the scenario is unlikely
+            // and will get GCed by the future leader.
+            state = phase2.copy(gc = Done)
+        }
     }
+
   }
 
   private def handleMatchChosen(

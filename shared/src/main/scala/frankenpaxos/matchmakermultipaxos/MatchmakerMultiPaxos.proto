@@ -120,7 +120,8 @@ message MatchmakerConfiguration {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 epoch = 1;
-  repeated int32 matchmaker_index = 2;
+  required int32 reconfigurer_index = 2;
+  repeated int32 matchmaker_index = 3;
 }
 
 message Phase1bSlotInfo {
@@ -145,7 +146,7 @@ message MatchRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 epoch = 1;
+  required MatchmakerConfiguration matchmaker_configuration = 1;
   required Configuration configuration = 2;
 }
 
@@ -325,7 +326,7 @@ message GarbageCollect {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 epoch = 1;
+  required MatchmakerConfiguration matchmaker_configuration = 1;
   // Garbage collect all rounds less than `gc_watermark`.
   required int32 gc_watermark = 2;
 }
@@ -344,6 +345,7 @@ message Stopped {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
+  // The matchmaker is stopped in this epoch.
   required int32 epoch = 1;
 }
 
@@ -351,24 +353,23 @@ message Reconfigure {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 epoch = 1;
-  repeated int32 matchmaker_index = 2;
-  repeated int32 new_matchmaker_index = 3;
+  required MatchmakerConfiguration matchmaker_configuration = 1;
+  repeated int32 new_matchmaker_index = 2;
 }
 
 message Stop {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 epoch = 1;
+  required MatchmakerConfiguration matchmaker_configuration = 1;
 }
 
 message StopAck {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 matchmaker_index = 1;
-  required int32 epoch = 2;
+  required int32 epoch = 1;
+  required int32 matchmaker_index = 2;
   required int32 gcWatermark = 3;
   repeated Configuration configuration = 4;
 }
@@ -378,23 +379,24 @@ message Bootstrap {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 epoch = 1;
-  required int32 gcWatermark = 2;
-  repeated Configuration configuration = 3;
+  required int32 reconfigurer_index = 2;
+  required int32 gcWatermark = 3;
+  repeated Configuration configuration = 4;
 }
 
 message BootstrapAck {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 matchmaker_index = 1;
-  required int32 epoch = 2;
+  required int32 epoch = 1;
+  required int32 matchmaker_index = 2;
 }
 
 message MatchPhase1a {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 epoch = 1;
+  required MatchmakerConfiguration matchmaker_configuration = 1;
   required int32 round = 2;
 }
 
@@ -412,7 +414,7 @@ message MatchPhase2a {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 epoch = 1;
+  required MatchmakerConfiguration matchmaker_configuration = 1;
   required int32 round = 2;
   required MatchmakerConfiguration value = 3;
 }
@@ -430,8 +432,7 @@ message MatchChosen {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 epoch = 1;
-  required MatchmakerConfiguration value = 2;
+  required MatchmakerConfiguration value = 1;
 }
 
 // TODO(mwhittaker): We have MatchmakerNack and MatchNack, and they're

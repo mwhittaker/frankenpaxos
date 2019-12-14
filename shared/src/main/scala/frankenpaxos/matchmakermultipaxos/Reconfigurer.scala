@@ -111,6 +111,7 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = ReconfigurerInbound
   override val serializer = ReconfigurerInboundSerializer
 
+  type Epoch = Int
   type MatchmakerIndex = Int
 
   @JSExportAll
@@ -155,10 +156,10 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
       resendMatchPhase2as: Transport#Timer
   ) extends State
 
-  // Fields ////////////////////////////////////////////////////////////////////
+// Fields ////////////////////////////////////////////////////////////////////
   private val index = config.reconfigurerAddresses.indexOf(address)
 
-  // Leader channels.
+// Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
     for (a <- config.leaderAddresses)
       yield chan[Leader[Transport]](a, Leader.serializer)
@@ -180,7 +181,8 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
   var state: State = Idle(
     MatchmakerConfiguration(
       epoch = 0,
-      matchmakerIndex = 0 until (2 * config.f + 1)
+      reconfigurerIndex = -1,
+      matchmakerIndex = Seq() ++ (0 until (2 * config.f + 1))
     )
   )
 
@@ -283,33 +285,26 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
   // Reconfigure is like `handleReconfigure` except we don't assume it comes
   // from a leader. This is mostly used to trigger reconfigurations from the
   // command line.
-  private def reconfigure(reconfigure: Reconfigure): Unit = {
+  private def reconfigure(matchmakerIndices: Set[MatchmakerIndex]): Unit = {
     state match {
       case idle: Idle =>
-        if (reconfigure.epoch < idle.configuration.epoch) {
-          // The reconfigure is stale. We ignore it.
-          return
-        }
-
         // Sends stops to the matchmakers.
-        val stop = Stop(epoch = idle.configuration.epoch)
-        reconfigure.matchmakerIndex.foreach(
-          matchmakers(_).send(MatchmakerInbound().withStop(stop))
-        )
+        val stop = Stop(idle.configuration)
+        for (index <- idle.configuration.matchmakerIndex) {
+          matchmakers(index).send(MatchmakerInbound().withStop(stop))
+        }
 
         // Update our state.
         state = Stopping(
-          configuration = MatchmakerConfiguration(
-            epoch = reconfigure.epoch,
-            matchmakerIndex = reconfigure.matchmakerIndex
-          ),
+          configuration = idle.configuration,
           newConfiguration = MatchmakerConfiguration(
-            epoch = reconfigure.epoch + 1,
-            matchmakerIndex = reconfigure.newMatchmakerIndex
+            epoch = idle.configuration.epoch + 1,
+            reconfigurerIndex = index,
+            matchmakerIndex = matchmakerIndices.toSeq
           ),
           stopAcks = mutable.Map(),
           resendStops =
-            makeResendStopsTimer(stop, reconfigure.matchmakerIndex.toSet)
+            makeResendStopsTimer(stop, idle.configuration.matchmakerIndex.toSet)
         )
 
       case _: Stopping | _: Bootstrapping | _: Phase1 | _: Phase2 =>
@@ -361,41 +356,39 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
     state match {
       case idle: Idle =>
         val leader = chan[Leader[Transport]](src, Leader.serializer)
-        if (reconfigure.epoch < idle.configuration.epoch) {
+        if (reconfigure.matchmakerConfiguration.epoch < idle.configuration.epoch) {
           // The reconfigure is stale. We have a more recent configuration.
           leader.send(
-            LeaderInbound().withMatchChosen(
-              MatchChosen(epoch = idle.configuration.epoch - 1,
-                          value = idle.configuration)
-            )
+            LeaderInbound()
+              .withMatchChosen(MatchChosen(value = idle.configuration))
           )
           return
         }
 
         // Sends stops to the matchmakers.
-        val stop = Stop(epoch = idle.configuration.epoch)
-        reconfigure.matchmakerIndex.foreach(
-          matchmakers(_).send(MatchmakerInbound().withStop(stop))
-        )
+        val stop = Stop(reconfigure.matchmakerConfiguration)
+        for (index <- reconfigure.matchmakerConfiguration.matchmakerIndex) {
+          matchmakers(index).send(MatchmakerInbound().withStop(stop))
+        }
 
         // Update our state.
         state = Stopping(
-          configuration = MatchmakerConfiguration(
-            epoch = reconfigure.epoch,
-            matchmakerIndex = reconfigure.matchmakerIndex
-          ),
+          configuration = reconfigure.matchmakerConfiguration,
           newConfiguration = MatchmakerConfiguration(
-            epoch = reconfigure.epoch + 1,
+            epoch = reconfigure.matchmakerConfiguration.epoch + 1,
+            reconfigurerIndex = index,
             matchmakerIndex = reconfigure.newMatchmakerIndex
           ),
           stopAcks = mutable.Map(),
-          resendStops =
-            makeResendStopsTimer(stop, reconfigure.matchmakerIndex.toSet)
+          resendStops = makeResendStopsTimer(
+            stop,
+            reconfigure.matchmakerConfiguration.matchmakerIndex.toSet
+          )
         )
 
       case _: Stopping | _: Bootstrapping | _: Phase1 | _: Phase2 =>
         logger.debug(
-          s"Reconfigurer received a Reconfigurer command while it is " +
+          s"Reconfigurer received a Reconfigure command while it is " +
             s"reconfiguring. Its state is $state. The Reconfigure command is " +
             s"being ignored."
         )
@@ -425,12 +418,17 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         // Stop our timer.
         stopping.resendStops.stop()
 
-        // Union logs and send to new matchmakers.
+        // Union logs, trim garbage, and send to new matchmakers.
         val gcWatermark = stopping.stopAcks.values.map(_.gcWatermark).max
         val configurations =
-          stopping.stopAcks.values.flatMap(_.configuration).toSet.toSeq
+          stopping.stopAcks.values
+            .flatMap(_.configuration)
+            .toSet
+            .filter(_.round >= gcWatermark)
+            .toSeq
         val bootstrap = Bootstrap(
           epoch = stopping.newConfiguration.epoch,
+          reconfigurerIndex = index,
           gcWatermark = gcWatermark,
           configuration = configurations
         )
@@ -453,6 +451,10 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  // TODO(mwhittaker): It is possible, though very very unlikely that one of
+  // the new matchmakers fails before it can be properly bootstrapped. This
+  // means that we'll be stuck waiting for it to bootstrap forever. We need a
+  // timeout to trigger us to try and reconfigure to a different set of nodes.
   private def handleBootstrapAck(
       src: Transport#Address,
       bootstrapAck: BootstrapAck
@@ -488,7 +490,7 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         val round =
           roundSystem.nextClassicRound(leaderIndex = index, round = -1)
         val matchPhase1a = MatchPhase1a(
-          epoch = bootstrapping.configuration.epoch,
+          matchmakerConfiguration = bootstrapping.configuration,
           round = round
         )
         for (index <- bootstrapping.configuration.matchmakerIndex) {
@@ -551,7 +553,7 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
           votes.maxBy(_.voteRound).voteValue
         }
         val matchPhase2a = MatchPhase2a(
-          epoch = phase1.configuration.epoch,
+          matchmakerConfiguration = phase1.configuration,
           round = phase1.round,
           value = value
         )
@@ -608,10 +610,7 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         phase2.resendMatchPhase2as.stop()
 
         // Inform the matchmakers, the other reconfigurers, and the leaders.
-        val matchChosen = MatchChosen(
-          epoch = phase2.configuration.epoch,
-          value = phase2.newConfiguration
-        )
+        val matchChosen = MatchChosen(value = phase2.newConfiguration)
         leaders.foreach(_.send(LeaderInbound().withMatchChosen(matchChosen)))
         otherReconfigurers.foreach(
           _.send(ReconfigurerInbound().withMatchChosen(matchChosen))
@@ -703,7 +702,7 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
     val newRound =
       roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
     val matchPhase1a = MatchPhase1a(
-      epoch = configuration.epoch,
+      matchmakerConfiguration = configuration,
       round = newRound
     )
     for (index <- configuration.matchmakerIndex) {
@@ -727,20 +726,10 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
   // API ///////////////////////////////////////////////////////////////////////
   // For the JS frontend.
   def reconfigureF1(
-      epoch: Int,
-      matchmaker1: Int,
-      matchmaker2: Int,
-      matchmaker3: Int,
-      newMatchmaker1: Int,
-      newMatchmaker2: Int,
-      newMatchmaker3: Int
+      matchmaker1: MatchmakerIndex,
+      matchmaker2: MatchmakerIndex,
+      matchmaker3: MatchmakerIndex
   ): Unit = {
-    reconfigure(
-      Reconfigure(
-        epoch = epoch,
-        matchmakerIndex = Seq(matchmaker1, matchmaker2, matchmaker3),
-        newMatchmakerIndex = Seq(newMatchmaker1, newMatchmaker2, newMatchmaker3)
-      )
-    )
+    reconfigure(Set(matchmaker1, matchmaker2, matchmaker3))
   }
 }
