@@ -7,7 +7,7 @@ import org.scalatest.FlatSpec
 class MatchmakerMultiPaxosTest extends FlatSpec {
   "A MatchmakerMultiPaxos instance" should "work correctly" in {
     val runLength = 250
-    val numRuns = 500
+    val numRuns = 100
     info(s"runLength = $runLength, numRuns = $numRuns")
 
     for (f <- 1 to 2) {
