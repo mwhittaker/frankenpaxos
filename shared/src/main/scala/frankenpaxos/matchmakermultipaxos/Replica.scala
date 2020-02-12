@@ -41,9 +41,9 @@ case class ReplicaOptions(
     // performance debugging.
     unsafeDontUseClientTable: Boolean,
     // If a replica has a hole in its log for a certain amount of time, it
-    // sends a Recover message to the leader (indirectly through a replica
-    // proxy). The time to recover is chosen uniformly at random from the range
-    // defined by these two options.
+    // sends a Recover message to the leader and to the other replicas. The
+    // time to recover is chosen uniformly at random from the range defined by
+    // these two options.
     recoverLogEntryMinPeriod: java.time.Duration,
     recoverLogEntryMaxPeriod: java.time.Duration,
     // If `unsafeDontRecover` is true, replicas don't make any attempt to
@@ -177,7 +177,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var numChosen: Int = 0
 
-  // The client table used to ensure exactly once execution semantics. Every
+  // The client table used to ensure exactly-once execution semantics. Every
   // entry in the client table is keyed by a clients address and its pseudonym
   // and maps to the largest executed id for the client and the result of
   // executing the command. Note that unlike with generalized protocols like
@@ -200,7 +200,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                                          options.recoverLogEntryMaxPeriod),
         () => {
           // Ideally, we would send to the replicas first and then send to the
-          // leaders if that fails, but recover is almost never run so its not
+          // leaders if that fails, but recovery is almost never run so its not
           // necessary to optimize it.
           val recover = Recover(slot = executedWatermark)
           otherReplicas.foreach(_.send(ReplicaInbound().withRecover(recover)))

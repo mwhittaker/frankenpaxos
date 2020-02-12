@@ -156,10 +156,10 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
       resendMatchPhase2as: Transport#Timer
   ) extends State
 
-// Fields ////////////////////////////////////////////////////////////////////
+  // Fields ////////////////////////////////////////////////////////////////////
   private val index = config.reconfigurerAddresses.indexOf(address)
 
-// Leader channels.
+  // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
     for (a <- config.leaderAddresses)
       yield chan[Leader[Transport]](a, Leader.serializer)
@@ -283,8 +283,8 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Reconfigure is like `handleReconfigure` except we don't assume it comes
-  // from a leader. This is mostly used to trigger reconfigurations from the
-  // command line.
+  // from a leader. This is mostly used to trigger reconfigurations manually
+  // from the JS visualization.
   private def reconfigure(matchmakerIndices: Set[MatchmakerIndex]): Unit = {
     state match {
       case idle: Idle =>
@@ -356,7 +356,8 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
     state match {
       case idle: Idle =>
         val leader = chan[Leader[Transport]](src, Leader.serializer)
-        if (reconfigure.matchmakerConfiguration.epoch < idle.configuration.epoch) {
+        if (reconfigure.matchmakerConfiguration.epoch <
+              idle.configuration.epoch) {
           // The reconfigure is stale. We have a more recent configuration.
           leader.send(
             LeaderInbound()
@@ -486,7 +487,7 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         // Stop our timer.
         bootstrapping.resendBootstraps.stop()
 
-        // Send Phase1as, pick round
+        // Send Phase1as.
         val round =
           roundSystem.nextClassicRound(leaderIndex = index, round = -1)
         val matchPhase1a = MatchPhase1a(

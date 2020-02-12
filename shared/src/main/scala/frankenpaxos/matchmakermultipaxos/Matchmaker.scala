@@ -114,23 +114,23 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   //   2 | S |
   //     +---+
   //   1 | R |
-  //     +---+ <-- gcWatermark
+  //     +---+ <-- gcWatermark (1)
   //   0 |###|
   //     +---+
   //
   // All entries below the gcWatermark are garbage collected. Moreover, when we
   // reconfigure from one set of matchmakers to another, the new matchmakers
-  // begin withe same exact log. These initial entries all lie below a
+  // begin with the same exact log. These initial entries all lie below a
   // reconfigureWatermark. That looks something like this:
   //
   //     |   |
   //     +---+
   //   3 | T |
-  //     +---+ <-- reconfigureWatermark
+  //     +---+ <-- reconfigureWatermark (3)
   //   2 | S |
   //     +---+
   //   1 | R |
-  //     +---+ <-- gcWatermark
+  //     +---+ <-- gcWatermark (1)
   //   0 |###|
   //     +---+
   //
@@ -180,12 +180,18 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   // Fields ////////////////////////////////////////////////////////////////////
   private val index = config.matchmakerAddresses.indexOf(address)
 
+  // Recall that we can reconfigure from one set of matchmakers to another. We
+  // assign each set of matchmakers an epoch and reconfigure from one epoch to
+  // the next. A physical matchmaker may play the role of multiple logical
+  // matchmakers in different epochs.
   @JSExport
   protected var matchmakerStates = mutable.SortedMap[Epoch, MatchmakerState]()
 
   @JSExport
   protected var acceptorStates = mutable.SortedMap[Epoch, AcceptorState]()
 
+  // For simplicity, we assume the first 2f+1 matchmakers are in the first
+  // epoch.
   if (index < 2 * config.f + 1) {
     matchmakerStates(0) = Normal(
       gcWatermark = 0,
@@ -219,7 +225,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       case Request.GarbageCollect(_) => "GarbageCollect"
       case Request.Stop(_)           => "Stop"
       case Request.Bootstrap(_)      => "Bootstrap"
-      case Request.MatchPhase1A(_)   => "McPtaphase1a"
+      case Request.MatchPhase1A(_)   => "MatchPhase1a"
       case Request.MatchPhase2A(_)   => "MatchPhase2a"
       case Request.MatchChosen(_)    => "MatchChosen"
       case Request.Empty =>
@@ -304,7 +310,8 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     }
     matchmakerStates(epoch) = normal
 
-    // TODO(mwhittaker): Fix this now that we do do re-sends.
+    // TODO(mwhittaker): Don't do re-sends?
+    //
     // Recall that a matchmaker's log looks something like this:
     //
     //     |   |
@@ -357,6 +364,10 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       metrics.nacksSentTotal.inc()
       return
     }
+
+    // TODO(mwhittaker): Check to see if the round is less than the largest
+    // round we have. If it is, we have to reject it. How did this get lost? I
+    // thought I had code for this. Woops.
 
     // Send back all previous configurations and store the (potentially new)
     // acceptor group.

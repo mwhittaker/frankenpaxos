@@ -127,6 +127,11 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var round: Int = -1
 
+  // This acceptor knows that all log entries less than persistedWatermark have
+  // been persisted on at least f+1 replicas. The acceptor is free to garbage
+  // collect all log entries less than persistedWatermark. If a leader contacts
+  // the acceptor about one of these log entries, the acceptor will inform the
+  // leader that the value was already chosen.
   @JSExport
   protected var persistedWatermark: Int = 0
 
@@ -216,9 +221,12 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     val leader = chan[Leader[Transport]](src, Leader.serializer)
 
-    // If we receive a Phase2a for a slot that we know has been persited, we do
-    // not vote for it. Instead, we notify the leader that the value has
+    // If we receive a Phase2a for a slot that we know has been persisted, we
+    // do not vote for it. Instead, we notify the leader that the value has
     // already been persisted.
+    //
+    // TODO(mwhittaker): Remember why we do this. The persisted field doesn't
+    // seem like it's ever used.
     if (phase2a.slot < persistedWatermark) {
       leader.send(
         LeaderInbound().withPhase2B(
