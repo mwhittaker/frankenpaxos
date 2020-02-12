@@ -1,5 +1,21 @@
 package frankenpaxos.quorums
 
+// A SimpleMajority quorum system with a set of nodes X is the quorum system in
+// which every majority of X serves as a read and write qourum. For example,
+// given nodes a, b, c, d, e, the following are the quorums:
+//
+//   - a, b, c
+//   - a, b, d
+//   - a, b, e
+//   - a, c, d
+//   - a, c, e
+//   - a, d, e
+//   - a, b, c, d
+//   - a, b, c, e
+//   - a, b, d, e
+//   - a, c, d, e
+//   - b, c, d, e
+//   - a, b, c, d, e
 class SimpleMajority[T](
     private[quorums] val members: Set[T],
     seed: Long = System.currentTimeMillis()

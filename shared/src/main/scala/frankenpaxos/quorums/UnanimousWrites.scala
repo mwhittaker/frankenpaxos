@@ -1,5 +1,19 @@
 package frankenpaxos.quorums
 
+// A UnanimousWrites quorum system with a set of nodes X is the quorum system
+// with a single write quorum, X, and with every non-empty subset of X acting
+// as a read quroum. For example, given nodes a, b, c, these are the read and
+// write quorums:
+//
+//   Write Quorums    Read Quorums
+//   =============    ============
+//   a, b, c          a
+//                    b
+//                    c
+//                    a, b
+//                    a, c
+//                    b, c
+//                    a, b, c
 class UnanimousWrites[T](
     private[quorums] val members: Set[T],
     seed: Long = System.currentTimeMillis
