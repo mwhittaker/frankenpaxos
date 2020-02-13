@@ -86,6 +86,86 @@ object RoundSystem {
     ): Option[Round] = None
   }
 
+  // A ClassicStutteredRoundRobin round system assigns classic rounds to
+  // leaders round-robin, but in groups of size stutterLength. There are no
+  // fast rounds. Here's an example with n = 3 and stutterLength = 2:
+  //
+  //                       | Round | Leader | Round Type |
+  //                       +-------+--------+------------+
+  //                       | 0     | 0      | classic    |
+  //                       | 1     | 0      | classic    |
+  //                       | 2     | 1      | classic    |
+  //                       | 3     | 1      | classic    |
+  //                       | 4     | 2      | classic    |
+  //                       | 5     | 2      | classic    |
+  //                       | 6     | 0      | classic    |
+  //
+  // Here's an example with n = 3 and stutterLength = 3:
+  //
+  //                       | Round | Leader | Round Type |
+  //                       +-------+--------+------------+
+  //                       | 0     | 0      | classic    |
+  //                       | 1     | 0      | classic    |
+  //                       | 2     | 0      | classic    |
+  //                       | 3     | 1      | classic    |
+  //                       | 4     | 1      | classic    |
+  //                       | 5     | 1      | classic    |
+  //                       | 6     | 2      | classic    |
+  //
+  // This round system approximates a round system with rounds of the form (i,
+  // p, j) where i and j are integers and p is a unique proposer id. With this
+  // round system, every proposer in round r owns round r+1 as well.
+  class ClassicStutteredRoundRobin(
+      private val n: Int,
+      private val stutterLength: Int
+  ) extends RoundSystem {
+    require(n > 1)
+    require(stutterLength >= 1)
+
+    override def toString(): String =
+      s"ClassicRoundRobin(n=$n, stutterLength=$stutterLength)"
+    override def numLeaders(): Int = n
+    override def leader(round: Round): LeaderIndex = (round / stutterLength) % n
+    override def roundType(round: Round): RoundType = ClassicRound
+
+    override def nextClassicRound(
+        leaderIndex: LeaderIndex,
+        round: Round
+    ): Round = {
+      if (round < 0) {
+        leaderIndex * stutterLength
+      } else if (leader(round + 1) == leaderIndex) {
+        round + 1
+      } else {
+        // n = 3, stutterLength = 3, leaderIndex = 1
+        //
+        //   round   leader
+        //   0       0      \  <--- start of chuck
+        //   1       0       |
+        //   2       0       |
+        //   3       1       |       \  <--- start of stutter
+        //   4       1       | chunk  | stutter
+        //   5       1       |       /
+        //   6       2       |
+        //   7       2       |
+        //   8       2      /
+        val chunkLength = n * stutterLength
+        val startOfChunk = chunkLength * (round / chunkLength)
+        val startOfStutter = startOfChunk + (leaderIndex * stutterLength)
+        if (leader(round) < leaderIndex) {
+          startOfStutter
+        } else {
+          startOfStutter + chunkLength
+        }
+      }
+    }
+
+    override def nextFastRound(
+        leaderIndex: LeaderIndex,
+        round: Round
+    ): Option[Round] = None
+  }
+
   // A RoundZeroFast round system assigns round 0 to leader 0 and then assigns
   // rounds round-robin. Round 0 is fast, and all other rounds are classic.
   // This round system is used in BPaxos (and implicitly in EPaxos). Here's an

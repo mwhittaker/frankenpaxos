@@ -70,6 +70,233 @@ class RoundSystemSpec extends FlatSpec with Matchers {
     }
   }
 
+  // ClassicStutteredRoundRobin. ///////////////////////////////////////////////
+  "ClassicStutteredRoundRobin" should "implement numLeaders correctly" in {
+    for (stutterLength <- 1 to 10) {
+      val rs = new RoundSystem.ClassicStutteredRoundRobin(n = 3, stutterLength)
+      rs.numLeaders shouldBe 3
+    }
+  }
+
+  it should "implement leader (3, 1) correctly" in {
+    val rs =
+      new RoundSystem.ClassicStutteredRoundRobin(n = 3, stutterLength = 1)
+    rs.leader(0) shouldBe 0
+    rs.leader(1) shouldBe 1
+    rs.leader(2) shouldBe 2
+    rs.leader(3) shouldBe 0
+    rs.leader(4) shouldBe 1
+    rs.leader(5) shouldBe 2
+    rs.leader(6) shouldBe 0
+    rs.leader(7) shouldBe 1
+    rs.leader(8) shouldBe 2
+  }
+
+  it should "implement leader stutter (3, 2) correctly" in {
+    val rs =
+      new RoundSystem.ClassicStutteredRoundRobin(n = 3, stutterLength = 2)
+    rs.leader(0) shouldBe 0
+    rs.leader(1) shouldBe 0
+    rs.leader(2) shouldBe 1
+    rs.leader(3) shouldBe 1
+    rs.leader(4) shouldBe 2
+    rs.leader(5) shouldBe 2
+    rs.leader(6) shouldBe 0
+    rs.leader(7) shouldBe 0
+    rs.leader(8) shouldBe 1
+  }
+
+  it should "implement leader stutter (3, 3) correctly" in {
+    val rs =
+      new RoundSystem.ClassicStutteredRoundRobin(n = 3, stutterLength = 3)
+    rs.leader(0) shouldBe 0
+    rs.leader(1) shouldBe 0
+    rs.leader(2) shouldBe 0
+    rs.leader(3) shouldBe 1
+    rs.leader(4) shouldBe 1
+    rs.leader(5) shouldBe 1
+    rs.leader(6) shouldBe 2
+    rs.leader(7) shouldBe 2
+    rs.leader(8) shouldBe 2
+  }
+
+  it should "implement leader stutter (2, 2) correctly" in {
+    val rs =
+      new RoundSystem.ClassicStutteredRoundRobin(n = 2, stutterLength = 2)
+    rs.leader(0) shouldBe 0
+    rs.leader(1) shouldBe 0
+    rs.leader(2) shouldBe 1
+    rs.leader(3) shouldBe 1
+    rs.leader(4) shouldBe 0
+    rs.leader(5) shouldBe 0
+    rs.leader(6) shouldBe 1
+    rs.leader(7) shouldBe 1
+    rs.leader(8) shouldBe 0
+  }
+
+  it should "implement leader stutter (2, 3) correctly" in {
+    val rs =
+      new RoundSystem.ClassicStutteredRoundRobin(n = 2, stutterLength = 3)
+    rs.leader(0) shouldBe 0
+    rs.leader(1) shouldBe 0
+    rs.leader(2) shouldBe 0
+    rs.leader(3) shouldBe 1
+    rs.leader(4) shouldBe 1
+    rs.leader(5) shouldBe 1
+    rs.leader(6) shouldBe 0
+    rs.leader(7) shouldBe 0
+    rs.leader(8) shouldBe 0
+  }
+
+  it should "implement roundType correctly" in {
+    val rs =
+      new RoundSystem.ClassicStutteredRoundRobin(n = 3, stutterLength = 1)
+    for (i <- 0 until 10) {
+      rs.roundType(i) shouldBe ClassicRound
+    }
+  }
+
+  it should "implement nextClassicRound (3, 1) correctly" in {
+    val rs =
+      new RoundSystem.ClassicStutteredRoundRobin(n = 3, stutterLength = 1)
+
+    rs.nextClassicRound(leaderIndex = 0, round = -1) shouldBe 0
+    rs.nextClassicRound(leaderIndex = 0, round = 0) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 0, round = 1) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 0, round = 2) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 0, round = 3) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 0, round = 4) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 0, round = 5) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 0, round = 6) shouldBe 9
+
+    rs.nextClassicRound(leaderIndex = 1, round = -1) shouldBe 1
+    rs.nextClassicRound(leaderIndex = 1, round = 0) shouldBe 1
+    rs.nextClassicRound(leaderIndex = 1, round = 1) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 1, round = 2) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 1, round = 3) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 1, round = 4) shouldBe 7
+    rs.nextClassicRound(leaderIndex = 1, round = 5) shouldBe 7
+    rs.nextClassicRound(leaderIndex = 1, round = 6) shouldBe 7
+
+    rs.nextClassicRound(leaderIndex = 2, round = -1) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 2, round = 0) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 2, round = 1) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 2, round = 2) shouldBe 5
+    rs.nextClassicRound(leaderIndex = 2, round = 3) shouldBe 5
+    rs.nextClassicRound(leaderIndex = 2, round = 4) shouldBe 5
+    rs.nextClassicRound(leaderIndex = 2, round = 5) shouldBe 8
+    rs.nextClassicRound(leaderIndex = 2, round = 6) shouldBe 8
+  }
+
+  it should "implement nextClassicRound (3, 2) correctly" in {
+    val rs =
+      new RoundSystem.ClassicStutteredRoundRobin(n = 3, stutterLength = 2)
+
+    rs.nextClassicRound(leaderIndex = 0, round = -1) shouldBe 0
+    rs.nextClassicRound(leaderIndex = 0, round = 0) shouldBe 1
+    rs.nextClassicRound(leaderIndex = 0, round = 1) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 0, round = 2) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 0, round = 3) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 0, round = 4) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 0, round = 5) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 0, round = 6) shouldBe 7
+    rs.nextClassicRound(leaderIndex = 0, round = 7) shouldBe 12
+    rs.nextClassicRound(leaderIndex = 0, round = 8) shouldBe 12
+    rs.nextClassicRound(leaderIndex = 0, round = 9) shouldBe 12
+
+    rs.nextClassicRound(leaderIndex = 1, round = -1) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 1, round = 0) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 1, round = 1) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 1, round = 2) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 1, round = 3) shouldBe 8
+    rs.nextClassicRound(leaderIndex = 1, round = 4) shouldBe 8
+    rs.nextClassicRound(leaderIndex = 1, round = 5) shouldBe 8
+    rs.nextClassicRound(leaderIndex = 1, round = 6) shouldBe 8
+    rs.nextClassicRound(leaderIndex = 1, round = 7) shouldBe 8
+    rs.nextClassicRound(leaderIndex = 1, round = 8) shouldBe 9
+    rs.nextClassicRound(leaderIndex = 1, round = 9) shouldBe 14
+
+    rs.nextClassicRound(leaderIndex = 2, round = -1) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 2, round = 0) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 2, round = 1) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 2, round = 2) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 2, round = 3) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 2, round = 4) shouldBe 5
+    rs.nextClassicRound(leaderIndex = 2, round = 5) shouldBe 10
+    rs.nextClassicRound(leaderIndex = 2, round = 6) shouldBe 10
+    rs.nextClassicRound(leaderIndex = 2, round = 7) shouldBe 10
+    rs.nextClassicRound(leaderIndex = 2, round = 8) shouldBe 10
+    rs.nextClassicRound(leaderIndex = 2, round = 9) shouldBe 10
+  }
+
+  it should "implement nextClassicRound (3, 3) correctly" in {
+    val rs =
+      new RoundSystem.ClassicStutteredRoundRobin(n = 3, stutterLength = 3)
+
+    rs.nextClassicRound(leaderIndex = 0, round = -1) shouldBe 0
+    rs.nextClassicRound(leaderIndex = 0, round = 0) shouldBe 1
+    rs.nextClassicRound(leaderIndex = 0, round = 1) shouldBe 2
+    rs.nextClassicRound(leaderIndex = 0, round = 2) shouldBe 9
+    rs.nextClassicRound(leaderIndex = 0, round = 3) shouldBe 9
+    rs.nextClassicRound(leaderIndex = 0, round = 4) shouldBe 9
+    rs.nextClassicRound(leaderIndex = 0, round = 5) shouldBe 9
+    rs.nextClassicRound(leaderIndex = 0, round = 6) shouldBe 9
+    rs.nextClassicRound(leaderIndex = 0, round = 7) shouldBe 9
+    rs.nextClassicRound(leaderIndex = 0, round = 8) shouldBe 9
+    rs.nextClassicRound(leaderIndex = 0, round = 9) shouldBe 10
+    rs.nextClassicRound(leaderIndex = 0, round = 10) shouldBe 11
+    rs.nextClassicRound(leaderIndex = 0, round = 11) shouldBe 18
+    rs.nextClassicRound(leaderIndex = 0, round = 12) shouldBe 18
+    rs.nextClassicRound(leaderIndex = 0, round = 13) shouldBe 18
+    rs.nextClassicRound(leaderIndex = 0, round = 14) shouldBe 18
+    rs.nextClassicRound(leaderIndex = 0, round = 15) shouldBe 18
+
+    rs.nextClassicRound(leaderIndex = 1, round = -1) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 1, round = 0) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 1, round = 1) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 1, round = 2) shouldBe 3
+    rs.nextClassicRound(leaderIndex = 1, round = 3) shouldBe 4
+    rs.nextClassicRound(leaderIndex = 1, round = 4) shouldBe 5
+    rs.nextClassicRound(leaderIndex = 1, round = 5) shouldBe 12
+    rs.nextClassicRound(leaderIndex = 1, round = 6) shouldBe 12
+    rs.nextClassicRound(leaderIndex = 1, round = 7) shouldBe 12
+    rs.nextClassicRound(leaderIndex = 1, round = 8) shouldBe 12
+    rs.nextClassicRound(leaderIndex = 1, round = 9) shouldBe 12
+    rs.nextClassicRound(leaderIndex = 1, round = 10) shouldBe 12
+    rs.nextClassicRound(leaderIndex = 1, round = 11) shouldBe 12
+    rs.nextClassicRound(leaderIndex = 1, round = 12) shouldBe 13
+    rs.nextClassicRound(leaderIndex = 1, round = 13) shouldBe 14
+    rs.nextClassicRound(leaderIndex = 1, round = 14) shouldBe 21
+    rs.nextClassicRound(leaderIndex = 1, round = 15) shouldBe 21
+
+    rs.nextClassicRound(leaderIndex = 2, round = -1) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 0) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 1) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 2) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 3) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 4) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 5) shouldBe 6
+    rs.nextClassicRound(leaderIndex = 2, round = 6) shouldBe 7
+    rs.nextClassicRound(leaderIndex = 2, round = 7) shouldBe 8
+    rs.nextClassicRound(leaderIndex = 2, round = 8) shouldBe 15
+    rs.nextClassicRound(leaderIndex = 2, round = 9) shouldBe 15
+    rs.nextClassicRound(leaderIndex = 2, round = 10) shouldBe 15
+    rs.nextClassicRound(leaderIndex = 2, round = 11) shouldBe 15
+    rs.nextClassicRound(leaderIndex = 2, round = 12) shouldBe 15
+    rs.nextClassicRound(leaderIndex = 2, round = 13) shouldBe 15
+    rs.nextClassicRound(leaderIndex = 2, round = 14) shouldBe 15
+    rs.nextClassicRound(leaderIndex = 2, round = 15) shouldBe 16
+  }
+
+  it should "implement nextFastRound correctly" in {
+    val rs = new RoundSystem.ClassicStutteredRoundRobin(3, 1)
+    for (leader <- 0 until 3) {
+      for (round <- -1 until 10) {
+        rs.nextFastRound(leader, round) shouldBe None
+      }
+    }
+  }
+
   // RoundZeroFast. ////////////////////////////////////////////////////////////
   "RoundZeroFast" should "implement numLeaders correctly" in {
     val rs = new RoundSystem.RoundZeroFast(3)
