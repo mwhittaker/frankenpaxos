@@ -1174,6 +1174,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           val garbageCollect = GarbageCollect(matchmakerConfiguration =
                                                 matchmakerConfiguration,
                                               gcWatermark = round)
+          // TODO(mwhittaker): Which matchmakers should we send this to?
           matchmakers.foreach(
             _.send(MatchmakerInbound().withGarbageCollect(garbageCollect))
           )
@@ -1587,5 +1588,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                                  waitingForReconfigure.quorumSystem,
                                  waitingForReconfigure.quorumSystemProto)
     }
+  }
+
+  // API ///////////////////////////////////////////////////////////////////////
+  // For the JS frontend.
+  def reconfigure(): Unit = {
+    becomeLeader(
+      roundSystem.nextClassicRound(leaderIndex = index, round = round)
+    )
   }
 }

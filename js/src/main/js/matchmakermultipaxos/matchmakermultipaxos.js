@@ -143,6 +143,8 @@ const leader_info = {
 
   template: `
     <div>
+      <button v-on:click="node.actor.reconfigure()">Reconfigure</button>
+
       <div>
         round = {{node.actor.round}}
       </div>
