@@ -118,27 +118,10 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   //   0 |###|
   //     +---+
   //
-  // All entries below the gcWatermark are garbage collected. Moreover, when we
-  // reconfigure from one set of matchmakers to another, the new matchmakers
-  // begin with the same exact log. These initial entries all lie below a
-  // reconfigureWatermark. That looks something like this:
-  //
-  //     |   |
-  //     +---+
-  //   3 | T |
-  //     +---+ <-- reconfigureWatermark (3)
-  //   2 | S |
-  //     +---+
-  //   1 | R |
-  //     +---+ <-- gcWatermark (1)
-  //   0 |###|
-  //     +---+
-  //
-  // MatchRequests for entries below the reconfigureWatermark are nacked.
+  // All entries below the gcWatermark are garbage collected.
   @JSExportAll
   case class Log(
       gcWatermark: Int,
-      reconfigureWatermark: Int,
       configurations: mutable.SortedMap[Round, Configuration]
   )
 
@@ -153,29 +136,21 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Normal(
       gcWatermark: Int,
-      reconfigureWatermark: Int,
       configurations: mutable.SortedMap[Round, Configuration]
   ) extends MatchmakerState
 
   @JSExportAll
   case class HasStopped(
       gcWatermark: Int,
-      reconfigureWatermark: Int,
       configurations: mutable.SortedMap[Round, Configuration]
   ) extends MatchmakerState
 
   @JSExportAll
-  sealed trait AcceptorState
-
-  @JSExportAll
-  case class NotChosen(
+  case class AcceptorState(
       round: Int,
       voteRound: Int,
       voteValue: Option[MatchmakerConfiguration]
-  ) extends AcceptorState
-
-  @JSExportAll
-  case class YesChosen(value: MatchmakerConfiguration) extends AcceptorState
+  )
 
   // Fields ////////////////////////////////////////////////////////////////////
   private val index = config.matchmakerAddresses.indexOf(address)
@@ -195,10 +170,10 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
   if (index < 2 * config.f + 1) {
     matchmakerStates(0) = Normal(
       gcWatermark = 0,
-      reconfigureWatermark = 0,
       configurations = mutable.SortedMap()
     )
-    acceptorStates(0) = NotChosen(round = -1, voteRound = -1, voteValue = None)
+    acceptorStates(0) =
+      AcceptorState(round = -1, voteRound = -1, voteValue = None)
   }
 
   // Helpers ///////////////////////////////////////////////////////////////////
@@ -213,6 +188,47 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       x
     } else {
       e
+    }
+  }
+
+  private def transitionToHasStopped(
+      epoch: Epoch,
+      reconfigurerIndex: ReconfigurerIndex
+  ): HasStopped = {
+    matchmakerStates(epoch) match {
+      case pending: Pending =>
+        pending.logs.get(reconfigurerIndex) match {
+          case None =>
+            logger.fatal(
+              s"A matchmaker was told to stop in epoch $epoch, " +
+                s"reconfigurerIndex $reconfigurerIndex, but is still " +
+                s"pending. This means that some matchmaker configuration " +
+                s"and corresponding log was chosen in epoch $epoch (we " +
+                s"can't stop an epoch before it starts), but we haven't " +
+                s"learned that it was chosen until now. Before a " +
+                s"configuration can be chosen, its log must be sent to all " +
+                s"of the matchmakers. Thus, we must have the log stored here."
+            )
+
+          case Some(log) =>
+            val hasStopped = HasStopped(
+              gcWatermark = log.gcWatermark,
+              configurations = log.configurations
+            )
+            matchmakerStates(epoch) = hasStopped
+            hasStopped
+        }
+
+      case normal: Normal =>
+        val hasStopped = HasStopped(
+          gcWatermark = normal.gcWatermark,
+          configurations = normal.configurations
+        )
+        matchmakerStates(epoch) = hasStopped
+        hasStopped
+
+      case hasStopped: HasStopped =>
+        hasStopped
     }
   }
 
@@ -281,43 +297,25 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
           case Some(log) =>
             Normal(gcWatermark = log.gcWatermark,
-                   reconfigureWatermark = log.reconfigureWatermark,
                    configurations = log.configurations)
         }
 
       case normal: Normal => normal
 
       case stopped: HasStopped =>
-        // If we're currently stopped, then the leader has to give up on this
-        // epoch and move to the next epoch. If we know the next epoch, we let
-        // the leader know what it is. Otherwise, we just let them know that
-        // we're stopped.
-        //
-        // TODO(mwhittaker): We could inform the leader of the largest epoch we
-        // know about, but it's probably not worth the optimization.
-        acceptorStates(epoch) match {
-          case _: NotChosen =>
-            leader.send(
-              LeaderInbound().withStopped(Stopped(epoch))
-            )
-
-          case chosen: YesChosen =>
-            leader.send(
-              LeaderInbound().withMatchChosen(MatchChosen(value = chosen.value))
-            )
-        }
+        // If we're currently stopped, then we let the leader know. The leader
+        // has to give up on this epoch and move to the next epoch.
+        leader.send(LeaderInbound().withStopped(Stopped(epoch)))
         return
     }
     matchmakerStates(epoch) = normal
 
-    // TODO(mwhittaker): Don't do re-sends?
-    //
     // Recall that a matchmaker's log looks something like this:
     //
     //     |   |
     //     +---+
     //   3 | T |
-    //     +---+ <-- reconfigureWatermark
+    //     +---+
     //   2 | S |
     //     +---+
     //   1 | R |
@@ -325,14 +323,9 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     //   0 |###|
     //     +---+
     //
-    // If a MatchRequest's round is larger than any previously seen, larger
-    // than the reconfigureWatermark, and larger than the gcWatermark, then we
-    // can process it.
-    //
-    // If the MatchRequest's round has already been processed, then the
-    // Matchmaker resends the response, unless the round is below the
-    // reconfigureWatermark or below the gcWatermark. In these cases, a nack is
-    // sent back instead.
+    // If a MatchRequest's round is larger than any previously seen and larger
+    // than the gcWatermark, then we can process it. If the MatchRequest's
+    // round has already been processed, then a nack is sent.
     if (matchRequest.configuration.round < normal.gcWatermark) {
       logger.debug(
         s"Matchmaker received a MatchRequest in round " +
@@ -348,26 +341,23 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    if (matchRequest.configuration.round < normal.reconfigureWatermark) {
+    if (!normal.configurations.isEmpty &&
+        matchRequest.configuration.round <= normal.configurations.lastKey) {
       logger.debug(
         s"Matchmaker received a MatchRequest in round " +
-          s"${matchRequest.configuration.round} but has a " +
-          s"reconfigureWatermark of ${normal.reconfigureWatermark}, so the " +
-          s"request is being ignored, and a nack is being sent."
+          s"${matchRequest.configuration.round} but has already processed a " +
+          s"MatchRequest in round ${normal.configurations.lastKey}, so the " +
+          s"request is being ignored, and a nack is being sent back."
       )
       leader.send(
         LeaderInbound()
           .withMatchmakerNack(
-            MatchmakerNack(round = normal.reconfigureWatermark - 1)
+            MatchmakerNack(round = normal.configurations.lastKey)
           )
       )
       metrics.nacksSentTotal.inc()
       return
     }
-
-    // TODO(mwhittaker): Check to see if the round is less than the largest
-    // round we have. If it is, we have to reject it. How did this get lost? I
-    // thought I had code for this. Woops.
 
     // Send back all previous configurations and store the (potentially new)
     // acceptor group.
@@ -418,21 +408,13 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
           case Some(log) =>
             Normal(gcWatermark = log.gcWatermark,
-                   reconfigureWatermark = log.reconfigureWatermark,
                    configurations = log.configurations)
         }
 
       case normal: Normal => normal
 
       case stopped: HasStopped =>
-        acceptorStates(epoch) match {
-          case _: NotChosen =>
-            leader.send(LeaderInbound().withStopped(Stopped(epoch)))
-          case chosen: YesChosen =>
-            leader.send(
-              LeaderInbound().withMatchChosen(MatchChosen(value = chosen.value))
-            )
-        }
+        leader.send(LeaderInbound().withStopped(Stopped(epoch)))
         return
     }
 
@@ -464,50 +446,18 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
     val epoch = stop.matchmakerConfiguration.epoch
     logger.check(matchmakerStates.contains(epoch))
 
-    val (watermark, configs) = matchmakerStates(epoch) match {
-      case pending: Pending =>
-        val reconfigurerIndex =
-          stop.matchmakerConfiguration.reconfigurerIndex
-        pending.logs.get(reconfigurerIndex) match {
-          case None =>
-            logger.fatal(
-              s"Matchmaker received a Stop with matchmakerConfiguration " +
-                s"from reconfigurer ${reconfigurerIndex}, but it doesn't " +
-                s"have a pending log from this reconfigurer. This should " +
-                s"be impossible."
-            )
-
-          case Some(log) =>
-            matchmakerStates(epoch) = HasStopped(
-              gcWatermark = log.gcWatermark,
-              reconfigureWatermark = log.reconfigureWatermark,
-              configurations = log.configurations
-            )
-            (log.reconfigureWatermark, log.configurations)
-        }
-
-      case normal: Normal =>
-        matchmakerStates(epoch) = HasStopped(
-          gcWatermark = normal.gcWatermark,
-          reconfigureWatermark = normal.reconfigureWatermark,
-          configurations = normal.configurations
-        )
-        (normal.gcWatermark, normal.configurations)
-
-      case stopped: HasStopped =>
-        // Note that we're already stopped, but for liveness we send back a
-        // StopAck anyway. Sending redundant StopAcks is safe.
-        (stopped.gcWatermark, stopped.configurations)
-    }
-
+    val hasStopped = transitionToHasStopped(
+      epoch,
+      stop.matchmakerConfiguration.reconfigurerIndex
+    )
     val reconfigurer =
       chan[Reconfigurer[Transport]](src, Reconfigurer.serializer)
     reconfigurer.send(
       ReconfigurerInbound().withStopAck(
         StopAck(matchmakerIndex = index,
                 epoch = epoch,
-                gcWatermark = watermark,
-                configuration = configs.values.toSeq)
+                gcWatermark = hasStopped.gcWatermark,
+                configuration = hasStopped.configurations.values.toSeq)
       )
     )
   }
@@ -523,19 +473,17 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
             bootstrap.reconfigurerIndex ->
               Log(
                 gcWatermark = bootstrap.gcWatermark,
-                reconfigureWatermark = bootstrap.configuration.size,
                 configurations = mutable.SortedMap() ++
                   bootstrap.configuration.map(c => c.round -> c)
               )
           )
         )
         acceptorStates(bootstrap.epoch) =
-          NotChosen(round = -1, voteRound = -1, voteValue = None)
+          AcceptorState(round = -1, voteRound = -1, voteValue = None)
 
       case Some(pending: Pending) =>
         pending.logs(bootstrap.reconfigurerIndex) = Log(
           gcWatermark = bootstrap.gcWatermark,
-          reconfigureWatermark = bootstrap.configuration.size,
           configurations = mutable.SortedMap() ++
             bootstrap.configuration.map(c => c.round -> c)
         )
@@ -569,82 +517,48 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
     // Update our matchmaker state. If we've entered Phase 1, we should be
     // stopped, though we may not have received a Stop.
-    matchmakerStates(epoch) match {
-      case pending: Pending =>
-        val reconfigurerIndex =
-          matchPhase1a.matchmakerConfiguration.reconfigurerIndex
-        pending.logs.get(reconfigurerIndex) match {
-          case None =>
-            logger.fatal(
-              s"Matchmaker received a MatchPhase1a with " +
-                s"matchmakerConfiguration from reconfigurer " +
-                s"${reconfigurerIndex}, but it doesn't have a pending log " +
-                s"from this reconfigurer. This should be impossible."
-            )
-
-          case Some(log) =>
-            matchmakerStates(epoch) = HasStopped(
-              gcWatermark = log.gcWatermark,
-              reconfigureWatermark = log.reconfigureWatermark,
-              configurations = log.configurations
-            )
-        }
-
-      case normal: Normal =>
-        matchmakerStates(epoch) = HasStopped(
-          gcWatermark = normal.gcWatermark,
-          reconfigureWatermark = normal.reconfigureWatermark,
-          configurations = normal.configurations
-        )
-
-      case stopped: HasStopped =>
-    }
+    transitionToHasStopped(
+      epoch,
+      matchPhase1a.matchmakerConfiguration.reconfigurerIndex
+    )
 
     // Update our acceptor state.
     val reconfigurer =
       chan[Reconfigurer[Transport]](src, Reconfigurer.serializer)
-    acceptorStates(epoch) match {
-      case notChosen: NotChosen =>
-        // If we receive an out of date round, we send back a nack.
-        if (matchPhase1a.round < notChosen.round) {
-          logger.debug(
-            s"Matchmaker received a MatchPhase1a message in round " +
-              s"${matchPhase1a.round} but is in round ${notChosen.round}. " +
-              s"The matchmaker is sending back a nack."
+    val acceptorState = acceptorStates(epoch)
+    // If we receive an out of date round, we send back a nack.
+    if (matchPhase1a.round < acceptorState.round) {
+      logger.debug(
+        s"Matchmaker received a MatchPhase1a message in round " +
+          s"${matchPhase1a.round} but is in round ${acceptorState.round}. " +
+          s"The matchmaker is sending back a nack."
+      )
+      reconfigurer.send(
+        ReconfigurerInbound()
+          .withMatchNack(
+            MatchNack(epoch = epoch, round = acceptorState.round)
           )
-          reconfigurer.send(
-            ReconfigurerInbound()
-              .withMatchNack(
-                MatchNack(epoch = epoch, round = notChosen.round)
-              )
-          )
-          return
-        }
-
-        // Otherwise, we update our round and send back a Phase1b message to the
-        // reconfigurer.
-        reconfigurer.send(
-          ReconfigurerInbound().withMatchPhase1B(
-            MatchPhase1b(
-              epoch = epoch,
-              round = matchPhase1a.round,
-              matchmakerIndex = index,
-              vote = notChosen.voteValue.map(
-                v =>
-                  MatchPhase1bVote(voteRound = notChosen.voteRound,
-                                   voteValue = v)
-              )
-            )
-          )
-        )
-        acceptorStates(epoch) = notChosen.copy(round = matchPhase1a.round)
-
-      case chosen: YesChosen =>
-        reconfigurer.send(
-          ReconfigurerInbound()
-            .withMatchChosen(MatchChosen(value = chosen.value))
-        )
+      )
+      return
     }
+
+    // Otherwise, we update our round and send back a Phase1b message to the
+    // reconfigurer.
+    reconfigurer.send(
+      ReconfigurerInbound().withMatchPhase1B(
+        MatchPhase1b(
+          epoch = epoch,
+          round = matchPhase1a.round,
+          matchmakerIndex = index,
+          vote = acceptorState.voteValue.map(
+            v =>
+              MatchPhase1bVote(voteRound = acceptorState.voteRound,
+                               voteValue = v)
+          )
+        )
+      )
+    )
+    acceptorStates(epoch) = acceptorState.copy(round = matchPhase1a.round)
   }
 
   private def handleMatchPhase2a(
@@ -657,154 +571,76 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
     // Update our matchmaker state. If we've entered Phase 2, we should be
     // stopped, though we may not have received a Stop.
-    matchmakerStates(epoch) match {
-      case pending: Pending =>
-        val reconfigurerIndex =
-          matchPhase2a.matchmakerConfiguration.reconfigurerIndex
-        pending.logs.get(reconfigurerIndex) match {
-          case None =>
-            logger.fatal(
-              s"Matchmaker received a MatchPhase2a with " +
-                s"matchmakerConfiguration from reconfigurer " +
-                s"${reconfigurerIndex}, but it doesn't have a pending log " +
-                s"from this reconfigurer. This should be impossible."
-            )
-
-          case Some(log) =>
-            matchmakerStates(epoch) = HasStopped(
-              gcWatermark = log.gcWatermark,
-              reconfigureWatermark = log.reconfigureWatermark,
-              configurations = log.configurations
-            )
-        }
-
-      case normal: Normal =>
-        matchmakerStates(epoch) = HasStopped(
-          gcWatermark = normal.gcWatermark,
-          reconfigureWatermark = normal.reconfigureWatermark,
-          configurations = normal.configurations
-        )
-
-      case stopped: HasStopped =>
-    }
+    transitionToHasStopped(
+      epoch,
+      matchPhase2a.matchmakerConfiguration.reconfigurerIndex
+    )
 
     // Update our acceptor state.
     val reconfigurer =
       chan[Reconfigurer[Transport]](src, Reconfigurer.serializer)
-    acceptorStates(epoch) match {
-      case notChosen: NotChosen =>
-        // If we receive an out of date round, we send back a nack to the
-        // leader.
-        if (matchPhase2a.round < notChosen.round) {
-          logger.debug(
-            s"Matchmaker received a MatchPhase2a message in round " +
-              s"${matchPhase2a.round} but is in round ${notChosen.round}. " +
-              s"The acceptor is sending back a nack."
+    val acceptorState = acceptorStates(epoch)
+    // If we receive an out of date round, we send back a nack to the
+    // leader.
+    if (matchPhase2a.round < acceptorState.round) {
+      logger.debug(
+        s"Matchmaker received a MatchPhase2a message in round " +
+          s"${matchPhase2a.round} but is in round ${acceptorState.round}. " +
+          s"The acceptor is sending back a nack."
+      )
+      reconfigurer.send(
+        ReconfigurerInbound()
+          .withMatchNack(
+            MatchNack(epoch = epoch, round = acceptorState.round)
           )
-          reconfigurer.send(
-            ReconfigurerInbound()
-              .withMatchNack(
-                MatchNack(epoch = epoch, round = notChosen.round)
-              )
-          )
-          return
-        }
-
-        // Otherwise, update our round and send back a Phase2b to the leader.
-        reconfigurer.send(
-          ReconfigurerInbound().withMatchPhase2B(
-            MatchPhase2b(epoch = epoch,
-                         round = matchPhase2a.round,
-                         matchmakerIndex = index)
-          )
-        )
-
-        acceptorStates(epoch) = notChosen.copy(
-          round = matchPhase2a.round,
-          voteRound = matchPhase2a.round,
-          voteValue = Some(matchPhase2a.value)
-        )
-
-      case chosen: YesChosen =>
-        reconfigurer.send(
-          ReconfigurerInbound()
-            .withMatchChosen(MatchChosen(value = chosen.value))
-        )
+      )
+      return
     }
+
+    // Otherwise, update our round and send back a Phase2b to the leader.
+    reconfigurer.send(
+      ReconfigurerInbound().withMatchPhase2B(
+        MatchPhase2b(epoch = epoch,
+                     round = matchPhase2a.round,
+                     matchmakerIndex = index)
+      )
+    )
+
+    acceptorStates(epoch) = acceptorState.copy(
+      round = matchPhase2a.round,
+      voteRound = matchPhase2a.round,
+      voteValue = Some(matchPhase2a.value)
+    )
   }
 
   private def handleMatchChosen(
       src: Transport#Address,
       matchChosen: MatchChosen
   ): Unit = {
+    val epoch = matchChosen.value.epoch
+    logger.check(matchmakerStates.contains(epoch))
+    matchmakerStates(epoch) match {
+      case pending: Pending =>
+        val reconfigurerIndex = matchChosen.value.reconfigurerIndex
+        pending.logs.get(reconfigurerIndex) match {
+          case None =>
+            logger.fatal(
+              s"Matchmaker received a MatchChosen with " +
+                s"matchmakerConfiguration from reconfigurer " +
+                s"${reconfigurerIndex}, but it doesn't have a pending log " +
+                s"from this reconfigurer. This should be impossible."
+            )
 
-    // Update the epoch in which the value was chosen.
-    val oldEpoch = matchChosen.value.epoch - 1
-    if (matchmakerStates.contains(oldEpoch)) {
-      logger.check(acceptorStates.contains(oldEpoch))
+          case Some(log) =>
+            matchmakerStates(epoch) = Normal(
+              gcWatermark = log.gcWatermark,
+              configurations = log.configurations
+            )
+        }
 
-      matchmakerStates(oldEpoch) match {
-        case pending: Pending =>
-          val reconfigurerIndex = matchChosen.value.reconfigurerIndex
-          pending.logs.get(reconfigurerIndex) match {
-            case None =>
-              logger.fatal(
-                s"Matchmaker received a MatchChosen with " +
-                  s"matchmakerConfiguration from reconfigurer " +
-                  s"${reconfigurerIndex}, but it doesn't have a pending log " +
-                  s"from this reconfigurer. This should be impossible."
-              )
-
-            case Some(log) =>
-              matchmakerStates(oldEpoch) = HasStopped(
-                gcWatermark = log.gcWatermark,
-                reconfigureWatermark = log.reconfigureWatermark,
-                configurations = log.configurations
-              )
-          }
-
-        case normal: Normal =>
-          matchmakerStates(oldEpoch) = HasStopped(
-            gcWatermark = normal.gcWatermark,
-            reconfigureWatermark = normal.reconfigureWatermark,
-            configurations = normal.configurations
-          )
-
-        case _: HasStopped =>
-          // Do nothing.
-          ()
-      }
-
-      acceptorStates(oldEpoch) = YesChosen(matchChosen.value)
-    }
-
-    // Update the chosen epoch.
-    val newEpoch = matchChosen.value.epoch
-    if (matchmakerStates.contains(newEpoch)) {
-      matchmakerStates(newEpoch) match {
-        case pending: Pending =>
-          val reconfigurerIndex = matchChosen.value.reconfigurerIndex
-          pending.logs.get(reconfigurerIndex) match {
-            case None =>
-              logger.fatal(
-                s"Matchmaker received a MatchChosen with " +
-                  s"matchmakerConfiguration from reconfigurer " +
-                  s"${reconfigurerIndex}, but it doesn't have a pending log " +
-                  s"from this reconfigurer. This should be impossible."
-              )
-
-            case Some(log) =>
-              matchmakerStates(oldEpoch) = HasStopped(
-                gcWatermark = log.gcWatermark,
-                reconfigureWatermark = log.reconfigureWatermark,
-                configurations = log.configurations
-              )
-          }
-
-        case _: Normal | _: HasStopped =>
-          // Do nothing.
-          ()
-      }
+      case _: Normal | _: HasStopped =>
+        // Do nothing.
+        ()
     }
   }
 }

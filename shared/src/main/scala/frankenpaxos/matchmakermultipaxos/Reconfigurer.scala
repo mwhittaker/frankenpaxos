@@ -610,14 +610,14 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         // Stop our timer.
         phase2.resendMatchPhase2as.stop()
 
-        // Inform the matchmakers, the other reconfigurers, and the leaders.
+        // Inform the new matchmakers, the other reconfigurers, and the
+        // leaders.
         val matchChosen = MatchChosen(value = phase2.newConfiguration)
         leaders.foreach(_.send(LeaderInbound().withMatchChosen(matchChosen)))
         otherReconfigurers.foreach(
           _.send(ReconfigurerInbound().withMatchChosen(matchChosen))
         )
-        for (index <- Set() ++ phase2.configuration.matchmakerIndex ++
-               phase2.newConfiguration.matchmakerIndex) {
+        for (index <- phase2.newConfiguration.matchmakerIndex) {
           matchmakers(index).send(
             MatchmakerInbound().withMatchChosen(matchChosen)
           )

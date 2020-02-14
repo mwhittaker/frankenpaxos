@@ -512,30 +512,17 @@ const matchmaker_info = {
         <frankenpaxos-map
           :map="node.actor.acceptorStates"
           v-slot="{value: state}">
-
-          <div v-if="state.constructor.name.includes('NotChosen')">
-            NotChosen
-            <fp-object :value="state">
-              <fp-field :name="'round'">
-                {{state.round}}
-              </fp-field>
-              <fp-field :name="'voteRound'">
-                {{state.voteRound}}
-              </fp-field>
-              <fp-field :name="'voteValue'">
-                {{state.voteValue}}
-              </fp-field>
-            </fp-object>
-          </div>
-
-          <div v-if="state.constructor.name.includes('YesChosen')">
-            Chosen
-            <fp-object :value="state">
-              <fp-field :name="'value'">
-                {{state.value}}
-              </fp-field>
-            </fp-object>
-          </div>
+          <fp-object>
+            <fp-field :name="'round'">
+              {{state.round}}
+            </fp-field>
+            <fp-field :name="'voteRound'">
+              {{state.voteRound}}
+            </fp-field>
+            <fp-field :name="'voteValue'">
+              {{state.voteValue}}
+            </fp-field>
+          </fp-object>
         </frankenpaxos-map>
       </div>
     </div>
