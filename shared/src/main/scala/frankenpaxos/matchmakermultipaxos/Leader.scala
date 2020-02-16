@@ -210,6 +210,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   type Round = Int
   type Slot = Int
 
+  // TODO(mwhittaker): Move round, chosenWatermark, and nextSlot into state?
+  // TODO(mwhittaker): Move Phase2 GC stuff into GC.
+  // TODO(mwhittaker): Choose better names for watermarks and messages.
   @JSExportAll
   sealed trait State
 
@@ -327,6 +330,22 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       chosenWatermark: Int,
       maxSlot: Int,
       gc: GarbageCollection
+  ) extends State
+
+  @JSExportAll
+  case class Phase2Matchmaking(
+      phase2: Phase2,
+      matchmaking: Matchmaking
+  ) extends State
+
+  @JSExportAll
+  case class Phase212(
+      // `transitionSlot` is the value of `nextSlot` at the point of
+      // transitioning from Phase2Matchmaking to Phase212.
+      transitionSlot: Slot,
+      oldPhase2: Phase2,
+      phase1: Phase1,
+      phase2: Phase2
   ) extends State
 
   // Fields ////////////////////////////////////////////////////////////////////
@@ -491,30 +510,32 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       () => {
         metrics.resendPhase2asTotal.inc()
 
-        state match {
+        val phase2 = state match {
           case Inactive | _: Matchmaking | _: WaitingForReconfigure |
               _: Phase1 =>
             logger.fatal(
               s"The resendPhase2as timer was triggered but the leader is " +
                 s"not in Phase2. Its state is $state."
             )
+          case phase2Matchmaking: Phase2Matchmaking => phase2Matchmaking.phase2
+          case phase212: Phase212                   => phase212.phase2
+          case phase2: Phase2                       => phase2
+        }
 
-          case phase2: Phase2 =>
-            phase2.values.get(chosenWatermark) match {
-              case Some(value) =>
-                val phase2a =
-                  Phase2a(slot = chosenWatermark, round = round, value = value)
-                for (index <- phase2.quorumSystem.nodes) {
-                  acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
-                }
-
-              case None =>
-                logger.debug(
-                  s"The resendPhase2as timer was triggered but there is no " +
-                    s"pending value for slot $chosenWatermark (the chosen " +
-                    s"watermark)."
-                )
+        phase2.values.get(chosenWatermark) match {
+          case Some(value) =>
+            val phase2a =
+              Phase2a(slot = chosenWatermark, round = round, value = value)
+            for (index <- phase2.quorumSystem.nodes) {
+              acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
             }
+
+          case None =>
+            logger.debug(
+              s"The resendPhase2as timer was triggered but there is no " +
+                s"pending value for slot $chosenWatermark (the chosen " +
+                s"watermark)."
+            )
         }
 
         t.start()
@@ -592,6 +613,59 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       x
     } else {
       e
+    }
+  }
+
+  private def stopGcTimers(gc: GarbageCollection): Unit = {
+    gc match {
+      case gc: QueryingReplicas =>
+        gc.resendExecutedWatermarkRequests.stop()
+      case gc: PushingToAcceptors =>
+        gc.resendPersisted.stop()
+      case WaitingForLargerChosenWatermark =>
+      case gc: GarbageCollecting =>
+        gc.resendGarbageCollects.stop()
+      case Done =>
+    }
+  }
+
+  private def stopTimers(state: State): Unit = {
+    state match {
+      case Inactive => ()
+      case matchmaking: Matchmaking =>
+        matchmaking.resendMatchRequests.stop()
+      case waitingForReconfigure: WaitingForReconfigure =>
+        waitingForReconfigure.resendReconfigure.stop()
+      case phase1: Phase1 =>
+        phase1.resendPhase1as.stop()
+      case phase2: Phase2 =>
+        phase2.resendPhase2as.stop()
+        stopGcTimers(phase2.gc)
+      case Phase2Matchmaking(phase2, matchmaking) =>
+        phase2.resendPhase2as.stop()
+        stopGcTimers(phase2.gc)
+        matchmaking.resendMatchRequests.stop()
+      case Phase212(_, oldPhase2, phase1, phase2) =>
+        oldPhase2.resendPhase2as.stop()
+        stopGcTimers(oldPhase2.gc)
+        phase1.resendPhase1as.stop()
+        phase2.resendPhase2as.stop()
+        stopGcTimers(phase2.gc)
+    }
+  }
+
+  private def pendingClientRequests(
+      state: State
+  ): mutable.Buffer[ClientRequest] = {
+    state match {
+      case Inactive | _: Phase2 | _: Phase2Matchmaking | _: Phase212 =>
+        mutable.Buffer()
+      case matchmaking: Matchmaking =>
+        matchmaking.pendingClientRequests
+      case waitingForReconfigure: WaitingForReconfigure =>
+        waitingForReconfigure.pendingClientRequests
+      case phase1: Phase1 =>
+        phase1.pendingClientRequests
     }
   }
 
@@ -684,12 +758,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def processClientRequest(
+      round: Round,
       phase2: Phase2,
       clientRequest: ClientRequest
   ): Unit = {
-    // processClientRequest should only be called in Phase 2.
-    logger.checkEq(state, phase2)
-
     // Send Phase2as to a write quorum.
     val slot = nextSlot
     nextSlot += 1
@@ -707,51 +779,414 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   private def stopBeingLeader(): Unit = {
     metrics.stopBeingLeaderTotal.inc()
-
-    state match {
-      case Inactive =>
-        // Do nothing.
-        {}
-      case matchmaking: Matchmaking =>
-        matchmaking.resendMatchRequests.stop()
-        state = Inactive
-      case waitingForReconfigure: WaitingForReconfigure =>
-        waitingForReconfigure.resendReconfigure.stop()
-        state = Inactive
-      case phase1: Phase1 =>
-        phase1.resendPhase1as.stop()
-        state = Inactive
-      case phase2: Phase2 =>
-        phase2.resendPhase2as.stop()
-        state = Inactive
-    }
+    stopTimers(state)
+    state = Inactive
   }
 
   private def becomeLeader(newRound: Round): Unit = {
+    // TODO(mwhittaker): Add flag to do a i/i+1 leader change.
+
     logger.checkGt(newRound, round)
     logger.check(roundSystem.leader(newRound) == index)
     metrics.becomeLeaderTotal.inc()
 
+    stopTimers(state)
+    val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
     round = newRound
-    val pendingClientRequests: mutable.Buffer[ClientRequest] = state match {
-      case Inactive =>
-        mutable.Buffer()
-      case matchmaking: Matchmaking =>
-        matchmaking.resendMatchRequests.stop()
-        matchmaking.pendingClientRequests
-      case waitingForReconfigure: WaitingForReconfigure =>
-        waitingForReconfigure.resendReconfigure.stop()
-        waitingForReconfigure.pendingClientRequests
-      case phase1: Phase1 =>
-        phase1.resendPhase1as.stop()
-        phase1.pendingClientRequests
-      case phase2: Phase2 =>
-        phase2.resendPhase2as.stop()
-        mutable.Buffer()
+    state = startMatchmaking(round, pendingClientRequests(state), qs, qsp)
+  }
+
+  // processMatchReply processes a MatchReply. There are three possibilities
+  // when processing a MatchReply.
+  //
+  //   1. The Matchmaking phase is not over yet. In this case,
+  //      processMatchReply returns None.
+  //   2. The Matchmaking phase is over and there are not any previous rounds
+  //      to intersect with. In this case, processMatchReply returns a Phase2.
+  //      We can proceed directly to Phase 2.
+  //   3. The Matchmaking phase is over and there are any previous rounds
+  //      to intersect with. In this case, processMatchReply sends Phase1a
+  //      messages and returns a Phase1.
+  def processMatchReply(
+      r: Round,
+      matchmaking: Matchmaking,
+      matchReply: MatchReply
+  ): Option[Either[Phase1, Phase2]] = {
+    // Ignore stale epochs.
+    if (matchReply.epoch != matchmaking.matchmakerConfiguration.epoch) {
+      logger.debug(
+        s"Leader received a MatchReply in epoch ${matchReply.epoch} but " +
+          s"is already in epoch " +
+          s"${matchmaking.matchmakerConfiguration.epoch}. The MatchReply " +
+          s"is being ignored."
+      )
+      return None
     }
 
-    val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
-    state = startMatchmaking(round, pendingClientRequests, qs, qsp)
+    // Ignore stale rounds.
+    if (matchReply.round != r) {
+      logger.debug(
+        s"Leader received a MatchReply in round ${matchReply.round} but " +
+          s"is already in round $r. The MatchReply is being ignored."
+      )
+      metrics.staleMatchRepliesTotal.inc()
+      // We can't receive MatchReplies from the future.
+      logger.checkLt(matchReply.round, r)
+      return None
+    }
+
+    // Wait until we have a quorum of responses.
+    matchmaking.matchReplies(matchReply.matchmakerIndex) = matchReply
+    if (matchmaking.matchReplies.size < config.quorumSize) {
+      return None
+    }
+
+    // Stop our timers.
+    matchmaking.resendMatchRequests.stop()
+
+    // Compute the following:
+    //
+    //   - pendingRounds: the set of all rounds for which some quorum
+    //     system was returned. We need to intersect the quorum systems in
+    //     these rounds.
+    //   - previousQuorumSystems: the quorum system for every round in
+    //     pendingRounds.
+    //   - acceptorIndices: the union of a read quorum for every round in
+    //     `pendingRounds`. These are the acceptors to which we send a
+    //     Phase 1a message.
+    //
+    //     TODO(mwhittaker): We only need to send to enough acceptors to
+    //     form a read quorum for every round in `pendingRounds`. I think
+    //     this might be some complicated NP complete problem or something,
+    //     so we just take a union of a read set from every quorum. There
+    //     might be a better way to do this.
+    //   - acceptorToRounds: an index mapping each acceptor's index to the
+    //     set of rounds that it appears in. When we receive a Phase 1b
+    //     from an acceptor, this index allows us to quickly figure out
+    //     which rounds to update.
+    //
+    // For example, imagine a leader receives the following two responses
+    // from the matchmakers with all quorums being unanimous write quorums:
+    //
+    //     0   1   2   3
+    //   +---+---+---+---+
+    //   |0,1|   |   |0,4|
+    //   +---+---+---+---+
+    //   +---+---+---+---+
+    //   |   |2,3|   |0,4|
+    //   +---+---+---+---+
+    //
+    // Then,
+    //
+    //   - pendingRounds = {0, 1, 3}
+    //   - previousQuorumSystems = {0 -> [0, 1], 1 -> [2, 3], 3 -> [0, 4]}
+    //   - acceptorIndices = {0, 3, 4}
+    //   - acceptorToRounds = {0->[0,3], 1->[0], 2->[1], 3->[1], 4->[3]}
+    val pendingRounds = mutable.Set[Round]()
+    val previousQuorumSystems =
+      mutable.Map[Round, QuorumSystem[AcceptorIndex]]()
+    val acceptorIndices = mutable.Set[AcceptorIndex]()
+    val acceptorToRounds = mutable.Map[AcceptorIndex, mutable.Set[Round]]()
+
+    val gcWatermark = matchmaking.matchReplies.values.map(_.gcWatermark).max
+    for {
+      reply <- matchmaking.matchReplies.values
+      configuration <- reply.configuration
+      if configuration.round >= gcWatermark
+    } {
+      pendingRounds += configuration.round
+      val quorumSystem = QuorumSystem.fromProto(configuration.quorumSystem)
+      previousQuorumSystems(configuration.round) = quorumSystem
+      acceptorIndices ++= quorumSystem.randomReadQuorum()
+
+      for (index <- quorumSystem.nodes) {
+        acceptorToRounds
+          .getOrElseUpdate(index, mutable.Set[Round]())
+          .add(configuration.round)
+      }
+    }
+
+    // If there are no pending rounds, then we're done already! We can skip
+    // straight to phase 2. Otherwise, we have to go through phase 1.
+    if (pendingRounds.isEmpty) {
+      // In this case, we can issue GarbageCollect commands immediately
+      // because we no values have been chosen in any log entry in any
+      // round less than us. However, we didn't receive any configurations
+      // anyway, so there is no need to garbage collect in the first place.
+      nextSlot = chosenWatermark
+      return Some(
+        Right(
+          Phase2(
+            quorumSystem = matchmaking.quorumSystem,
+            values = mutable.Map(),
+            phase2bs = mutable.Map(),
+            chosen = mutable.Set(),
+            numChosenSinceLastWatermarkSend = 0,
+            resendPhase2as = makeResendPhase2asTimer(),
+            chosenWatermark = chosenWatermark,
+            maxSlot = -1,
+            gc = Done
+          )
+        )
+      )
+    } else {
+      // Send phase1s to acceptors.
+      val phase1a =
+        Phase1a(round = round, chosenWatermark = chosenWatermark)
+      for (index <- acceptorIndices) {
+        acceptors(index).send(AcceptorInbound().withPhase1A(phase1a))
+      }
+
+      // Update our state.
+      return Some(
+        Left(
+          Phase1(
+            quorumSystem = matchmaking.quorumSystem,
+            previousQuorumSystems = previousQuorumSystems.toMap,
+            acceptorToRounds = acceptorToRounds.toMap,
+            pendingRounds = pendingRounds,
+            phase1bs = mutable.Map(),
+            pendingClientRequests = matchmaking.pendingClientRequests,
+            resendPhase1as =
+              makeResendPhase1asTimer(phase1a, acceptorToRounds.keys.toSet)
+          )
+        )
+      )
+    }
+  }
+
+  def processPhase1b(
+      r: Round,
+      phase1: Phase1,
+      phase1b: Phase1b
+  ): Option[mutable.SortedMap[Slot, CommandOrNoop]] = {
+    // Ignore messages from stale rounds.
+    if (phase1b.round != r) {
+      logger.debug(
+        s"A leader received a Phase1b message in round ${phase1b.round} " +
+          s"but is in round $r. The Phase1b is being ignored."
+      )
+      metrics.stalePhase1bsTotal.inc()
+      // We can't receive phase 1bs from the future.
+      logger.checkLt(phase1b.round, round)
+      return None
+    }
+
+    // Wait until we have a read quorum for every pending round.
+    logger.checkGt(phase1.pendingRounds.size, 0)
+    phase1.phase1bs(phase1b.acceptorIndex) = phase1b
+    for (round <- phase1.acceptorToRounds(phase1b.acceptorIndex)) {
+      if (phase1
+            .previousQuorumSystems(round)
+            .isSuperSetOfReadQuorum(phase1.phase1bs.keys.toSet)) {
+        phase1.pendingRounds.remove(round)
+      }
+    }
+    if (!phase1.pendingRounds.isEmpty) {
+      return None
+    }
+
+    // Stop our timers.
+    phase1.resendPhase1as.stop()
+
+    // Find the largest slot with a vote, or -1 if there are no votes.
+    val slotInfos = phase1.phase1bs.values.flatMap(_.info)
+    val maxSlot = if (slotInfos.isEmpty) {
+      -1
+    } else {
+      slotInfos.map(_.slot).max
+    }
+
+    // Now, we iterate from chosenWatermark to maxSlot proposing safe
+    // values to the acceptors to fill in the log.
+    val values = mutable.SortedMap[Slot, CommandOrNoop]()
+    for (slot <- chosenWatermark to maxSlot) {
+      values(slot) = safeValue(phase1.phase1bs.values, slot)
+    }
+    Some(values)
+  }
+
+  def processPhase2b(r: Round, phase2: Phase2, phase2b: Phase2b): Phase2 = {
+    // Ignore messages from stale rounds.
+    if (phase2b.round != r) {
+      logger.debug(
+        s"A leader received a Phase2b message in round ${phase2b.round} " +
+          s"but is in round $r. The Phase2b is being ignored."
+      )
+      metrics.stalePhase2bsTotal.inc()
+      return phase2
+    }
+
+    // Ignore messages for slots that have already been chosen.
+    if (phase2b.slot < chosenWatermark ||
+        phase2.chosen.contains(phase2b.slot)) {
+      logger.debug(
+        s"A leader received a Phase2b message in slot ${phase2b.slot} " +
+          s"but that slot has already been chosen. The Phase2b message " +
+          s"is being ignored."
+      )
+      metrics.phase2bAlreadyChosenTotal.inc()
+      return phase2
+    }
+
+    // Wait until we have a write quorum.
+    val phase2bs = phase2.phase2bs(phase2b.slot)
+    phase2bs(phase2b.acceptorIndex) = phase2b
+    if (!phase2.quorumSystem.isWriteQuorum(phase2bs.keys.toSet)) {
+      return phase2
+    }
+
+    // Inform the replicas that the value has been chosen.
+    for (replica <- replicas) {
+      replica.send(
+        ReplicaInbound().withChosen(
+          Chosen(slot = phase2b.slot, value = phase2.values(phase2b.slot))
+        )
+      )
+    }
+
+    // Clear our metadata.
+    phase2.values.remove(phase2b.slot)
+    phase2.phase2bs.remove(phase2b.slot)
+
+    // Update our chosen watermark.
+    phase2.chosen += phase2b.slot
+    val oldChosenWatermark = chosenWatermark
+    while (phase2.chosen.contains(chosenWatermark)) {
+      phase2.chosen.remove(chosenWatermark)
+      chosenWatermark += 1
+    }
+
+    // Otherwise, we are waiting on at least one value to get chosen. If
+    // we've updated the chosenWatermark, then we reset the timer.
+    if (oldChosenWatermark != chosenWatermark) {
+      phase2.resendPhase2as.reset()
+    }
+
+    // Broadcast chosenWatermark to other leaders, if needed.
+    var numChosenSinceLastWatermarkSend =
+      phase2.numChosenSinceLastWatermarkSend + 1
+    if (numChosenSinceLastWatermarkSend >=
+          options.sendChosenWatermarkEveryN) {
+      for (leader <- otherLeaders) {
+        leader.send(
+          LeaderInbound().withChosenWatermark(
+            ChosenWatermark(watermark = chosenWatermark)
+          )
+        )
+      }
+      numChosenSinceLastWatermarkSend = 0
+    }
+
+    // Check if we're now ready to send garbage collect commands.
+    if (phase2.gc == WaitingForLargerChosenWatermark &&
+        chosenWatermark > phase2.maxSlot) {
+      val garbageCollect = GarbageCollect(matchmakerConfiguration =
+                                            matchmakerConfiguration,
+                                          gcWatermark = round)
+      matchmakerConfiguration.matchmakerIndex.foreach(
+        matchmakers(_).send(
+          MatchmakerInbound().withGarbageCollect(garbageCollect)
+        )
+      )
+
+      return phase2.copy(
+        gc = GarbageCollecting(
+          matchmakerConfiguration = matchmakerConfiguration,
+          garbageCollectAcks = mutable.Set(),
+          resendGarbageCollects = makeResendGarbageCollectsTimer(garbageCollect)
+        ),
+        numChosenSinceLastWatermarkSend = numChosenSinceLastWatermarkSend
+      )
+    } else {
+      return phase2.copy(
+        numChosenSinceLastWatermarkSend = numChosenSinceLastWatermarkSend
+      )
+    }
+  }
+
+  private def processExecutedWatermarkReply(
+      phase2: Phase2,
+      queryingReplicas: QueryingReplicas,
+      executedWatermarkReply: ExecutedWatermarkReply
+  ): Option[PushingToAcceptors] = {
+    // Ignore lagging replies.
+    if (executedWatermarkReply.executedWatermark < phase2.chosenWatermark) {
+      return None
+    }
+
+    // Wait until we have persisted on at least f+1 replicas.
+    queryingReplicas.executedWatermarkReplies.add(
+      executedWatermarkReply.replicaIndex
+    )
+    if (queryingReplicas.executedWatermarkReplies.size < config.f + 1) {
+      return None
+    }
+
+    // Stop our timer.
+    queryingReplicas.resendExecutedWatermarkRequests.stop()
+
+    // Notify the acceptors.
+    val persisted = Persisted(persistedWatermark = phase2.chosenWatermark)
+    phase2.quorumSystem.nodes.foreach(
+      acceptors(_).send(AcceptorInbound().withPersisted(persisted))
+    )
+
+    // Update our state.
+    return Some(
+      PushingToAcceptors(
+        persistedAcks = mutable.Set(),
+        resendPersisted =
+          makeResendPersistedTimer(persisted, phase2.quorumSystem.nodes)
+      )
+    )
+  }
+
+  def processPersistedAck(
+      r: Round,
+      phase2: Phase2,
+      gc: PushingToAcceptors,
+      persistedAck: PersistedAck
+  ): Option[GarbageCollection] = {
+    // Ignore stale replies.
+    if (persistedAck.persistedWatermark < phase2.chosenWatermark) {
+      return None
+    }
+
+    // Wait until we have received responses from a write quorum of
+    // acceptors.
+    gc.persistedAcks.add(persistedAck.acceptorIndex)
+    if (!phase2.quorumSystem.isWriteQuorum(gc.persistedAcks.toSet)) {
+      return None
+    }
+
+    // Stop our timer.
+    gc.resendPersisted.stop()
+
+    // Wait until every command up to and including maxSlot has been chosen.
+    if (chosenWatermark <= phase2.maxSlot) {
+      return Some(WaitingForLargerChosenWatermark)
+    }
+
+    // Send garbage collect command.
+    val garbageCollect = GarbageCollect(
+      matchmakerConfiguration = matchmakerConfiguration,
+      gcWatermark = r
+    )
+    matchmakerConfiguration.matchmakerIndex.foreach(
+      matchmakers(_).send(
+        MatchmakerInbound().withGarbageCollect(garbageCollect)
+      )
+    )
+
+    // Update our state.
+    return Some(
+      GarbageCollecting(
+        matchmakerConfiguration = matchmakerConfiguration,
+        garbageCollectAcks = mutable.Set(),
+        resendGarbageCollects = makeResendGarbageCollectsTimer(garbageCollect)
+      )
+    )
   }
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -807,7 +1242,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       matchReply: MatchReply
   ): Unit = {
     state match {
-      case Inactive | _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
+      case Inactive | _: WaitingForReconfigure | _: Phase1 | _: Phase2 |
+          _: Phase212 =>
         logger.debug(
           s"Leader received a MatchReply but is not currently in the " +
             s"Matchmaking phase (its state is $state). The MatchReply is " +
@@ -815,144 +1251,63 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case matchmaking: Matchmaking =>
-        // Ignore stale epochs.
-        if (matchReply.epoch != matchmaking.matchmakerConfiguration.epoch) {
-          logger.debug(
-            s"Leader received a MatchReply in epoch ${matchReply.epoch} but " +
-              s"is already in epoch " +
-              s"${matchmaking.matchmakerConfiguration.epoch}. The MatchReply " +
-              s"is being ignored."
-          )
-          return
+        processMatchReply(round, matchmaking, matchReply) match {
+          case None =>
+            // Do nothing
+            {}
+
+          case Some(Left(phase1: Phase1)) =>
+            state = phase1
+
+          case Some(Right(phase2: Phase2)) =>
+            state = phase2
+            for (clientRequest <- matchmaking.pendingClientRequests) {
+              processClientRequest(round, phase2, clientRequest)
+            }
         }
 
-        // Ignore stale rounds.
-        if (matchReply.round != round) {
-          logger.debug(
-            s"Leader received a MatchReply in round ${matchReply.round} but " +
-              s"is already in round $round. The MatchReply is being ignored."
-          )
-          metrics.staleMatchRepliesTotal.inc()
-          // We can't receive MatchReplies from the future.
-          logger.checkLt(matchReply.round, round)
-          return
-        }
+      case phase2Matchmaking: Phase2Matchmaking =>
+        val matchmaking = phase2Matchmaking.matchmaking
 
-        // Wait until we have a quorum of responses.
-        matchmaking.matchReplies(matchReply.matchmakerIndex) = matchReply
-        if (matchmaking.matchReplies.size < config.quorumSize) {
-          return
-        }
+        // We shouldn't have any pending client requests, since any pending
+        // requests can be served by the Phase 2 in round i. This is important
+        // to note because if we did have pending client requests, then we
+        // would have to process them when transitioning to a new Phase 2.
+        logger.checkEq(matchmaking.pendingClientRequests.size, 0)
 
-        // Stop our timers.
-        matchmaking.resendMatchRequests.stop()
+        processMatchReply(round + 1, matchmaking, matchReply) match {
+          case None =>
+            // Do nothing
+            {}
 
-        // Compute the following:
-        //
-        //   - pendingRounds: the set of all rounds for which some quorum
-        //     system was returned. We need to intersect the quorum systems in
-        //     these rounds.
-        //   - previousQuorumSystems: the quorum system for every round in
-        //     pendingRounds.
-        //   - acceptorIndices: the union of a read quorum for every round in
-        //     `pendingRounds`. These are the acceptors to which we send a
-        //     Phase 1a message.
-        //
-        //     TODO(mwhittaker): We only need to send to enough acceptors to
-        //     form a read quorum for every round in `pendingRounds`. I think
-        //     this might be some complicated NP complete problem or something,
-        //     so we just take a union of a read set from every quorum. There
-        //     might be a better way to do this.
-        //   - acceptorToRounds: an index mapping each acceptor's index to the
-        //     set of rounds that it appears in. When we receive a Phase 1b
-        //     from an acceptor, this index allows us to quickly figure out
-        //     which rounds to update.
-        //
-        // For example, imagine a leader receives the following two responses
-        // from the matchmakers with all quorums being unanimous write quorums:
-        //
-        //     0   1   2   3
-        //   +---+---+---+---+
-        //   |0,1|   |   |0,4|
-        //   +---+---+---+---+
-        //   +---+---+---+---+
-        //   |   |2,3|   |0,4|
-        //   +---+---+---+---+
-        //
-        // Then,
-        //
-        //   - pendingRounds = {0, 1, 3}
-        //   - previousQuorumSystems = {0 -> [0, 1], 1 -> [2, 3], 3 -> [0, 4]}
-        //   - acceptorIndices = {0, 3, 4}
-        //   - acceptorToRounds = {0->[0,3], 1->[0], 2->[1], 3->[1], 4->[3]}
-        val pendingRounds = mutable.Set[Round]()
-        val previousQuorumSystems =
-          mutable.Map[Round, QuorumSystem[AcceptorIndex]]()
-        val acceptorIndices = mutable.Set[AcceptorIndex]()
-        val acceptorToRounds = mutable.Map[AcceptorIndex, mutable.Set[Round]]()
+          case Some(Left(phase1: Phase1)) =>
+            // Matchmaking is done, and we have to perform Phase 1. We are also
+            // free to start Phase 2 starting in slot `transitionSlot`.
+            state = Phase212(
+              transitionSlot = nextSlot,
+              phase2Matchmaking.phase2,
+              phase1,
+              Phase2(
+                quorumSystem = matchmaking.quorumSystem,
+                values = mutable.Map(),
+                phase2bs = mutable.Map(),
+                chosen = mutable.Set(),
+                numChosenSinceLastWatermarkSend = 0,
+                makeResendPhase2asTimer(),
+                // We wait until we enter a stable Phase 2 to perform garbage
+                // collection.
+                chosenWatermark = -1,
+                maxSlot = -1,
+                gc = Done
+              )
+            )
 
-        val gcWatermark = matchmaking.matchReplies.values.map(_.gcWatermark).max
-        for {
-          reply <- matchmaking.matchReplies.values
-          configuration <- reply.configuration
-          if configuration.round >= gcWatermark
-        } {
-          pendingRounds += configuration.round
-          val quorumSystem = QuorumSystem.fromProto(configuration.quorumSystem)
-          previousQuorumSystems(configuration.round) = quorumSystem
-          acceptorIndices ++= quorumSystem.randomReadQuorum()
-
-          for (index <- quorumSystem.nodes) {
-            acceptorToRounds
-              .getOrElseUpdate(index, mutable.Set[Round]())
-              .add(configuration.round)
-          }
-        }
-
-        // If there are no pending rounds, then we're done already! We can skip
-        // straight to phase 2. Otherwise, we have to go through phase 1.
-        if (pendingRounds.isEmpty) {
-          // In this case, we can issue GarbageCollect commands immediately
-          // because we no values have been chosen in any log entry in any
-          // round less than us. However, we didn't receive any configurations
-          // anyway, so there is no need to garbage collect in the first place.
-          nextSlot = chosenWatermark
-          val phase2 = Phase2(
-            quorumSystem = matchmaking.quorumSystem,
-            values = mutable.Map(),
-            phase2bs = mutable.Map(),
-            chosen = mutable.Set(),
-            numChosenSinceLastWatermarkSend = 0,
-            resendPhase2as = makeResendPhase2asTimer(),
-            chosenWatermark = chosenWatermark,
-            maxSlot = -1,
-            gc = Done
-          )
-          state = phase2
-
-          // Process any pending client requests.
-          for (clientRequest <- matchmaking.pendingClientRequests) {
-            processClientRequest(phase2, clientRequest)
-          }
-        } else {
-          // Send phase1s to acceptors.
-          val phase1a =
-            Phase1a(round = round, chosenWatermark = chosenWatermark)
-          for (index <- acceptorIndices) {
-            acceptors(index).send(AcceptorInbound().withPhase1A(phase1a))
-          }
-
-          // Update our state.
-          state = Phase1(
-            quorumSystem = matchmaking.quorumSystem,
-            previousQuorumSystems = previousQuorumSystems.toMap,
-            acceptorToRounds = acceptorToRounds.toMap,
-            pendingRounds = pendingRounds,
-            phase1bs = mutable.Map(),
-            pendingClientRequests = matchmaking.pendingClientRequests,
-            resendPhase1as =
-              makeResendPhase1asTimer(phase1a, acceptorToRounds.keys.toSet)
-          )
+          case Some(Right(_: Phase2)) =>
+            logger.fatal(
+              s"We transitioned from round i to round i+1, so the " +
+                s"Matchmaking phase should return the configuration used " +
+                s"in round i. It's impossible to not find any configuration."
+            )
         }
     }
   }
@@ -962,97 +1317,138 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase1b: Phase1b
   ): Unit = {
     state match {
-      case Inactive | _: Matchmaking | _: WaitingForReconfigure | _: Phase2 =>
+      case Inactive | _: Matchmaking | _: WaitingForReconfigure | _: Phase2 |
+          _: Phase2Matchmaking =>
         logger.debug(
           s"Leader received a Phase1b message but is not in Phase1. Its " +
             s"state is $state. The Phase1b message is being ignored."
         )
 
       case phase1: Phase1 =>
-        // Ignore messages from stale rounds.
-        if (phase1b.round != round) {
-          logger.debug(
-            s"A leader received a Phase1b message in round ${phase1b.round} " +
-              s"but is in round $round. The Phase1b is being ignored."
-          )
-          metrics.stalePhase1bsTotal.inc()
-          // We can't receive phase 1bs from the future.
-          logger.checkLt(phase1b.round, round)
-          return
+        processPhase1b(round, phase1, phase1b) match {
+          case None =>
+            // Do nothing.
+            {}
+
+          case Some(values) =>
+            // Now, we iterate from chosenWatermark to maxSlot proposing safe
+            // values to the acceptors to fill in the log.
+            val phase2bs =
+              mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]]()
+            for ((slot, value) <- values) {
+              phase2bs(slot) = mutable.Map()
+              val phase2a = Phase2a(slot = slot, round = round, value = value)
+              for (index <- phase1.quorumSystem.randomWriteQuorum()) {
+                acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
+              }
+            }
+
+            // We've filled in every slot up to and including maxSlot, so the
+            // next slot is maxSlot + 1 (or chosenWatermark if maxSlot + 1 is
+            // smaller).
+            val maxSlot = if (values.size == 0) {
+              -1
+            } else {
+              values.lastKey
+            }
+            nextSlot = Math.max(chosenWatermark, maxSlot + 1)
+
+            // Send ExecutedWatermarkRequests to the replicas.
+            replicas.foreach(
+              _.send(
+                ReplicaInbound()
+                  .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
+              )
+            )
+
+            // Update our state.
+            val phase2 = Phase2(
+              quorumSystem = phase1.quorumSystem,
+              values = values,
+              phase2bs = phase2bs,
+              chosen = mutable.Set(),
+              numChosenSinceLastWatermarkSend = 0,
+              resendPhase2as = makeResendPhase2asTimer(),
+              chosenWatermark = chosenWatermark,
+              maxSlot = maxSlot,
+              gc = QueryingReplicas(
+                executedWatermarkReplies = mutable.Set(),
+                resendExecutedWatermarkRequests =
+                  makeResendExecutedWatermarkRequestsTimer()
+              )
+            )
+            state = phase2
+
+            // Process any pending client requests.
+            for (clientRequest <- phase1.pendingClientRequests) {
+              processClientRequest(round, phase2, clientRequest)
+            }
         }
 
-        // Wait until we have a read quorum for every pending round.
-        logger.checkGt(phase1.pendingRounds.size, 0)
-        phase1.phase1bs(phase1b.acceptorIndex) = phase1b
-        for (round <- phase1.acceptorToRounds(phase1b.acceptorIndex)) {
-          if (phase1
-                .previousQuorumSystems(round)
-                .isSuperSetOfReadQuorum(phase1.phase1bs.keys.toSet)) {
-            phase1.pendingRounds.remove(round)
-          }
-        }
-        if (!phase1.pendingRounds.isEmpty) {
-          return
-        }
+      case phase212: Phase212 =>
+        processPhase1b(round, phase212.phase1, phase1b) match {
+          case None =>
+            // Do nothing.
+            {}
 
-        // Stop our timers.
-        phase1.resendPhase1as.stop()
+          case Some(values) =>
+            // Now, we iterate from chosenWatermark to maxSlot proposing safe
+            // values to the acceptors to fill in the log. It must be the case
+            // that all of these slots are smaller than `transitionSlot`.
+            val phase2bs =
+              mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]]()
+            for ((slot, value) <- values) {
+              logger.checkLt(slot, phase212.transitionSlot)
+              phase2bs(slot) = mutable.Map()
+              val phase2a = Phase2a(slot = slot, round = round, value = value)
+              for (index <- phase212.phase2.quorumSystem.randomWriteQuorum()) {
+                acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
+              }
+            }
 
-        // Find the largest slot with a vote, or -1 if there are no votes.
-        val slotInfos = phase1.phase1bs.values.flatMap(_.info)
-        val maxSlot = if (slotInfos.isEmpty) {
-          -1
-        } else {
-          slotInfos.map(_.slot).max
-        }
+            // Unlike above, we do not modify nextSlot, since nextSlot might
+            // already be much larger due to running Phase 2.
 
-        // Now, we iterate from chosenWatermark to maxSlot proposing safe
-        // values to the acceptors to fill in the log.
-        val values = mutable.Map[Slot, CommandOrNoop]()
-        val phase2bs = mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]]()
-        for (slot <- chosenWatermark to maxSlot) {
-          val value = safeValue(phase1.phase1bs.values, slot)
-          values(slot) = value
-          phase2bs(slot) = mutable.Map()
-          val phase2a = Phase2a(slot = slot, round = round, value = value)
-          for (index <- phase1.quorumSystem.randomWriteQuorum()) {
-            acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
-          }
-        }
+            // Send ExecutedWatermarkRequests to the replicas.
+            replicas.foreach(
+              _.send(
+                ReplicaInbound()
+                  .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
+              )
+            )
 
-        // We've filled in every slot up to and including maxSlot, so the next
-        // slot is maxSlot + 1 (or chosenWatermark if maxSlot + 1 is smaller).
-        nextSlot = Math.max(chosenWatermark, maxSlot + 1)
+            val maxSlot = if (values.size == 0) {
+              -1
+            } else {
+              values.lastKey
+            }
 
-        // Send ExecutedWatermarkRequests to the replicas.
-        replicas.foreach(
-          _.send(
-            ReplicaInbound()
-              .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
-          )
-        )
+            // Stop timers.
+            phase212.oldPhase2.resendPhase2as.stop()
+            phase212.oldPhase2.gc match {
+              case gc: QueryingReplicas =>
+                gc.resendExecutedWatermarkRequests.stop()
+              case gc: PushingToAcceptors =>
+                gc.resendPersisted.stop()
+              case WaitingForLargerChosenWatermark =>
+              case gc: GarbageCollecting =>
+                gc.resendGarbageCollects.stop()
+              case Done =>
+            }
 
-        // Update our state.
-        val phase2 = Phase2(
-          quorumSystem = phase1.quorumSystem,
-          values = values,
-          phase2bs = phase2bs,
-          chosen = mutable.Set(),
-          numChosenSinceLastWatermarkSend = 0,
-          resendPhase2as = makeResendPhase2asTimer(),
-          chosenWatermark = chosenWatermark,
-          maxSlot = maxSlot,
-          gc = QueryingReplicas(
-            executedWatermarkReplies = mutable.Set(),
-            resendExecutedWatermarkRequests =
-              makeResendExecutedWatermarkRequestsTimer()
-          )
-        )
-        state = phase2
+            // Update our state.
+            state = phase212.phase2.copy(
+              chosenWatermark = chosenWatermark,
+              maxSlot = maxSlot,
+              gc = QueryingReplicas(
+                executedWatermarkReplies = mutable.Set(),
+                resendExecutedWatermarkRequests =
+                  makeResendExecutedWatermarkRequestsTimer()
+              )
+            )
 
-        // Process any pending client requests.
-        for (clientRequest <- phase1.pendingClientRequests) {
-          processClientRequest(phase2, clientRequest)
+            // There can't be any pending requests to process.
+            logger.checkEq(phase212.phase1.pendingClientRequests.size, 0)
         }
     }
   }
@@ -1082,7 +1478,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         phase1.pendingClientRequests += clientRequest
 
       case phase2: Phase2 =>
-        processClientRequest(phase2, clientRequest)
+        processClientRequest(round, phase2, clientRequest)
+
+      case phase2Matchmaking: Phase2Matchmaking =>
+        processClientRequest(round, phase2Matchmaking.phase2, clientRequest)
+
+      case phase212: Phase212 =>
+        processClientRequest(round + 1, phase212.phase2, clientRequest)
     }
   }
 
@@ -1095,103 +1497,27 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case phase2: Phase2 =>
-        // Ignore messages from stale rounds.
-        if (phase2b.round != round) {
-          logger.debug(
-            s"A leader received a Phase2b message in round ${phase2b.round} " +
-              s"but is in round $round. The Phase2b is being ignored."
+        state = processPhase2b(round, phase2, phase2b)
+
+      case phase2Matchmaking: Phase2Matchmaking =>
+        state = processPhase2b(round, phase2Matchmaking.phase2, phase2b)
+
+      case phase212: Phase212 =>
+        if (phase2b.round == round) {
+          state = phase212.copy(
+            oldPhase2 = processPhase2b(round, phase212.oldPhase2, phase2b)
           )
-          metrics.stalePhase2bsTotal.inc()
-          // We can't receive phase 2bs from the future.
-          logger.checkLt(phase2b.round, round)
-          return
-        }
-
-        // Ignore messages for slots that have already been chosen.
-        if (phase2b.slot < chosenWatermark ||
-            phase2.chosen.contains(phase2b.slot)) {
-          logger.debug(
-            s"A leader received a Phase2b message in slot ${phase2b.slot} " +
-              s"but that slot has already been chosen. The Phase2b message " +
-              s"is being ignored."
-          )
-          metrics.phase2bAlreadyChosenTotal.inc()
-          return
-        }
-
-        // Wait until we have a write quorum.
-        val phase2bs = phase2.phase2bs(phase2b.slot)
-        phase2bs(phase2b.acceptorIndex) = phase2b
-        if (!phase2.quorumSystem.isWriteQuorum(phase2bs.keys.toSet)) {
-          return
-        }
-
-        // Inform the replicas that the value has been chosen.
-        for (replica <- replicas) {
-          replica.send(
-            ReplicaInbound().withChosen(
-              Chosen(slot = phase2b.slot, value = phase2.values(phase2b.slot))
-            )
-          )
-        }
-
-        // Clear our metadata.
-        phase2.values.remove(phase2b.slot)
-        phase2.phase2bs.remove(phase2b.slot)
-
-        // Update our chosen watermark.
-        phase2.chosen += phase2b.slot
-        val oldChosenWatermark = chosenWatermark
-        while (phase2.chosen.contains(chosenWatermark)) {
-          phase2.chosen.remove(chosenWatermark)
-          chosenWatermark += 1
-        }
-
-        // Otherwise, we are waiting on at least one value to get chosen. If
-        // we've updated the chosenWatermark, then we reset the timer.
-        if (oldChosenWatermark != chosenWatermark) {
-          phase2.resendPhase2as.reset()
-        }
-
-        // Broadcast chosenWatermark to other leaders, if needed.
-        var numChosenSinceLastWatermarkSend =
-          phase2.numChosenSinceLastWatermarkSend + 1
-        if (numChosenSinceLastWatermarkSend >=
-              options.sendChosenWatermarkEveryN) {
-          for (leader <- otherLeaders) {
-            leader.send(
-              LeaderInbound().withChosenWatermark(
-                ChosenWatermark(watermark = chosenWatermark)
-              )
-            )
-          }
-          numChosenSinceLastWatermarkSend = 0
-        }
-
-        // Check if we're now ready to send garbage collect commands.
-        if (phase2.gc == WaitingForLargerChosenWatermark &&
-            chosenWatermark > phase2.maxSlot) {
-          val garbageCollect = GarbageCollect(matchmakerConfiguration =
-                                                matchmakerConfiguration,
-                                              gcWatermark = round)
-          // TODO(mwhittaker): Which matchmakers should we send this to?
-          matchmakers.foreach(
-            _.send(MatchmakerInbound().withGarbageCollect(garbageCollect))
-          )
-
-          state = phase2.copy(
-            gc = GarbageCollecting(
-              matchmakerConfiguration = matchmakerConfiguration,
-              garbageCollectAcks = mutable.Set(),
-              resendGarbageCollects =
-                makeResendGarbageCollectsTimer(garbageCollect)
-            ),
-            numChosenSinceLastWatermarkSend = numChosenSinceLastWatermarkSend
+        } else if (phase2b.round == round + 1) {
+          state = phase212.copy(
+            phase2 = processPhase2b(round, phase212.phase2, phase2b)
           )
         } else {
-          state = phase2.copy(
-            numChosenSinceLastWatermarkSend = numChosenSinceLastWatermarkSend
+          logger.debug(
+            s"A leader received a Phase2b message in round ${phase2b.round} " +
+              s"but is in round $round/${round + 1}. The Phase2b is being " +
+              s"ignored."
           )
+          metrics.stalePhase2bsTotal.inc()
         }
     }
   }
@@ -1205,10 +1531,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // We're inactive, so we ignore the leader info request. The active
       // leader will respond to the request.
 
-      case _: Matchmaking | _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
+      case _: Matchmaking | _: WaitingForReconfigure | _: Phase1 | _: Phase2 |
+          _: Phase2Matchmaking =>
         val client = chan[Client[Transport]](src, Client.serializer)
         client.send(
           ClientInbound().withLeaderInfoReply(LeaderInfoReply(round = round))
+        )
+
+      case _: Phase212 =>
+        val client = chan[Client[Transport]](src, Client.serializer)
+        client.send(
+          ClientInbound().withLeaderInfoReply(
+            LeaderInfoReply(round = round + 1)
+          )
         )
     }
   }
@@ -1221,7 +1556,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Inactive =>
         chosenWatermark = Math.max(chosenWatermark, msg.watermark)
 
-      case _: Matchmaking | _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
+      case _: Matchmaking | _: WaitingForReconfigure | _: Phase1 | _: Phase2 |
+          _: Phase2Matchmaking | _: Phase212 =>
         // We ignore these watermarks if we are trying to become an active
         // leader. Otherwise, things get too complicated. It's very unlikely
         // we'll ever get these messages anyway.
@@ -1236,7 +1572,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       nack: MatchmakerNack
   ): Unit = {
-    if (nack.round <= round) {
+    if (nack.round < round) {
       logger.debug(
         s"A Leader received a MatchmakerNack message with round " +
           s"${nack.round} but is already in round $round. The Nack is being " +
@@ -1255,11 +1591,25 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
         becomeLeader(newRound)
 
-      case _: WaitingForReconfigure | _: Phase1 | _: Phase2 =>
+      case _: WaitingForReconfigure | _: Phase1 | _: Phase2 | _: Phase212 =>
         logger.debug(
           s"Leader received a MatchmakerNack with round ${nack.round} but is " +
             s"not matchmaking. Its state is $state. The nack is being ignored."
         )
+
+      case _: Phase2Matchmaking =>
+        if (nack.round < round + 1) {
+          logger.debug(
+            s"A Leader received a MatchmakerNack message with round " +
+              s"${nack.round} but is already in round $round. The Nack is being " +
+              s"ignored."
+          )
+          metrics.staleMatchmakerNackTotal.inc()
+          return
+        }
+        val newRound =
+          roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
+        becomeLeader(newRound)
     }
   }
 
@@ -1293,7 +1643,20 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             s"ignored."
         )
 
-      case _: Phase1 | _: Phase2 =>
+      case _: Phase1 | _: Phase2 | _: Phase2Matchmaking =>
+        val newRound =
+          roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
+        becomeLeader(newRound)
+
+      case _: Phase212 =>
+        if (nack.round == round + 1) {
+          logger.debug(
+            s"A Leader received an AcceptorNack message with round " +
+              s"${nack.round} but is already in round ${round + 1}. The Nack " +
+              s"is being ignored."
+          )
+          return
+        }
         val newRound =
           roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
         becomeLeader(newRound)
@@ -1321,12 +1684,25 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         val newRound =
           roundSystem.nextClassicRound(leaderIndex = index, round = round)
         becomeLeader(newRound)
+
+      case _: Phase2Matchmaking | _: Phase212 =>
+        // If our chosen watermark is larger than the slot we're trying to
+        // recover, then we won't get the value chosen again. We have to lower
+        // our watermark so that the protocol gets the value chosen again.
+        if (chosenWatermark > recover.slot) {
+          chosenWatermark = recover.slot
+        }
+
+        // Leader change to make sure the slot is chosen.
+        val newRound =
+          roundSystem.nextClassicRound(leaderIndex = index, round = round + 1)
+        becomeLeader(newRound)
     }
   }
 
   private def handleExecutedWatermarkReply(
       src: Transport#Address,
-      executedWatermarkReply: ExecutedWatermarkReply
+      reply: ExecutedWatermarkReply
   ): Unit = {
     state match {
       case Inactive | _: Matchmaking | _: WaitingForReconfigure | _: Phase1 =>
@@ -1347,43 +1723,59 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             )
 
           case gc: QueryingReplicas =>
-            // Ignore lagging replies.
-            if (executedWatermarkReply.executedWatermark < chosenWatermark) {
-              return
+            processExecutedWatermarkReply(phase2, gc, reply) match {
+              case None => // Do nothing.
+              case Some(pushingToAcceptors) =>
+                state = phase2.copy(gc = pushingToAcceptors)
             }
+        }
 
-            // Wait until we have persisted on at least f+1 replicas.
-            gc.executedWatermarkReplies.add(executedWatermarkReply.replicaIndex)
-            if (gc.executedWatermarkReplies.size < config.f + 1) {
-              return
+      case phase2Matchmaking: Phase2Matchmaking =>
+        val phase2 = phase2Matchmaking.phase2
+        phase2.gc match {
+          case _: PushingToAcceptors | _: GarbageCollecting |
+              WaitingForLargerChosenWatermark | Done =>
+            logger.debug(
+              s"Leader received an ExecutedWatermarkReply but is not " +
+                s"querying replicas. Its state is $state. The " +
+                s"ExecutedWatermarkReply is being ignored."
+            )
+
+          case gc: QueryingReplicas =>
+            processExecutedWatermarkReply(phase2, gc, reply) match {
+              case None => // Do nothing.
+              case Some(pushingToAcceptors) =>
+                state = phase2Matchmaking.copy(
+                  phase2 = phase2.copy(gc = pushingToAcceptors)
+                )
             }
+        }
 
-            // Stop our timer.
-            gc.resendExecutedWatermarkRequests.stop()
+      case phase212: Phase212 =>
+        phase212.oldPhase2.gc match {
+          case _: PushingToAcceptors | _: GarbageCollecting |
+              WaitingForLargerChosenWatermark | Done =>
+            logger.debug(
+              s"Leader received an ExecutedWatermarkReply but is not " +
+                s"querying replicas. Its state is $state. The " +
+                s"ExecutedWatermarkReply is being ignored."
+            )
 
-            // Notify the acceptors.
-            val persisted = Persisted(
-              persistedWatermark = phase2.chosenWatermark
-            )
-            phase2.quorumSystem.nodes.foreach(
-              acceptors(_).send(AcceptorInbound().withPersisted(persisted))
-            )
-
-            // Update our state.
-            state = phase2.copy(
-              gc = PushingToAcceptors(
-                persistedAcks = mutable.Set(),
-                resendPersisted =
-                  makeResendPersistedTimer(persisted, phase2.quorumSystem.nodes)
-              )
-            )
+          case gc: QueryingReplicas =>
+            processExecutedWatermarkReply(phase212.oldPhase2, gc, reply) match {
+              case None => // Do nothing.
+              case Some(pushingToAcceptors) =>
+                state = phase212.copy(
+                  oldPhase2 = phase212.oldPhase2.copy(gc = pushingToAcceptors)
+                )
+            }
         }
     }
   }
 
   private def handlePersistedAck(
       src: Transport#Address,
-      persistedAck: PersistedAck
+      reply: PersistedAck
   ): Unit = {
     state match {
       case Inactive | _: Matchmaking | _: WaitingForReconfigure | _: Phase1 =>
@@ -1404,50 +1796,57 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             )
 
           case gc: PushingToAcceptors =>
-            // Ignore stale replies.
-            if (persistedAck.persistedWatermark < phase2.chosenWatermark) {
-              return
+            processPersistedAck(round, phase2, gc, reply) match {
+              case None     =>
+              case Some(gc) => state = phase2.copy(gc = gc)
             }
+        }
 
-            // Wait until we have received responses from a write quorum of
-            // acceptors.
-            gc.persistedAcks.add(persistedAck.acceptorIndex)
-            if (!phase2.quorumSystem.isWriteQuorum(gc.persistedAcks.toSet)) {
-              return
-            }
-
-            // Stop our timer.
-            gc.resendPersisted.stop()
-
-            // Wait until every command up to and including maxSlot has been
-            // chosen.
-            if (chosenWatermark <= phase2.maxSlot) {
-              state = phase2.copy(gc = WaitingForLargerChosenWatermark)
-              return
-            }
-
-            // Send garbage collect command.
-            val garbageCollect = GarbageCollect(
-              matchmakerConfiguration = matchmakerConfiguration,
-              gcWatermark = round
-            )
-            matchmakers.foreach(
-              _.send(MatchmakerInbound().withGarbageCollect(garbageCollect))
+      case phase2Matchmaking: Phase2Matchmaking =>
+        val phase2 = phase2Matchmaking.phase2
+        phase2.gc match {
+          case _: QueryingReplicas | _: GarbageCollecting |
+              WaitingForLargerChosenWatermark | Done =>
+            logger.debug(
+              s"Leader received an PersistedAck but is not " +
+                s"persisting to acceptors. Its state is $state. The " +
+                s"PersistedAck is being ignored."
             )
 
-            // Update our state.
-            state = phase2.copy(
-              gc = GarbageCollecting(
-                matchmakerConfiguration = matchmakerConfiguration,
-                garbageCollectAcks = mutable.Set(),
-                resendGarbageCollects =
-                  makeResendGarbageCollectsTimer(garbageCollect)
-              )
+          case gc: PushingToAcceptors =>
+            processPersistedAck(round, phase2, gc, reply) match {
+              case None =>
+              case Some(gc) =>
+                state = phase2Matchmaking.copy(phase2 = phase2.copy(gc = gc))
+            }
+        }
+
+      case phase212: Phase212 =>
+        phase212.oldPhase2.gc match {
+          case _: QueryingReplicas | _: GarbageCollecting |
+              WaitingForLargerChosenWatermark | Done =>
+            logger.debug(
+              s"Leader received an PersistedAck but is not " +
+                s"persisting to acceptors. Its state is $state. The " +
+                s"PersistedAck is being ignored."
             )
+
+          case gc: PushingToAcceptors =>
+            processPersistedAck(round, phase212.oldPhase2, gc, reply) match {
+              case None =>
+              case Some(gc) =>
+                state =
+                  phase212.copy(oldPhase2 = phase212.oldPhase2.copy(gc = gc))
+            }
         }
     }
   }
 
+  // TODO(mwhittaker): Right now, it's possible that we send GarbageCollect
+  // commands to a given matchmaker configuration, and the matchmaker
+  // configuration changes. When this happens, we need to resend to the new
+  // matchmaker configuration and restart the whole process. We don't do that
+  // right now. It's a bug.
   private def handleGarbageCollectAck(
       src: Transport#Address,
       garbageCollectAck: GarbageCollectAck
@@ -1459,6 +1858,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             s"collecting. Its state is $state. The GarbageCollectAck is " +
             s"being ignored."
         )
+
+      case _: Phase2Matchmaking =>
+      // TODO(mwhittaker): process as normal?
+
+      case _: Phase212 =>
+      // TODO(mwhittaker): Ignore.
 
       case phase2: Phase2 =>
         phase2.gc match {
@@ -1501,6 +1906,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           s"Leader received a Stopped but its state is $state. The Stopped " +
             s"is being ignored."
         )
+
+      case _: Phase2Matchmaking =>
+      // TODO(mwhittaker): normal as below.
+
+      case _: Phase212 =>
+      // TODO(mwhittaker): Ignore.
 
       case matchmaking: Matchmaking =>
         // Ignore stale messages.
@@ -1565,6 +1976,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case Inactive | _: Phase1 | _: Phase2 =>
         // Do nothing.
         ()
+
+      case _: Phase2Matchmaking =>
+      // TODO(mwhittaker): redo matchmaking.
+
+      case _: Phase212 =>
+      // TODO(mwhittaker): ignore.
 
       case matchmaking: Matchmaking =>
         if (matchChosen.value.epoch <=
