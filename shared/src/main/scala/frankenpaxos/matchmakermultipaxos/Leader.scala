@@ -243,10 +243,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       resendMatchRequests: Transport#Timer
   ) extends State
 
-// If we were in the middle of Matchmaking, but the matchmakers were stopped,
-// then we have to contact the reconfigurers and wait for them to tell us
-// about the new matchmakers. When we do learn about the new matchmakers, we
-// revert back to the Matchmaking phase.
+  // If we were in the middle of Matchmaking, but the matchmakers were stopped,
+  // then we have to contact the reconfigurers and wait for them to tell us
+  // about the new matchmakers. When we do learn about the new matchmakers, we
+  // revert back to the Matchmaking phase.
   @JSExportAll
   case class WaitingForNewMatchmakers(
       // When we resume matchmaking, we resume in this round.
@@ -285,19 +285,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       resendPhase1as: Transport#Timer
   ) extends State
 
-// When a leader enters phase 2 in round i, it attempts to garbage collect
-// configurations in round less than i. To do so, it does the following:
-//
-//   1. Upon transitioning from phase 1 to phase 2, the leader uses a given
-//      chosenWatermark and a computes a given maxSlot.
-//   2. The leader repeatedly queries the replicas until at least f+1 have
-//      executed commands up through and including chosenWatermark.
-//   3. The leader informs the acceptors that these slots have been persisted
-//      on the replicas.
-//   4. The leader waits for all slots up to and including maxSlot have been
-//      chosen.
-//   5. The leader sends a garbage collect command to the matchmakers and
-//      waits to hear back all the acks.
+  // When a leader enters phase 2 in round i, it attempts to garbage collect
+  // configurations in round less than i. To do so, it does the following:
+  //
+  //   1. Upon transitioning from phase 1 to phase 2, the leader uses a given
+  //      chosenWatermark and a computes a given maxSlot.
+  //   2. The leader repeatedly queries the replicas until at least f+1 have
+  //      executed commands up through and including chosenWatermark.
+  //   3. The leader informs the acceptors that these slots have been persisted
+  //      on the replicas.
+  //   4. The leader waits for all slots up to and including maxSlot have been
+  //      chosen.
+  //   5. The leader sends a garbage collect command to the matchmakers and
+  //      waits to hear back all the acks.
   @JSExportAll
   sealed trait GarbageCollection
 
@@ -350,13 +350,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case object Done extends GarbageCollection
 
-// During an i/i+1 configuration, we cancel any pending garbage collection
-// being performed during round i. This is not necessary for correctness, but
-// simplifies the implementation. Moreover, it shouldn't have a big impact on
-// performance.
-//
-// Similarly, if a matchmaker reconfiguration happens during garbage
-// collection, we just cancel the garbage collection.
+  // During an i/i+1 configuration, we cancel any pending garbage collection
+  // being performed during round i. This is not necessary for correctness, but
+  // simplifies the implementation. Moreover, it shouldn't have a big impact on
+  // performance.
+  //
+  // Similarly, if a matchmaker reconfiguration happens during garbage
+  // collection, we just cancel the garbage collection.
   @JSExportAll
   case object Cancelled extends GarbageCollection
 

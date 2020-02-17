@@ -66,6 +66,195 @@ const matchmaker_configuration_component = {
   `,
 }
 
+const matchmaking_component = {
+  props: {
+    value: Object,
+  },
+
+  components: {
+    'matchmaker-configuration': matchmaker_configuration_component,
+  },
+
+  template: `
+    <fp-object :value="value" v-slot="{let: state}">
+      <fp-field :name="'round'">
+        {{state.round}}
+      </fp-field>
+      <fp-field :name="'matchmakerConfiguration'">
+        <matchmaker-configuration :value="state.matchmakerConfiguration">
+        </matchmaker-configuration>
+      </fp-field>
+      <fp-field :name="'quorumSystem'">{{state.quorumSystem}}</fp-field>
+      <fp-field :name="'quorumSystemProto'">
+        {{state.quorumSystemProto}}
+      </fp-field>
+      <fp-field :name="'matchReplies'">
+        <frankenpaxos-map :map="state.matchReplies">
+        </frankenpaxos-map>
+      </fp-field>
+      <fp-field :name="'pendingClientRequests'">
+        <frankenpaxos-horizontal-seq :seq="state.pendingClientRequests">
+        </frankenpaxos-horizontal-seq>
+      </fp-field>
+      <fp-field :name="'resendMatchRequests'">
+        {{state.resendMatchRequests}}
+      </fp-field>
+    </fp-object>
+  `
+}
+
+const phase1_component = {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <fp-object :value="value" v-slot="{let: state}">
+      <fp-field :name="'round'">{{state.round}}</fp-field>
+      <fp-field :name="'quorumSystem'">{{state.quorumSystem}}</fp-field>
+      <fp-field :name="'previousQuorumSystems'">
+        <frankenpaxos-map :map="state.previousQuorumSystems">
+        </frankenpaxos-map>
+      </fp-field>
+      <fp-field :name="'acceptorToRounds'">
+        <frankenpaxos-map :map="state.acceptorToRounds">
+        </frankenpaxos-map>
+      </fp-field>
+      <fp-field :name="'pendingRounds'">
+        {{state.pendingRounds}}
+      </fp-field>
+      <fp-field :name="'phase1bs'">
+        <frankenpaxos-map :map="state.phase1bs">
+        </frankenpaxos-map>
+      </fp-field>
+      <fp-field :name="'pendingClientRequests'">
+        <frankenpaxos-horizontal-seq :seq="state.pendingClientRequests">
+        </frankenpaxos-horizontal-seq>
+      </fp-field>
+      <fp-field :name="'resendPhase1as'">
+        {{state.resendPhase1as}}
+      </fp-field>
+    </fp-object>
+  `
+}
+
+const phase2_component = {
+  props: {
+    value: Object,
+  },
+
+  components: {
+    'matchmaker-configuration': matchmaker_configuration_component,
+  },
+
+  template: `
+    <fp-object :value="value" v-slot="{let: state}">
+      <fp-field :name="'round'">{{state.round}}</fp-field>
+      <fp-field :name="'nextSlot'">{{state.nextSlot}}</fp-field>
+      <fp-field :name="'quorumSystem'">{{state.quorumSystem}}</fp-field>
+      <fp-field :name="'values'">
+        <frankenpaxos-map :map="state.values">
+        </frankenpaxos-map>
+      </fp-field>
+      <fp-field :name="'phase2bs'">
+        <frankenpaxos-map :map="state.phase2bs" v-slot="{value: v}">
+          <frankenpaxos-map :map="v">
+          </frankenpaxos-map>
+        </frankenpaxos-map>
+      </fp-field>
+      <fp-field :name="'chosen'">
+        <frankenpaxos-set :set="state.chosen">
+        </frankenpaxos-set>
+      </fp-field>
+      <fp-field :name="'numChosenSinceLastWatermarkSend'">
+        {{state.numChosenSinceLastWatermarkSend}}
+      </fp-field>
+      <fp-field :name="'resendPhase2as'">
+        {{state.resendPhase2as}}
+      </fp-field>
+      <fp-field :name="'gc'">
+        <div v-if="state.gc.constructor.name.includes('QueryingReplicas')">
+          QueryingReplicas
+          <fp-object :value="state.gc" v-slot="{let: gc}">
+            <fp-field :name="'chosenWatermark'">
+              {{gc.chosenWatermark}}
+            </fp-field>
+            <fp-field :name="'maxSlot'">
+              {{gc.maxSlot}}
+            </fp-field>
+            <fp-field :name="'executedWatermarkReplies'">
+              {{gc.executedWatermarkReplies}}
+            </fp-field>
+            <fp-field :name="'resendExecutedWatermarkRequests'">
+              {{gc.resendExecutedWatermarkRequests}}
+            </fp-field>
+          </fp-object>
+        </div>
+
+        <div v-if="state.gc.constructor.name.includes('PushingToAcceptors')">
+          PushingToAcceptors
+          <fp-object :value="state.gc" v-slot="{let: gc}">
+            <fp-field :name="'chosenWatermark'">
+              {{gc.chosenWatermark}}
+            </fp-field>
+            <fp-field :name="'maxSlot'">
+              {{gc.maxSlot}}
+            </fp-field>
+            <fp-field :name="'quorumSystem'">
+              {{gc.quorumSystem}}
+            </fp-field>
+            <fp-field :name="'persistedAcks'">
+              {{gc.persistedAcks}}
+            </fp-field>
+            <fp-field :name="'resendPersisted'">
+              {{gc.resendPersisted}}
+            </fp-field>
+          </fp-object>
+        </div>
+
+        <div v-if="state.gc.constructor.name.includes('WaitingForLargerChosenWatermark')">
+          WaitingForLargerChosenWatermark
+          <fp-object :value="state.gc" v-slot="{let: gc}">
+            <fp-field :name="'chosenWatermark'">
+              {{gc.chosenWatermark}}
+            </fp-field>
+            <fp-field :name="'maxSlot'">
+              {{gc.maxSlot}}
+            </fp-field>
+          </fp-object>
+        </div>
+
+        <div v-if="state.gc.constructor.name.includes('GarbageCollecting')">
+          GarbageCollecting
+          <fp-object :value="state.gc" v-slot="{let: gc}">
+            <fp-field :name="'gcWatermark'">
+              {{gc.gcWatermark}}
+            </fp-field>
+            <fp-field :name="'matchmakerConfiguration'">
+              <matchmaker-configuration :value="gc.matchmakerConfiguration">
+              </matchmaker-configuration>
+            </fp-field>
+            <fp-field :name="'garbageCollectAcks'">
+              {{gc.garbageCollectAcks}}
+            </fp-field>
+            <fp-field :name="'resendGarbageCollects'">
+              {{gc.resendGarbageCollects}}
+            </fp-field>
+          </fp-object>
+        </div>
+
+        <div v-if="state.gc.constructor.name.includes('Done')">
+          Done
+        </div>
+
+        <div v-if="state.gc.constructor.name.includes('Cancelled')">
+          Cancelled
+        </div>
+      </fp-field>
+    </fp-object>
+  `
+}
+
 // Node components /////////////////////////////////////////////////////////////
 const client_info = {
   props: {
@@ -139,19 +328,14 @@ const leader_info = {
   components: {
     'phase1b': phase1b_component,
     'matchmaker-configuration': matchmaker_configuration_component,
+    'matchmaking': matchmaking_component,
+    'phase1': phase1_component,
+    'phase2': phase2_component,
   },
 
   template: `
     <div>
       <button v-on:click="node.actor.reconfigure()">Reconfigure</button>
-
-      <div>
-        round = {{node.actor.round}}
-      </div>
-
-      <div>
-        nextSlot = {{node.actor.nextSlot}}
-      </div>
 
       <div>
         chosenWatermark = {{node.actor.chosenWatermark}}
@@ -165,38 +349,27 @@ const leader_info = {
 
       <div>
         state =
-        <div v-if="node.actor.state.constructor.name.includes('Inactive')">
+        <div v-if="node.actor.state.constructor.name.endsWith('Inactive')">
           Inactive
-        </div>
-
-        <div v-if="node.actor.state.constructor.name.includes('Matchmaking')">
-          Matchmaking
           <fp-object :value="node.actor.state" v-slot="{let: state}">
-            <fp-field :name="'matchmakerConfiguration'">
-              <matchmaker-configuration :value="state.matchmakerConfiguration">
-              </matchmaker-configuration>
-            </fp-field>
-            <fp-field :name="'quorumSystem'">{{state.quorumSystem}}</fp-field>
-            <fp-field :name="'quorumSystemProto'">
-              {{state.quorumSystemProto}}
-            </fp-field>
-            <fp-field :name="'matchReplies'">
-              <frankenpaxos-map :map="state.matchReplies">
-              </frankenpaxos-map>
-            </fp-field>
-            <fp-field :name="'pendingClientRequests'">
-              <frankenpaxos-horizontal-seq :seq="state.pendingClientRequests">
-              </frankenpaxos-horizontal-seq>
-            </fp-field>
-            <fp-field :name="'resendMatchRequests'">
-              {{state.resendMatchRequests}}
+            <fp-field :name="'round'">
+            {{state.round}}
             </fp-field>
           </fp-object>
         </div>
 
-        <div v-if="node.actor.state.constructor.name.includes('WaitingForReconfigure')">
-          WaitingForReconfigure
+        <div v-if="node.actor.state.constructor.name.endsWith('Matchmaking') &&
+                   !node.actor.state.constructor.name.includes('Phase2')">
+          Matchmaking
+          <matchmaking :value="node.actor.state"></matchmaking>
+        </div>
+
+        <div v-if="node.actor.state.constructor.name.endsWith('WaitingForNewMatchmakers')">
+          WaitingForNewMatchmakers
           <fp-object :value="node.actor.state" v-slot="{let: state}">
+            <fp-field :name="'round'">
+              {{state.round}}
+            </fp-field>
             <fp-field :name="'matchmakerConfiguration'">
               <matchmaker-configuration :value="state.matchmakerConfiguration">
               </matchmaker-configuration>
@@ -215,67 +388,51 @@ const leader_info = {
           </fp-object>
         </div>
 
-        <div v-if="node.actor.state.constructor.name.includes('Phase1')">
+        <div v-if="node.actor.state.constructor.name.endsWith('Phase1')">
           Phase1
+          <phase1 :value="node.actor.state"></phase1>
+        </div>
+
+        <div v-if="node.actor.state.constructor.name.endsWith('Phase2')">
+          Phase2
+          <phase2 :value="node.actor.state"></phase2>
+        </div>
+
+        <div v-if="node.actor.state.constructor.name.endsWith('Phase2Matchmaking')">
+          Phase2Matchmaking
           <fp-object :value="node.actor.state" v-slot="{let: state}">
-            <fp-field :name="'quorumSystem'">{{state.quorumSystem}}</fp-field>
-            <fp-field :name="'previousQuorumSystems'">
-              <frankenpaxos-map :map="state.previousQuorumSystems">
-              </frankenpaxos-map>
+            <fp-field :name="'phase2'">
+              <phase2 :value="state.phase2"></phase2>
             </fp-field>
-            <fp-field :name="'acceptorToRounds'">
-              <frankenpaxos-map :map="state.acceptorToRounds">
-              </frankenpaxos-map>
-            </fp-field>
-            <fp-field :name="'pendingRounds'">
-              {{state.pendingRounds}}
-            </fp-field>
-            <fp-field :name="'phase1bs'">
-              <frankenpaxos-map :map="state.phase1bs">
-              </frankenpaxos-map>
-            </fp-field>
-            <fp-field :name="'pendingClientRequests'">
-              <frankenpaxos-horizontal-seq :seq="state.pendingClientRequests">
-              </frankenpaxos-horizontal-seq>
-            </fp-field>
-            <fp-field :name="'resendPhase1as'">
-              {{state.resendPhase1as}}
+            <fp-field :name="'matchmaking'">
+              <matchmaking :value="state.matchmaking"></matchmaking>
             </fp-field>
           </fp-object>
         </div>
 
-        <div v-if="node.actor.state.constructor.name.includes('Phase2')">
-          Phase2
+        <div v-if="node.actor.state.constructor.name.endsWith('Phase212')">
+          Phase212
           <fp-object :value="node.actor.state" v-slot="{let: state}">
-            <fp-field :name="'quorumSystem'">{{state.quorumSystem}}</fp-field>
-            <fp-field :name="'values'">
-              <frankenpaxos-map :map="state.values">
-              </frankenpaxos-map>
+            <fp-field :name="'oldPhase2'">
+              <phase2 :value="state.oldPhase2"></phase2>
             </fp-field>
-            <fp-field :name="'phase2bs'">
-              <frankenpaxos-map :map="state.phase2bs" v-slot="{value: v}">
-                <frankenpaxos-map :map="v">
-                </frankenpaxos-map>
-              </frankenpaxos-map>
+            <fp-field :name="'newPhase1'">
+              <phase1 :value="state.newPhase1"></phase1>
             </fp-field>
-            <fp-field :name="'chosen'">
-              <frankenpaxos-set :set="state.chosen">
-              </frankenpaxos-set>
+            <fp-field :name="'newPhase2'">
+              <phase2 :value="state.newPhase2"></phase2>
             </fp-field>
-            <fp-field :name="'numChosenSinceLastWatermarkSend'">
-              {{state.numChosenSinceLastWatermarkSend}}
+          </fp-object>
+        </div>
+
+        <div v-if="node.actor.state.constructor.name.endsWith('Phase22')">
+          Phase22
+          <fp-object :value="node.actor.state" v-slot="{let: state}">
+            <fp-field :name="'oldPhase2'">
+              <phase2 :value="state.oldPhase2"></phase2>
             </fp-field>
-            <fp-field :name="'resendPhase2as'">
-              {{state.resendPhase2as}}
-            </fp-field>
-            <fp-field :name="'chosenWatermark'">
-              {{state.chosenWatermark}}
-            </fp-field>
-            <fp-field :name="'maxSlot'">
-              {{state.maxSlot}}
-            </fp-field>
-            <fp-field :name="'gc'">
-              {{state.gc}}
+            <fp-field :name="'newPhase2'">
+              <phase2 :value="state.newPhase2"></phase2>
             </fp-field>
           </fp-object>
         </div>
