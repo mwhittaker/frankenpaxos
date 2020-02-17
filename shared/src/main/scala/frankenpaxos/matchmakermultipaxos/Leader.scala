@@ -48,6 +48,8 @@ case class LeaderOptions(
     // that during a leader change, all the leaders have a relatively up to
     // date chosen watermark.
     sendChosenWatermarkEveryN: Int,
+    // Leaders use a ClassicStutteredRound round system. This is the stutter.
+    stutter: Int = 1000,
     electionOptions: ElectionOptions,
     measureLatencies: Boolean
 )
@@ -63,6 +65,7 @@ object LeaderOptions {
     resendPersistedPeriod = java.time.Duration.ofSeconds(5),
     resendGarbageCollectsPeriod = java.time.Duration.ofSeconds(5),
     sendChosenWatermarkEveryN = 100,
+    stutter = 1000,
     electionOptions = ElectionOptions.default,
     measureLatencies = true
   )
@@ -439,7 +442,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // TODO(mwhittaker): Use a ClassicStutteredRound system and pass in the
   // stutter as a flag.
   // For simplicity, we use a round robin round system for the leaders.
-  private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
+  private val roundSystem = new RoundSystem.ClassicStutteredRoundRobin(
+    n = config.numLeaders,
+    stutterLength = options.stutter
+  )
 
   // Every slot less than chosenWatermark has been chosen. The active leader
   // periodically sends its chosenWatermarks to the other leaders.
