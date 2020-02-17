@@ -1003,15 +1003,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       configuration <- reply.configuration
       if configuration.round >= gcWatermark
     } {
-      pendingRounds += configuration.round
-      val quorumSystem = QuorumSystem.fromProto(configuration.quorumSystem)
-      previousQuorumSystems(configuration.round) = quorumSystem
-      acceptorIndices ++= quorumSystem.randomReadQuorum()
+      if (pendingRounds.contains(configuration.round)) {
+        // Do nothing. We've already processed this configuration.
+      } else {
+        pendingRounds += configuration.round
+        val quorumSystem = QuorumSystem.fromProto(configuration.quorumSystem)
+        previousQuorumSystems(configuration.round) = quorumSystem
+        acceptorIndices ++= quorumSystem.randomReadQuorum()
 
-      for (index <- quorumSystem.nodes) {
-        acceptorToRounds
-          .getOrElseUpdate(index, mutable.Set[Round]())
-          .add(configuration.round)
+        for (index <- quorumSystem.nodes) {
+          acceptorToRounds
+            .getOrElseUpdate(index, mutable.Set[Round]())
+            .add(configuration.round)
+        }
       }
     }
 
