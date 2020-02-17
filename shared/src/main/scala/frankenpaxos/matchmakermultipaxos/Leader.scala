@@ -210,9 +210,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   type Round = Int
   type Slot = Int
 
-  // TODO(mwhittaker): Move round, chosenWatermark, and nextSlot into state?
-  // TODO(mwhittaker): Move Phase2 GC stuff into GC.
-  // TODO(mwhittaker): Choose better names for watermarks and messages.
   @JSExportAll
   sealed trait State
 
@@ -880,6 +877,28 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     stopTimers(state)
     val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
     state = startMatchmaking(newRound, pendingClientRequests(state), qs, qsp)
+  }
+
+  private def becomeIIPlusOneLeader(): Unit = {
+    state match {
+      case _: Inactive | _: Matchmaking | _: WaitingForNewMatchmakers |
+          _: Phase1 | _: Phase2Matchmaking | _: Phase212 | _: Phase22 =>
+        becomeLeader(getNextRound(state))
+
+      case phase2: Phase2 =>
+        if (roundSystem.leader(phase2.round + 1) == index) {
+          val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
+          val matchmaking = startMatchmaking(
+            round = phase2.round + 1,
+            pendingClientRequests = mutable.Buffer(),
+            qs,
+            qsp
+          )
+          state = Phase2Matchmaking(phase2, matchmaking)
+        } else {
+          becomeLeader(getNextRound(state))
+        }
+    }
   }
 
   // processMatchReply processes a MatchReply. There are three possibilities
@@ -2053,6 +2072,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // API ///////////////////////////////////////////////////////////////////////
   // For the JS frontend.
   def reconfigure(): Unit = {
-    becomeLeader(getNextRound(state))
+    becomeIIPlusOneLeader()
   }
 }
