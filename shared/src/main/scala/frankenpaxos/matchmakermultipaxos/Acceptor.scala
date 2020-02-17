@@ -204,11 +204,25 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       persistedWatermark = persistedWatermark,
       info = states
         .iteratorFrom(phase1a.chosenWatermark)
-        .map({
+        .flatMap({
           case (slot, state) =>
-            Phase1bSlotInfo(slot = slot,
-                            voteRound = state.voteRound,
-                            voteValue = state.voteValue)
+            // This reason for this `if` is very subtle. During an i/i+1
+            // reconfiguration, a leader may send Phase2as in round i+1 while
+            // performing Phase 1 in round i+1. If an acceptor receives a
+            // Phase2a before the Phase1a, then it will return Phase1bs for
+            // values in round i+1. We don't want this. So, if the vote round
+            // of an entry is `round`, we don't send it back. The leader has
+            // already determined a safe value to propose in the slot and
+            // proposed it.
+            if (state.voteRound < round) {
+              Some(
+                Phase1bSlotInfo(slot = slot,
+                                voteRound = state.voteRound,
+                                voteValue = state.voteValue)
+              )
+            } else {
+              None
+            }
         })
         .toSeq
     )
