@@ -238,9 +238,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // If we receive a Phase2a for a slot that we know has been persisted, we
     // do not vote for it. Instead, we notify the leader that the value has
     // already been persisted.
-    //
-    // TODO(mwhittaker): Remember why we do this. The persisted field doesn't
-    // seem like it's ever used.
     if (phase2a.slot < persistedWatermark) {
       leader.send(
         LeaderInbound().withPhase2B(

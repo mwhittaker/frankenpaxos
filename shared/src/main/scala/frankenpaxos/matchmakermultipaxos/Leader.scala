@@ -1101,6 +1101,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // Stop our timers.
     phase1.resendPhase1as.stop()
 
+    // Compute the largest persistedWatermark. We should not propose any values
+    // for entries less than maxPersistedWatermark.
+    val maxPersistedWatermark =
+      phase1.phase1bs.values.map(_.persistedWatermark).max
+
+    // If persistedWatermark is larger than chosenWatermark, then there are
+    // some values that were persisted that we don't know about. For now, we
+    // simply ignore them. In a more complete implementation, we maybe would
+    // let the replicas know that the values were chosen.
+    chosenWatermark = Math.max(chosenWatermark, maxPersistedWatermark)
+
     // Find the largest slot with a vote, or -1 if there are no votes.
     val slotInfos = phase1.phase1bs.values.flatMap(_.info)
     val maxSlot = if (slotInfos.isEmpty) {
@@ -1141,20 +1152,29 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       return phase2
     }
 
-    // Wait until we have a write quorum.
-    val phase2bs = phase2.phase2bs(phase2b.slot)
-    phase2bs(phase2b.acceptorIndex) = phase2b
-    if (!phase2.quorumSystem.isWriteQuorum(phase2bs.keys.toSet)) {
-      return phase2
-    }
+    // If the replica tells us that the command has already been persisted,
+    // then we can proceed right away to clearing our metadata.
+    if (phase2b.persisted) {
+      // In a more complete implementation, we might inform the replicas that
+      // some value was chosen here, but we don't know what it is. Here, we
+      // just don't tell them anything. More likely than not, they already know
+      // the value. They will also recover if they don't know it.
+    } else {
+      // Otherwise, we wait until we have a write quorum.
+      val phase2bs = phase2.phase2bs(phase2b.slot)
+      phase2bs(phase2b.acceptorIndex) = phase2b
+      if (!phase2.quorumSystem.isWriteQuorum(phase2bs.keys.toSet)) {
+        return phase2
+      }
 
-    // Inform the replicas that the value has been chosen.
-    for (replica <- replicas) {
-      replica.send(
-        ReplicaInbound().withChosen(
-          Chosen(slot = phase2b.slot, value = phase2.values(phase2b.slot))
+      // Inform the replicas that the value has been chosen.
+      for (replica <- replicas) {
+        replica.send(
+          ReplicaInbound().withChosen(
+            Chosen(slot = phase2b.slot, value = phase2.values(phase2b.slot))
+          )
         )
-      )
+      }
     }
 
     // Clear our metadata.
