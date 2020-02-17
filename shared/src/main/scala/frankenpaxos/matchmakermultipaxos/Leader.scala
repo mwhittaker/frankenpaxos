@@ -1714,7 +1714,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // Note that if we're Phase2Matchmaking, we could maybe do a trick
         // where we increment the round of the Matchmaking phase and leave the
         // Phase 2 alone, but that's really complicated for not much gain.
-        becomeLeader(getNextRound(state))
+        becomeLeader(
+          roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
+        )
     }
   }
 
