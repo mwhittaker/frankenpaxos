@@ -385,14 +385,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       gc: GarbageCollection
   ) extends State
 
-// TODO(mwhittaker): Document.
+  // TODO(mwhittaker): Document.
   @JSExportAll
   case class Phase2Matchmaking(
       phase2: Phase2,
       matchmaking: Matchmaking
   ) extends State
 
-// TODO(mwhittaker): Document.
+  // TODO(mwhittaker): Document.
   @JSExportAll
   case class Phase212(
       oldPhase2: Phase2,
@@ -400,21 +400,21 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       newPhase2: Phase2
   ) extends State
 
-// TODO(mwhittaker): Document.
+  // TODO(mwhittaker): Document.
   @JSExportAll
   case class Phase22(
       oldPhase2: Phase2,
       newPhase2: Phase2
   ) extends State
 
-// Fields ////////////////////////////////////////////////////////////////////
-// A random number generator instantiated from `seed`. This allows us to
-// perform deterministic randomized tests.
+  // Fields ////////////////////////////////////////////////////////////////////
+  // A random number generator instantiated from `seed`. This allows us to
+  // perform deterministic randomized tests.
   private val rand = new Random(seed)
 
   private val index = config.leaderAddresses.indexOf(address)
 
-// Channels to all the _other_ leaders.
+  // Channels to all the _other_ leaders.
   private val otherLeaders: Seq[Chan[Leader[Transport]]] =
     for (a <- config.leaderAddresses if a != address)
       yield chan[Leader[Transport]](a, Leader.serializer)
@@ -874,8 +874,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def becomeLeader(newRound: Round): Unit = {
-    // TODO(mwhittaker): Add flag to do a i/i+1 leader change.
-
     logger.checkGt(newRound, getRound(state))
     logger.check(roundSystem.leader(newRound) == index)
     metrics.becomeLeaderTotal.inc()
