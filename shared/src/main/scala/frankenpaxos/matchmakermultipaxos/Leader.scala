@@ -49,7 +49,7 @@ case class LeaderOptions(
     // date chosen watermark.
     sendChosenWatermarkEveryN: Int,
     // Leaders use a ClassicStutteredRound round system. This is the stutter.
-    stutter: Int = 1000,
+    stutter: Int,
     electionOptions: ElectionOptions,
     measureLatencies: Boolean
 )
@@ -169,12 +169,6 @@ class LeaderMetrics(collectors: Collectors) {
     .help(
       "Total number of times the leader resent ExecutedWatermarkRequest messages."
     )
-    .register()
-
-  val resendPeristedTotal: Counter = collectors.counter
-    .build()
-    .name("matchmakermultipaxos_leader_resend_persisted_total")
-    .help("Total number of times the leader resent Persisted messages.")
     .register()
 
   val resendPersistedTotal: Counter = collectors.counter

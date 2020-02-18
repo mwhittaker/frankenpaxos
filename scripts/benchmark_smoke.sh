@@ -5,7 +5,8 @@ set -euo pipefail
 main() {
     for protocol in unreplicated batchedunreplicated multipaxos \
                     supermultipaxos mencius supermencius fastmultipaxos epaxos \
-                    simplebpaxos superbpaxos simplegcbpaxos unanimousbpaxos; do
+                    simplebpaxos superbpaxos simplegcbpaxos unanimousbpaxos \
+                    matchmakermultipaxos; do
         echo "Running $protocol."
         python -m "benchmarks.${protocol}.smoke" \
             -m \
