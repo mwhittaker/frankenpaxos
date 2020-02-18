@@ -211,7 +211,8 @@ class MatchmakerMultiPaxosNet:
 
     def config(self) -> proto_util.Message:
         return {
-            'f': self._input.f,
+            'f':
+                self._input.f,
             'leader_address': [{
                 'host': e.host.ip(),
                 'port': e.port
@@ -351,16 +352,13 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
                                  total_seconds()),
                     '--options.resendBootstrapsPeriod',
                     '{}s'.format(input.reconfigurer_options.
-                                 resend_bootstraps_period.
-                                 total_seconds()),
+                                 resend_bootstraps_period.total_seconds()),
                     '--options.resendMatchPhase1asPeriod',
                     '{}s'.format(input.reconfigurer_options.
-                                 resend_match_phase1as_period.
-                                 total_seconds()),
+                                 resend_match_phase1as_period.total_seconds()),
                     '--options.resendMatchPhase2asPeriod',
                     '{}s'.format(input.reconfigurer_options.
-                                 resend_match_phase2as_period.
-                                 total_seconds()),
+                                 resend_match_phase2as_period.total_seconds()),
                 ],
             )
             if input.profiled:
@@ -433,8 +431,7 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     str(leader.port + 1) if input.monitored else '-1',
                     '--options.resendMatchRequestsPeriod',
                     '{}s'.format(input.leader_options.
-                                 resend_match_requests_period.
-                                 total_seconds()),
+                                 resend_match_requests_period.total_seconds()),
                     '--options.resendReconfigurePeriod',
                     '{}s'.format(input.leader_options.resend_reconfigure_period.
                                  total_seconds()),
@@ -452,9 +449,9 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     '{}s'.format(input.leader_options.resend_persisted_period.
                                  total_seconds()),
                     '--options.resendGarbageCollectsPeriod',
-                    '{}s'.format(input.leader_options.
-                                 resend_garbage_collects_period.
-                                 total_seconds()),
+                    '{}s'.format(
+                        input.leader_options.resend_garbage_collects_period.
+                        total_seconds()),
                     '--options.sendChosenWatermarkEveryN',
                     str(input.leader_options.send_chosen_watermark_every_n),
                     '--options.election.pingPeriod',
@@ -589,7 +586,9 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
             for i in range(input.num_client_procs)
         ]
         return benchmark.parse_recorder_data(
-            bench, client_csvs, drop_prefix=datetime.timedelta(seconds=0),
+            bench,
+            client_csvs,
+            drop_prefix=datetime.timedelta(seconds=0),
             save_data=False)
 
 

@@ -116,19 +116,26 @@ def main(args) -> None:
         def summary(self, input: multipaxos.Input,
                     output: multipaxos.Output) -> str:
             return str({
-                'f': input.f,
-                'num_client_procs': input.num_client_procs,
-                'num_clients_per_proc': input.num_clients_per_proc,
-                'num_batchers': input.num_batchers,
-                'batch_size': input.batcher_options.batch_size,
+                'f':
+                    input.f,
+                'num_client_procs':
+                    input.num_client_procs,
+                'num_clients_per_proc':
+                    input.num_clients_per_proc,
+                'num_batchers':
+                    input.num_batchers,
+                'batch_size':
+                    input.batcher_options.batch_size,
                 'leader_flush_every_n':
-                input.leader_options.flush_phase2as_every_n,
+                    input.leader_options.flush_phase2as_every_n,
                 'proxy_leader_flush_every_n':
-                input.proxy_leader_options.flush_phase2as_every_n,
+                    input.proxy_leader_options.flush_phase2as_every_n,
                 'proxy_replica_flush_every_n':
-                input.proxy_replica_options.flush_every_n,
-                'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.7}',
+                    input.proxy_replica_options.flush_every_n,
+                'latency.median_ms':
+                    f'{output.latency.median_ms:.6}',
+                'stop_throughput_1s.p90':
+                    f'{output.stop_throughput_1s.p90:.7}',
             })
 
     suite = EuroSysLtSuperMultiPaxosSuite()

@@ -28,8 +28,7 @@ def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, marker: str,
     ax.plot(throughput / 1000, latency, marker, label=label, linewidth=2)
 
 
-def make_figure(output_filename: str,
-                coupled_df: pd.DataFrame,
+def make_figure(output_filename: str, coupled_df: pd.DataFrame,
                 multipaxos_df: pd.DataFrame,
                 unreplicated_df: pd.DataFrame) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
@@ -37,7 +36,8 @@ def make_figure(output_filename: str,
     print('coupled multipaxos')
     plot_latency_throughput(coupled_df, ax, '^-', 'MultiPaxos')
     print('multipaxos')
-    plot_latency_throughput(multipaxos_df, ax, 'o-', 'Compartmentalized MultiPaxos')
+    plot_latency_throughput(multipaxos_df, ax, 'o-',
+                            'Compartmentalized MultiPaxos')
     print('unreplicated')
     plot_latency_throughput(unreplicated_df, ax, 's-', 'Unreplicated')
 
@@ -51,12 +51,18 @@ def make_figure(output_filename: str,
 
 
 def main(args) -> None:
-    unbatched_coupled_df = add_num_clients(pd.read_csv(args.unbatched_coupled_multipaxos_results))
-    unbatched_multipaxos_df = add_num_clients(pd.read_csv(args.unbatched_multipaxos_results))
-    unbatched_unreplicated_df = add_num_clients(pd.read_csv(args.unbatched_unreplicated_results))
-    batched_coupled_df = add_num_clients(pd.read_csv(args.batched_coupled_multipaxos_results))
-    batched_multipaxos_df = add_num_clients(pd.read_csv(args.batched_multipaxos_results))
-    batched_unreplicated_df = add_num_clients(pd.read_csv(args.batched_unreplicated_results))
+    unbatched_coupled_df = add_num_clients(
+        pd.read_csv(args.unbatched_coupled_multipaxos_results))
+    unbatched_multipaxos_df = add_num_clients(
+        pd.read_csv(args.unbatched_multipaxos_results))
+    unbatched_unreplicated_df = add_num_clients(
+        pd.read_csv(args.unbatched_unreplicated_results))
+    batched_coupled_df = add_num_clients(
+        pd.read_csv(args.batched_coupled_multipaxos_results))
+    batched_multipaxos_df = add_num_clients(
+        pd.read_csv(args.batched_multipaxos_results))
+    batched_unreplicated_df = add_num_clients(
+        pd.read_csv(args.batched_unreplicated_results))
 
     make_figure(
         args.output_unbatched,

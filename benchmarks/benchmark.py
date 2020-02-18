@@ -322,8 +322,10 @@ class RecorderOutput(NamedTuple):
 #
 # TODO(mwhittaker): Drop the first couple of seconds from the data since it
 # takes a while for the JVM to fully ramp up.
-def parse_recorder_data(bench: BenchmarkDirectory, filenames: Iterable[str],
-                        drop_prefix: datetime.timedelta, save_data: bool = True) -> RecorderOutput:
+def parse_recorder_data(bench: BenchmarkDirectory,
+                        filenames: Iterable[str],
+                        drop_prefix: datetime.timedelta,
+                        save_data: bool = True) -> RecorderOutput:
     df = pd_util.read_csvs(filenames, parse_dates=['start', 'stop'])
     bench.log('Aggregate recorder data read.')
     df = df.set_index('start')

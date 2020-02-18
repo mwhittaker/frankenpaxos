@@ -28,8 +28,7 @@ def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, marker: str,
     ax.plot(throughput / 1000, latency, marker, label=label, linewidth=2)
 
 
-def make_figure(output_filename: str,
-                coupled_df: pd.DataFrame,
+def make_figure(output_filename: str, coupled_df: pd.DataFrame,
                 mencius_df: pd.DataFrame,
                 unreplicated_df: pd.DataFrame) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
@@ -51,12 +50,18 @@ def make_figure(output_filename: str,
 
 
 def main(args) -> None:
-    unbatched_coupled_df = add_num_clients(pd.read_csv(args.unbatched_coupled_mencius_results))
-    unbatched_mencius_df = add_num_clients(pd.read_csv(args.unbatched_mencius_results))
-    unbatched_unreplicated_df = add_num_clients(pd.read_csv(args.unbatched_unreplicated_results))
-    batched_coupled_df = add_num_clients(pd.read_csv(args.batched_coupled_mencius_results))
-    batched_mencius_df = add_num_clients(pd.read_csv(args.batched_mencius_results))
-    batched_unreplicated_df = add_num_clients(pd.read_csv(args.batched_unreplicated_results))
+    unbatched_coupled_df = add_num_clients(
+        pd.read_csv(args.unbatched_coupled_mencius_results))
+    unbatched_mencius_df = add_num_clients(
+        pd.read_csv(args.unbatched_mencius_results))
+    unbatched_unreplicated_df = add_num_clients(
+        pd.read_csv(args.unbatched_unreplicated_results))
+    batched_coupled_df = add_num_clients(
+        pd.read_csv(args.batched_coupled_mencius_results))
+    batched_mencius_df = add_num_clients(
+        pd.read_csv(args.batched_mencius_results))
+    batched_unreplicated_df = add_num_clients(
+        pd.read_csv(args.batched_unreplicated_results))
 
     make_figure(
         args.output_unbatched,

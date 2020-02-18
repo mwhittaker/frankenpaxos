@@ -125,11 +125,16 @@ def main(args) -> None:
 
         def summary(self, input: mencius.Input, output: mencius.Output) -> str:
             return str({
-                'f': input.f,
-                'num_client_procs': input.num_client_procs,
-                'num_clients_per_proc': input.num_clients_per_proc,
-                'num_batchers': input.num_batchers,
-                'batch_size': input.batcher_options.batch_size,
+                'f':
+                    input.f,
+                'num_client_procs':
+                    input.num_client_procs,
+                'num_clients_per_proc':
+                    input.num_clients_per_proc,
+                'num_batchers':
+                    input.num_batchers,
+                'batch_size':
+                    input.batcher_options.batch_size,
                 'leader_flush_every_n':
                     input.leader_options.flush_phase2as_every_n,
                 'proxy_leader_flush_every_n':
@@ -140,8 +145,10 @@ def main(args) -> None:
                     input.leader_options.send_high_watermark_every_n,
                 'send_noop_range_if_lagging_by':
                     input.leader_options.send_noop_range_if_lagging_by,
-                'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.7}',
+                'latency.median_ms':
+                    f'{output.latency.median_ms:.6}',
+                'stop_throughput_1s.p90':
+                    f'{output.stop_throughput_1s.p90:.7}',
             })
 
     suite = EuroSysLtSuperMenciusSuite()

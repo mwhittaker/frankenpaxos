@@ -27,12 +27,9 @@ def main(args) -> None:
                         milliseconds=200),
                     client_options=ClientOptions(),
                     client_log_level=args.log_level,
-                    server_options=ServerOptions(
-                        flush_every_n = flush_every_n,
-                    ),
+                    server_options=ServerOptions(flush_every_n=flush_every_n,),
                     server_log_level=args.log_level,
                 )
-
                 for (num_client_procs, num_clients_per_proc, flush_every_n) in [
                     (1, 1, 1),
                     (1, 10, 5),

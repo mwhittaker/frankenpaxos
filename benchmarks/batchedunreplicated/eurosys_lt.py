@@ -32,53 +32,49 @@ def main(args) -> None:
                         milliseconds=200),
                     client_options=ClientOptions(),
                     client_log_level=args.log_level,
-                    batcher_options=BatcherOptions(
-                        batch_size=batch_size
-                    ),
+                    batcher_options=BatcherOptions(batch_size=batch_size),
                     batcher_log_level=args.log_level,
                     server_options=ServerOptions(
-                        flush_every_n=server_flush_every_n,
-                    ),
+                        flush_every_n=server_flush_every_n,),
                     server_log_level=args.log_level,
                     proxy_server_options=ProxyServerOptions(
-                        flush_every_n=proxy_server_flush_every_n
-                    ),
+                        flush_every_n=proxy_server_flush_every_n),
                     proxy_server_log_level=args.log_level,
-                )
-
-                for (
-                    num_client_procs,
-                    num_clients_per_proc,
-                    num_batchers,
-                    num_proxy_servers,
-                    batch_size,
-                    server_flush_every_n,
-                    proxy_server_flush_every_n
-                ) in [
-                    ( 1,   1, 1, 10, 1, 1, 1),
-                    ( 1,  10, 1, 10, 5, 1, 5),
-                    ( 5,  10, 1, 10, 10, 1, 10),
-                    ( 5,  20, 1, 10, 10, 1, 10),
-                    ( 6,  50, 1, 10, 10, 1, 10),
-                    ( 6, 100, 2, 10, 10, 1, 10),
-                    (10, 100, 4, 10, 10, 1, 10),
-                    (20, 100, 4, 10, 20, 1, 20),
-                    (20, 200, 8, 10, 40, 1, 40),
-                ]
+                ) for (num_client_procs, num_clients_per_proc, num_batchers,
+                       num_proxy_servers, batch_size, server_flush_every_n,
+                       proxy_server_flush_every_n) in [
+                           (1, 1, 1, 10, 1, 1, 1),
+                           (1, 10, 1, 10, 5, 1, 5),
+                           (5, 10, 1, 10, 10, 1, 10),
+                           (5, 20, 1, 10, 10, 1, 10),
+                           (6, 50, 1, 10, 10, 1, 10),
+                           (6, 100, 2, 10, 10, 1, 10),
+                           (10, 100, 4, 10, 10, 1, 10),
+                           (20, 100, 4, 10, 20, 1, 20),
+                           (20, 200, 8, 10, 40, 1, 40),
+                       ]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
-                'num_client_procs': input.num_client_procs,
-                'num_clients_per_proc': input.num_clients_per_proc,
-                'num_batchers': input.num_batchers,
-                'num_proxy_servers': input.num_proxy_servers,
-                'batch_size': input.batcher_options.batch_size,
-                'server.flush_every_n': input.server_options.flush_every_n,
+                'num_client_procs':
+                    input.num_client_procs,
+                'num_clients_per_proc':
+                    input.num_clients_per_proc,
+                'num_batchers':
+                    input.num_batchers,
+                'num_proxy_servers':
+                    input.num_proxy_servers,
+                'batch_size':
+                    input.batcher_options.batch_size,
+                'server.flush_every_n':
+                    input.server_options.flush_every_n,
                 'proxy_serverserver.flush_every_n':
-                input.proxy_server_options.flush_every_n,
-                'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.7}',
+                    input.proxy_server_options.flush_every_n,
+                'latency.median_ms':
+                    f'{output.latency.median_ms:.6}',
+                'stop_throughput_1s.p90':
+                    f'{output.stop_throughput_1s.p90:.7}',
             })
 
     suite = EuroSysLtBatchedUnreplicatedSuite()

@@ -198,10 +198,8 @@ class MenciusNet:
             # [1]: scholar.google.com/scholar?cluster=9598150994777714641
             leader_hosts = [
                 list(
-                    itertools.islice(
-                        itertools.cycle(self._cluster['leaders']),
-                        i,
-                        i + self._input.num_leaders_per_group))
+                    itertools.islice(itertools.cycle(self._cluster['leaders']),
+                                     i, i + self._input.num_leaders_per_group))
                 for i in range(self._input.num_leader_groups)
             ]
         else:
@@ -667,7 +665,9 @@ class MenciusSuite(benchmark.Suite[Input, Output]):
             for i in range(input.num_client_procs)
         ]
         return benchmark.parse_recorder_data(
-            bench, client_csvs, drop_prefix=datetime.timedelta(seconds=0),
+            bench,
+            client_csvs,
+            drop_prefix=datetime.timedelta(seconds=0),
             save_data=False)
 
 

@@ -34,11 +34,8 @@ def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def barchart(output_filename: str,
-             labels: List[str],
-             data: List[float],
-             yerr: List[float],
-             color: List[str]) -> None:
+def barchart(output_filename: str, labels: List[str], data: List[float],
+             yerr: List[float], color: List[str]) -> None:
 
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
     x_pos = range(len(data))
@@ -73,8 +70,8 @@ def main(args) -> None:
         batched_df[batched_df['num_clients'] == 4000]
 
     barchart(
-        output_filename = args.output_unbatched_throughput,
-        labels = [
+        output_filename=args.output_unbatched_throughput,
+        labels=[
             'coupled',
             'decoupled',
             '3 proxy leaders',
@@ -85,7 +82,7 @@ def main(args) -> None:
             '8 proxy leaders',
             '2 acceptor groups',
         ],
-        data = [
+        data=[
             avg_tput(unbatched_super_df),
             avg_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 2]),
             avg_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 3]),
@@ -98,7 +95,7 @@ def main(args) -> None:
             avg_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 8) &
                                   (unbatched_df['num_acceptor_groups'] == 2)]),
         ],
-        yerr = [
+        yerr=[
             std_tput(unbatched_super_df),
             std_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 2]),
             std_tput(unbatched_df[unbatched_df['num_proxy_leaders'] == 3]),
@@ -111,7 +108,7 @@ def main(args) -> None:
             std_tput(unbatched_df[(unbatched_df['num_proxy_leaders'] == 8) &
                                   (unbatched_df['num_acceptor_groups'] == 2)]),
         ],
-        color = [
+        color=[
             'C0',
             'C1',
             'C2',
@@ -125,8 +122,8 @@ def main(args) -> None:
     )
 
     barchart(
-        output_filename = args.output_batched_throughput,
-        labels = [
+        output_filename=args.output_batched_throughput,
+        labels=[
             'coupled',
             'decoupled',
             '3 unbatchers',
@@ -134,7 +131,7 @@ def main(args) -> None:
             '5 unbatchers',
             '6 unbatchers',
         ],
-        data = [
+        data=[
             avg_tput(batched_super_df),
             avg_tput(batched_df[batched_df['num_proxy_replicas'] == 2]),
             avg_tput(batched_df[batched_df['num_proxy_replicas'] == 3]),
@@ -142,7 +139,7 @@ def main(args) -> None:
             avg_tput(batched_df[batched_df['num_proxy_replicas'] == 5]),
             avg_tput(batched_df[batched_df['num_proxy_replicas'] == 6]),
         ],
-        yerr = [
+        yerr=[
             std_tput(batched_super_df),
             std_tput(batched_df[batched_df['num_proxy_replicas'] == 2]),
             std_tput(batched_df[batched_df['num_proxy_replicas'] == 3]),
@@ -150,7 +147,7 @@ def main(args) -> None:
             std_tput(batched_df[batched_df['num_proxy_replicas'] == 5]),
             std_tput(batched_df[batched_df['num_proxy_replicas'] == 6]),
         ],
-        color = [
+        color=[
             'C0',
             'C1',
             'C2',
