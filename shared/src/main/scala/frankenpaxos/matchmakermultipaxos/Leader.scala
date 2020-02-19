@@ -481,13 +481,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // The leader's state.
   @JSExport
   protected var state: State = if (index == 0) {
-    // TODO(mwhittaker): Have the leader start with a predetermined
-    // reconfiguration.
-    val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
+    // In the first round, we use a predetermined set of acceptors. This is not
+    // necessary, but it is convenient for some benchmarks.
+    val quorumSystem =
+      new SimpleMajority((0 until (2 * config.f + 1)).toSet, seed)
     startMatchmaking(round = 0,
                      pendingClientRequests = mutable.Buffer(),
-                     qs,
-                     qsp)
+                     quorumSystem,
+                     QuorumSystem.toProto(quorumSystem))
   } else {
     Inactive(round = -1)
   }
