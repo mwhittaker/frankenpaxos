@@ -24,6 +24,7 @@ def main(args) -> None:
                     reconfigurer_jvm_heap_size = '100m',
                     acceptor_jvm_heap_size = '100m',
                     replica_jvm_heap_size = '100m',
+                    driver_jvm_heap_size = '100m',
                     warmup_duration = datetime.timedelta(seconds=2),
                     warmup_timeout = datetime.timedelta(seconds=3),
                     warmup_sleep = datetime.timedelta(seconds=0),
@@ -32,6 +33,7 @@ def main(args) -> None:
                     client_lag = datetime.timedelta(seconds=3),
                     state_machine = 'Noop',
                     workload = workload.StringWorkload(size_mean=1, size_std=0),
+                    driver_workload = driver_workload.DoNothing(),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -92,6 +94,7 @@ def main(args) -> None:
                             datetime.timedelta(seconds=120),
                     ),
                     client_log_level = args.log_level,
+                    driver_log_level = args.log_level,
                 )
                 for f in [1, 2]
             ]

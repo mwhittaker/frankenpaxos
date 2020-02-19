@@ -1,3 +1,4 @@
+from . import driver_workload
 from .. import benchmark
 from .. import cluster
 from .. import host
@@ -10,6 +11,7 @@ from .. import proto_util
 from .. import util
 from .. import workload
 from ..workload import Workload
+from .driver_workload import DriverWorkload
 from typing import Any, Callable, Collection, Dict, List, NamedTuple, Optional
 import argparse
 import csv
@@ -104,6 +106,7 @@ class Input(NamedTuple):
     reconfigurer_jvm_heap_size: str
     acceptor_jvm_heap_size: str
     replica_jvm_heap_size: str
+    driver_jvm_heap_size: str
 
     # Benchmark parameters. ####################################################
     warmup_duration: datetime.timedelta
@@ -114,6 +117,7 @@ class Input(NamedTuple):
     client_lag: datetime.timedelta
     state_machine: str
     workload: Workload
+    driver_workload: DriverWorkload
     profiled: bool
     monitored: bool
     prometheus_scrape_interval: datetime.timedelta
@@ -141,6 +145,9 @@ class Input(NamedTuple):
     # Client options. ##########################################################
     client_options: ClientOptions
     client_log_level: str
+
+    # Driver options. ##########################################################
+    driver_log_level: str
 
 
 Output = benchmark.RecorderOutput
@@ -174,6 +181,7 @@ class MatchmakerMultiPaxosNet:
         reconfigurers: List[host.Endpoint]
         acceptors: List[host.Endpoint]
         replicas: List[host.Endpoint]
+        driver: host.Endpoint
 
     def placement(self) -> Placement:
         ports = itertools.count(10000, 100)
@@ -207,6 +215,7 @@ class MatchmakerMultiPaxosNet:
             replicas=portify(
                 cycle_take_n(self._input.num_replicas,
                              self._cluster['replicas'])),
+            driver=portify(self._cluster['driver'])[0],
         )
 
     def config(self) -> proto_util.Message:
@@ -572,11 +581,37 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
             client_procs.append(p)
         bench.log(f'Clients started and running for {input.duration}.')
 
+        # Launch driver.
+        driver_workload_filename = bench.abspath('driver_workload.pbtxt')
+        bench.write_string(
+            driver_workload_filename,
+            proto_util.message_to_pbtext(input.driver_workload.to_proto()))
+
+        driver_proc: proc.Proc = bench.popen(
+            host=net.placement().driver.host,
+            label=f'driver',
+            cmd=java(input.driver_jvm_heap_size) + [
+                '-cp',
+                os.path.abspath(args['jar']),
+                'frankenpaxos.matchmakermultipaxos.DriverMain',
+                '--host',
+                net.placement().driver.host.ip(),
+                '--port',
+                str(net.placement().driver.port),
+                '--config',
+                config_filename,
+                '--log_level',
+                input.driver_log_level,
+                '--driver_workload',
+                f'{driver_workload_filename}',
+            ])
+        bench.log('Driver started')
+
         # Wait for clients to finish and then terminate leaders and acceptors.
         for p in client_procs:
             p.wait()
         for p in (leader_procs + matchmaker_procs + reconfigurer_procs +
-                  acceptor_procs + replica_procs):
+                  acceptor_procs + replica_procs + [driver_proc]):
             p.kill()
         bench.log('Clients finished and processes terminated.')
 
