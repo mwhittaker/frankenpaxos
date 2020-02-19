@@ -162,6 +162,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Phase1A(_)   => "Phase1a"
         case Request.Phase2A(_)   => "Phase2a"
         case Request.Persisted(_) => "Persisted"
+        case Request.Die(_)       => "Die"
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -172,6 +173,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Phase1A(r)   => handlePhase1a(src, r)
         case Request.Phase2A(r)   => handlePhase2a(src, r)
         case Request.Persisted(r) => handlePersisted(src, r)
+        case Request.Die(r)       => handleDie(src, r)
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -303,5 +305,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       case (slots, _) => round < persistedWatermark
     })
     metrics.persistedWatermark.set(persistedWatermark)
+  }
+
+  private def handleDie(src: Transport#Address, die: Die): Unit = {
+    logger.fatal("Die!")
   }
 }

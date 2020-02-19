@@ -244,6 +244,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       case Request.MatchPhase1A(_)   => "MatchPhase1a"
       case Request.MatchPhase2A(_)   => "MatchPhase2a"
       case Request.MatchChosen(_)    => "MatchChosen"
+      case Request.Die(_)            => "Die"
       case Request.Empty =>
         logger.fatal("Empty MatchmakerInbound encountered.")
     }
@@ -258,6 +259,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
         case Request.MatchPhase1A(r)   => handleMatchPhase1a(src, r)
         case Request.MatchPhase2A(r)   => handleMatchPhase2a(src, r)
         case Request.MatchChosen(r)    => handleMatchChosen(src, r)
+        case Request.Die(r)            => handleDie(src, r)
         case Request.Empty =>
           logger.fatal("Empty MatchmakerInbound encountered.")
       }
@@ -642,5 +644,9 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
         // Do nothing.
         ()
     }
+  }
+
+  private def handleDie(src: Transport#Address, die: Die): Unit = {
+    logger.fatal("Die!")
   }
 }

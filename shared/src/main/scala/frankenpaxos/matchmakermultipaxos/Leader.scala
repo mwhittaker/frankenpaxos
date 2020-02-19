@@ -481,6 +481,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   // The leader's state.
   @JSExport
   protected var state: State = if (index == 0) {
+    // TODO(mwhittaker): Have the leader start with a predetermined
+    // reconfiguration.
     val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
     startMatchmaking(round = 0,
                      pendingClientRequests = mutable.Buffer(),
@@ -877,7 +879,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     state = startMatchmaking(newRound, pendingClientRequests(state), qs, qsp)
   }
 
-  private def becomeIIPlusOneLeader(): Unit = {
+  private def becomeIIPlusOneLeader(
+      qs: QuorumSystem[AcceptorIndex],
+      qsp: QuorumSystemProto
+  ): Unit = {
     state match {
       case _: Inactive | _: Matchmaking | _: WaitingForNewMatchmakers |
           _: Phase1 | _: Phase2Matchmaking | _: Phase212 | _: Phase22 =>
@@ -885,7 +890,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case phase2: Phase2 =>
         if (roundSystem.leader(phase2.round + 1) == index) {
-          val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
           val matchmaking = startMatchmaking(
             round = phase2.round + 1,
             pendingClientRequests = mutable.Buffer(),
@@ -1253,6 +1257,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.PersistedAck(_)           => "PersistedAck"
         case Request.Stopped(_)                => "Stopped"
         case Request.MatchChosen(_)            => "MatchChosen"
+        case Request.Die(_)                    => "Die"
+        case Request.ForceReconfiguration(_)   => "ForceReconfiguration"
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -1275,6 +1281,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         case Request.PersistedAck(r)      => handlePersistedAck(src, r)
         case Request.Stopped(r)           => handleStopped(src, r)
         case Request.MatchChosen(r)       => handleMatchChosen(src, r)
+        case Request.Die(r)               => handleDie(src, r)
+        case Request.ForceReconfiguration(r) =>
+          handleForceReconfiguration(src, r)
         case Request.Empty =>
           logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -2093,9 +2102,25 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private def handleDie(src: Transport#Address, die: Die): Unit = {
+    logger.fatal("Die!")
+  }
+
+  private def handleForceReconfiguration(
+      src: Transport#Address,
+      forceReconfiguration: ForceReconfiguration
+  ): Unit = {
+    val quorumSystem = new SimpleMajority(
+      forceReconfiguration.acceptorIndex.toSet,
+      seed
+    )
+    becomeIIPlusOneLeader(quorumSystem, QuorumSystem.toProto(quorumSystem))
+  }
+
   // API ///////////////////////////////////////////////////////////////////////
   // For the JS frontend.
   def reconfigure(): Unit = {
-    becomeIIPlusOneLeader()
+    val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
+    becomeIIPlusOneLeader(qs, qsp)
   }
 }

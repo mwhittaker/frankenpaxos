@@ -283,8 +283,7 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Reconfigure is like `handleReconfigure` except we don't assume it comes
-  // from a leader. This is mostly used to trigger reconfigurations manually
-  // from the JS visualization.
+  // from a leader.
   private def reconfigure(matchmakerIndices: Set[MatchmakerIndex]): Unit = {
     state match {
       case idle: Idle =>
@@ -329,6 +328,8 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         case Request.MatchPhase2B(_) => "MatchPhase2b"
         case Request.MatchChosen(_)  => "MatchChosen"
         case Request.MatchNack(_)    => "MatchNack"
+        case Request.ForceMatchmakerReconfiguration(_) =>
+          "ForceMatchmakerReconfiguration"
         case Request.Empty =>
           logger.fatal("Empty ReconfigurerInbound encountered.")
       }
@@ -343,6 +344,8 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         case Request.MatchPhase2B(r) => handleMatchPhase2b(src, r)
         case Request.MatchChosen(r)  => handleMatchChosen(src, r)
         case Request.MatchNack(r)    => handleMatchNack(src, r)
+        case Request.ForceMatchmakerReconfiguration(r) =>
+          handleForceMatchmakerReconfiguration(src, r)
         case Request.Empty =>
           logger.fatal("Empty ReconfigurerInbound encountered.")
       }
@@ -722,6 +725,13 @@ class Reconfigurer[Transport <: frankenpaxos.Transport[Transport]](
         configuration.matchmakerIndex.toSet
       )
     )
+  }
+
+  private def handleForceMatchmakerReconfiguration(
+      src: Transport#Address,
+      force: ForceMatchmakerReconfiguration
+  ): Unit = {
+    reconfigure(force.matchmakerIndex.toSet)
   }
 
   // API ///////////////////////////////////////////////////////////////////////

@@ -58,6 +58,14 @@
 //     |         |         | <------ |         |         |     MatchChosen
 //     |         |         | <------ |         |         |     MatchNack
 //
+// Driver.
+
+//   Driver   Leader Reconfigurer Matchmaker Acceptor
+//     | ------> |         |         |         |     Die
+//     | --------^-----------------> |         |     Die
+//     | --------^---------------------------> |     Die
+//     | ------> |         |         |         |     ForceReconfiguration
+//     | ----------------> |         |         |     ForceMatchmakerReconfiguration
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
@@ -446,6 +454,26 @@ message MatchNack {
   required int32 round = 2;
 }
 
+// Driver. /////////////////////////////////////////////////////////////////////
+message Die {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message ForceReconfiguration {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated int32 acceptor_index = 1;
+}
+
+message ForceMatchmakerReconfiguration {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated int32 matchmaker_index = 1;
+}
+
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ClientInbound {
   oneof request {
@@ -471,6 +499,8 @@ message LeaderInbound {
     GarbageCollectAck garbage_collect_ack = 12;
     Stopped stopped = 13;
     MatchChosen match_chosen = 14;
+    Die die = 15;
+    ForceReconfiguration force_reconfiguration = 16;
   }
 }
 
@@ -483,6 +513,7 @@ message ReconfigurerInbound {
     MatchPhase2b match_phase2b = 5;
     MatchChosen match_chosen = 6;
     MatchNack match_nack = 7;
+    ForceMatchmakerReconfiguration force_matchmaker_reconfiguration = 8;
   }
 }
 
@@ -495,6 +526,7 @@ message MatchmakerInbound {
     MatchPhase1a match_phase1a = 5;
     MatchPhase2a match_phase2a = 6;
     MatchChosen match_chosen = 7;
+    Die die = 8;
   }
 }
 
@@ -503,6 +535,7 @@ message AcceptorInbound {
     Phase1a phase1a = 1;
     Phase2a phase2a = 2;
     Persisted persisted = 3;
+    Die die = 4;
   }
 }
 
