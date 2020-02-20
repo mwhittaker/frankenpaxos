@@ -87,6 +87,13 @@ class LeaderMetrics(collectors: Collectors) {
     .help("Latency (in milliseconds) of a request.")
     .register()
 
+  val reconfigurationLatency: Summary = collectors.summary
+    .build()
+    .name("matchmakermultipaxos_leader_reconfiguration_latency")
+    .labelNames("phase")
+    .help("Latency (in milliseconds) of a reconfiguration phase.")
+    .register()
+
   val staleMatchRepliesTotal: Counter = collectors.counter
     .build()
     .name("matchmakermultipaxos_leader_stale_match_replies_total")
@@ -422,7 +429,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Phase2Matchmaking(
       phase2: Phase2,
-      matchmaking: Matchmaking
+      matchmaking: Matchmaking,
+      // When we perform a reconfiguration, we record how long each phase of
+      // the reconfiguration takes. To do this, we record the starting time of
+      // the reconfiguration in `startNanos`.
+      startNanos: Long
   ) extends State
 
   // TODO(mwhittaker): Document.
@@ -430,14 +441,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   case class Phase212(
       oldPhase2: Phase2,
       newPhase1: Phase1,
-      newPhase2: Phase2
+      newPhase2: Phase2,
+      startNanos: Long
   ) extends State
 
   // TODO(mwhittaker): Document.
   @JSExportAll
   case class Phase22(
       oldPhase2: Phase2,
-      newPhase2: Phase2
+      newPhase2: Phase2,
+      startNanos: Long
   ) extends State
 
   // Fields ////////////////////////////////////////////////////////////////////
@@ -762,17 +775,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case phase2: Phase2 =>
         phase2.resendPhase2as.stop()
         stopGcTimers(phase2.gc)
-      case Phase2Matchmaking(phase2, matchmaking) =>
+      case Phase2Matchmaking(phase2, matchmaking, _) =>
         phase2.resendPhase2as.stop()
         stopGcTimers(phase2.gc)
         matchmaking.resendMatchRequests.stop()
-      case Phase212(oldPhase2, newPhase1, newPhase2) =>
+      case Phase212(oldPhase2, newPhase1, newPhase2, _) =>
         oldPhase2.resendPhase2as.stop()
         stopGcTimers(oldPhase2.gc)
         newPhase1.resendPhase1as.stop()
         newPhase2.resendPhase2as.stop()
         stopGcTimers(newPhase2.gc)
-      case Phase22(oldPhase2, newPhase2) =>
+      case Phase22(oldPhase2, newPhase2, _) =>
         oldPhase2.resendPhase2as.stop()
         stopGcTimers(oldPhase2.gc)
         newPhase2.resendPhase2as.stop()
@@ -931,6 +944,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
       case phase2: Phase2 =>
         if (roundSystem.leader(phase2.round + 1) == index) {
+          // Update metrics.
           metrics.becomeIIPlusOneLeaderTotal.labels("yes").inc()
           if (phase2.gc == Done) {
             metrics.gcDoneDuringLeaderChange.inc()
@@ -942,7 +956,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             qs,
             qsp
           )
-          state = Phase2Matchmaking(phase2, matchmaking)
+          state = Phase2Matchmaking(phase2, matchmaking, System.nanoTime)
         } else {
           metrics.becomeIIPlusOneLeaderTotal.labels("no").inc()
           becomeLeader(getNextRound(state))
@@ -1390,6 +1404,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             // happening anyway, and it simplifies things a bit.
             stopGcTimers(phase2Matchmaking.phase2.gc)
 
+            // Update metrics.
+            val startNanos = System.nanoTime
+            metrics.reconfigurationLatency
+              .labels("Phase2Matchmaking to Phase212")
+              .observe(
+                (startNanos - phase2Matchmaking.startNanos).toDouble / 1000000
+              )
+
             // Next, we transition to Phase 1 and Phase 2.
             state = Phase212(
               oldPhase2 = phase2Matchmaking.phase2.copy(gc = Cancelled),
@@ -1406,7 +1428,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 // We wait until we enter a stable Phase 2 to perform garbage
                 // collection.
                 gc = Cancelled
-              )
+              ),
+              startNanos = startNanos
             )
 
           case Some(Right(_: Phase2)) =>
@@ -1566,6 +1589,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               // Stop timers.
               stopTimers(phase212.oldPhase2)
 
+              // Update metrics.
+              metrics.reconfigurationLatency
+                .labels("Phase212 to Phase2")
+                .observe(
+                  (System.nanoTime - phase212.startNanos).toDouble / 1000000
+                )
+
               // Update our state.
               state = phase212.newPhase2.copy(
                 gc = QueryingReplicas(
@@ -1577,9 +1607,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 )
               )
             } else {
+              val startNanos = System.nanoTime
+              metrics.reconfigurationLatency
+                .labels("Phase212 to Phase22")
+                .observe(
+                  (startNanos - phase212.startNanos).toDouble / 1000000
+                )
+
               state = Phase22(
                 oldPhase2 = phase212.oldPhase2,
-                newPhase2 = phase212.newPhase2
+                newPhase2 = phase212.newPhase2,
+                startNanos = startNanos
               )
             }
         }
@@ -1689,6 +1727,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
             )
           )
+
+          // Update metrics.
+          metrics.reconfigurationLatency
+            .labels("Phase22 to Phase2")
+            .observe(
+              (System.nanoTime - phase22.startNanos).toDouble / 1000000
+            )
+
           state = phase22.newPhase2.copy(
             gc = QueryingReplicas(
               // The numbers here are not perfect. chosenWatermark and maxSlot
