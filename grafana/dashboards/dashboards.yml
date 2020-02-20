@@ -8,5 +8,5 @@ providers:
   updateIntervalSeconds: 10
   options:
     # path: /home/vagrant/frankenpaxos/grafana/dashboards
-    # path: /home/ubuntu/frankenpaxos/grafana/dashboards
-    path: /mnt/efs/frankenpaxos/frankenpaxos/grafana/dashboards
+    path: /home/ubuntu/frankenpaxos/grafana/dashboards
+    # path: /mnt/efs/frankenpaxos/frankenpaxos/grafana/dashboards
