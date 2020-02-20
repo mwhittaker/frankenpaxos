@@ -1,5 +1,5 @@
 from .. import proto_util
-from typing import NamedTuple, Union
+from typing import List, NamedTuple, Union
 
 
 class DoNothing(NamedTuple):
@@ -14,11 +14,11 @@ class DoNothing(NamedTuple):
 
 class DoubleLeaderReconfiguration(NamedTuple):
     first_reconfiguration_delay_ms: int
-    first_reconfiguration: int
+    first_reconfiguration: List[int]
     acceptor_failure_delay_ms: int
     acceptor_failure: int
     second_reconfiguration_delay_ms: int
-    second_reconfiguration: int
+    second_reconfiguration: List[int]
     # We put the name here so that it appears in benchmark outputs.
     name: str = 'DoubleLeaderReconfiguration'
 

@@ -483,27 +483,27 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
         if input.monitored:
             prometheus_config = prometheus.prometheus_config(
                 int(input.prometheus_scrape_interval.total_seconds() * 1000), {
-                    'multipaxos_client': [
+                    'matchmakermultipaxos_client': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().clients
                     ],
-                    'multipaxos_leader': [
+                    'matchmakermultipaxos_leader': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().leaders
                     ],
-                    'multipaxos_matchmaker': [
+                    'matchmakermultipaxos_matchmaker': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().matchmakers
                     ],
-                    'multipaxos_reconfigurer': [
+                    'matchmakermultipaxos_reconfigurer': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().reconfigurers
                     ],
-                    'multipaxos_acceptor': [
+                    'matchmakermultipaxos_acceptor': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().acceptors
                     ],
-                    'multipaxos_replica': [
+                    'matchmakermultipaxos_replica': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().replicas
                     ],
@@ -624,7 +624,7 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
             bench,
             client_csvs,
             drop_prefix=datetime.timedelta(seconds=0),
-            save_data=False)
+            save_data=True)
 
 
 def get_parser() -> argparse.ArgumentParser:
