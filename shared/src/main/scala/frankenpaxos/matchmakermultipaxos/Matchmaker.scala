@@ -475,7 +475,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
             bootstrap.reconfigurerIndex ->
               Log(
                 gcWatermark = bootstrap.gcWatermark,
-                configurations = mutable.SortedMap() ++
+                configurations = mutable.SortedMap[Round, Configuration]() ++
                   bootstrap.configuration.map(c => c.round -> c)
               )
           )
@@ -486,7 +486,7 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
       case Some(pending: Pending) =>
         pending.logs(bootstrap.reconfigurerIndex) = Log(
           gcWatermark = bootstrap.gcWatermark,
-          configurations = mutable.SortedMap() ++
+          configurations = mutable.SortedMap[Round, Configuration]() ++
             bootstrap.configuration.map(c => c.round -> c)
         )
         logger.check(acceptorStates.contains(bootstrap.epoch))
