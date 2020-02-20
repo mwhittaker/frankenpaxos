@@ -137,6 +137,45 @@ class LeaderMetrics(collectors: Collectors) {
     .help("Total number of times a node becomes the leader.")
     .register()
 
+  val becomeIIPlusOneLeaderTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_become_i_i_plus_one_leader_total")
+    // "yes" if the i/i+1 path is taken and "no" if the normal reconfiguration
+    // path is taken.
+    .labelNames("successful")
+    .help("Total number of times a node attemps an i/i+1 leader change.")
+    .register()
+
+  val gcDoneDuringLeaderChange: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_gc_done_during_leader_change")
+    .help("Total number of times an i/i+1 leader change happens with GC done.")
+    .register()
+
+  // After the matchmaking phase, we have to perform Phase 1 with some set of n
+  // previous rounds. previousNumberOfRoundsTotal records the frequency of n.
+  // We make this a Counter instead of a Summary because it's likely that there
+  // won't be many different values of n.
+  val previousNumberOfRoundsTotal: Counter = collectors.counter
+    .build()
+    .name("matchmakermultipaxos_leader_previous_number_of_rounds_total")
+    // "yes" if the i/i+1 path is taken and "no" if the normal reconfiguration
+    // path is taken.
+    .labelNames("n")
+    .help(
+      "The number of previous rounds with which we have to perform Phase 1."
+    )
+    .register()
+
+  val phase1NumEntries: Summary = collectors.summary
+    .build()
+    .name("matchmakermultipaxos_leader_phase1_num_entries")
+    .help(
+      "The number of log entries we receive in Phase 1 in which we have " +
+        "to get some value chosen."
+    )
+    .register()
+
   val resendMatchRequestsTotal: Counter = collectors.counter
     .build()
     .name("matchmakermultipaxos_leader_resend_match_requests_total")
@@ -887,10 +926,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     state match {
       case _: Inactive | _: Matchmaking | _: WaitingForNewMatchmakers |
           _: Phase1 | _: Phase2Matchmaking | _: Phase212 | _: Phase22 =>
+        metrics.becomeIIPlusOneLeaderTotal.labels("no").inc()
         becomeLeader(getNextRound(state))
 
       case phase2: Phase2 =>
         if (roundSystem.leader(phase2.round + 1) == index) {
+          metrics.becomeIIPlusOneLeaderTotal.labels("yes").inc()
+          if (phase2.gc == Done) {
+            metrics.gcDoneDuringLeaderChange.inc()
+          }
+
           val matchmaking = startMatchmaking(
             round = phase2.round + 1,
             pendingClientRequests = mutable.Buffer(),
@@ -899,6 +944,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           )
           state = Phase2Matchmaking(phase2, matchmaking)
         } else {
+          metrics.becomeIIPlusOneLeaderTotal.labels("no").inc()
           becomeLeader(getNextRound(state))
         }
     }
@@ -1017,6 +1063,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
       }
     }
+
+    metrics.previousNumberOfRoundsTotal
+      .labels(pendingRounds.size.toString)
+      .inc()
 
     // If there are no pending rounds, then we're done already! We can skip
     // straight to phase 2. Otherwise, we have to go through phase 1.
@@ -1400,6 +1450,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               }
             }
 
+            metrics.phase1NumEntries.observe(values.size)
+
             // We've filled in every slot up to and including maxSlot, so the
             // next slot is maxSlot + 1 (or chosenWatermark if maxSlot + 1 is
             // smaller).
@@ -1491,6 +1543,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
               }
             }
+
+            metrics.phase1NumEntries.observe(
+              values.size +
+                (Math.max(maxSlot + 1, chosenWatermark) until
+                  phase212.oldPhase2.nextSlot).size
+            )
 
             // At this point, we either transition to Phase22 or Phase2,
             // depending on whether or not the old Phase 2 has finished
