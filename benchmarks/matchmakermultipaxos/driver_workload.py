@@ -12,6 +12,23 @@ class DoNothing(NamedTuple):
         }
 
 
+class RepeatedLeaderReconfiguration(NamedTuple):
+    acceptors: List[int]
+    delay_ms: int
+    period_ms: int
+    # We put the name here so that it appears in benchmark outputs.
+    name: str = 'RepeatedLeaderReconfiguration'
+
+    def to_proto(self) -> proto_util.Message:
+        return {
+            'repeated_leader_reconfiguration': {
+                'acceptor': self.acceptors,
+                'delay_ms': self.delay_ms,
+                'period_ms': self.period_ms,
+            }
+        }
+
+
 class DoubleLeaderReconfiguration(NamedTuple):
     first_reconfiguration_delay_ms: int
     first_reconfiguration: List[int]
@@ -41,4 +58,5 @@ class DoubleLeaderReconfiguration(NamedTuple):
         }
 
 
-DriverWorkload = Union[DoNothing, DoubleLeaderReconfiguration]
+DriverWorkload = Union[DoNothing, RepeatedLeaderReconfiguration,
+                       DoubleLeaderReconfiguration]

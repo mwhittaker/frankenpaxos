@@ -14,6 +14,17 @@ sealed trait DriverWorkload
 // This is a dud workload in which the driver doesn't do anything.
 object DoNothing extends DriverWorkload
 
+// This is a testing workload in which the leader waits some delay and then
+// repeatedly performs reconfigurations.
+case class RepeatedLeaderReconfiguration(
+    // The acceptors to reconfigure to.
+    acceptors: Set[Int],
+    // The delay to the first reconfiguration.
+    delay: java.time.Duration,
+    // The period between reconfigurations.
+    period: java.time.Duration
+) extends DriverWorkload
+
 // A double leader reconfiguration involves two acceptor reconfigurations (both
 // initiated by the leader) and an acceptor failure. The throughput should look
 // something like this:
@@ -51,6 +62,14 @@ object DriverWorkload {
     proto.value match {
       case Value.DoNothing(w) =>
         DoNothing
+
+      case Value.RepeatedLeaderReconfiguration(w) =>
+        RepeatedLeaderReconfiguration(
+          acceptors = w.acceptor.toSet,
+          delay = java.time.Duration.ofMillis(w.delayMs),
+          period = java.time.Duration.ofMillis(w.periodMs)
+        )
+
       case Value.DoubleLeaderReconfiguration(w) =>
         DoubleLeaderReconfiguration(
           firstReconfigurationDelay =
@@ -63,6 +82,7 @@ object DriverWorkload {
             java.time.Duration.ofMillis(w.secondReconfigurationDelayMs),
           secondReconfiguration = w.secondReconfiguration.toSet
         )
+
       case Value.Empty =>
         throw new IllegalArgumentException(
           "Empty DriverWorkloadProto encountered."

@@ -41,6 +41,11 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
 
   object DoNothingState extends State
 
+  case class RepeatedLeaderReconfigurationState(
+      delayTimer: Transport#Timer,
+      reconfigureTimer: Transport#Timer
+  ) extends State
+
   case class DoubleLeaderReconfigurationState(
       firstReconfigurationTimer: Transport#Timer,
       acceptorFailureTimer: Transport#Timer,
@@ -76,6 +81,37 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
   val state: State = workload match {
     case DoNothing =>
       DoNothingState
+
+    case workload: RepeatedLeaderReconfiguration =>
+      lazy val reconfigureTimer: Transport#Timer =
+        timer(
+          "reconfigureTimer",
+          workload.period,
+          () => {
+            logger.info("reconfigureTimer triggered")
+            leaders(0).send(
+              LeaderInbound().withForceReconfiguration(
+                ForceReconfiguration(acceptorIndex = 0 until (2 * config.f + 1))
+              )
+            )
+            reconfigureTimer.start()
+          }
+        )
+
+      val delayTimer = timer(
+        "delayTimer",
+        workload.delay,
+        () => {
+          logger.info("delayTimer triggered")
+          reconfigureTimer.start()
+        }
+      )
+      delayTimer.start()
+
+      RepeatedLeaderReconfigurationState(
+        delayTimer = delayTimer,
+        reconfigureTimer = reconfigureTimer
+      )
 
     case workload: DoubleLeaderReconfiguration =>
       // We reconfigure from one set of 2f+1 acceptors to a different set of

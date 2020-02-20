@@ -11,6 +11,12 @@ option (scalapb.options) = {
 
 message DoNothingProto {}
 
+message RepeatedLeaderReconfigurationProto {
+    repeated int32 acceptor = 1;
+    required int32 delay_ms = 2;
+    required int32 period_ms = 3;
+}
+
 message DoubleLeaderReconfigurationProto {
     required int32 first_reconfiguration_delay_ms = 1;
     repeated int32 first_reconfiguration = 2;
@@ -23,6 +29,7 @@ message DoubleLeaderReconfigurationProto {
 message DriverWorkloadProto {
   oneof value {
     DoNothingProto do_nothing = 1;
-    DoubleLeaderReconfigurationProto double_leader_reconfiguration = 2;
+    RepeatedLeaderReconfigurationProto repeated_leader_reconfiguration = 2;
+    DoubleLeaderReconfigurationProto double_leader_reconfiguration = 3;
   }
 }
