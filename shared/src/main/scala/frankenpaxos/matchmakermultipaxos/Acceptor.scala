@@ -301,6 +301,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     )
 
     // Garbage collect slots.
+    // TODO(mwhittaker): This is too slow.
     states = states.dropWhile({
       case (slots, _) => round < persistedWatermark
     })

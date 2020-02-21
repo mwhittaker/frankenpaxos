@@ -25,35 +25,18 @@ case class RepeatedLeaderReconfiguration(
     period: java.time.Duration
 ) extends DriverWorkload
 
-// A double leader reconfiguration involves two acceptor reconfigurations (both
-// initiated by the leader) and an acceptor failure. The throughput should look
-// something like this:
-//
-//                  a   b     c
-//              |   |   |     |
-//              |   |   |     |
-//   throughput | --|-- |     |  -------
-//              |   |  \|_____|_/
-//              |   |   |     |
-//              +------------------------
-//                         time
-// where
-//
-//   (a) we reconfigure,
-//   (b) we fail an acceptor, and
-//   (c) we reconfigure.
-case class DoubleLeaderReconfiguration(
-    // The delay to the first reconfiguration, and the set of acceptor indices
-    // to reconfigure to.
-    firstReconfigurationDelay: java.time.Duration,
-    firstReconfiguration: Set[Int],
-    // The delay to fail the acceptor, and the acceptor index to fail.
-    acceptorFailureDelay: java.time.Duration,
-    acceptorFailure: Int,
-    // The delay to the second reconfiguration, and the set of acceptor indices
-    // to reconfigure to.
-    secondReconfigurationDelay: java.time.Duration,
-    secondReconfiguration: Set[Int]
+// A leader reconfiguration involves a warmup period of reconfigurations, then
+// a sequence of reconfigurations, then an acceptor failure, and a final
+// reconfiguration away from the failed acceptor.
+case class LeaderReconfiguration(
+    warmupDelay: java.time.Duration,
+    warmupPeriod: java.time.Duration,
+    warmupNum: Int,
+    delay: java.time.Duration,
+    period: java.time.Duration,
+    num: Int,
+    failureDelay: java.time.Duration,
+    recoverDelay: java.time.Duration
 ) extends DriverWorkload
 
 object DriverWorkload {
@@ -70,17 +53,16 @@ object DriverWorkload {
           period = java.time.Duration.ofMillis(w.periodMs)
         )
 
-      case Value.DoubleLeaderReconfiguration(w) =>
-        DoubleLeaderReconfiguration(
-          firstReconfigurationDelay =
-            java.time.Duration.ofMillis(w.firstReconfigurationDelayMs),
-          firstReconfiguration = w.firstReconfiguration.toSet,
-          acceptorFailureDelay =
-            java.time.Duration.ofMillis(w.acceptorFailureDelayMs),
-          acceptorFailure = w.acceptorFailure,
-          secondReconfigurationDelay =
-            java.time.Duration.ofMillis(w.secondReconfigurationDelayMs),
-          secondReconfiguration = w.secondReconfiguration.toSet
+      case Value.LeaderReconfiguration(w) =>
+        LeaderReconfiguration(
+          warmupDelay = java.time.Duration.ofMillis(w.warmupDelayMs),
+          warmupPeriod = java.time.Duration.ofMillis(w.warmupPeriodMs),
+          warmupNum = w.warmupNum,
+          delay = java.time.Duration.ofMillis(w.delayMs),
+          period = java.time.Duration.ofMillis(w.periodMs),
+          num = w.num,
+          failureDelay = java.time.Duration.ofMillis(w.failureDelayMs),
+          recoverDelay = java.time.Duration.ofMillis(w.recoverDelayMs)
         )
 
       case Value.Empty =>

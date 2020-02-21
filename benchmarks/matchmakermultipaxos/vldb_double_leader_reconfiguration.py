@@ -18,31 +18,31 @@ def main(args) -> None:
                     num_reconfigurers = f + 1,
                     num_acceptors = 2*n,
                     num_replicas = n,
-                    client_jvm_heap_size = '10g',
-                    leader_jvm_heap_size = '10g',
-                    matchmaker_jvm_heap_size = '10g',
-                    reconfigurer_jvm_heap_size = '10g',
-                    acceptor_jvm_heap_size = '10g',
-                    replica_jvm_heap_size = '10g',
-                    driver_jvm_heap_size = '5g',
+                    client_jvm_heap_size = '15g',
+                    leader_jvm_heap_size = '15g',
+                    matchmaker_jvm_heap_size = '15g',
+                    reconfigurer_jvm_heap_size = '15g',
+                    acceptor_jvm_heap_size = '15g',
+                    replica_jvm_heap_size = '15g',
+                    driver_jvm_heap_size = '15g',
                     warmup_duration = datetime.timedelta(seconds=5),
                     warmup_timeout = datetime.timedelta(seconds=10),
                     warmup_sleep = datetime.timedelta(seconds=0),
-                    duration = datetime.timedelta(seconds=45),
-                    timeout = datetime.timedelta(seconds=50),
+                    duration = datetime.timedelta(seconds=90),
+                    timeout = datetime.timedelta(seconds=100),
                     client_lag = datetime.timedelta(seconds=2),
                     state_machine = 'Noop',
                     workload = workload.StringWorkload(size_mean=1, size_std=0),
                     driver_workload = \
-                        driver_workload.DoubleLeaderReconfiguration(
-                            first_reconfiguration_delay_ms = 5 * 1000,
-                            # first_reconfiguration = list(range(n, 2*n)),
-                            first_reconfiguration = list(range(0, n)),
-                            acceptor_failure_delay_ms = 120 * 1000,
-                            acceptor_failure = n,
-                            second_reconfiguration_delay_ms = 120 * 1000,
-                            # second_reconfiguration = [0] + list(range(n+1, 2*n)),
-                            second_reconfiguration = list(range(0, n))
+                        driver_workload.LeaderReconfiguration(
+                            warmup_delay_ms = 10 * 1000,
+                            warmup_period_ms = 100,
+                            warmup_num = 100,
+                            delay_ms = 30 * 1000,
+                            period_ms = 1000,
+                            num = 10,
+                            failure_delay_ms = 600 * 1000,
+                            recover_delay_ms = 600 * 1000,
                         ),
                     profiled = args.profile,
                     monitored = args.monitor,
@@ -106,7 +106,7 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                     driver_log_level = args.log_level,
                 )
-                for f in [1, 2]
+                for f in [1]
                 for n in [2*f+1]
                 for (num_client_procs, num_clients_per_proc) in
                     # [(1, 1), (1, 5), (1, 10)]

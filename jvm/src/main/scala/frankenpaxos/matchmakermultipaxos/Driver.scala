@@ -46,10 +46,13 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
       reconfigureTimer: Transport#Timer
   ) extends State
 
-  case class DoubleLeaderReconfigurationState(
-      firstReconfigurationTimer: Transport#Timer,
-      acceptorFailureTimer: Transport#Timer,
-      secondReconfigurationTimer: Transport#Timer
+  case class LeaderReconfigurationState(
+      warmupDelayTimer: Transport#Timer,
+      warmupReconfigureTimer: Transport#Timer,
+      delayTimer: Transport#Timer,
+      reconfigureTimer: Transport#Timer,
+      failureTimer: Transport#Timer,
+      recoverTimer: Transport#Timer
   ) extends State
 
   // Fields ////////////////////////////////////////////////////////////////////
@@ -77,6 +80,53 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
   private val replicas: Seq[Chan[Replica[Transport]]] =
     for (a <- config.replicaAddresses)
       yield chan[Replica[Transport]](a, Replica.serializer)
+
+  def randomSubset(n: Int, m: Int): Set[Int] = {
+    Random
+      .shuffle(List() ++ (0 until n))
+      .take(m)
+      .toSet,
+  }
+
+  private def delayedTimer(
+      name: String,
+      delay: java.time.Duration,
+      period: java.time.Duration,
+      n: Int,
+      f: () => Unit,
+      onLast: () => Unit
+  ): (Transport#Timer, Transport#Timer) = {
+    case class Counter(var x: Int)
+
+    val counter = Counter(n)
+    lazy val t: Transport#Timer =
+      timer(
+        name,
+        period,
+        () => {
+          if (counter.x > 1) {
+            f()
+            counter.x = counter.x - 1
+            t.start()
+          } else {
+            onLast()
+          }
+        }
+      )
+
+    val delayTimer = timer(name + " delay", delay, () => { t.start() })
+    delayTimer.start()
+
+    (delayTimer, t)
+  }
+
+  def reconfigure(leader: Int, acceptors: Set[Int]): Unit = {
+    leaders(leader).send(
+      LeaderInbound().withForceReconfiguration(
+        ForceReconfiguration(acceptorIndex = acceptors.toSeq)
+      )
+    )
+  }
 
   val state: State = workload match {
     case DoNothing =>
@@ -113,55 +163,62 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
         reconfigureTimer = reconfigureTimer
       )
 
-    case workload: DoubleLeaderReconfiguration =>
-      // We reconfigure from one set of 2f+1 acceptors to a different set of
-      // 2f+1 acceptors. Then, we fail one and swap it out. So, we need at
-      // least 2(2f+1) acceptors.
-      val n = 2 * config.f + 1
-      logger.checkGe(acceptors.size, 2 * n)
+    case workload: LeaderReconfiguration =>
+      val (warmupDelayTimer, warmupReconfigureTimer) = delayedTimer(
+        name = "warmup",
+        delay = workload.warmupDelay,
+        period = workload.warmupPeriod,
+        n = workload.warmupNum,
+        f = () => {
+          logger.info("warmup triggered!")
+          reconfigure(0, randomSubset(acceptors.size, 2 * config.f + 1))
+        },
+        onLast = () => {
+          logger.info("warmup triggered!")
+          reconfigure(0, randomSubset(acceptors.size, 2 * config.f + 1))
+        }
+      )
 
-      val firstReconfigurationTimer =
-        timer(
-          "firstReconfigurationTimer",
-          workload.firstReconfigurationDelay,
-          () => {
-            logger.info("firstReconfigurationTimer triggered")
-            leaders(0).send(
-              LeaderInbound().withForceReconfiguration(
-                ForceReconfiguration(acceptorIndex = n until 2 * n)
-              )
-            )
-          }
-        )
-      val acceptorFailureTimer = timer(
-        "acceptorFailureTimer",
-        workload.acceptorFailureDelay,
-        () => {
-          logger.info("acceptorFailureTimer triggered")
-          acceptors(n).send(AcceptorInbound().withDie(Die()))
+      val (delayTimer, reconfigureTimer) = delayedTimer(
+        name = "normal",
+        delay = workload.delay,
+        period = workload.period,
+        n = workload.num,
+        f = () => {
+          logger.info("normal triggered!")
+          reconfigure(0, randomSubset(acceptors.size, 2 * config.f + 1))
+        },
+        onLast = () => {
+          logger.info("normal triggered!")
+          reconfigure(0, Set() ++ (0 until 2 * config.f + 1))
         }
       )
-      val secondReconfigurationTimer = timer(
-        "secondReconfigurationTimer",
-        workload.secondReconfigurationDelay,
+
+      val failureTimer = timer(
+        "failure",
+        workload.failureDelay,
         () => {
-          logger.info("secondReconfigurationTimer triggered")
-          leaders(0).send(
-            LeaderInbound().withForceReconfiguration(
-              ForceReconfiguration(
-                acceptorIndex = Seq(0) ++ (n + 1 until 2 * n)
-              )
-            )
-          )
+          logger.info("failure triggered!")
+          acceptors(0).send(AcceptorInbound().withDie(Die()))
         }
       )
-      firstReconfigurationTimer.start()
-      acceptorFailureTimer.start()
-      secondReconfigurationTimer.start()
-      DoubleLeaderReconfigurationState(
-        firstReconfigurationTimer = firstReconfigurationTimer,
-        acceptorFailureTimer = acceptorFailureTimer,
-        secondReconfigurationTimer = secondReconfigurationTimer
+
+      val recoverTimer = timer(
+        "recover",
+        workload.recoverDelay,
+        () => {
+          logger.info("recover triggered!")
+          reconfigure(0, Set() ++ (1 to 2 * config.f + 1))
+        }
+      )
+
+      LeaderReconfigurationState(
+        warmupDelayTimer = warmupDelayTimer,
+        warmupReconfigureTimer = warmupReconfigureTimer,
+        delayTimer = delayTimer,
+        reconfigureTimer = reconfigureTimer,
+        failureTimer = failureTimer,
+        recoverTimer = recoverTimer
       )
   }
 

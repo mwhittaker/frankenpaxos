@@ -17,19 +17,21 @@ message RepeatedLeaderReconfigurationProto {
     required int32 period_ms = 3;
 }
 
-message DoubleLeaderReconfigurationProto {
-    required int32 first_reconfiguration_delay_ms = 1;
-    repeated int32 first_reconfiguration = 2;
-    required int32 acceptor_failure_delay_ms = 3;
-    required int32 acceptor_failure = 4;
-    required int32 second_reconfiguration_delay_ms = 5;
-    repeated int32 second_reconfiguration = 6;
+message LeaderReconfigurationProto {
+    required int32 warmup_delay_ms = 1;
+    required int32 warmup_period_ms = 2;
+    required int32 warmup_num = 3;
+    required int32 delay_ms = 4;
+    required int32 period_ms = 5;
+    required int32 num = 6;
+    required int32 failure_delay_ms = 7;
+    required int32 recover_delay_ms = 8;
 }
 
 message DriverWorkloadProto {
   oneof value {
     DoNothingProto do_nothing = 1;
     RepeatedLeaderReconfigurationProto repeated_leader_reconfiguration = 2;
-    DoubleLeaderReconfigurationProto double_leader_reconfiguration = 3;
+    LeaderReconfigurationProto leader_reconfiguration = 3;
   }
 }

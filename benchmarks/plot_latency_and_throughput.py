@@ -13,16 +13,19 @@ import pandas as pd
 def plot_latency(ax: plt.Axes, latency_ms: pd.Series) -> None:
     ax.plot_date(latency_ms.index,
                  latency_ms.rolling('500ms').median(),
-                 label='500ms',
-                 fmt='-',
-                 alpha=0.5)
-    ax.plot_date(latency_ms.index,
-                 latency_ms.rolling('1s').median(),
-                 label='1s',
+                 label='median (500ms)',
                  fmt='-')
-    ax.set_title('Median latency')
+    ax.plot_date(latency_ms.index,
+                 latency_ms.rolling('500ms').quantile(0.9),
+                 label='90% (500ms)',
+                 fmt='-')
+    ax.plot_date(latency_ms.index,
+                 latency_ms.rolling('500ms').quantile(0.99),
+                 label='99% (500ms)',
+                 fmt='-')
+    ax.set_title('Latency')
     ax.set_xlabel('Time')
-    ax.set_ylabel('Median latency (ms)')
+    ax.set_ylabel('Latency (ms)')
 
 
 def plot_throughput(ax: plt.Axes, start: pd.Series, stop: pd.Series) -> None:

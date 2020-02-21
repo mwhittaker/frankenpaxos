@@ -29,34 +29,32 @@ class RepeatedLeaderReconfiguration(NamedTuple):
         }
 
 
-class DoubleLeaderReconfiguration(NamedTuple):
-    first_reconfiguration_delay_ms: int
-    first_reconfiguration: List[int]
-    acceptor_failure_delay_ms: int
-    acceptor_failure: int
-    second_reconfiguration_delay_ms: int
-    second_reconfiguration: List[int]
+class LeaderReconfiguration(NamedTuple):
+    warmup_delay_ms: int
+    warmup_period_ms: int
+    warmup_num: int
+    delay_ms: int
+    period_ms: int
+    num: int
+    failure_delay_ms: int
+    recover_delay_ms: int
     # We put the name here so that it appears in benchmark outputs.
-    name: str = 'DoubleLeaderReconfiguration'
+    name: str = 'LeaderReconfiguration'
 
     def to_proto(self) -> proto_util.Message:
         return {
-            'double_leader_reconfiguration': {
-                'first_reconfiguration_delay_ms':
-                    self.first_reconfiguration_delay_ms,
-                'first_reconfiguration':
-                    self.first_reconfiguration,
-                'acceptor_failure_delay_ms':
-                    self.acceptor_failure_delay_ms,
-                'acceptor_failure':
-                    self.acceptor_failure,
-                'second_reconfiguration_delay_ms':
-                    self.second_reconfiguration_delay_ms,
-                'second_reconfiguration':
-                    self.second_reconfiguration,
+            'leader_reconfiguration': {
+                'warmup_delay_ms': self.warmup_delay_ms,
+                'warmup_period_ms': self.warmup_period_ms,
+                'warmup_num': self.warmup_num,
+                'delay_ms': self.delay_ms,
+                'period_ms': self.period_ms,
+                'num': self.num,
+                'failure_delay_ms': self.failure_delay_ms,
+                'recover_delay_ms': self.recover_delay_ms,
             }
         }
 
 
 DriverWorkload = Union[DoNothing, RepeatedLeaderReconfiguration,
-                       DoubleLeaderReconfiguration]
+                       LeaderReconfiguration]
