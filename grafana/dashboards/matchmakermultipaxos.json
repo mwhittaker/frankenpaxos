@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1582169220281,
+  "iteration": 1582241105584,
   "links": [],
   "panels": [
     {
@@ -987,6 +987,292 @@
         "x": 0,
         "y": 64
       },
+      "id": 28,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(matchmakermultipaxos_leader_become_i_i_plus_one_leader_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "i/i+1 reconfigurations (type={{successful}}) ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(matchmakermultipaxos_leader_gc_done_during_leader_change[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "GC done during leader change ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(matchmakermultipaxos_leader_become_leader_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Become leader ({{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(matchmakermultipaxos_leader_stop_being_leader_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Stop being leader ({{instance}})",
+          "refId": "D"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Leader Changes",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 72
+      },
+      "id": 29,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(matchmakermultipaxos_leader_reconfiguration_latency_sum{job=~\"$job\"}[1s])\n/ rate(matchmakermultipaxos_leader_reconfiguration_latency_count{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Reconfiguration latency (phase={{phase}}) ({{instance}})",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Reconfiguration Latencies",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 80
+      },
+      "id": 30,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(matchmakermultipaxos_leader_previous_number_of_rounds_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Previous number of rounds (n={{n}}) ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(matchmakermultipaxos_leader_phase1_num_entries_sum{job=~\"$job\"}[1s])\n/ rate(matchmakermultipaxos_leader_phase1_num_entries_count{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Phase 1 number of entries ({{instance}})",
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Reconfiguration Sizes",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 88
+      },
       "id": 27,
       "legend": {
         "avg": false,
@@ -1085,7 +1371,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 72
+        "y": 96
       },
       "id": 7,
       "legend": {
@@ -1178,7 +1464,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 80
+        "y": 104
       },
       "id": 8,
       "legend": {
@@ -1263,6 +1549,7 @@
       {
         "allValue": null,
         "current": {
+          "selected": true,
           "text": "jvm_classes_unloaded_total",
           "value": "jvm_classes_unloaded_total"
         },
@@ -1461,13 +1748,48 @@
           },
           {
             "selected": false,
+            "text": "matchmakermultipaxos_leader_become_i_i_plus_one_leader_total",
+            "value": "matchmakermultipaxos_leader_become_i_i_plus_one_leader_total"
+          },
+          {
+            "selected": false,
             "text": "matchmakermultipaxos_leader_become_leader_total",
             "value": "matchmakermultipaxos_leader_become_leader_total"
           },
           {
             "selected": false,
+            "text": "matchmakermultipaxos_leader_gc_done_during_leader_change",
+            "value": "matchmakermultipaxos_leader_gc_done_during_leader_change"
+          },
+          {
+            "selected": false,
+            "text": "matchmakermultipaxos_leader_phase1_num_entries_count",
+            "value": "matchmakermultipaxos_leader_phase1_num_entries_count"
+          },
+          {
+            "selected": false,
+            "text": "matchmakermultipaxos_leader_phase1_num_entries_sum",
+            "value": "matchmakermultipaxos_leader_phase1_num_entries_sum"
+          },
+          {
+            "selected": false,
             "text": "matchmakermultipaxos_leader_phase2b_already_chosen_total",
             "value": "matchmakermultipaxos_leader_phase2b_already_chosen_total"
+          },
+          {
+            "selected": false,
+            "text": "matchmakermultipaxos_leader_previous_number_of_rounds_total",
+            "value": "matchmakermultipaxos_leader_previous_number_of_rounds_total"
+          },
+          {
+            "selected": false,
+            "text": "matchmakermultipaxos_leader_reconfiguration_latency_count",
+            "value": "matchmakermultipaxos_leader_reconfiguration_latency_count"
+          },
+          {
+            "selected": false,
+            "text": "matchmakermultipaxos_leader_reconfiguration_latency_sum",
+            "value": "matchmakermultipaxos_leader_reconfiguration_latency_sum"
           },
           {
             "selected": false,
@@ -1704,6 +2026,7 @@
       {
         "allValue": null,
         "current": {
+          "selected": true,
           "text": "All",
           "value": "$__all"
         },
@@ -1722,33 +2045,33 @@
           },
           {
             "selected": false,
-            "text": "multipaxos_acceptor",
-            "value": "multipaxos_acceptor"
+            "text": "matchmakermultipaxos_acceptor",
+            "value": "matchmakermultipaxos_acceptor"
           },
           {
             "selected": false,
-            "text": "multipaxos_client",
-            "value": "multipaxos_client"
+            "text": "matchmakermultipaxos_client",
+            "value": "matchmakermultipaxos_client"
           },
           {
             "selected": false,
-            "text": "multipaxos_leader",
-            "value": "multipaxos_leader"
+            "text": "matchmakermultipaxos_leader",
+            "value": "matchmakermultipaxos_leader"
           },
           {
             "selected": false,
-            "text": "multipaxos_matchmaker",
-            "value": "multipaxos_matchmaker"
+            "text": "matchmakermultipaxos_matchmaker",
+            "value": "matchmakermultipaxos_matchmaker"
           },
           {
             "selected": false,
-            "text": "multipaxos_reconfigurer",
-            "value": "multipaxos_reconfigurer"
+            "text": "matchmakermultipaxos_reconfigurer",
+            "value": "matchmakermultipaxos_reconfigurer"
           },
           {
             "selected": false,
-            "text": "multipaxos_replica",
-            "value": "multipaxos_replica"
+            "text": "matchmakermultipaxos_replica",
+            "value": "matchmakermultipaxos_replica"
           }
         ],
         "query": "label_values(job)",
@@ -1765,6 +2088,7 @@
       {
         "allValue": null,
         "current": {
+          "selected": true,
           "text": "avg_over_time",
           "value": "avg_over_time"
         },
@@ -1792,8 +2116,8 @@
     ]
   },
   "time": {
-    "from": "2020-02-20T03:15:55.404Z",
-    "to": "2020-02-20T03:16:25.051Z"
+    "from": "2020-02-20T23:16:27.052Z",
+    "to": "2020-02-20T23:17:39.912Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1823,5 +2147,5 @@
   "timezone": "",
   "title": "MatchmakerMultiPaxos",
   "uid": "9Kdek-QWk",
-  "version": 4
+  "version": 6
 }
