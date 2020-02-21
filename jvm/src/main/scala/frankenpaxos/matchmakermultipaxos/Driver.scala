@@ -55,6 +55,14 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
       recoverTimer: Transport#Timer
   ) extends State
 
+  case class MatchmakerReconfigurationState(
+      delayTimer: Transport#Timer,
+      matchmakerReconfigureTimer: Transport#Timer,
+      failureTimer: Transport#Timer,
+      recoverTimer: Transport#Timer,
+      reconfigureTimer: Transport#Timer
+  ) extends State
+
   // Fields ////////////////////////////////////////////////////////////////////
   // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
@@ -124,6 +132,14 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
     leaders(leader).send(
       LeaderInbound().withForceReconfiguration(
         ForceReconfiguration(acceptorIndex = acceptors.toSeq)
+      )
+    )
+  }
+
+  def matchmakerReconfigure(reconfigurer: Int, matchmakers: Set[Int]): Unit = {
+    reconfigurers(reconfigurer).send(
+      ReconfigurerInbound().withForceMatchmakerReconfiguration(
+        ForceMatchmakerReconfiguration(matchmakerIndex = matchmakers.toSeq)
       )
     )
   }
@@ -219,6 +235,60 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
         reconfigureTimer = reconfigureTimer,
         failureTimer = failureTimer,
         recoverTimer = recoverTimer
+      )
+
+    case workload: MatchmakerReconfiguration =>
+      val (delayTimer, matchmakerReconfigureTimer) = delayedTimer(
+        name = "normal",
+        delay = workload.delay,
+        period = workload.period,
+        n = workload.num,
+        f = () => {
+          logger.info("normal triggered!")
+          matchmakerReconfigure(
+            0,
+            randomSubset(matchmakers.size, 2 * config.f + 1)
+          )
+        },
+        onLast = () => {
+          logger.info("normal triggered!")
+          matchmakerReconfigure(0, Set() ++ (1 to 2 * config.f + 1))
+        }
+      )
+
+      val failureTimer = timer(
+        "failure",
+        workload.failureDelay,
+        () => {
+          logger.info("failure triggered!")
+          matchmakers(2 * config.f + 1).send(MatchmakerInbound().withDie(Die()))
+        }
+      )
+
+      val recoverTimer = timer(
+        "recover",
+        workload.recoverDelay,
+        () => {
+          logger.info("recover triggered!")
+          matchmakerReconfigure(0, Set() ++ (0 until 2 * config.f + 1))
+        }
+      )
+
+      val reconfigureTimer = timer(
+        "reconfigure",
+        workload.reconfigureDelay,
+        () => {
+          logger.info("reconfigure triggered!")
+          reconfigure(0, Set() ++ (0 until 2 * config.f + 1))
+        }
+      )
+
+      MatchmakerReconfigurationState(
+        delayTimer = delayTimer,
+        matchmakerReconfigureTimer = matchmakerReconfigureTimer,
+        failureTimer = failureTimer,
+        recoverTimer = recoverTimer,
+        reconfigureTimer = reconfigureTimer
       )
   }
 
