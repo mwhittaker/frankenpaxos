@@ -205,7 +205,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       acceptorIndex = index,
       persistedWatermark = persistedWatermark,
       info = states
-        .iteratorFrom(phase1a.chosenWatermark)
+        .iteratorFrom(Math.max(persistedWatermark, phase1a.chosenWatermark))
         .flatMap({
           case (slot, state) =>
             // This reason for this `if` is very subtle. During an i/i+1
@@ -290,6 +290,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // would be completely ignored by the acceptors, which is not what we want.
     persistedWatermark =
       Math.max(persistedWatermark, persisted.persistedWatermark)
+    metrics.persistedWatermark.set(persistedWatermark)
     val leader = chan[Leader[Transport]](src, Leader.serializer)
     leader.send(
       LeaderInbound().withPersistedAck(
@@ -299,13 +300,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         )
       )
     )
-
-    // Garbage collect slots.
-    // TODO(mwhittaker): This is too slow.
-    states = states.dropWhile({
-      case (slots, _) => round < persistedWatermark
-    })
-    metrics.persistedWatermark.set(persistedWatermark)
   }
 
   private def handleDie(src: Transport#Address, die: Die): Unit = {

@@ -29,12 +29,15 @@ message LeaderReconfigurationProto {
 }
 
 message MatchmakerReconfigurationProto {
-    required int32 delay_ms = 1;
-    required int32 period_ms = 2;
-    required int32 num = 3;
-    required int32 failure_delay_ms = 4;
-    required int32 recover_delay_ms = 5;
-    required int32 reconfigure_delay_ms = 6;
+    required int32 reconfiguration_warmup_delay_ms = 1;
+    required int32 reconfiguration_warmup_period_ms = 2;
+    required int32 reconfiguration_warmup_num = 3;
+    required int32 matchmaker_reconfiguration_delay_ms = 4;
+    required int32 matchmaker_reconfiguration_period_ms = 5;
+    required int32 matchmaker_reconfiguration_num = 6;
+    required int32 failure_delay_ms = 7;
+    required int32 recover_delay_ms = 8;
+    required int32 reconfigure_delay_ms = 9;
 }
 
 message DriverWorkloadProto {

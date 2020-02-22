@@ -43,9 +43,12 @@ case class LeaderReconfiguration(
 // matchmaker, reconfiguring away from the failed matchmaker, and then
 // performing a regular reconfiguration.
 case class MatchmakerReconfiguration(
-    delay: java.time.Duration,
-    period: java.time.Duration,
-    num: Int,
+    reconfigurationWarmupDelay: java.time.Duration,
+    reconfigurationWarmupPeriod: java.time.Duration,
+    reconfigurationWarmupNum: Int,
+    matchmakerReconfigurationDelay: java.time.Duration,
+    matchmakerReconfigurationPeriod: java.time.Duration,
+    matchmakerReconfigurationNum: Int,
     failureDelay: java.time.Duration,
     recoverDelay: java.time.Duration,
     reconfigureDelay: java.time.Duration
@@ -79,9 +82,16 @@ object DriverWorkload {
 
       case Value.MatchmakerReconfiguration(w) =>
         MatchmakerReconfiguration(
-          delay = java.time.Duration.ofMillis(w.delayMs),
-          period = java.time.Duration.ofMillis(w.periodMs),
-          num = w.num,
+          reconfigurationWarmupDelay =
+            java.time.Duration.ofMillis(w.reconfigurationWarmupDelayMs),
+          reconfigurationWarmupPeriod =
+            java.time.Duration.ofMillis(w.reconfigurationWarmupPeriodMs),
+          reconfigurationWarmupNum = w.reconfigurationWarmupNum,
+          matchmakerReconfigurationDelay =
+            java.time.Duration.ofMillis(w.matchmakerReconfigurationDelayMs),
+          matchmakerReconfigurationPeriod =
+            java.time.Duration.ofMillis(w.matchmakerReconfigurationPeriodMs),
+          matchmakerReconfigurationNum = w.matchmakerReconfigurationNum,
           failureDelay = java.time.Duration.ofMillis(w.failureDelayMs),
           recoverDelay = java.time.Duration.ofMillis(w.recoverDelayMs),
           reconfigureDelay = java.time.Duration.ofMillis(w.reconfigureDelayMs)

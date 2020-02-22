@@ -56,8 +56,10 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
   ) extends State
 
   case class MatchmakerReconfigurationState(
-      delayTimer: Transport#Timer,
-      matchmakerReconfigureTimer: Transport#Timer,
+      reconfigurationWarmupDelayTimer: Transport#Timer,
+      reconfigurationWarmupTimer: Transport#Timer,
+      matchmakerReconfigurationDelayTimer: Transport#Timer,
+      matchmakerReconfigurationTimer: Transport#Timer,
       failureTimer: Transport#Timer,
       recoverTimer: Transport#Timer,
       reconfigureTimer: Transport#Timer
@@ -238,54 +240,86 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
       )
 
     case workload: MatchmakerReconfiguration =>
-      val (delayTimer, matchmakerReconfigureTimer) = delayedTimer(
-        name = "normal",
-        delay = workload.delay,
-        period = workload.period,
-        n = workload.num,
-        f = () => {
-          logger.info("normal triggered!")
-          matchmakerReconfigure(
-            0,
-            randomSubset(matchmakers.size, 2 * config.f + 1)
-          )
-        },
-        onLast = () => {
-          logger.info("normal triggered!")
-          matchmakerReconfigure(0, Set() ++ (1 to 2 * config.f + 1))
-        }
-      )
+      val (reconfigurationWarmupDelayTimer, reconfigurationWarmupTimer) =
+        delayedTimer(
+          name = "reconfiguration warmup",
+          delay = workload.reconfigurationWarmupDelay,
+          period = workload.reconfigurationWarmupPeriod,
+          n = workload.reconfigurationWarmupNum,
+          f = () => {
+            logger.info(
+              "MatchmakerReconfiguration reconfiguration warmup triggered!"
+            )
+            reconfigure(0, Set() ++ (0 until 2 * config.f + 1))
+          },
+          onLast = () => {
+            logger.info(
+              "MatchmakerReconfiguration reconfiguration warmup triggered!"
+            )
+            reconfigure(0, Set() ++ (0 until 2 * config.f + 1))
+          }
+        )
+
+      val (matchmakerReconfigurationDelayTimer,
+           matchmakerReconfigurationTimer) =
+        delayedTimer(
+          name = "reconfiguration warmup",
+          delay = workload.matchmakerReconfigurationDelay,
+          period = workload.matchmakerReconfigurationPeriod,
+          n = workload.matchmakerReconfigurationNum,
+          f = () => {
+            logger.info(
+              "MatchmakerReconfiguration matchmaker reconfiguration triggered!"
+            )
+            matchmakerReconfigure(
+              0,
+              randomSubset(matchmakers.size, 2 * config.f + 1)
+            )
+          },
+          onLast = () => {
+            logger.info(
+              "MatchmakerReconfiguration matchmaker reconfiguration triggered!"
+            )
+            matchmakerReconfigure(0, Set() ++ (1 to 2 * config.f + 1))
+          }
+        )
 
       val failureTimer = timer(
         "failure",
         workload.failureDelay,
         () => {
-          logger.info("failure triggered!")
+          logger.info("MatchmakerReconfiguration failure triggered!")
           matchmakers(2 * config.f + 1).send(MatchmakerInbound().withDie(Die()))
         }
       )
+      failureTimer.start()
 
       val recoverTimer = timer(
         "recover",
         workload.recoverDelay,
         () => {
-          logger.info("recover triggered!")
+          logger.info("MatchmakerReconfiguration recover triggered!")
           matchmakerReconfigure(0, Set() ++ (0 until 2 * config.f + 1))
         }
       )
+      recoverTimer.start()
 
       val reconfigureTimer = timer(
         "reconfigure",
         workload.reconfigureDelay,
         () => {
-          logger.info("reconfigure triggered!")
+          logger.info("MatchmakerReconfiguration reconfigure triggered!")
           reconfigure(0, Set() ++ (0 until 2 * config.f + 1))
         }
       )
+      reconfigureTimer.start()
 
       MatchmakerReconfigurationState(
-        delayTimer = delayTimer,
-        matchmakerReconfigureTimer = matchmakerReconfigureTimer,
+        reconfigurationWarmupDelayTimer = reconfigurationWarmupDelayTimer,
+        reconfigurationWarmupTimer = reconfigurationWarmupTimer,
+        matchmakerReconfigurationDelayTimer =
+          matchmakerReconfigurationDelayTimer,
+        matchmakerReconfigurationTimer = matchmakerReconfigurationTimer,
         failureTimer = failureTimer,
         recoverTimer = recoverTimer,
         reconfigureTimer = reconfigureTimer
