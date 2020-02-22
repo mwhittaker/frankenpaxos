@@ -29,12 +29,12 @@ case class RepeatedLeaderReconfiguration(
 // a sequence of reconfigurations, then an acceptor failure, and a final
 // reconfiguration away from the failed acceptor.
 case class LeaderReconfiguration(
-    warmupDelay: java.time.Duration,
-    warmupPeriod: java.time.Duration,
-    warmupNum: Int,
-    delay: java.time.Duration,
-    period: java.time.Duration,
-    num: Int,
+    reconfigurationWarmupDelay: java.time.Duration,
+    reconfigurationWarmupPeriod: java.time.Duration,
+    reconfigurationWarmupNum: Int,
+    reconfigurationDelay: java.time.Duration,
+    reconfigurationPeriod: java.time.Duration,
+    reconfigurationNum: Int,
     failureDelay: java.time.Duration,
     recoverDelay: java.time.Duration
 ) extends DriverWorkload
@@ -70,12 +70,16 @@ object DriverWorkload {
 
       case Value.LeaderReconfiguration(w) =>
         LeaderReconfiguration(
-          warmupDelay = java.time.Duration.ofMillis(w.warmupDelayMs),
-          warmupPeriod = java.time.Duration.ofMillis(w.warmupPeriodMs),
-          warmupNum = w.warmupNum,
-          delay = java.time.Duration.ofMillis(w.delayMs),
-          period = java.time.Duration.ofMillis(w.periodMs),
-          num = w.num,
+          reconfigurationWarmupDelay =
+            java.time.Duration.ofMillis(w.reconfigurationWarmupDelayMs),
+          reconfigurationWarmupPeriod =
+            java.time.Duration.ofMillis(w.reconfigurationWarmupPeriodMs),
+          reconfigurationWarmupNum = w.reconfigurationWarmupNum,
+          reconfigurationDelay =
+            java.time.Duration.ofMillis(w.reconfigurationDelayMs),
+          reconfigurationPeriod =
+            java.time.Duration.ofMillis(w.reconfigurationPeriodMs),
+          reconfigurationNum = w.reconfigurationNum,
           failureDelay = java.time.Duration.ofMillis(w.failureDelayMs),
           recoverDelay = java.time.Duration.ofMillis(w.recoverDelayMs)
         )

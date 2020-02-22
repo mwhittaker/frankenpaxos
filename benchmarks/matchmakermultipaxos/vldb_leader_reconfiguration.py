@@ -2,7 +2,7 @@ from .matchmakermultipaxos import *
 
 
 def main(args) -> None:
-    class DoubleLeaderReconfigurationSuite(MatchmakerMultiPaxosSuite):
+    class LeaderReconfigurationSuite(MatchmakerMultiPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -25,24 +25,29 @@ def main(args) -> None:
                     acceptor_jvm_heap_size = '15g',
                     replica_jvm_heap_size = '15g',
                     driver_jvm_heap_size = '15g',
-                    warmup_duration = datetime.timedelta(seconds=5),
-                    warmup_timeout = datetime.timedelta(seconds=10),
+                    warmup_duration = datetime.timedelta(seconds=10),
+                    warmup_timeout = datetime.timedelta(seconds=15),
                     warmup_sleep = datetime.timedelta(seconds=0),
-                    duration = datetime.timedelta(seconds=90),
-                    timeout = datetime.timedelta(seconds=100),
-                    client_lag = datetime.timedelta(seconds=2),
+                    # duration = datetime.timedelta(seconds=60),
+                    # timeout = datetime.timedelta(seconds=65),
+                    duration = datetime.timedelta(seconds=30),
+                    timeout = datetime.timedelta(seconds=35),
+                    client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'Noop',
                     workload = workload.StringWorkload(size_mean=1, size_std=0),
                     driver_workload = \
                         driver_workload.LeaderReconfiguration(
-                            warmup_delay_ms = 10 * 1000,
-                            warmup_period_ms = 100,
-                            warmup_num = 100,
-                            delay_ms = 30 * 1000,
-                            period_ms = 1000,
-                            num = 10,
-                            failure_delay_ms = 600 * 1000,
-                            recover_delay_ms = 600 * 1000,
+                            reconfiguration_warmup_delay_ms = 10 * 1000,
+                            reconfiguration_warmup_period_ms = 100,
+                            reconfiguration_warmup_num = 100,
+                            # reconfiguration_delay_ms = 30 * 1000,
+                            reconfiguration_delay_ms = 300 * 1000,
+                            reconfiguration_period_ms = 1000,
+                            reconfiguration_num = 10,
+                            # failure_delay_ms = 45 * 1000,
+                            failure_delay_ms = 450 * 1000,
+                            # recover_delay_ms = 50 * 1000,
+                            recover_delay_ms = 500 * 1000,
                         ),
                     profiled = args.profile,
                     monitored = args.monitor,
@@ -56,7 +61,7 @@ def main(args) -> None:
                         resend_phase1as_period = \
                             datetime.timedelta(seconds=60),
                         resend_phase2as_period = \
-                            datetime.timedelta(seconds=60),
+                            datetime.timedelta(milliseconds=10),
                         resend_executed_watermark_requests_period = \
                             datetime.timedelta(seconds=60),
                         resend_persisted_period = \
@@ -109,8 +114,8 @@ def main(args) -> None:
                 for f in [1]
                 for n in [2*f+1]
                 for (num_client_procs, num_clients_per_proc) in
-                    # [(1, 1), (1, 5), (1, 10)]
-                    [(1, 10)]
+                    # [(1, 1), (4, 1), (4, 2)]
+                    [(4, 1)]
             ]
 
         def summary(self, input: Input, output: Output) -> str:
@@ -122,10 +127,10 @@ def main(args) -> None:
                 'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
             })
 
-    suite = DoubleLeaderReconfigurationSuite()
+    suite = LeaderReconfigurationSuite()
     with benchmark.SuiteDirectory(
             args.suite_directory,
-            'matchmaker_multipaxos_double_leader_reconfiguration') as dir:
+            'matchmaker_multipaxos_leader_reconfiguration') as dir:
         suite.run_suite(dir)
 
 

@@ -1023,6 +1023,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     //     `pendingRounds`. These are the acceptors to which we send a
     //     Phase 1a message.
     //
+    //     TODO(mwhittaker): Update this documentation.
+    //
     //     TODO(mwhittaker): We only need to send to enough acceptors to
     //     form a read quorum for every round in `pendingRounds`. I think
     //     this might be some complicated NP complete problem or something,
@@ -1068,7 +1070,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         pendingRounds += configuration.round
         val quorumSystem = QuorumSystem.fromProto(configuration.quorumSystem)
         previousQuorumSystems(configuration.round) = quorumSystem
-        acceptorIndices ++= quorumSystem.randomReadQuorum()
+        acceptorIndices ++= quorumSystem.nodes()
 
         for (index <- quorumSystem.nodes) {
           acceptorToRounds
@@ -1226,6 +1228,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // Otherwise, we wait until we have a write quorum.
       val phase2bs = phase2.phase2bs(phase2b.slot)
       phase2bs(phase2b.acceptorIndex) = phase2b
+
       if (!phase2.quorumSystem.isWriteQuorum(phase2bs.keys.toSet)) {
         return phase2
       }
@@ -1541,6 +1544,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             for ((slot, value) <- values) {
               logger.check(!phase212.newPhase2.phase2bs.contains(slot))
               phase212.newPhase2.phase2bs(slot) = mutable.Map()
+              phase212.newPhase2.values(slot) = value
               val phase2a = Phase2a(slot = slot,
                                     round = phase212.newPhase2.round,
                                     value = value)
@@ -1558,6 +1562,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                    phase212.oldPhase2.nextSlot) {
               logger.check(!phase212.newPhase2.phase2bs.contains(slot))
               phase212.newPhase2.phase2bs(slot) = mutable.Map()
+              phase212.newPhase2.values(slot) = CommandOrNoop().withNoop(Noop())
               val phase2a = Phase2a(slot = slot,
                                     round = phase212.newPhase2.round,
                                     value = CommandOrNoop().withNoop(Noop()))
@@ -1704,8 +1709,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           state = phase22.copy(
             oldPhase2 = processPhase2b(phase22.oldPhase2, phase2b)
           )
-        }
-        if (phase2b.round == phase22.newPhase2.round) {
+        } else if (phase2b.round == phase22.newPhase2.round) {
           state = phase22.copy(
             newPhase2 = processPhase2b(phase22.newPhase2, phase2b)
           )

@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1582327382572,
+  "iteration": 1582406617194,
   "links": [],
   "panels": [
     {
@@ -1402,6 +1402,13 @@
           "intervalFactor": 1,
           "legendFormat": "Leader changes ({{instance}})",
           "refId": "B"
+        },
+        {
+          "expr": "rate(matchmakermultipaxos_leader_resend_phase2as_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Resend Phase2as ({{instance}})",
+          "refId": "C"
         }
       ],
       "thresholds": [],
@@ -2112,8 +2119,8 @@
     ]
   },
   "time": {
-    "from": "2020-02-21T23:17:44.870Z",
-    "to": "2020-02-21T23:19:31.897Z"
+    "from": "2020-02-22T21:21:43.417Z",
+    "to": "2020-02-22T21:23:40.988Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -2143,5 +2150,5 @@
   "timezone": "",
   "title": "MatchmakerMultiPaxos",
   "uid": "9Kdek-QWk",
-  "version": 7
+  "version": 8
 }

@@ -30,12 +30,12 @@ class RepeatedLeaderReconfiguration(NamedTuple):
 
 
 class LeaderReconfiguration(NamedTuple):
-    warmup_delay_ms: int
-    warmup_period_ms: int
-    warmup_num: int
-    delay_ms: int
-    period_ms: int
-    num: int
+    reconfiguration_warmup_delay_ms: int
+    reconfiguration_warmup_period_ms: int
+    reconfiguration_warmup_num: int
+    reconfiguration_delay_ms: int
+    reconfiguration_period_ms: int
+    reconfiguration_num: int
     failure_delay_ms: int
     recover_delay_ms: int
     # We put the name here so that it appears in benchmark outputs.
@@ -44,12 +44,18 @@ class LeaderReconfiguration(NamedTuple):
     def to_proto(self) -> proto_util.Message:
         return {
             'leader_reconfiguration': {
-                'warmup_delay_ms': self.warmup_delay_ms,
-                'warmup_period_ms': self.warmup_period_ms,
-                'warmup_num': self.warmup_num,
-                'delay_ms': self.delay_ms,
-                'period_ms': self.period_ms,
-                'num': self.num,
+                'reconfiguration_warmup_delay_ms':
+                    self.reconfiguration_warmup_delay_ms,
+                'reconfiguration_warmup_period_ms':
+                    self.reconfiguration_warmup_period_ms,
+                'reconfiguration_warmup_num':
+                    self.reconfiguration_warmup_num,
+                'reconfiguration_delay_ms':
+                    self.reconfiguration_delay_ms,
+                'reconfiguration_period_ms':
+                    self.reconfiguration_period_ms,
+                'reconfiguration_num':
+                    self.reconfiguration_num,
                 'failure_delay_ms': self.failure_delay_ms,
                 'recover_delay_ms': self.recover_delay_ms,
             }

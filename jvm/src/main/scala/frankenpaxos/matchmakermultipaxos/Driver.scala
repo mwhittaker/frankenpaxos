@@ -47,10 +47,10 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
   ) extends State
 
   case class LeaderReconfigurationState(
-      warmupDelayTimer: Transport#Timer,
-      warmupReconfigureTimer: Transport#Timer,
-      delayTimer: Transport#Timer,
-      reconfigureTimer: Transport#Timer,
+      reconfigurationWarmupDelayTimer: Transport#Timer,
+      reconfigurationWarmupTimer: Transport#Timer,
+      reconfigurationDelayTimer: Transport#Timer,
+      reconfigurationTimer: Transport#Timer,
       failureTimer: Transport#Timer,
       recoverTimer: Transport#Timer
   ) extends State
@@ -182,32 +182,37 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
       )
 
     case workload: LeaderReconfiguration =>
-      val (warmupDelayTimer, warmupReconfigureTimer) = delayedTimer(
-        name = "warmup",
-        delay = workload.warmupDelay,
-        period = workload.warmupPeriod,
-        n = workload.warmupNum,
-        f = () => {
-          logger.info("warmup triggered!")
-          reconfigure(0, randomSubset(acceptors.size, 2 * config.f + 1))
-        },
-        onLast = () => {
-          logger.info("warmup triggered!")
-          reconfigure(0, randomSubset(acceptors.size, 2 * config.f + 1))
-        }
-      )
+      val (reconfigurationWarmupDelayTimer, reconfigurationWarmupTimer) =
+        delayedTimer(
+          name = "LeaderReconfiguration reconfiguration warmup",
+          delay = workload.reconfigurationWarmupDelay,
+          period = workload.reconfigurationWarmupPeriod,
+          n = workload.reconfigurationWarmupNum,
+          f = () => {
+            logger.info(
+              "LeaderReconfiguration reconfiguration warmup triggered!"
+            )
+            reconfigure(0, randomSubset(acceptors.size, 2 * config.f + 1))
+          },
+          onLast = () => {
+            logger.info(
+              "LeaderReconfiguration reconfiguration warmup triggered!"
+            )
+            reconfigure(0, randomSubset(acceptors.size, 2 * config.f + 1))
+          }
+        )
 
-      val (delayTimer, reconfigureTimer) = delayedTimer(
-        name = "normal",
-        delay = workload.delay,
-        period = workload.period,
-        n = workload.num,
+      val (reconfigurationDelayTimer, reconfigurationTimer) = delayedTimer(
+        name = "LeaderReconfiguration reconfiguration",
+        delay = workload.reconfigurationDelay,
+        period = workload.reconfigurationPeriod,
+        n = workload.reconfigurationNum,
         f = () => {
-          logger.info("normal triggered!")
+          logger.info("LeaderReconfiguration reconfiguration triggered!")
           reconfigure(0, randomSubset(acceptors.size, 2 * config.f + 1))
         },
         onLast = () => {
-          logger.info("normal triggered!")
+          logger.info("LeaderReconfiguration reconfiguration triggered!")
           reconfigure(0, Set() ++ (0 until 2 * config.f + 1))
         }
       )
@@ -216,25 +221,27 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
         "failure",
         workload.failureDelay,
         () => {
-          logger.info("failure triggered!")
+          logger.info("LeaderReconfiguration failure triggered!")
           acceptors(0).send(AcceptorInbound().withDie(Die()))
         }
       )
+      failureTimer.start()
 
       val recoverTimer = timer(
         "recover",
         workload.recoverDelay,
         () => {
-          logger.info("recover triggered!")
+          logger.info("LeaderReconfiguration recover triggered!")
           reconfigure(0, Set() ++ (1 to 2 * config.f + 1))
         }
       )
+      recoverTimer.start()
 
       LeaderReconfigurationState(
-        warmupDelayTimer = warmupDelayTimer,
-        warmupReconfigureTimer = warmupReconfigureTimer,
-        delayTimer = delayTimer,
-        reconfigureTimer = reconfigureTimer,
+        reconfigurationWarmupDelayTimer = reconfigurationWarmupDelayTimer,
+        reconfigurationWarmupTimer = reconfigurationWarmupTimer,
+        reconfigurationDelayTimer = reconfigurationDelayTimer,
+        reconfigurationTimer = reconfigurationTimer,
         failureTimer = failureTimer,
         recoverTimer = recoverTimer
       )
