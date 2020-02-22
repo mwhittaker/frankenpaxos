@@ -1405,8 +1405,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           case Some(Left(phase1: Phase1)) =>
             // Matchmaking is done. We're about to transition to Phase212. We
             // stop any pending GC in the old Phase 2. It's unlikely that it's
-            // happening anyway, and it simplifies things a bit.
-            stopGcTimers(phase2Matchmaking.phase2.gc)
+            // happening anyway, and it simplifies things a bit. We also stop
+            // the resendPhase2as timers since we'll make sure to get those
+            // values in the newer round anyway.
+            stopTimers(phase2Matchmaking.phase2)
 
             // Update metrics.
             val startNanos = System.nanoTime
