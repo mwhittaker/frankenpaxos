@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1582406617194,
+  "iteration": 1582409769962,
   "links": [],
   "panels": [
     {
@@ -1309,6 +1309,20 @@
           "intervalFactor": 1,
           "legendFormat": "Matchmaker nacks sent ({{instance}})",
           "refId": "C"
+        },
+        {
+          "expr": "rate(matchmakermultipaxos_leader_stale_acceptor_nack_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Stale acceptor nacks received ({{instance}})",
+          "refId": "D"
+        },
+        {
+          "expr": "rate(matchmakermultipaxos_leader_stale_matchmaker_nack_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Stale matchmaker nacks received ({{instance}})",
+          "refId": "E"
         }
       ],
       "thresholds": [],
@@ -2119,8 +2133,8 @@
     ]
   },
   "time": {
-    "from": "2020-02-22T21:21:43.417Z",
-    "to": "2020-02-22T21:23:40.988Z"
+    "from": "2020-02-22T22:13:37.989Z",
+    "to": "2020-02-22T22:14:00.738Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -2150,5 +2164,5 @@
   "timezone": "",
   "title": "MatchmakerMultiPaxos",
   "uid": "9Kdek-QWk",
-  "version": 8
+  "version": 9
 }
