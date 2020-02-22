@@ -37,7 +37,7 @@ def main(args) -> None:
                         driver_workload.MatchmakerReconfiguration(
                             reconfiguration_warmup_delay_ms = 10 * 1000,
                             reconfiguration_warmup_period_ms = 100,
-                            reconfiguration_warmup_num = 200,
+                            reconfiguration_warmup_num = 100,
                             matchmaker_reconfiguration_delay_ms = 30 * 1000,
                             matchmaker_reconfiguration_period_ms = 1000,
                             matchmaker_reconfiguration_num = 10,
