@@ -956,6 +956,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             qs,
             qsp
           )
+          stopTimers(state)
           state = Phase2Matchmaking(phase2, matchmaking, System.nanoTime)
         } else {
           metrics.becomeIIPlusOneLeaderTotal.labels("no").inc()
@@ -1739,6 +1740,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               (System.nanoTime - phase22.startNanos).toDouble / 1000000
             )
 
+          stopTimers(phase22.oldPhase2)
           state = phase22.newPhase2.copy(
             gc = QueryingReplicas(
               // The numbers here are not perfect. chosenWatermark and maxSlot
