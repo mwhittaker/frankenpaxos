@@ -7,7 +7,7 @@ def main(args) -> None:
             return vars(args)
 
         def inputs(self) -> Collection[Input]:
-            return [
+            return ([
                 Input(
                     f = f,
                     num_client_procs = num_client_procs,
@@ -28,10 +28,8 @@ def main(args) -> None:
                     warmup_duration = datetime.timedelta(seconds=10),
                     warmup_timeout = datetime.timedelta(seconds=15),
                     warmup_sleep = datetime.timedelta(seconds=0),
-                    # duration = datetime.timedelta(seconds=60),
-                    # timeout = datetime.timedelta(seconds=65),
-                    duration = datetime.timedelta(seconds=30),
-                    timeout = datetime.timedelta(seconds=35),
+                    duration = datetime.timedelta(seconds=55),
+                    timeout = datetime.timedelta(seconds=60),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'Noop',
                     workload = workload.StringWorkload(size_mean=1, size_std=0),
@@ -40,14 +38,11 @@ def main(args) -> None:
                             reconfiguration_warmup_delay_ms = 10 * 1000,
                             reconfiguration_warmup_period_ms = 100,
                             reconfiguration_warmup_num = 100,
-                            # reconfiguration_delay_ms = 30 * 1000,
-                            reconfiguration_delay_ms = 300 * 1000,
+                            reconfiguration_delay_ms = 30 * 1000,
                             reconfiguration_period_ms = 1000,
                             reconfiguration_num = 10,
-                            # failure_delay_ms = 45 * 1000,
-                            failure_delay_ms = 450 * 1000,
-                            # recover_delay_ms = 50 * 1000,
-                            recover_delay_ms = 500 * 1000,
+                            failure_delay_ms = 45 * 1000,
+                            recover_delay_ms = 50 * 1000,
                         ),
                     profiled = args.profile,
                     monitored = args.monitor,
@@ -61,7 +56,7 @@ def main(args) -> None:
                         resend_phase1as_period = \
                             datetime.timedelta(seconds=60),
                         resend_phase2as_period = \
-                            datetime.timedelta(milliseconds=10),
+                            datetime.timedelta(milliseconds=1),
                         resend_executed_watermark_requests_period = \
                             datetime.timedelta(seconds=60),
                         resend_persisted_period = \
@@ -111,12 +106,11 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                     driver_log_level = args.log_level,
                 )
-                for f in [1]
+                for f in [1, 2]
                 for n in [2*f+1]
                 for (num_client_procs, num_clients_per_proc) in
-                    # [(1, 1), (4, 1), (4, 2)]
-                    [(4, 1)]
-            ]
+                    [(1, 1), (4, 1), (4, 2)]
+            ])[2:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({

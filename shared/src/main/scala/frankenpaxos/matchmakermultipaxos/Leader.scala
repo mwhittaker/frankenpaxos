@@ -625,22 +625,22 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           case phase22: Phase22   => phase22.newPhase2
         }
 
-        phase2.values.get(chosenWatermark) match {
-          case Some(value) =>
-            val phase2a =
-              Phase2a(slot = chosenWatermark,
-                      round = getRound(state),
-                      value = value)
-            for (index <- phase2.quorumSystem.nodes) {
-              acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
-            }
+        // TODO(mwhittaker): Pass this value in as a parameter.
+        for (slot <- chosenWatermark until chosenWatermark + 10) {
+          phase2.values.get(slot) match {
+            case Some(value) =>
+              val phase2a =
+                Phase2a(slot = slot, round = getRound(state), value = value)
+              for (index <- phase2.quorumSystem.nodes) {
+                acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
+              }
 
-          case None =>
-            logger.debug(
-              s"The resendPhase2as timer was triggered but there is no " +
-                s"pending value for slot $chosenWatermark (the chosen " +
-                s"watermark)."
-            )
+            case None =>
+              logger.debug(
+                s"The resendPhase2as timer was triggered but there is no " +
+                  s"pending value for slot $slot."
+              )
+          }
         }
 
         t.start()
@@ -1872,6 +1872,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           s"${nack.round} but is already in round ${smallerRound}. " +
           s"The Nack is being ignored."
       )
+      metrics.staleAcceptorNackTotal.inc()
       return
     }
 
