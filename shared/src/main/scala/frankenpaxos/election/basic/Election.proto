@@ -14,8 +14,14 @@ message Ping {
   required int32 round = 2;
 }
 
+// When a follower receives a ForceNoPing message, it pretends as if its its
+// noPingTimer went off. This is good for benchmarks where we want to
+// artificially force a leader change.
+message ForceNoPing {}
+
 message ParticipantInbound {
   oneof request {
     Ping ping = 1;
+    ForceNoPing force_no_ping = 2;
   }
 }

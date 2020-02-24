@@ -171,7 +171,8 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     import ParticipantInbound.Request
     inbound.request match {
-      case Request.Ping(r) => handlePing(src, r)
+      case Request.Ping(r)        => handlePing(src, r)
+      case Request.ForceNoPing(r) => handleForceNoPing(src, r)
       case Request.Empty => {
         logger.fatal("Empty LeaderInbound encountered.")
       }
@@ -214,6 +215,24 @@ class Participant[Transport <: frankenpaxos.Transport[Transport]](
           leaderIndex = ping.leaderIndex
           changeState(Follower)
         }
+    }
+  }
+
+  private def handleForceNoPing(
+      src: Transport#Address,
+      forceNoPing: ForceNoPing
+  ): Unit = {
+    state match {
+      case Leader =>
+        logger.debug(
+          "Participant received a ForceNoPing but is already the leader. " +
+            "The ForceNoPing is being ignored."
+        )
+
+      case Follower =>
+        round += 1
+        leaderIndex = index
+        changeState(Leader)
     }
   }
 
