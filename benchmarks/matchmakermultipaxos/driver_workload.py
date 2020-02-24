@@ -97,5 +97,30 @@ class MatchmakerReconfiguration(NamedTuple):
         }
 
 
+class LeaderFailure(NamedTuple):
+    leader_change_warmup_delay_ms: int
+    leader_change_warmup_period_ms: int
+    leader_change_warmup_num: int
+    failure_delay_ms: int
+    # We put the name here so that it appears in benchmark outputs.
+    name: str = 'LeaderFailure'
+
+    def to_proto(self) -> proto_util.Message:
+
+        return {
+            'leader_failure': {
+                'leader_change_warmup_delay_ms':
+                    self.leader_change_warmup_delay_ms,
+                'leader_change_warmup_period_ms':
+                    self.leader_change_warmup_period_ms,
+                'leader_change_warmup_num':
+                    self.leader_change_warmup_num,
+                'failure_delay_ms':
+                    self.failure_delay_ms,
+            }
+        }
+
+
 DriverWorkload = Union[DoNothing, RepeatedLeaderReconfiguration,
-                       LeaderReconfiguration, MatchmakerReconfiguration]
+                       LeaderReconfiguration, MatchmakerReconfiguration,
+                       LeaderFailure]

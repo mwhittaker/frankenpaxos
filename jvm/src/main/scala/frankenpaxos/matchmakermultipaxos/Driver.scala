@@ -5,6 +5,7 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.Serializer
+import frankenpaxos.election.basic.Participant
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
@@ -65,11 +66,22 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
       reconfigureTimer: Transport#Timer
   ) extends State
 
+  case class LeaderFailureState(
+      leaderChangeWarmupDelayTimer: Transport#Timer,
+      leaderChangeWarmupTimer: Transport#Timer,
+      failureTimer: Transport#Timer
+  ) extends State
+
   // Fields ////////////////////////////////////////////////////////////////////
   // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
     for (a <- config.leaderAddresses)
       yield chan[Leader[Transport]](a, Leader.serializer)
+
+  // Leader election participant channels.
+  private val participants: Seq[Chan[Participant[Transport]]] =
+    for (a <- config.leaderElectionAddresses)
+      yield chan[Participant[Transport]](a, Participant.serializer)
 
   // Matchmaker channels.
   private val matchmakers: Seq[Chan[Matchmaker[Transport]]] =
@@ -143,6 +155,16 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
       ReconfigurerInbound().withForceMatchmakerReconfiguration(
         ForceMatchmakerReconfiguration(matchmakerIndex = matchmakers.toSeq)
       )
+    )
+  }
+
+  def becomeLeader(leader: Int): Unit = {
+    participants(leader).send(
+      frankenpaxos.election.basic
+        .ParticipantInbound()
+        .withForceNoPing(
+          frankenpaxos.election.basic.ForceNoPing()
+        )
     )
   }
 
@@ -330,6 +352,43 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
         failureTimer = failureTimer,
         recoverTimer = recoverTimer,
         reconfigureTimer = reconfigureTimer
+      )
+
+    case workload: LeaderFailure =>
+      val (leaderChangeWarmupDelayTimer, leaderChangeWarmupTimer) =
+        delayedTimer(
+          name = "leader change warmup",
+          delay = workload.leaderChangeWarmupDelay,
+          period = workload.leaderChangeWarmupPeriod,
+          n = workload.leaderChangeWarmupNum,
+          f = () => {
+            logger.info(
+              "LeaderFailure leader change warmup triggered!"
+            )
+            becomeLeader(Random.nextInt(participants.size))
+          },
+          onLast = () => {
+            logger.info(
+              "MatchmakerReconfiguration reconfiguration warmup triggered!"
+            )
+            becomeLeader(0)
+          }
+        )
+
+      val failureTimer = timer(
+        "failure",
+        workload.failureDelay,
+        () => {
+          logger.info("MatchmakerReconfiguration failure triggered!")
+          leaders(0).send(LeaderInbound().withDie(Die()))
+        }
+      )
+      failureTimer.start()
+
+      LeaderFailureState(
+        leaderChangeWarmupDelayTimer = leaderChangeWarmupDelayTimer,
+        leaderChangeWarmupTimer = leaderChangeWarmupTimer,
+        failureTimer = failureTimer
       )
   }
 

@@ -54,6 +54,16 @@ case class MatchmakerReconfiguration(
     reconfigureDelay: java.time.Duration
 ) extends DriverWorkload
 
+// This workload involves the leader failing and the other leader taking over
+// and performing a reconfiguration. The workload starts off with a warmup of
+// both leaders.
+case class LeaderFailure(
+    leaderChangeWarmupDelay: java.time.Duration,
+    leaderChangeWarmupPeriod: java.time.Duration,
+    leaderChangeWarmupNum: Int,
+    failureDelay: java.time.Duration
+) extends DriverWorkload
+
 object DriverWorkload {
   def fromProto(proto: DriverWorkloadProto): DriverWorkload = {
     import DriverWorkloadProto.Value
@@ -99,6 +109,16 @@ object DriverWorkload {
           failureDelay = java.time.Duration.ofMillis(w.failureDelayMs),
           recoverDelay = java.time.Duration.ofMillis(w.recoverDelayMs),
           reconfigureDelay = java.time.Duration.ofMillis(w.reconfigureDelayMs)
+        )
+
+      case Value.LeaderFailure(w) =>
+        LeaderFailure(
+          leaderChangeWarmupDelay =
+            java.time.Duration.ofMillis(w.leaderChangeWarmupDelayMs),
+          leaderChangeWarmupPeriod =
+            java.time.Duration.ofMillis(w.leaderChangeWarmupPeriodMs),
+          leaderChangeWarmupNum = w.leaderChangeWarmupNum,
+          failureDelay = java.time.Duration.ofMillis(w.failureDelayMs)
         )
 
       case Value.Empty =>

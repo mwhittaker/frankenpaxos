@@ -40,11 +40,19 @@ message MatchmakerReconfigurationProto {
     required int32 reconfigure_delay_ms = 9;
 }
 
+message LeaderFailureProto {
+    required int32 leader_change_warmup_delay_ms = 1;
+    required int32 leader_change_warmup_period_ms = 2;
+    required int32 leader_change_warmup_num = 3;
+    required int32 failure_delay_ms = 4;
+}
+
 message DriverWorkloadProto {
   oneof value {
     DoNothingProto do_nothing = 1;
     RepeatedLeaderReconfigurationProto repeated_leader_reconfiguration = 2;
     LeaderReconfigurationProto leader_reconfiguration = 3;
     MatchmakerReconfigurationProto matchmaker_reconfiguration = 4;
+    LeaderFailureProto leader_failure = 5;
   }
 }
