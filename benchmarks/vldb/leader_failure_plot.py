@@ -17,14 +17,15 @@ import re
 
 def read_data(file,
               drop_head: float,
-              drop_tail: float) -> Tuple[pd.DataFrame, Any]:
+              drop_tail: float,
+              nudge: datetime.timedelta) -> Tuple[pd.DataFrame, Any]:
     # Read the data.
     df = pd.read_csv(file, parse_dates=['start', 'stop'])
 
     # Chop off the head and tail.
     start_time = df['start'].iloc[0]
     end_time = df['start'].iloc[-1]
-    new_start_time = start_time + pd.DateOffset(seconds=drop_head)
+    new_start_time = start_time + pd.DateOffset(seconds=drop_head) + nudge
     new_end_time = end_time - pd.DateOffset(seconds=drop_tail)
     df = df[df['start'] >= new_start_time]
     df = df[df['start'] <= new_end_time]
@@ -111,10 +112,15 @@ def plot(n1: pd.DataFrame,
 
 
 def main(args) -> None:
-    # Read the data.
-    (f1n1, start_time) = read_data(args.f1n1, args.drop_head, args.drop_tail)
-    (f1n4, _) = read_data(args.f1n4, args.drop_head, args.drop_tail)
-    (f1n8, _) = read_data(args.f1n8, args.drop_head, args.drop_tail)
+    # Read the data. To align the benchmarks, we manually nudge. Ideally, we
+    # would do some ultra fancy code to synchronize all the stuff, but it's not
+    # worth it.
+    (f1n1, start_time) = read_data(args.f1n1, args.drop_head, args.drop_tail,
+                                   nudge=datetime.timedelta(seconds=0))
+    (f1n4, _) = read_data(args.f1n4, args.drop_head, args.drop_tail,
+                          nudge=datetime.timedelta(milliseconds=350))
+    (f1n8, _) = read_data(args.f1n8, args.drop_head, args.drop_tail,
+                          nudge=datetime.timedelta(milliseconds=450))
 
     # Plot the data.
     plot(
