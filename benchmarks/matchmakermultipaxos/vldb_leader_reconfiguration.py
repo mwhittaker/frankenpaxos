@@ -102,6 +102,7 @@ def main(args) -> None:
                     client_options = ClientOptions(
                         resend_client_request_period = \
                             datetime.timedelta(seconds=120),
+                        stutter = 1000,
                     ),
                     client_log_level = args.log_level,
                     driver_log_level = args.log_level,

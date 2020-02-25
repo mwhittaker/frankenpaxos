@@ -32,6 +32,7 @@ import yaml
 class ClientOptions(NamedTuple):
     resend_client_request_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
+    stutter: int = 1000
 
 
 class ElectionOptions(NamedTuple):
@@ -575,6 +576,8 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     '--options.resendClientRequestPeriod',
                     '{}s'.format(input.client_options.
                                  resend_client_request_period.total_seconds()),
+                    '--options.stutter',
+                    str(input.client_options.stutter),
                 ])
             if input.profiled:
                 p = perf_util.JavaPerfProc(bench, client.host, p, f'client_{i}')

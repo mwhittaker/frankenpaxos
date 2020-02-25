@@ -90,6 +90,8 @@ object ClientMain extends App {
     // Options.
     opt[java.time.Duration]("options.resendClientRequestPeriod")
       .optionAction((x, o) => o.copy(resendClientRequestPeriod = x))
+    opt[Int]("options.stutter")
+      .optionAction((x, o) => o.copy(stutter = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {

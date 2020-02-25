@@ -30,13 +30,16 @@ object Client {
 
 @JSExportAll
 case class ClientOptions(
-    resendClientRequestPeriod: java.time.Duration
+    resendClientRequestPeriod: java.time.Duration,
+    // Leaders use a ClassicStutteredRound round system. This is the stutter.
+    stutter: Int
 )
 
 @JSExportAll
 object ClientOptions {
   val default = ClientOptions(
-    resendClientRequestPeriod = java.time.Duration.ofSeconds(10)
+    resendClientRequestPeriod = java.time.Duration.ofSeconds(10),
+    stutter = 1000
   )
 }
 
@@ -101,7 +104,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     for (address <- config.leaderAddresses)
       yield chan[Leader[Transport]](address, Leader.serializer)
 
-  private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
+  private val roundSystem = new RoundSystem.ClassicStutteredRoundRobin(
+    n = config.numLeaders,
+    stutterLength = options.stutter
+  )
 
   // The round that this client thinks the leader is in. This value is not
   // always accurate. It's just the client's best guess. The leader associated
@@ -139,7 +145,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   private val resendClientRequestTimers =
     mutable.Map[Pseudonym, Transport#Timer]()
 
-  // Tiemrs ////////////////////////////////////////////////////////////////////
+  // Timers ////////////////////////////////////////////////////////////////////
   private def makeResendClientRequestTimer(
       clientRequest: ClientRequest
   ): Transport#Timer = {
@@ -149,9 +155,18 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         s"id=${clientRequest.command.commandId.clientId}]",
       options.resendClientRequestPeriod,
       () => {
-        val leader = leaders(roundSystem.leader(round))
-        leader.send(LeaderInbound().withClientRequest(clientRequest))
+        // The leader may have failed and a new leader may have taken over. We
+        // broadcast leader info requests to learn of the new leader.
+        leaders.foreach(
+          _.send(LeaderInbound().withLeaderInfoRequest(LeaderInfoRequest()))
+        )
+
+        // We also resend our command to all of the leaders.
+        leaders.foreach(
+          _.send(LeaderInbound().withClientRequest(clientRequest))
+        )
         metrics.resendClientRequestTotal.inc()
+
         t.start()
       }
     )

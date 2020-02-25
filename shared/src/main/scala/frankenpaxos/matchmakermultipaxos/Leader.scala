@@ -485,9 +485,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     for (a <- config.replicaAddresses)
       yield chan[Replica[Transport]](a, Replica.serializer)
 
-  // TODO(mwhittaker): Use a ClassicStutteredRound system and pass in the
-  // stutter as a flag.
-  // For simplicity, we use a round robin round system for the leaders.
   private val roundSystem = new RoundSystem.ClassicStutteredRoundRobin(
     n = config.numLeaders,
     stutterLength = options.stutter
@@ -515,6 +512,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   )
   election.register((leaderIndex) => {
     if (leaderIndex == index) {
+      logger.info("Becoming leader due to leader election!")
       becomeLeader(getNextRound(state))
     } else {
       stopBeingLeader()
@@ -839,7 +837,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     // We randomly pick between simple majority quorums and unanimous write
     // quorums. The thing is, though, that we can only use simple majority
     // quorums if we have at least 2*f+1 acceptors.
-    if (config.numAcceptors >= 2 * config.f + 1 && rand.nextBoolean()) {
+    // TODO(mwhittaker): Pass in a flag to determine quorum system.
+    if (true || config.numAcceptors >= 2 * config.f + 1 && rand.nextBoolean()) {
       val quorumSystem = new SimpleMajority(
         rand
           .shuffle(List() ++ (0 until n))
@@ -923,6 +922,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def becomeLeader(newRound: Round): Unit = {
+    logger.debug(s"Becoming leader in round $newRound.")
+
     logger.checkGt(newRound, getRound(state))
     logger.check(roundSystem.leader(newRound) == index)
     metrics.becomeLeaderTotal.inc()

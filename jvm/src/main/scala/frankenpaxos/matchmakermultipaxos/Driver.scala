@@ -365,11 +365,11 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
             logger.info(
               "LeaderFailure leader change warmup triggered!"
             )
-            becomeLeader(Random.nextInt(participants.size))
+            becomeLeader(1)
           },
           onLast = () => {
             logger.info(
-              "MatchmakerReconfiguration reconfiguration warmup triggered!"
+              "LeaderFailure leader change warmup triggered!"
             )
             becomeLeader(0)
           }
@@ -379,7 +379,7 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
         "failure",
         workload.failureDelay,
         () => {
-          logger.info("MatchmakerReconfiguration failure triggered!")
+          logger.info("LeaderFailure failure triggered!")
           leaders(0).send(LeaderInbound().withDie(Die()))
         }
       )
