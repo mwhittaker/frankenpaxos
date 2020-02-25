@@ -44,9 +44,10 @@ def plot_throughput(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> No
 def plot_latency(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> None:
     median = s.rolling('1000ms').median()
     p95 = s.rolling('1000ms').quantile(0.95)
+    label = '1 client' if n == 1 else f'{n} clients'
     line = ax.plot_date(s.index[::sample_every],
                         median[::sample_every],
-                        label=f'{n} clients',
+                        label=label,
                         fmt='-')[0]
     ax.fill_between(s.index[::sample_every], median[::sample_every],
                     p95[::sample_every], color=line.get_color(), alpha=0.25)
@@ -106,12 +107,13 @@ def plot(n1: pd.DataFrame,
 
     for axes in ax:
         for t in matchmaker_reconfigurations:
-            axes.axvline(x=origin + (t - naive_start_time), color='black')
+            axes.axvline(x=origin + (t - naive_start_time), color='blue',
+                         ls='-.')
         axes.axvline(x=origin + (failure - naive_start_time), color='red',
                      ls='--')
-        axes.axvline(x=origin + (recover - naive_start_time), color='black')
-        axes.axvline(x=origin + (reconfigure - naive_start_time), color='blue',
+        axes.axvline(x=origin + (recover - naive_start_time), color='blue',
                      ls='-.')
+        axes.axvline(x=origin + (reconfigure - naive_start_time), color='black')
 
     # Write legend.
     handles, labels = ax[0].get_legend_handles_labels()

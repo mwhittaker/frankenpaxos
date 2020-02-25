@@ -44,9 +44,10 @@ def plot_throughput(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> No
 def plot_latency(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> None:
     median = s.rolling('1000ms').median()
     p95 = s.rolling('1000ms').quantile(0.95)
+    label = '1 client' if n == 1 else f'{n} clients'
     line = ax.plot_date(s.index[::sample_every],
                         median[::sample_every],
-                        label=f'{n} clients',
+                        label=label,
                         fmt='-')[0]
     ax.fill_between(s.index[::sample_every], median[::sample_every],
                     p95[::sample_every], color=line.get_color(), alpha=0.25)

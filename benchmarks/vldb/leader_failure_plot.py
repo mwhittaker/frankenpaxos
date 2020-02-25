@@ -72,10 +72,10 @@ def plot_latency(ax: plt.Axes, n: int, before: pd.Series, after: pd.Series,
 
     median_after = after.rolling('1000ms').median()
     p95_after = after.rolling('1000ms').quantile(0.95)
-    label = f'client' if n == 1 else f'{n} clients'
+    label = '1 client' if n == 1 else f'{n} clients'
     ax.plot_date(after.index[::sample_every],
                  median_after[::sample_every],
-                 label=f'{n} clients',
+                 label=label,
                  color = line.get_color(),
                  fmt='-')
     ax.fill_between(after.index[::sample_every],
@@ -111,6 +111,8 @@ def plot(n1: pd.DataFrame,
                  n4_after['latency_nanos'] / 1e6, sample_every)
     plot_latency(ax[0], 8, n8_before['latency_nanos'] / 1e6,
                  n8_after['latency_nanos'] / 1e6, sample_every)
+    ax[0].set_ylim([0, 2.0])
+
     plot_throughput(ax[1], 1, n1_before['delta'], n1_after['delta'], sample_every)
     plot_throughput(ax[1], 4, n4_before['delta'], n4_after['delta'], sample_every)
     plot_throughput(ax[1], 8, n8_before['delta'], n8_after['delta'], sample_every)
