@@ -76,7 +76,16 @@ def throughput(s: pd.Series, window_size_ms: float,
              pd.DateOffset(microseconds=window_size_ms * 1000))
         return throughput[throughput.index >= t]
     else:
-        return throughput
+        # TODO(mwhittaker): Fix up. It's a little jank.
+        start_time = throughput.index[0]
+        offset = pd.DateOffset(microseconds=window_size_ms*1000)
+        for i, (index, row) in enumerate(s.iteritems(), start=1):
+            if i < 100:
+                continue
+            if index > start_time + offset:
+                return throughput[100:]
+            throughput[index] = i / (index - start_time).total_seconds()
+        return throughput[100:]
 
 
 def rate(s: pd.Series, window_size_ms: float) -> pd.Series:

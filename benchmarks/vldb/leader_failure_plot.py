@@ -37,20 +37,51 @@ def read_data(file,
     return (df, new_start_time)
 
 
-def plot_throughput(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> None:
-    tput = pd_util.throughput(s, 1000, trim=True)[::sample_every]
-    ax.plot_date(tput.index, tput, fmt='-', label=f'{n} clients')
+def split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    for i in range(len(df)):
+        if i == 0:
+            continue
+
+        if df.iloc[i]['start'] - df.iloc[i - 1]['start'] > pd.Timedelta('1s'):
+            return df.iloc[:i], df[i:]
+
+    raise ValueError("No split found.")
 
 
-def plot_latency(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> None:
-    median = s.rolling('1000ms').median()
-    p95 = s.rolling('1000ms').quantile(0.95)
-    line = ax.plot_date(s.index[::sample_every],
-                        median[::sample_every],
-                        label=f'{n} clients',
+def plot_throughput(ax: plt.Axes, n: int, before: pd.Series, after: pd.Series,
+                    sample_every: int) -> None:
+    tput_before = pd_util.throughput(before, 1000, trim=True)[::sample_every]
+    line = ax.plot_date(tput_before.index, tput_before, fmt='-') [0]
+    tput_after = pd_util.throughput(after, 1000, trim=False)[::sample_every]
+    line = ax.plot_date(tput_after.index, tput_after, fmt='-',
+                        color=line.get_color())
+
+
+def plot_latency(ax: plt.Axes, n: int, before: pd.Series, after: pd.Series,
+                 sample_every: int) -> None:
+    median_before = before.rolling('1000ms').median()
+    p95_before = before.rolling('1000ms').quantile(0.95)
+    line = ax.plot_date(before.index[::sample_every],
+                        median_before[::sample_every],
+                        label='_nolegend_',
                         fmt='-')[0]
-    ax.fill_between(s.index[::sample_every], median[::sample_every],
-                    p95[::sample_every], color=line.get_color(), alpha=0.25)
+    ax.fill_between(before.index[::sample_every],
+                    median_before[::sample_every],
+                    p95_before[::sample_every],
+                    color=line.get_color(), alpha=0.25)
+
+    median_after = after.rolling('1000ms').median()
+    p95_after = after.rolling('1000ms').quantile(0.95)
+    label = f'client' if n == 1 else f'{n} clients'
+    ax.plot_date(after.index[::sample_every],
+                 median_after[::sample_every],
+                 label=f'{n} clients',
+                 color = line.get_color(),
+                 fmt='-')
+    ax.fill_between(after.index[::sample_every],
+                    median_after[::sample_every],
+                    p95_after[::sample_every],
+                    color=line.get_color(), alpha=0.25)
 
 
 def plot(n1: pd.DataFrame,
@@ -65,13 +96,24 @@ def plot(n1: pd.DataFrame,
     fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8),
                            sharex=True)
 
+    # Split data.
+    n1_before, n1_after = split(n1)
+    print('n1 split')
+    n4_before, n4_after = split(n4)
+    print('n4 split')
+    n8_before, n8_after = split(n8)
+    print('n8 split')
+
     # Plot data.
-    plot_latency(ax[0], 1, n1['latency_nanos'] / 1e6, sample_every)
-    plot_latency(ax[0], 4, n4['latency_nanos'] / 1e6, sample_every)
-    plot_latency(ax[0], 8, n8['latency_nanos'] / 1e6, sample_every)
-    plot_throughput(ax[1], 1, n1['delta'], sample_every)
-    plot_throughput(ax[1], 4, n4['delta'], sample_every)
-    plot_throughput(ax[1], 8, n8['delta'], sample_every)
+    plot_latency(ax[0], 1, n1_before['latency_nanos'] / 1e6,
+                 n1_after['latency_nanos'] / 1e6, sample_every)
+    plot_latency(ax[0], 4, n4_before['latency_nanos'] / 1e6,
+                 n4_after['latency_nanos'] / 1e6, sample_every)
+    plot_latency(ax[0], 8, n8_before['latency_nanos'] / 1e6,
+                 n8_after['latency_nanos'] / 1e6, sample_every)
+    plot_throughput(ax[1], 1, n1_before['delta'], n1_after['delta'], sample_every)
+    plot_throughput(ax[1], 4, n4_before['delta'], n4_after['delta'], sample_every)
+    plot_throughput(ax[1], 8, n8_before['delta'], n8_after['delta'], sample_every)
 
     # Format x ticks nicely.
     for axes in ax:
