@@ -87,21 +87,31 @@ def plot(n1: pd.DataFrame,
     origin = datetime.datetime(1970, 1, 1, second=0)
     naive_start_time = start_time.to_pydatetime().replace(tzinfo=None)
     reconfigurations = [
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=1, microsecond=379000),
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=2, microsecond=381000),
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=3, microsecond=383000),
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=4, microsecond=385000),
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=5, microsecond=387000),
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=6, microsecond=388000),
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=7, microsecond=390000),
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=8, microsecond=392000),
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=9, microsecond=394000),
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=10, microsecond=396000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=1, microsecond=379000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=2, microsecond=381000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=3, microsecond=383000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=4, microsecond=385000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=5, microsecond=387000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=6, microsecond=388000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=7, microsecond=390000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=8, microsecond=392000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=9, microsecond=394000),
+        datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=10, microsecond=396000),
     ]
-    failure = \
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=15, microsecond=373000)
-    recover = \
-        datetime.datetime(2020, 2, 22, hour=22, minute=11, second=20, microsecond=374000)
+    failure = datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=15, microsecond=373000)
+    recover = datetime.datetime(
+            2020, 2, 22, hour=22, minute=11, second=20, microsecond=374000)
 
     for axes in ax:
         for t in reconfigurations:
@@ -125,14 +135,129 @@ def plot(n1: pd.DataFrame,
     print(f'Wrote plot to {output_filename}.')
 
 
+
+def plot_violin(n1: Tuple[np.array, np.array],
+                n4: Tuple[np.array, np.array],
+                n8: Tuple[np.array, np.array],
+                ylabel: str,
+                output_filename: str) -> None:
+    num_plots = 3
+    fig, ax = plt.subplots(1, num_plots, figsize=(6.4 * 1.25, 4.8))
+
+    for (axes, data, color, n) in zip(ax, [n1,n4,n8], ['C0','C1','C2'], [1,4,8]):
+        # Plot data.
+        parts = axes.violinplot(data, widths=0.5, showextrema=False)
+
+        # Set color.
+        for pc in parts['bodies']:
+            pc.set_facecolor(color)
+            pc.set_edgecolor('black')
+            pc.set_alpha(1)
+
+        # Set y-axis label.
+        if n == 1:
+            axes.set_ylabel(ylabel)
+
+        # Set x-axis labels.
+        axes.set_xticklabels(['', '0s-10s', '10s-20s'])
+
+        # Set title.
+        axes.set_title('1 client' if n == 1 else f'{n} clients')
+
+        # Show median, quartiles, and min/max.
+        p25 = [np.percentile(xs, 25) for xs in data]
+        medians = [np.percentile(xs, 50) for xs in data]
+        p75 = [np.percentile(xs, 75) for xs in data]
+        mins = [np.min(xs) for xs in data]
+        maxs = [np.max(xs) for xs in data]
+
+        axes.scatter([1, 2], medians, marker='o', color='white', s=30, zorder=3)
+        axes.vlines([1, 2], p25, p75, color='k', linestyle='-', lw=7)
+        axes.vlines([1, 2], mins, maxs, color='k', linestyle='-', lw=1)
+
+    fig.set_tight_layout(True)
+    fig.savefig(output_filename)
+
+
+def violin(n1: pd.DataFrame,
+           n4: pd.DataFrame,
+           n8: pd.DataFrame,
+           throughput_filename: str,
+           latency_filename: str) -> None:
+    ten = datetime.datetime(1970, 1, 1, second=10)
+    twenty = datetime.datetime(1970, 1, 1, second=20)
+
+    # https://stackoverflow.com/a/11686764/3187068
+    def reject_outliers(data, p=99):
+        return data[data < np.percentile(data, p)]
+
+
+    def throughput(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        before = df[:ten]
+        during = df[ten:twenty]
+        return (
+            pd_util.throughput(before['delta'], 1000, trim=True).to_numpy(),
+            pd_util.throughput(during['delta'], 1000, trim=True).to_numpy(),
+        )
+
+    def latency(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        before = df[:ten]
+        during = df[ten:twenty]
+        return (
+            reject_outliers((before['latency_nanos'] / 1e6).to_numpy()),
+            reject_outliers((during['latency_nanos'] / 1e6).to_numpy()),
+        )
+
+    def report_stats(name: str, xs: np.array) -> None:
+        print(f'{name}:')
+        print(f'- 25% = {np.percentile(xs, 25)}')
+        print(f'- 50% = {np.percentile(xs, 50)}')
+        print(f'- 75% = {np.percentile(xs, 75)}')
+        print(f'- IQR = {np.percentile(xs, 75) - np.percentile(xs, 50)}')
+        print(f'- stddev = {np.std(xs)}')
+
+    n1_tput_before, n1_tput_during = throughput(n1)
+    n4_tput_before, n4_tput_during = throughput(n4)
+    n8_tput_before, n8_tput_during = throughput(n8)
+    report_stats('n1 throughput before', n1_tput_before)
+    report_stats('n1 throughput during', n1_tput_during)
+    report_stats('n4 throughput before', n4_tput_before)
+    report_stats('n4 throughput during', n4_tput_during)
+    report_stats('n8 throughput before', n8_tput_before)
+    report_stats('n8 throughput during', n8_tput_during)
+    n1_latency_before, n1_latency_during = latency(n1)
+    n4_latency_before, n4_latency_during = latency(n4)
+    n8_latency_before, n8_latency_during = latency(n8)
+    report_stats('n1 latency before', n1_latency_before)
+    report_stats('n1 latency during', n1_latency_during)
+    report_stats('n4 latency before', n4_latency_before)
+    report_stats('n4 latency during', n4_latency_during)
+    report_stats('n8 latency before', n8_latency_before)
+    report_stats('n8 latency during', n8_latency_during)
+
+    plot_violin(
+        n1 = (n1_tput_before, n1_tput_during),
+        n4 = (n4_tput_before, n4_tput_during),
+        n8 = (n8_tput_before, n8_tput_during),
+        ylabel = 'Throughput (commands/second)',
+        output_filename = throughput_filename)
+
+    plot_violin(
+        n1 = (n1_latency_before, n1_latency_during),
+        n4 = (n4_latency_before, n4_latency_during),
+        n8 = (n8_latency_before, n8_latency_during),
+        ylabel = 'Latency (ms)',
+        output_filename = latency_filename)
+
+
 def main(args) -> None:
     # Read the data.
     (f1n1, start_time) = read_data(args.f1n1, args.drop_head, args.drop_tail)
-    (f1n4, _) = read_data(args.f1n4, args.drop_head, args.drop_tail)
+    (f1n4, _) = read_data(args.f1n4, args.drop_head, args.drop_tail + 5)
     (f1n8, _) = read_data(args.f1n8, args.drop_head, args.drop_tail)
     (f2n1, _) = read_data(args.f2n1, args.drop_head, args.drop_tail)
-    (f2n4, _) = read_data(args.f2n4, args.drop_head, args.drop_tail)
-    (f2n8, _) = read_data(args.f2n8, args.drop_head, args.drop_tail)
+    (f2n4, _) = read_data(args.f2n4, args.drop_head, args.drop_tail + 1)
+    (f2n8, _) = read_data(args.f2n8, args.drop_head, args.drop_tail + 1)
 
     # Plot the data.
     plot(
@@ -152,6 +277,13 @@ def main(args) -> None:
         f=2,
         start_time=start_time,
         sample_every=args.sample_every,
+    )
+    violin(
+        n1=f1n1,
+        n4=f1n4,
+        n8=f1n8,
+        throughput_filename=args.output_violin_throughput,
+        latency_filename=args.output_violin_latency,
     )
 
 
@@ -201,6 +333,16 @@ def get_parser() -> argparse.ArgumentParser:
                         type=str,
                         default='vldb_leader_reconfiguration_f=2.pdf',
                         help='f=2 output filename')
+    parser.add_argument(
+        '--output_violin_throughput',
+        type=str,
+        default='vldb_leader_reconfiguration_violin_throughput.pdf',
+        help='f=1 violin throughput output filename')
+    parser.add_argument(
+        '--output_violin_latency',
+        type=str,
+        default='vldb_leader_reconfiguration_violin_latency.pdf',
+        help='f=1 violin latency output filename')
 
     return parser
 
