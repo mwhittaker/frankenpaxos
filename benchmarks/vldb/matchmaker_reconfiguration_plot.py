@@ -36,6 +36,41 @@ def read_data(file,
     return (df, new_start_time)
 
 
+def report_stats(df: pd.DataFrame, f: int, n: int) -> None:
+    ten = datetime.datetime(1970, 1, 1, second=10)
+    twenty = datetime.datetime(1970, 1, 1, second=20)
+    before = df[:ten]
+    during = df[ten:twenty]
+
+    def throughput(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        return (
+            pd_util.throughput(before['delta'], 1000, trim=True).to_numpy(),
+            pd_util.throughput(during['delta'], 1000, trim=True).to_numpy(),
+        )
+
+    def latency(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        return (
+            (before['latency_nanos'] / 1e6).to_numpy(),
+            (during['latency_nanos'] / 1e6).to_numpy(),
+        )
+
+    def report(name: str, xs: np.array) -> None:
+        print(name)
+        print(f'- 25% = {np.percentile(xs, 25)}')
+        print(f'- 50% = {np.percentile(xs, 50)}')
+        print(f'- 75% = {np.percentile(xs, 75)}')
+        print(f'- IQR = {np.percentile(xs, 75) - np.percentile(xs, 50)}')
+        print(f'- stddev = {np.std(xs)}')
+
+    tput_before, tput_during = throughput(df)
+    report(f'[f={f}, n={n}] throughput before', tput_before)
+    report(f'[f={f}, n={n}] throughput during', tput_during)
+
+    latency_before, latency_during = latency(df)
+    report(f'[f={f}, n={n}] latency before', latency_before)
+    report(f'[f={f}, n={n}] latency during', latency_during)
+
+
 def plot_throughput(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> None:
     tput = pd_util.throughput(s, 1000, trim=True)[::sample_every]
     ax.plot_date(tput.index, tput, fmt='-', label=f'{n} clients')
@@ -158,6 +193,14 @@ def main(args) -> None:
         start_time=start_time,
         sample_every=args.sample_every,
     )
+
+    # Report stats.
+    report_stats(f1n1, f=1, n=1)
+    report_stats(f1n4, f=1, n=4)
+    report_stats(f1n8, f=1, n=8)
+    report_stats(f2n1, f=2, n=1)
+    report_stats(f2n4, f=2, n=4)
+    report_stats(f2n8, f=2, n=8)
 
 
 def get_parser() -> argparse.ArgumentParser:

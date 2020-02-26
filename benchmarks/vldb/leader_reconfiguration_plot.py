@@ -36,6 +36,41 @@ def read_data(file,
     return (df, new_start_time)
 
 
+def report_stats(df: pd.DataFrame, f: int, n: int) -> None:
+    ten = datetime.datetime(1970, 1, 1, second=10)
+    twenty = datetime.datetime(1970, 1, 1, second=20)
+    before = df[:ten]
+    during = df[ten:twenty]
+
+    def throughput(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        return (
+            pd_util.throughput(before['delta'], 1000, trim=True).to_numpy(),
+            pd_util.throughput(during['delta'], 1000, trim=True).to_numpy(),
+        )
+
+    def latency(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        return (
+            (before['latency_nanos'] / 1e6).to_numpy(),
+            (during['latency_nanos'] / 1e6).to_numpy(),
+        )
+
+    def report(name: str, xs: np.array) -> None:
+        print(name)
+        print(f'- 25% = {np.percentile(xs, 25)}')
+        print(f'- 50% = {np.percentile(xs, 50)}')
+        print(f'- 75% = {np.percentile(xs, 75)}')
+        print(f'- IQR = {np.percentile(xs, 75) - np.percentile(xs, 50)}')
+        print(f'- stddev = {np.std(xs)}')
+
+    tput_before, tput_during = throughput(df)
+    report(f'[f={f}, n={n}] throughput before', tput_before)
+    report(f'[f={f}, n={n}] throughput during', tput_during)
+
+    latency_before, latency_during = latency(df)
+    report(f'[f={f}, n={n}] latency before', latency_before)
+    report(f'[f={f}, n={n}] latency during', latency_during)
+
+
 def plot_throughput(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> None:
     tput = pd_util.throughput(s, 1000, trim=True)[::sample_every]
     ax.plot_date(tput.index, tput, fmt='-', label=f'{n} clients')
@@ -177,6 +212,7 @@ def plot_violin(n1: Tuple[np.array, np.array],
 
     fig.set_tight_layout(True)
     fig.savefig(output_filename)
+    print(f'Wrote plot to {output_filename}.')
 
 
 def violin(n1: pd.DataFrame,
@@ -190,7 +226,6 @@ def violin(n1: pd.DataFrame,
     # https://stackoverflow.com/a/11686764/3187068
     def reject_outliers(data, p=99):
         return data[data < np.percentile(data, p)]
-
 
     def throughput(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         before = df[:ten]
@@ -208,44 +243,17 @@ def violin(n1: pd.DataFrame,
             reject_outliers((during['latency_nanos'] / 1e6).to_numpy()),
         )
 
-    def report_stats(name: str, xs: np.array) -> None:
-        print(f'{name}:')
-        print(f'- 25% = {np.percentile(xs, 25)}')
-        print(f'- 50% = {np.percentile(xs, 50)}')
-        print(f'- 75% = {np.percentile(xs, 75)}')
-        print(f'- IQR = {np.percentile(xs, 75) - np.percentile(xs, 50)}')
-        print(f'- stddev = {np.std(xs)}')
-
-    n1_tput_before, n1_tput_during = throughput(n1)
-    n4_tput_before, n4_tput_during = throughput(n4)
-    n8_tput_before, n8_tput_during = throughput(n8)
-    report_stats('n1 throughput before', n1_tput_before)
-    report_stats('n1 throughput during', n1_tput_during)
-    report_stats('n4 throughput before', n4_tput_before)
-    report_stats('n4 throughput during', n4_tput_during)
-    report_stats('n8 throughput before', n8_tput_before)
-    report_stats('n8 throughput during', n8_tput_during)
-    n1_latency_before, n1_latency_during = latency(n1)
-    n4_latency_before, n4_latency_during = latency(n4)
-    n8_latency_before, n8_latency_during = latency(n8)
-    report_stats('n1 latency before', n1_latency_before)
-    report_stats('n1 latency during', n1_latency_during)
-    report_stats('n4 latency before', n4_latency_before)
-    report_stats('n4 latency during', n4_latency_during)
-    report_stats('n8 latency before', n8_latency_before)
-    report_stats('n8 latency during', n8_latency_during)
-
     plot_violin(
-        n1 = (n1_tput_before, n1_tput_during),
-        n4 = (n4_tput_before, n4_tput_during),
-        n8 = (n8_tput_before, n8_tput_during),
+        n1 = throughput(n1),
+        n4 = throughput(n4),
+        n8 = throughput(n8),
         ylabel = 'Throughput (commands/second)',
         output_filename = throughput_filename)
 
     plot_violin(
-        n1 = (n1_latency_before, n1_latency_during),
-        n4 = (n4_latency_before, n4_latency_during),
-        n8 = (n8_latency_before, n8_latency_during),
+        n1 = latency(n1),
+        n4 = latency(n4),
+        n8 = latency(n8),
         ylabel = 'Latency (ms)',
         output_filename = latency_filename)
 
@@ -285,6 +293,14 @@ def main(args) -> None:
         throughput_filename=args.output_violin_throughput,
         latency_filename=args.output_violin_latency,
     )
+
+    # Report stats.
+    report_stats(f1n1, f=1, n=1)
+    report_stats(f1n4, f=1, n=4)
+    report_stats(f1n8, f=1, n=8)
+    report_stats(f2n1, f=2, n=1)
+    report_stats(f2n4, f=2, n=4)
+    report_stats(f2n8, f=2, n=8)
 
 
 def get_parser() -> argparse.ArgumentParser:
