@@ -97,7 +97,7 @@ def plot(n1: pd.DataFrame,
          sample_every: int):
     # Create figure.
     num_plots = 2
-    fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8),
+    fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8 * 0.7),
                            sharex=True)
 
     # Plot data.

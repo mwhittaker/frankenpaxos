@@ -1,3 +1,5 @@
+Wrote plot to benchmarks/vldb/vldb_matchmaker_reconfiguration_f=1.pdf.
+Wrote plot to benchmarks/vldb/vldb_matchmaker_reconfiguration_f=2.pdf.
 [f=1, n=1] throughput before
 - 25% = 3498.0
 - 50% = 3522.0

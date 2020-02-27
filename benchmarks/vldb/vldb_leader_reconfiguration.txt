@@ -1,3 +1,7 @@
+Wrote plot to benchmarks/vldb/vldb_leader_reconfiguration_f=1.pdf.
+Wrote plot to benchmarks/vldb/vldb_leader_reconfiguration_f=2.pdf.
+Wrote plot to benchmarks/vldb/vldb_leader_reconfiguration_violin_throughput.pdf.
+Wrote plot to benchmarks/vldb/vldb_leader_reconfiguration_violin_latency.pdf.
 [f=1, n=1] throughput before
 - 25% = 3599.0
 - 50% = 3618.0
