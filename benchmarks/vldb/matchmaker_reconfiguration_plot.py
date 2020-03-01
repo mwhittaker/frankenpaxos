@@ -97,7 +97,7 @@ def plot(n1: pd.DataFrame,
          sample_every: int):
     # Create figure.
     num_plots = 2
-    fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8 * 0.7),
+    fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, num_plots * 4.8 * 0.5),
                            sharex=True)
 
     # Plot data.
@@ -158,7 +158,7 @@ def plot(n1: pd.DataFrame,
     # Save figures.
     ax[1].set_xlabel('Time')
     ax[0].set_ylabel('Latency (ms)')
-    ax[1].set_ylabel('Throughput (commands/second)')
+    ax[1].set_ylabel('Throughput\n(cmds/second)')
     fig.set_tight_layout(True)
     fig.savefig(output_filename, bbox_extra_artists=(legend,),
                 bbox_inches='tight')
