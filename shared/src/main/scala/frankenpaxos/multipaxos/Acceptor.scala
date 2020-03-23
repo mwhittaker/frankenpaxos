@@ -97,6 +97,12 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var states = mutable.SortedMap[Slot, State]()
 
+  // `maxVotedSlot` is the largest slot in which an acceptor has voted (i.e.
+  // sent a Phase2a). Initially the value is -1 to indicate that there is no
+  // slot in which the acceptor has voted.
+  @JSExport
+  protected var maxVotedSlot: Int = -1
+
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
     if (options.measureLatencies) {
@@ -118,8 +124,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Phase1A(_) => "Phase1a"
-        case Request.Phase2A(_) => "Phase2a"
+        case Request.Phase1A(_)        => "Phase1a"
+        case Request.Phase2A(_)        => "Phase2a"
+        case Request.MaxSlotRequest(_) => "MaxSlotRequest"
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -127,8 +134,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.Phase1A(r) => handlePhase1a(src, r)
-        case Request.Phase2A(r) => handlePhase2a(src, r)
+        case Request.Phase1A(r)        => handlePhase1a(src, r)
+        case Request.Phase2A(r)        => handlePhase2a(src, r)
+        case Request.MaxSlotRequest(r) => handleMaxSlotRequest(src, r)
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -189,17 +197,35 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    // Otherwise, update our round and send back a Phase2b message to the proxy
+    // Otherwise, update our state and send back a Phase2b message to the proxy
     // leader.
     round = phase2a.round
     states(phase2a.slot) = State(
       voteRound = round,
       voteValue = phase2a.commandBatchOrNoop
     )
+    maxVotedSlot = Math.max(maxVotedSlot, phase2a.slot)
+
     val proxyLeader = chan[ProxyLeader[Transport]](src, ProxyLeader.serializer)
     proxyLeader.send(
       ProxyLeaderInbound().withPhase2B(
         Phase2b(acceptorIndex = index, slot = phase2a.slot, round = round)
+      )
+    )
+  }
+
+  private def handleMaxSlotRequest(
+      src: Transport#Address,
+      maxSlotRequest: MaxSlotRequest
+  ): Unit = {
+    val client = chan[Client[Transport]](src, Client.serializer)
+    client.send(
+      ClientInbound().withMaxSlotReply(
+        MaxSlotReply(
+          commandId = maxSlotRequest.commandId,
+          acceptorIndex = index,
+          slot = maxVotedSlot
+        )
       )
     )
   }

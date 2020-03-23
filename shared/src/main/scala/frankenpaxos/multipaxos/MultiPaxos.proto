@@ -14,6 +14,11 @@
 //      |      |      |      |      |        | ---> |   ClientReplyBatch
 //      | <----^------^------^------^--------^----- |   ClientReply
 //
+//      | -----^------^------^----> |        |      |   MaxSlotRequest
+//      | <----^------^------^----- |        |      |   MaxSlotReply
+//      | -----^------^------^------^------> |      |   ReadRequest
+//      | <----^------^------^------^------- |      |   ReadReply
+//
 //      | <----^----- |      |      |        |      |   NotLeaderClient
 //      | -----^----> |      |      |        |      |   LeaderInfoRequestClient
 //      | <----^----- |      |      |        |      |   LeaderInfoReplyClient
@@ -171,6 +176,38 @@ message ClientReplyBatch {
   repeated ClientReply batch = 1;
 }
 
+message MaxSlotRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+}
+
+message MaxSlotReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required int32 acceptor_index = 2;
+  required int32 slot = 3;
+}
+
+message ReadRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required Command command = 2;
+}
+
+message ReadReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes result = 2;
+}
+
 // If a client or batcher sends a request to a leader, but the leader is
 // inactive, then the leader sends back a NotLeader{Client,Batcher} message.
 // The client or batcher then sends a LeaderInfoRequest{Client,Batcher} request
@@ -254,6 +291,8 @@ message ClientInbound {
     ClientReply client_reply = 1;
     NotLeaderClient not_leader_client = 2;
     LeaderInfoReplyClient leader_info_reply_client = 3;
+    MaxSlotReply max_slot_reply = 4;
+    ReadReply read_reply = 5;
   }
 }
 
@@ -301,6 +340,7 @@ message AcceptorInbound {
   oneof request {
     Phase1a phase1a = 1;
     Phase2a phase2a = 2;
+    MaxSlotRequest max_slot_request = 3;
   }
 }
 
@@ -310,6 +350,7 @@ message ReplicaInbound {
 
   oneof request {
     Chosen chosen = 1;
+    ReadRequest read_request = 2;
   }
 }
 

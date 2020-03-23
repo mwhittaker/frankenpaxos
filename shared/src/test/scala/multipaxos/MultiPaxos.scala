@@ -7,7 +7,7 @@ import frankenpaxos.simulator.FakeLogger
 import frankenpaxos.simulator.FakeTransport
 import frankenpaxos.simulator.FakeTransportAddress
 import frankenpaxos.simulator.SimulatedSystem
-import frankenpaxos.statemachine.AppendLog
+import frankenpaxos.statemachine.ReadableAppendLog
 import frankenpaxos.util
 import org.scalacheck
 import org.scalacheck.Gen
@@ -121,7 +121,7 @@ class MultiPaxos(val f: Int, batched: Boolean, seed: Long) {
       address = address,
       transport = transport,
       logger = new FakeLogger(),
-      stateMachine = new AppendLog(),
+      stateMachine = new ReadableAppendLog(),
       config = config,
       options = ReplicaOptions.default.copy(
         logGrowSize = 10,
@@ -148,11 +148,18 @@ class MultiPaxos(val f: Int, batched: Boolean, seed: Long) {
 
 object SimulatedMultiPaxos {
   sealed trait Command
-  case class Propose(
+
+  case class Write(
       clientIndex: Int,
       clientPseudonym: Int,
       value: String
   ) extends Command
+
+  case class Read(
+      clientIndex: Int,
+      clientPseudonym: Int
+  ) extends Command
+
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
@@ -186,12 +193,19 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
 
   override def generateCommand(paxos: System): Option[Command] = {
     val subgens = mutable.Buffer[(Int, Gen[Command])](
-      // Propose.
+      // Write.
       paxos.numClients -> {
         for {
           clientId <- Gen.choose(0, paxos.numClients - 1)
-          request <- Gen.alphaLowerStr
-        } yield Propose(clientId, clientPseudonym = 0, request)
+          request <- Gen.alphaLowerStr.filter(_.size > 0)
+        } yield Write(clientId, clientPseudonym = 0, request)
+
+      },
+      // Read.
+      paxos.numClients -> {
+        for {
+          clientId <- Gen.choose(0, paxos.numClients - 1)
+        } yield Read(clientId, clientPseudonym = 0)
       }
     )
     FakeTransport
@@ -207,8 +221,10 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
 
   override def runCommand(paxos: System, command: Command): System = {
     command match {
-      case Propose(clientId, clientPseudonym, request) =>
-        paxos.clients(clientId).propose(clientPseudonym, request)
+      case Write(clientId, clientPseudonym, request) =>
+        paxos.clients(clientId).write(clientPseudonym, request)
+      case Read(clientId, clientPseudonym) =>
+        paxos.clients(clientId).read(clientPseudonym, "")
       case TransportCommand(command) =>
         FakeTransport.runCommand(paxos.transport, command)
     }
@@ -255,9 +271,13 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
   def commandToString(command: Command): String = {
     val paxos = newSystem(System.currentTimeMillis())
     command match {
-      case Propose(clientIndex, clientPseudonym, value) =>
+      case Write(clientIndex, clientPseudonym, value) =>
         val clientAddress = paxos.clients(clientIndex).address.address
-        s"Propose($clientAddress, $clientPseudonym, $value)"
+        s"Write($clientAddress, $clientPseudonym, $value)"
+
+      case Read(clientIndex, clientPseudonym) =>
+        val clientAddress = paxos.clients(clientIndex).address.address
+        s"Read($clientAddress, $clientPseudonym)"
 
       case TransportCommand(FakeTransport.DeliverMessage(msg)) =>
         val dstActor = paxos.transport.actors(msg.dst)

@@ -120,7 +120,7 @@ object ClientMain extends App {
   def warmupRun(pseudonym: Int): Future[Unit] = {
     implicit val context = transport.executionContext
     client
-      .propose(pseudonym, flags.workload.get())
+      .write(pseudonym, flags.workload.get())
       .transformWith({
         case scala.util.Failure(_) =>
           logger.debug("Request failed.")
@@ -136,7 +136,7 @@ object ClientMain extends App {
   def run(pseudonym: Int): Future[Unit] = {
     implicit val context = transport.executionContext
     BenchmarkUtil
-      .timed(() => client.propose(pseudonym, flags.workload.get()))
+      .timed(() => client.write(pseudonym, flags.workload.get()))
       .transformWith({
         case scala.util.Failure(_) =>
           logger.debug("Request failed.")

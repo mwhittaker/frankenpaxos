@@ -9,6 +9,7 @@ import frankenpaxos.ProtoSerializer
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.RoundSystem
 import scala.concurrent.Future
 import scala.concurrent.Promise
@@ -30,13 +31,19 @@ object Client {
 
 @JSExportAll
 case class ClientOptions(
-    resendClientRequestPeriod: java.time.Duration
+    resendClientRequestPeriod: java.time.Duration,
+    resendMaxSlotRequestsPeriod: java.time.Duration,
+    resendReadRequestPeriod: java.time.Duration,
+    measureLatencies: Boolean
 )
 
 @JSExportAll
 object ClientOptions {
   val default = ClientOptions(
-    resendClientRequestPeriod = java.time.Duration.ofSeconds(10)
+    resendClientRequestPeriod = java.time.Duration.ofSeconds(10),
+    resendMaxSlotRequestsPeriod = java.time.Duration.ofSeconds(10),
+    resendReadRequestPeriod = java.time.Duration.ofSeconds(10),
+    measureLatencies = true
   )
 }
 
@@ -45,25 +52,51 @@ class ClientMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
     .name("multipaxos_client_requests_total")
+    .labelNames("type")
+    .help("Total number of processed requests.")
+    .register()
+
+  val requestsLatency: Summary = collectors.summary
+    .build()
+    .name("multipaxos_client_requests_latency")
+    .labelNames("type")
+    .help("Latency (in milliseconds) of a request.")
+    .register()
+
+  val clientRequestsSentTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_client_client_requests_sent_total")
     .help("Total number of client requests sent.")
     .register()
 
-  val responsesTotal: Counter = collectors.counter
+  val clientRepliesReceivedTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_responses_total")
-    .help("Total number of successful client responses received.")
+    .name("multipaxos_client_replies_received_total")
+    .help("Total number of successful replies responses received.")
     .register()
 
-  val unpendingResponsesTotal: Counter = collectors.counter
+  val staleClientRepliesReceivedTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_unpending_responses_total")
-    .help("Total number of unpending client responses received.")
+    .name("multipaxos_client_stale_client_replies_received_total")
+    .help("Total number of stale client replies received.")
     .register()
 
   val resendClientRequestTotal: Counter = collectors.counter
     .build()
     .name("multipaxos_client_resend_client_request_total")
     .help("Total number of times a client resends a ClientRequest.")
+    .register()
+
+  val resendMaxSlotRequestsTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_client_resend_max_slot_requests_total")
+    .help("Total number of times a client resends a MaxSlotRequest.")
+    .register()
+
+  val resendReadRequestsTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_client_resend_read_requests_total")
+    .help("Total number of times a client resends a ReadRequest.")
     .register()
 }
 
@@ -85,6 +118,38 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   type Pseudonym = Int
   type Id = Int
+  type AcceptorIndex = Int
+
+  @JSExportAll
+  sealed trait State
+
+  @JSExportAll
+  case class PendingWrite(
+      pseudonym: Pseudonym,
+      id: Id,
+      command: Array[Byte],
+      result: Promise[Array[Byte]],
+      resendClientRequest: Transport#Timer
+  ) extends State
+
+  @JSExportAll
+  case class MaxSlot(
+      pseudonym: Pseudonym,
+      id: Id,
+      command: Array[Byte],
+      result: Promise[Array[Byte]],
+      maxSlotReplies: mutable.Map[AcceptorIndex, MaxSlotReply],
+      resendMaxSlotRequests: Transport#Timer
+  ) extends State
+
+  @JSExportAll
+  case class PendingRead(
+      pseudonym: Pseudonym,
+      id: Id,
+      command: Array[Byte],
+      result: Promise[Array[Byte]],
+      resendReadRequest: Transport#Timer
+  ) extends State
 
   // Fields ////////////////////////////////////////////////////////////////////
   // A random number generator instantiated from `seed`. This allows us to
@@ -105,6 +170,18 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   private val leaders: Seq[Chan[Leader[Transport]]] =
     for (address <- config.leaderAddresses)
       yield chan[Leader[Transport]](address, Leader.serializer)
+
+  // Acceptor channels.
+  private val acceptors: Seq[Seq[Chan[Acceptor[Transport]]]] =
+    for (group <- config.acceptorAddresses) yield {
+      for (acceptor <- group)
+        yield chan[Acceptor[Transport]](address, Acceptor.serializer)
+    }
+
+  // Replica channels.
+  private val replicas: Seq[Chan[Replica[Transport]]] =
+    for (address <- config.replicaAddresses)
+      yield chan[Replica[Transport]](address, Replica.serializer)
 
   private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
 
@@ -128,32 +205,81 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // there is a pending command, no other command can be proposed. This
   // restriction hurts performance a bit---a single client cannot pipeline
   // requests---but it simplifies the design of the protocol.
-  @JSExportAll
-  case class PendingCommand(
-      pseudonym: Pseudonym,
-      id: Id,
-      command: Array[Byte],
-      result: Promise[Array[Byte]]
-  )
-
   @JSExport
-  protected var pendingCommands = mutable.Map[Pseudonym, PendingCommand]()
-
-  // A timer to resend a proposed value. If a client doesn't hear back quickly
-  // enough, it resends its proposal to all of the batchers (or leaders).
-  private val resendClientRequestTimers =
-    mutable.Map[Pseudonym, Transport#Timer]()
+  protected var states = mutable.Map[Pseudonym, State]()
 
   // Helpers ///////////////////////////////////////////////////////////////////
-  def toClientRequest(pendingCommand: PendingCommand): ClientRequest = {
-    ClientRequest(
-      command = Command(
-        commandId = CommandId(clientAddress = addressAsBytes,
-                              clientPseudonym = pendingCommand.pseudonym,
-                              clientId = pendingCommand.id),
-        command = ByteString.copyFrom(pendingCommand.command)
-      )
+  private def makeResendClientRequestTimer(
+      clientRequest: ClientRequest
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendClientRequest " +
+        s"[pseudonym=${clientRequest.command.commandId.clientPseudonym}; " +
+        s"id=${clientRequest.command.commandId.clientId}]",
+      options.resendClientRequestPeriod,
+      () => {
+        sendClientRequest(clientRequest)
+        metrics.resendClientRequestTotal.inc()
+        t.start()
+      }
     )
+    t.start()
+    t
+  }
+
+  private def makeResendMaxSlotRequestsTimer(
+      pseudonym: Pseudonym,
+      id: Id,
+      group: Seq[Chan[Acceptor[Transport]]],
+      maxSlotRequest: MaxSlotRequest
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendMaxSlotRequest [pseudonym=${pseudonym}; id=${id}]",
+      options.resendMaxSlotRequestsPeriod,
+      () => {
+        group.foreach(
+          _.send(AcceptorInbound().withMaxSlotRequest(maxSlotRequest))
+        )
+        metrics.resendMaxSlotRequestsTotal.inc()
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendReadRequestTimer(
+      pseudonym: Pseudonym,
+      id: Id,
+      readRequest: ReadRequest
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendReadRequest [pseudonym=${pseudonym}; id=${id}]",
+      options.resendReadRequestPeriod,
+      () => {
+        val replica = replicas(rand.nextInt(replicas.size))
+        replica.send(ReplicaInbound().withReadRequest(readRequest))
+        metrics.resendReadRequestsTotal.inc()
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    if (options.measureLatencies) {
+      val startNanos = System.nanoTime
+      val x = e
+      val stopNanos = System.nanoTime
+      metrics.requestsLatency
+        .labels(label)
+        .observe((stopNanos - startNanos).toDouble / 1000000)
+      x
+    } else {
+      e
+    }
   }
 
   private def getBatcher(): Chan[Batcher[Transport]] = {
@@ -178,35 +304,17 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def makeResendClientRequestTimer(
-      clientRequest: ClientRequest
-  ): Transport#Timer = {
-    lazy val t: Transport#Timer = timer(
-      s"resendClientRequest " +
-        s"[pseudonym=${clientRequest.command.commandId.clientPseudonym}; " +
-        s"id=${clientRequest.command.commandId.clientId}]",
-      options.resendClientRequestPeriod,
-      () => {
-        sendClientRequest(clientRequest)
-        metrics.resendClientRequestTotal.inc()
-        t.start()
-      }
-    )
-    t.start()
-    t
-  }
-
-  private def proposeImpl(
+  private def writeImpl(
       pseudonym: Pseudonym,
       command: Array[Byte],
       promise: Promise[Array[Byte]]
   ): Unit = {
-    pendingCommands.get(pseudonym) match {
+    states.get(pseudonym) match {
       case Some(_) =>
         promise.failure(
           new IllegalStateException(
-            s"You attempted to propose a value with pseudonym $pseudonym, " +
-              s"but this pseudonym already has a command pending. A client " +
+            s"You attempted to issue a write with pseudonym $pseudonym, " +
+              s"but this pseudonym already has a request pending. A client " +
               s"can only have one pending request at a time. Try waiting or " +
               s"use a different pseudonym."
           )
@@ -215,18 +323,67 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
         // Send the command.
         val id = ids.getOrElse(pseudonym, 0)
-        val pendingCommand = PendingCommand(pseudonym = pseudonym,
-                                            id = id,
-                                            command = command,
-                                            result = promise)
-        val clientRequest = toClientRequest(pendingCommand)
+        val clientRequest = ClientRequest(
+          command = Command(
+            commandId = CommandId(clientAddress = addressAsBytes,
+                                  clientPseudonym = pseudonym,
+                                  clientId = id),
+            command = ByteString.copyFrom(command)
+          )
+        )
         sendClientRequest(clientRequest)
-        metrics.requestsTotal.inc()
 
-        // Update our metadata.
-        pendingCommands(pseudonym) = pendingCommand
-        resendClientRequestTimers(pseudonym) = makeResendClientRequestTimer(
-          clientRequest
+        // Update our state.
+        states(pseudonym) = PendingWrite(
+          pseudonym = pseudonym,
+          id = id,
+          command = command,
+          result = promise,
+          resendClientRequest = makeResendClientRequestTimer(clientRequest)
+        )
+        ids(pseudonym) = id + 1
+        metrics.requestsTotal.inc()
+    }
+  }
+
+  private def readImpl(
+      pseudonym: Pseudonym,
+      command: Array[Byte],
+      promise: Promise[Array[Byte]]
+  ): Unit = {
+    states.get(pseudonym) match {
+      case Some(_) =>
+        promise.failure(
+          new IllegalStateException(
+            s"You attempted to issue a read with pseudonym $pseudonym, " +
+              s"but this pseudonym already has a request pending. A client " +
+              s"can only have one pending request at a time. Try waiting or " +
+              s"use a different pseudonym."
+          )
+        )
+
+      case None =>
+        // Send the MaxSlotRequests.
+        val id = ids.getOrElse(pseudonym, 0)
+        val maxSlotRequest = MaxSlotRequest(
+          commandId = CommandId(clientAddress = addressAsBytes,
+                                clientPseudonym = pseudonym,
+                                clientId = id)
+        )
+        val group = acceptors(rand.nextInt(acceptors.size))
+        group.foreach(
+          _.send(AcceptorInbound().withMaxSlotRequest(maxSlotRequest))
+        )
+
+        // Update our state.
+        states(pseudonym) = MaxSlot(
+          pseudonym = pseudonym,
+          id = id,
+          command = command,
+          result = promise,
+          maxSlotReplies = mutable.Map(),
+          resendMaxSlotRequests =
+            makeResendMaxSlotRequestsTimer(pseudonym, id, group, maxSlotRequest)
         )
         ids(pseudonym) = id + 1
     }
@@ -235,14 +392,33 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
-    inbound.request match {
-      case Request.ClientReply(r) => handleClientReply(src, r)
-      case Request.NotLeaderClient(r) =>
-        handleNotLeaderClient(src, r)
-      case Request.LeaderInfoReplyClient(r) =>
-        handleLeaderInfoReplyClient(src, r)
+
+    val label = inbound.request match {
+      case Request.ClientReply(_)           => "ClientReply"
+      case Request.MaxSlotReply(_)          => "MaxSlotReply"
+      case Request.ReadReply(_)             => "ReadReply"
+      case Request.NotLeaderClient(_)       => "NotLeaderClient"
+      case Request.LeaderInfoReplyClient(_) => "LeaderInfoReplyClient"
       case Request.Empty =>
         logger.fatal("Empty ClientInbound encountered.")
+    }
+    metrics.requestsTotal.labels(label).inc()
+
+    timed(label) {
+      inbound.request match {
+        case Request.ClientReply(r) =>
+          handleClientReply(src, r)
+        case Request.MaxSlotReply(r) =>
+          handleMaxSlotReply(src, r)
+        case Request.ReadReply(r) =>
+          handleReadReply(src, r)
+        case Request.NotLeaderClient(r) =>
+          handleNotLeaderClient(src, r)
+        case Request.LeaderInfoReplyClient(r) =>
+          handleLeaderInfoReplyClient(src, r)
+        case Request.Empty =>
+          logger.fatal("Empty ClientInbound encountered.")
+      }
     }
   }
 
@@ -250,31 +426,129 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       clientReply: ClientReply
   ): Unit = {
-    pendingCommands.get(clientReply.commandId.clientPseudonym) match {
-      case Some(pendingCommand: PendingCommand) =>
-        logger.checkEq(clientReply.commandId.clientPseudonym,
-                       pendingCommand.pseudonym)
-        if (clientReply.commandId.clientId == pendingCommand.id) {
-          pendingCommands -= pendingCommand.pseudonym
-          resendClientRequestTimers(pendingCommand.pseudonym).stop()
-          pendingCommand.result.success(clientReply.result.toByteArray())
-          metrics.responsesTotal.inc()
-        } else {
+    val pseudonym = clientReply.commandId.clientPseudonym
+    val state = states.get(pseudonym)
+    state match {
+      case None | Some(_: MaxSlot) | Some(_: PendingRead) =>
+        logger.debug(
+          s"A client received a ClientReply, but the state is $state. The " +
+            s"ClientReply is being ignored."
+        )
+        metrics.staleClientRepliesReceivedTotal.inc()
+
+      case Some(pendingWrite: PendingWrite) =>
+        logger.checkEq(pseudonym, pendingWrite.pseudonym)
+
+        if (clientReply.commandId.clientId != pendingWrite.id) {
           logger.debug(
-            s"A client received a ClientReply for an unpending command with " +
-              s"pseudonym ${clientReply.commandId.clientPseudonym} and id " +
-              s"${clientReply.commandId.clientId}."
+            s"A client received a ClientReply for pseudonym ${pseudonym}, " +
+              s"but the client id ${clientReply.commandId.clientId} doesn't " +
+              s"match the expected client id ${pendingWrite.id}. The " +
+              s"ClientReply is being ignored."
           )
-          metrics.unpendingResponsesTotal.inc()
+          metrics.staleClientRepliesReceivedTotal.inc()
+          return
         }
 
-      case None =>
+        pendingWrite.resendClientRequest.stop()
+        pendingWrite.result.success(clientReply.result.toByteArray())
+        states -= pendingWrite.pseudonym
+        metrics.clientRepliesReceivedTotal.inc()
+    }
+  }
+
+  private def handleMaxSlotReply(
+      src: Transport#Address,
+      maxSlotReply: MaxSlotReply
+  ): Unit = {
+    val pseudonym = maxSlotReply.commandId.clientPseudonym
+    val state = states.get(pseudonym)
+    state match {
+      case None | Some(_: PendingWrite) | Some(_: PendingRead) =>
         logger.debug(
-          s"A client received a ClientReply for an unpending command with " +
-            s"pseudonym ${clientReply.commandId.clientPseudonym} and id " +
-            s"${clientReply.commandId.clientId}."
+          s"A client received a MaxSlotReply, but the state is $state. The " +
+            s"MaxSlotReply is being ignored."
         )
-        metrics.unpendingResponsesTotal.inc()
+
+      case Some(maxSlot: MaxSlot) =>
+        logger.checkEq(pseudonym, maxSlot.pseudonym)
+
+        if (maxSlotReply.commandId.clientId != maxSlot.id) {
+          logger.debug(
+            s"A client received a MaxSlotReply for pseudonym ${pseudonym}, " +
+              s"but the client id ${maxSlotReply.commandId.clientId} doesn't " +
+              s"match the expected client id ${maxSlot.id}. The " +
+              s"MaxSlotReply is being ignored."
+          )
+          return
+        }
+
+        // Wait until we have f+1 responses.
+        maxSlot.maxSlotReplies(maxSlotReply.acceptorIndex) = maxSlotReply
+        if (maxSlot.maxSlotReplies.size < config.f + 1) {
+          return
+        }
+
+        // Compute the slot.
+        val slot = maxSlot.maxSlotReplies.values.map(_.slot).max
+
+        // Send the read.
+        val readRequest = ReadRequest(
+          slot = slot,
+          command = Command(
+            commandId = CommandId(clientAddress = addressAsBytes,
+                                  clientPseudonym = pseudonym,
+                                  clientId = maxSlot.id),
+            command = ByteString.copyFrom(maxSlot.command)
+          )
+        )
+        val replica = replicas(rand.nextInt(replicas.size))
+
+        // Update our state.
+        states(pseudonym) = PendingRead(
+          pseudonym = pseudonym,
+          id = maxSlot.id,
+          command = maxSlot.command,
+          result = maxSlot.result,
+          resendReadRequest = makeResendReadRequestTimer(
+            pseudonym,
+            maxSlot.id,
+            readRequest
+          )
+        )
+        maxSlot.resendMaxSlotRequests.stop()
+    }
+  }
+
+  private def handleReadReply(
+      src: Transport#Address,
+      readReply: ReadReply
+  ): Unit = {
+    val pseudonym = readReply.commandId.clientPseudonym
+    val state = states.get(pseudonym)
+    state match {
+      case None | Some(_: PendingWrite) | Some(_: MaxSlot) =>
+        logger.debug(
+          s"A client received a ReadReply, but the state is $state. The " +
+            s"ReadReply is being ignored."
+        )
+
+      case Some(pendingRead: PendingRead) =>
+        logger.checkEq(pseudonym, pendingRead.pseudonym)
+
+        if (readReply.commandId.clientId != pendingRead.id) {
+          logger.debug(
+            s"A client received a ReadReply for pseudonym ${pseudonym}, " +
+              s"but the client id ${readReply.commandId.clientId} doesn't " +
+              s"match the expected client id ${pendingRead.id}. The " +
+              s"ReadReply is being ignored."
+          )
+          return
+        }
+
+        pendingRead.resendReadRequest.stop()
+        pendingRead.result.success(readReply.result.toByteArray())
+        states -= pseudonym
     }
   }
 
@@ -307,34 +581,40 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     val newRound = leaderInfo.round
     round = leaderInfo.round
 
-    // We've sent all of our pending commands to the leader of round `round`,
-    // but we just learned about a new round `leaderInfo.round`. If the leader
-    // of the new round is different than the leader of the old round, then we
-    // have to re-send our messages.
-    if (roundSystem.leader(oldRound) != roundSystem.leader(newRound)) {
-      for ((pseudonym, pendingCommand) <- pendingCommands) {
-        sendClientRequest(toClientRequest(pendingCommand))
-        resendClientRequestTimers(pseudonym).reset()
-      }
-    }
+    // TODO(mwhittaker): We may want to re-send our writes here.
   }
 
   // Interface /////////////////////////////////////////////////////////////////
-  def propose(
-      pseudonym: Pseudonym,
-      command: Array[Byte]
-  ): Future[Array[Byte]] = {
+  def write(pseudonym: Pseudonym, command: Array[Byte]): Future[Array[Byte]] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => proposeImpl(pseudonym, command, promise)
+      () => writeImpl(pseudonym, command, promise)
     )
     promise.future
   }
 
-  def propose(pseudonym: Pseudonym, command: String): Future[String] = {
+  def write(pseudonym: Pseudonym, command: String): Future[String] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => proposeImpl(pseudonym, command.getBytes(), promise)
+      () => writeImpl(pseudonym, command.getBytes(), promise)
+    )
+    promise.future.map(new String(_))(
+      concurrent.ExecutionContext.Implicits.global
+    )
+  }
+
+  def read(pseudonym: Pseudonym, command: Array[Byte]): Future[Array[Byte]] = {
+    val promise = Promise[Array[Byte]]()
+    transport.executionContext.execute(
+      () => readImpl(pseudonym, command, promise)
+    )
+    promise.future
+  }
+
+  def read(pseudonym: Pseudonym, command: String): Future[String] = {
+    val promise = Promise[Array[Byte]]()
+    transport.executionContext.execute(
+      () => readImpl(pseudonym, command.getBytes(), promise)
     )
     promise.future.map(new String(_))(
       concurrent.ExecutionContext.Implicits.global
