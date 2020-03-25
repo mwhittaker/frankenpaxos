@@ -57,55 +57,119 @@ const client_info = {
 
   data: function() {
     return {
-      proposal: "",
+      write_value: "",
     };
   },
 
   methods: {
-    propose: function() {
-      if (this.proposal === "") {
-        return;
-      }
-      this.node.actor.propose(0, this.proposal);
-      this.proposal = "";
+    read: function() {
+      this.node.actor.read(0, "");
     },
 
-    propose_ten: function() {
-      if (this.proposal === "") {
+    read_ten: function() {
+      for (let i = 0; i < 10; ++i) {
+        this.node.actor.read(i, "");
+      }
+    },
+
+    write: function() {
+      if (this.write_value === "") {
+        return;
+      }
+      this.node.actor.write(0, this.write_value);
+      this.write_value = "";
+    },
+
+    write_ten: function() {
+      if (this.write_value === "") {
         return;
       }
       for (let i = 0; i < 10; ++i) {
-        this.node.actor.propose(i, this.proposal);
+        this.node.actor.write(i, this.write_value);
       }
-      this.proposal = "";
+      this.write_value = "";
     },
   },
 
   template: `
     <div>
       <div>
-        ids =
-        <frankenpaxos-map :map="node.actor.ids"></frankenpaxos-map>
+        round = {{node.actor.round}}
       </div>
 
       <div>
-        pendingCommands =
-        <frankenpaxos-map
-          :map="node.actor.pendingCommands"
-          v-slot="{value: pc}">
-          <fp-object>
-            <fp-field :name="'pseudonym'" :value="pc.pseudonym"></fp-field>
-            <fp-field :name="'id'" :value="pc.id"></fp-field>
-            <fp-field :name="'command'" :value="pc.command"></fp-field>
-            <fp-field :name="'result'" :value="pc.result"></fp-field>
-          </fp-object>
+        ids = <frankenpaxos-map :map="node.actor.ids"></frankenpaxos-map>
+      </div>
+
+      <div>
+        states =
+        <frankenpaxos-map :map="node.actor.states" v-slot="{value: state}">
+          <div v-if="state.constructor.name.includes('PendingWrite')">
+            PendingWrite
+            <fp-object>
+              <fp-field :name="'pseudonym'">{{state.pseudonym}}</fp-field>
+              <fp-field :name="'id'">{{state.id}}</fp-field>
+              <fp-field :name="'command'">{{state.command}}</fp-field>
+              <fp-field :name="'result'">{{state.result}}</fp-field>
+              <fp-field :name="'resendClientRequest'">
+                {{state.resendClientRequest}}
+              </fp-field>
+            </fp-object>
+          </div>
+
+          <div v-if="state.constructor.name.includes('MaxSlot')">
+            MaxSlot
+            <fp-object>
+              <fp-field :name="'pseudonym'">{{state.pseudonym}}</fp-field>
+              <fp-field :name="'id'">{{state.id}}</fp-field>
+              <fp-field :name="'command'">{{state.command}}</fp-field>
+              <fp-field :name="'result'">{{state.result}}</fp-field>
+              <fp-field :name="'maxSlotReplies'">
+                <frankenpaxos-map :map="state.maxSlotReplies"
+                                  v-slot="{value: reply}">
+                  <fp-object>
+                    <fp-field :name="'reply.commandId'">
+                      {{reply.commandId}}
+                    </fp-field>
+                    <fp-field :name="'reply.acceptorIndex'">
+                      {{reply.acceptorIndex}}
+                    </fp-field>
+                    <fp-field :name="'reply.slot'">
+                      {{reply.slot}}
+                    </fp-field>
+                  </fp-object>
+                </frankenpaxos-map>
+              </fp-field>
+              <fp-field :name="'resendMaxSlotRequests'">
+                {{state.resendMaxSlotRequests}}
+              </fp-field>
+            </fp-object>
+          </div>
+
+          <div v-if="state.constructor.name.includes('PendingRead')">
+            PendingRead
+            <fp-object>
+              <fp-field :name="'pseudonym'">{{state.pseudonym}}</fp-field>
+              <fp-field :name="'id'">{{state.id}}</fp-field>
+              <fp-field :name="'command'">{{state.command}}</fp-field>
+              <fp-field :name="'result'">{{state.result}}</fp-field>
+              <fp-field :name="'resendReadRequest'">
+                {{state.resendReadRequest}}
+              </fp-field>
+            </fp-object>
+          </div>
         </frankenpaxos-map>
       </div>
 
-      <button v-on:click="propose">Propose</button>
-      <button v-on:click="propose_ten">Propose Ten</button>
-      <input v-model="proposal" v-on:keyup.enter="propose"></input>
-
+      <div>
+        <button v-on:click="read">Read</button>
+        <button v-on:click="read_ten">Read Ten</button>
+      </div>
+      <div>
+        <button v-on:click="write">Write</button>
+        <button v-on:click="write_ten">Write Ten</button>
+        <input v-model="write_value" v-on:keyup.enter="write"></input>
+      </div>
     </div>
   `,
 }
@@ -253,6 +317,10 @@ const acceptor_info = {
   template: `
     <div>
       <div>
+        maxVotedSlot = {{node.actor.maxVotedSlot}}
+      </div>
+
+      <div>
         round = {{node.actor.round}}
       </div>
 
@@ -286,6 +354,12 @@ const replica_info = {
 
       <div>
         numChosen = {{node.actor.numChosen}}
+      </div>
+
+      <div>
+        deferredReads =
+        <frankenpaxos-buffer-map :value="node.actor.deferredReads">
+        </frankenpaxos-buffer-map>
       </div>
 
       <div>

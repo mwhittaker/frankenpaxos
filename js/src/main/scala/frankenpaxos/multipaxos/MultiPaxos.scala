@@ -6,7 +6,7 @@ import frankenpaxos.JsTransportAddress
 import frankenpaxos.election.basic.ElectionOptions
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.roundsystem.RoundSystem
-import frankenpaxos.statemachine.AppendLog
+import frankenpaxos.statemachine.ReadableAppendLog
 import scala.scalajs.js.annotation._
 
 @JSExportAll
@@ -83,7 +83,7 @@ class MultiPaxos {
       logger = new JsLogger(),
       config = config,
       options = BatcherOptions.default.copy(
-        batchSize = 2
+        batchSize = 1
       ),
       metrics = new BatcherMetrics(FakeCollectors)
     )
@@ -151,7 +151,7 @@ class MultiPaxos {
       address = address,
       transport = transport,
       logger = new JsLogger(),
-      stateMachine = new AppendLog(),
+      stateMachine = new ReadableAppendLog(),
       config = config,
       options = ReplicaOptions.default.copy(
         logGrowSize = 5,

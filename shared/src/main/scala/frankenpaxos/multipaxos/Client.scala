@@ -163,25 +163,25 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   // Batcher channels.
   private val batchers: Seq[Chan[Batcher[Transport]]] =
-    for (address <- config.batcherAddresses)
-      yield chan[Batcher[Transport]](address, Batcher.serializer)
+    for (a <- config.batcherAddresses)
+      yield chan[Batcher[Transport]](a, Batcher.serializer)
 
   // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
-    for (address <- config.leaderAddresses)
-      yield chan[Leader[Transport]](address, Leader.serializer)
+    for (a <- config.leaderAddresses)
+      yield chan[Leader[Transport]](a, Leader.serializer)
 
   // Acceptor channels.
   private val acceptors: Seq[Seq[Chan[Acceptor[Transport]]]] =
     for (group <- config.acceptorAddresses) yield {
-      for (acceptor <- group)
-        yield chan[Acceptor[Transport]](address, Acceptor.serializer)
+      for (a <- group)
+        yield chan[Acceptor[Transport]](a, Acceptor.serializer)
     }
 
   // Replica channels.
   private val replicas: Seq[Chan[Replica[Transport]]] =
-    for (address <- config.replicaAddresses)
-      yield chan[Replica[Transport]](address, Replica.serializer)
+    for (a <- config.replicaAddresses)
+      yield chan[Replica[Transport]](a, Replica.serializer)
 
   private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
 
@@ -371,6 +371,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
                                 clientId = id)
         )
         val group = acceptors(rand.nextInt(acceptors.size))
+        // TODO(mwhittaker): Add thriftiness.
         group.foreach(
           _.send(AcceptorInbound().withMaxSlotRequest(maxSlotRequest))
         )
@@ -490,7 +491,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Compute the slot.
-        val slot = maxSlot.maxSlotReplies.values.map(_.slot).max
+        //
+        // TODO(mwhittaker): Double check that the `- 1` is safe.
+        val slot = maxSlot.maxSlotReplies.values
+          .map(_.slot)
+          .max + acceptors.size - 1
 
         // Send the read.
         val readRequest = ReadRequest(
@@ -503,6 +508,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
         val replica = replicas(rand.nextInt(replicas.size))
+        replica.send(ReplicaInbound().withReadRequest(readRequest))
 
         // Update our state.
         states(pseudonym) = PendingRead(
