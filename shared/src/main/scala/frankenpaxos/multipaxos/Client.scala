@@ -363,7 +363,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case None =>
-        // Send the MaxSlotRequests.
+        // Send the MaxSlotRequests to a random quorum of acceptors (thrifty by
+        // default).
         val id = ids.getOrElse(pseudonym, 0)
         val maxSlotRequest = MaxSlotRequest(
           commandId = CommandId(clientAddress = addressAsBytes,
@@ -371,8 +372,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
                                 clientId = id)
         )
         val group = acceptors(rand.nextInt(acceptors.size))
-        // TODO(mwhittaker): Add thriftiness.
-        group.foreach(
+        val quorum = scala.util.Random.shuffle(group).take(config.f + 1)
+        quorum.foreach(
           _.send(AcceptorInbound().withMaxSlotRequest(maxSlotRequest))
         )
 
