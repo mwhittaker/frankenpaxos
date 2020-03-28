@@ -9,7 +9,7 @@ from .. import prometheus
 from .. import proto_util
 from .. import util
 from .. import workload
-from ..workload import Workload
+from ..read_write_workload import ReadWriteWorkload
 from typing import Any, Callable, Collection, Dict, List, NamedTuple, Optional
 import argparse
 import csv
@@ -105,7 +105,7 @@ class Input(NamedTuple):
     timeout: datetime.timedelta
     client_lag: datetime.timedelta
     state_machine: str
-    workload: Workload
+    workload: ReadWriteWorkload
     profiled: bool
     monitored: bool
     prometheus_scrape_interval: datetime.timedelta
@@ -139,7 +139,12 @@ class Input(NamedTuple):
     client_log_level: str
 
 
-Output = benchmark.RecorderOutput
+class MultiPaxosOutput(NamedTuple):
+    read_output: benchmark.RecorderOutput
+    write_output: benchmark.RecorderOutput
+
+
+Output = MultiPaxosOutput
 
 
 # Networks #####################################################################
@@ -611,11 +616,13 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             bench.abspath(f'client_{i}_data.csv')
             for i in range(input.num_client_procs)
         ]
-        return benchmark.parse_recorder_data(
+        labeled_data = benchmark.parse_labeled_recorder_data(
             bench,
             client_csvs,
             drop_prefix=datetime.timedelta(seconds=0),
             save_data=False)
+        return MultiPaxosOutput(read_output = labeled_data['read'],
+                                write_output = labeled_data['write'])
 
 
 def get_parser() -> argparse.ArgumentParser:

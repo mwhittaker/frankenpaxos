@@ -317,15 +317,34 @@ class RecorderOutput(NamedTuple):
     stop_throughput_5s: ThroughputOutput
 
 
-# parse_recorder_data parses and summarizes data written by a
-# frankenpaxos.BenchmarkUtil.Recorder.
-#
-# TODO(mwhittaker): Drop the first couple of seconds from the data since it
-# takes a while for the JVM to fully ramp up.
-def parse_recorder_data(bench: BenchmarkDirectory,
-                        filenames: Iterable[str],
-                        drop_prefix: datetime.timedelta,
-                        save_data: bool = True) -> RecorderOutput:
+def _latency(s):
+    return LatencyOutput(
+        mean_ms=s.mean(),
+        median_ms=s.median(),
+        min_ms=s.min(),
+        max_ms=s.max(),
+        p90_ms=s.quantile(.90),
+        p95_ms=s.quantile(.95),
+        p99_ms=s.quantile(.99),
+    )
+
+
+def _throughput(s):
+    return LatencyOutput(
+        mean_ms=s.mean(),
+        median_ms=s.median(),
+        min_ms=s.min(),
+        max_ms=s.max(),
+        p90_ms=s.quantile(.90),
+        p95_ms=s.quantile(.95),
+        p99_ms=s.quantile(.99),
+    )
+
+
+def _wrangle_recorder_data(bench: BenchmarkDirectory,
+                           filenames: Iterable[str],
+                           drop_prefix: datetime.timedelta,
+                           save_data: bool = True) -> pd.DataFrame:
     df = pd_util.read_csvs(filenames, parse_dates=['start', 'stop'])
     bench.log('Aggregate recorder data read.')
     df = df.set_index('start')
@@ -352,34 +371,58 @@ def parse_recorder_data(bench: BenchmarkDirectory,
                       pd.DateOffset(seconds=drop_prefix.total_seconds()))
     df = df[df.index >= new_start_time]
 
-    def latency(s):
-        return LatencyOutput(
-            mean_ms=s.mean(),
-            median_ms=s.median(),
-            min_ms=s.min(),
-            max_ms=s.max(),
-            p90_ms=s.quantile(.90),
-            p95_ms=s.quantile(.95),
-            p99_ms=s.quantile(.99),
-        )
+    return df
 
-    def throughput(s):
-        return ThroughputOutput(
-            mean=s.mean(),
-            median=s.median(),
-            min=s.min(),
-            max=s.max(),
-            p90=s.quantile(.90),
-            p95=s.quantile(.95),
-            p99=s.quantile(.99),
-        )
 
+# parse_recorder_data parses and summarizes data written by a
+# frankenpaxos.BenchmarkUtil.Recorder.
+#
+# TODO(mwhittaker): Drop the first couple of seconds from the data since it
+# takes a while for the JVM to fully ramp up.
+def parse_recorder_data(bench: BenchmarkDirectory,
+                        filenames: Iterable[str],
+                        drop_prefix: datetime.timedelta,
+                        save_data: bool = True) -> RecorderOutput:
+    df = _wrangle_recorder_data(bench, filenames, drop_prefix, save_data)
     return RecorderOutput(
-        latency=latency(df['latency_nanos'] / 1e6),
-        start_throughput_1s=throughput(pd_util.throughput(df.index, 1000)),
-        start_throughput_2s=throughput(pd_util.throughput(df.index, 2000)),
-        start_throughput_5s=throughput(pd_util.throughput(df.index, 5000)),
-        stop_throughput_1s=throughput(pd_util.throughput(df['stop'], 1000)),
-        stop_throughput_2s=throughput(pd_util.throughput(df['stop'], 2000)),
-        stop_throughput_5s=throughput(pd_util.throughput(df['stop'], 5000)),
+        latency=_latency(df['latency_nanos'] / 1e6),
+        start_throughput_1s=_throughput(pd_util.throughput(df.index, 1000)),
+        start_throughput_2s=_throughput(pd_util.throughput(df.index, 2000)),
+        start_throughput_5s=_throughput(pd_util.throughput(df.index, 5000)),
+        stop_throughput_1s=_throughput(pd_util.throughput(df['stop'], 1000)),
+        stop_throughput_2s=_throughput(pd_util.throughput(df['stop'], 2000)),
+        stop_throughput_5s=_throughput(pd_util.throughput(df['stop'], 5000)),
     )
+
+
+# parse_labeled_recorder_data parses and summarizes data written by a
+# frankenpaxos.BenchmarkUtil.LabeledRecorder. Every label gets its own set of
+# outputs.
+def parse_labeled_recorder_data(bench: BenchmarkDirectory,
+                                filenames: Iterable[str],
+                                drop_prefix: datetime.timedelta,
+                                save_data: bool = True) \
+                                -> Dict[str, RecorderOutput]:
+    df = _wrangle_recorder_data(bench, filenames, drop_prefix, save_data)
+
+    # Record output for each label.
+    outputs = dict()
+    for label in df['label'].unique():
+        ldf = df[df['label'] == label]
+        outputs[label] = RecorderOutput(
+            latency = _latency(ldf['latency_nanos'] / 1e6),
+            start_throughput_1s = \
+                _throughput(pd_util.throughput(ldf.index, 1000)),
+            start_throughput_2s = \
+                _throughput(pd_util.throughput(ldf.index, 2000)),
+            start_throughput_5s = \
+                _throughput(pd_util.throughput(ldf.index, 5000)),
+            stop_throughput_1s = \
+                _throughput(pd_util.throughput(ldf['stop'], 1000)),
+            stop_throughput_2s = \
+                _throughput(pd_util.throughput(ldf['stop'], 2000)),
+            stop_throughput_5s = \
+                _throughput(pd_util.throughput(ldf['stop'], 5000)),
+        )
+
+    return outputs
