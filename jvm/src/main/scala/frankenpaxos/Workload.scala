@@ -106,19 +106,30 @@ object Workload {
   def fromProto(proto: WorkloadProto): Workload = {
     import WorkloadProto.Value
     proto.value match {
-      case Value.StringWorkload(w) =>
-        new StringWorkload(sizeMean = w.sizeMean, sizeStd = w.sizeStd)
-      case Value.UniformSingleKeyWorkload(w) =>
-        new UniformSingleKeyWorkload(numKeys = w.numKeys,
-                                     sizeMean = w.sizeMean,
-                                     sizeStd = w.sizeStd)
-      case Value.BernoulliSingleKeyWorkload(w) =>
-        new BernoulliSingleKeyWorkload(conflictRate = w.conflictRate,
-                                       sizeMean = w.sizeMean,
-                                       sizeStd = w.sizeStd)
+      case Value.StringWorkload(w)             => fromProto(w)
+      case Value.UniformSingleKeyWorkload(w)   => fromProto(w)
+      case Value.BernoulliSingleKeyWorkload(w) => fromProto(w)
       case Value.Empty =>
         throw new IllegalArgumentException("Empty WorkloadProto encountered.")
     }
+  }
+
+  def fromProto(w: StringWorkloadProto): StringWorkload = {
+    new StringWorkload(sizeMean = w.sizeMean, sizeStd = w.sizeStd)
+  }
+
+  def fromProto(w: UniformSingleKeyWorkloadProto): UniformSingleKeyWorkload = {
+    new UniformSingleKeyWorkload(numKeys = w.numKeys,
+                                 sizeMean = w.sizeMean,
+                                 sizeStd = w.sizeStd)
+  }
+
+  def fromProto(
+      w: BernoulliSingleKeyWorkloadProto
+  ): BernoulliSingleKeyWorkload = {
+    new BernoulliSingleKeyWorkload(conflictRate = w.conflictRate,
+                                   sizeMean = w.sizeMean,
+                                   sizeStd = w.sizeStd)
   }
 
   def fromFile(filename: String): Workload = {

@@ -1,0 +1,41 @@
+syntax = "proto2";
+
+package frankenpaxos.multipaxos;
+
+import "frankenpaxos/Workload.proto";
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.multipaxos"
+  flat_package: true
+};
+
+message UniformReadWriteWorkloadProto {
+  required int32 num_keys = 1;
+  required float read_fraction = 2;
+  required int32 write_size_mean = 3;
+  required int32 write_size_std = 4;
+}
+
+message WriteOnlyStringWorkloadProto {
+  required StringWorkloadProto workload = 1;
+}
+
+message WriteOnlyUniformSingleKeyWorkloadProto {
+  required UniformSingleKeyWorkloadProto workload = 1;
+}
+
+message WriteOnlyBernoulliSingleKeyWorkloadProto {
+  required BernoulliSingleKeyWorkloadProto workload = 1;
+}
+
+message ReadWriteWorkloadProto {
+  oneof value {
+    UniformReadWriteWorkloadProto uniform_read_write_workload = 1;
+    WriteOnlyStringWorkloadProto write_only_string_workload = 2;
+    WriteOnlyUniformSingleKeyWorkloadProto
+      write_only_uniform_single_key_workload = 3;
+    WriteOnlyBernoulliSingleKeyWorkloadProto
+      write_only_bernoulli_single_key_workload = 4;
+  }
+}

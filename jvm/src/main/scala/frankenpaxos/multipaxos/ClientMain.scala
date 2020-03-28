@@ -9,8 +9,8 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
-import frankenpaxos.StringWorkload
-import frankenpaxos.Workload
+// import frankenpaxos.StringWorkload
+// import frankenpaxos.Workload
 import frankenpaxos.monitoring.PrometheusCollectors
 import java.io.File
 import java.net.InetAddress
@@ -40,7 +40,7 @@ object ClientMain extends App {
       duration: java.time.Duration = java.time.Duration.ofSeconds(5),
       timeout: Duration = 10 seconds,
       numClients: Int = 1,
-      workload: Workload = new StringWorkload(0, 0),
+      workload: ReadWriteWorkload = new UniformReadWriteWorkload(1, 1, 1, 0),
       outputFilePrefix: String = "",
       // Options.
       options: ClientOptions = ClientOptions.default
@@ -82,7 +82,7 @@ object ClientMain extends App {
       .action((x, f) => f.copy(timeout = x))
     opt[Int]("num_clients")
       .action((x, f) => f.copy(numClients = x))
-    opt[Workload]("workload")
+    opt[ReadWriteWorkload]("workload")
       .action((x, f) => f.copy(workload = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
@@ -90,6 +90,10 @@ object ClientMain extends App {
     // Options.
     opt[java.time.Duration]("options.resendClientRequestPeriod")
       .optionAction((x, o) => o.copy(resendClientRequestPeriod = x))
+    opt[java.time.Duration]("options.resendMaxSlotRequestsPeriod")
+      .optionAction((x, o) => o.copy(resendMaxSlotRequestsPeriod = x))
+    opt[java.time.Duration]("options.resendReadRequestPeriod")
+      .optionAction((x, o) => o.copy(resendReadRequestPeriod = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
@@ -119,39 +123,78 @@ object ClientMain extends App {
   // any stats.
   def warmupRun(pseudonym: Int): Future[Unit] = {
     implicit val context = transport.executionContext
-    client
-      .write(pseudonym, flags.workload.get())
-      .transformWith({
-        case scala.util.Failure(_) =>
-          logger.debug("Request failed.")
-          Future.successful(())
+    flags.workload.get() match {
+      case Write(command) =>
+        client
+          .write(pseudonym, command)
+          .transformWith({
+            case scala.util.Failure(_) =>
+              logger.debug("Write failed.")
+              Future.successful(())
 
-        case scala.util.Success(_) =>
-          Future.successful(())
-      })
+            case scala.util.Success(_) =>
+              Future.successful(())
+          })
+
+      case Read(command) =>
+        client
+          .read(pseudonym, command)
+          .transformWith({
+            case scala.util.Failure(_) =>
+              logger.debug("Read failed.")
+              Future.successful(())
+
+            case scala.util.Success(_) =>
+              Future.successful(())
+          })
+    }
   }
 
   val recorder =
-    new BenchmarkUtil.Recorder(s"${flags.outputFilePrefix}_data.csv")
+    new BenchmarkUtil.LabeledRecorder(s"${flags.outputFilePrefix}_data.csv")
   def run(pseudonym: Int): Future[Unit] = {
     implicit val context = transport.executionContext
-    BenchmarkUtil
-      .timed(() => client.write(pseudonym, flags.workload.get()))
-      .transformWith({
-        case scala.util.Failure(_) =>
-          logger.debug("Request failed.")
-          Future.successful(())
+    flags.workload.get() match {
+      case Write(command) =>
+        BenchmarkUtil
+          .timed(() => client.write(pseudonym, command))
+          .transformWith({
+            case scala.util.Failure(_) =>
+              logger.debug("Write failed.")
+              Future.successful(())
 
-        case scala.util.Success((_, timing)) =>
-          recorder.record(
-            start = timing.startTime,
-            stop = timing.stopTime,
-            latencyNanos = timing.durationNanos,
-            host = flags.host,
-            port = flags.port
-          )
-          Future.successful(())
-      })
+            case scala.util.Success((_, timing)) =>
+              recorder.record(
+                start = timing.startTime,
+                stop = timing.stopTime,
+                latencyNanos = timing.durationNanos,
+                host = flags.host,
+                port = flags.port,
+                label = "write"
+              )
+              Future.successful(())
+          })
+
+      case Read(command) =>
+        BenchmarkUtil
+          .timed(() => client.read(pseudonym, command))
+          .transformWith({
+            case scala.util.Failure(_) =>
+              logger.debug("Read failed.")
+              Future.successful(())
+
+            case scala.util.Success((_, timing)) =>
+              recorder.record(
+                start = timing.startTime,
+                stop = timing.stopTime,
+                latencyNanos = timing.durationNanos,
+                host = flags.host,
+                port = flags.port,
+                label = "read"
+              )
+              Future.successful(())
+          })
+    }
   }
 
   // Warm up the protocol.

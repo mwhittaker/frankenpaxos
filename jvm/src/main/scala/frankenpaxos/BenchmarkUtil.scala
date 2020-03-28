@@ -88,4 +88,31 @@ object BenchmarkUtil {
       )
     }
   }
+
+  // A LabeledRecorder is like a recorder, but each command is annotated with a
+  // label (e.g., "read" or "write").
+  class LabeledRecorder(filename: String) {
+    val writer = CSVWriter.open(new java.io.File(filename))
+    writer.writeRow(
+      Seq("start", "stop", "latency_nanos", "host", "port", "label")
+    )
+
+    def record(
+        start: java.time.Instant,
+        stop: java.time.Instant,
+        latencyNanos: Long,
+        host: String,
+        port: Int,
+        label: String
+    ): Unit = {
+      writer.writeRow(
+        Seq(start.toString(),
+            stop.toString(),
+            latencyNanos.toString(),
+            host,
+            port,
+            label)
+      )
+    }
+  }
 }
