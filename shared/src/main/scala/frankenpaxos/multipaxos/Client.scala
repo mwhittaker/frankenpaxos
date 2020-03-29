@@ -342,7 +342,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           resendClientRequest = makeResendClientRequestTimer(clientRequest)
         )
         ids(pseudonym) = id + 1
-        metrics.requestsTotal.inc()
+        metrics.clientRequestsSentTotal.inc()
     }
   }
 

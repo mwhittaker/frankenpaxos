@@ -330,14 +330,14 @@ def _latency(s):
 
 
 def _throughput(s):
-    return LatencyOutput(
-        mean_ms=s.mean(),
-        median_ms=s.median(),
-        min_ms=s.min(),
-        max_ms=s.max(),
-        p90_ms=s.quantile(.90),
-        p95_ms=s.quantile(.95),
-        p99_ms=s.quantile(.99),
+    return ThroughputOutput(
+        mean=s.mean(),
+        median=s.median(),
+        min=s.min(),
+        max=s.max(),
+        p90=s.quantile(.90),
+        p95=s.quantile(.95),
+        p99=s.quantile(.99),
     )
 
 

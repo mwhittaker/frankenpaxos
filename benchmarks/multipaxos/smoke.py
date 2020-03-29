@@ -33,8 +33,10 @@ def main(args) -> None:
                     duration = datetime.timedelta(seconds=2),
                     timeout = datetime.timedelta(seconds=3),
                     client_lag = datetime.timedelta(seconds=3),
-                    state_machine = 'Noop',
-                    workload = workload.StringWorkload(size_mean=1, size_std=0),
+                    state_machine = 'KeyValueStore',
+                    workload = read_write_workload.UniformReadWriteWorkload(
+                        num_keys=1, read_fraction=0.0, write_size_mean=1,
+                        write_size_std=0),
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -87,8 +89,10 @@ def main(args) -> None:
                 'num_batchers': input.num_batchers,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
-                'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
+                'write.latency.median_ms': \
+                    f'{output.write_output.latency.median_ms:.6}',
+                'write.stop_throughput_1s.p90': \
+                    f'{output.write_output.stop_throughput_1s.p90:.6}',
             })
 
     suite = SmokeMultiPaxosSuite()

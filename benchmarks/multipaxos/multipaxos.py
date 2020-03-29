@@ -7,9 +7,8 @@ from .. import perf_util
 from .. import proc
 from .. import prometheus
 from .. import proto_util
+from .. import read_write_workload
 from .. import util
-from .. import workload
-from ..read_write_workload import ReadWriteWorkload
 from typing import Any, Callable, Collection, Dict, List, NamedTuple, Optional
 import argparse
 import csv
@@ -105,7 +104,7 @@ class Input(NamedTuple):
     timeout: datetime.timedelta
     client_lag: datetime.timedelta
     state_machine: str
-    workload: ReadWriteWorkload
+    workload: read_write_workload.ReadWriteWorkload
     profiled: bool
     monitored: bool
     prometheus_scrape_interval: datetime.timedelta
@@ -616,13 +615,48 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             bench.abspath(f'client_{i}_data.csv')
             for i in range(input.num_client_procs)
         ]
+
+        dummy_latency = benchmark.LatencyOutput(
+            mean_ms = -1.0,
+            median_ms = -1.0,
+            min_ms = -1.0,
+            max_ms = -1.0,
+            p90_ms = -1.0,
+            p95_ms = -1.0,
+            p99_ms = -1.0,
+        )
+        dummy_throughput = benchmark.ThroughputOutput(
+            mean = -1.0,
+            median = -1.0,
+            min = -1.0,
+            max = -1.0,
+            p90 = -1.0,
+            p95 = -1.0,
+            p99 = -1.0,
+        )
+        dummy_output = benchmark.RecorderOutput(
+            latency = dummy_latency,
+            start_throughput_1s = dummy_throughput,
+            start_throughput_2s = dummy_throughput,
+            start_throughput_5s = dummy_throughput,
+            stop_throughput_1s = dummy_throughput,
+            stop_throughput_2s = dummy_throughput,
+            stop_throughput_5s = dummy_throughput,
+        )
+
         labeled_data = benchmark.parse_labeled_recorder_data(
             bench,
             client_csvs,
             drop_prefix=datetime.timedelta(seconds=0),
             save_data=False)
-        return MultiPaxosOutput(read_output = labeled_data['read'],
-                                write_output = labeled_data['write'])
+        read_output = (labeled_data['read']
+                       if 'read' in labeled_data
+                       else dummy_output)
+        write_output = (labeled_data['write']
+                        if 'write' in labeled_data
+                        else dummy_output)
+        return MultiPaxosOutput(read_output = read_output,
+                                write_output = write_output)
 
 
 def get_parser() -> argparse.ArgumentParser:

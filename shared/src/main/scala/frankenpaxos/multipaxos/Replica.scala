@@ -124,7 +124,7 @@ class ReplicaMetrics(collectors: Collectors) {
 
   val deferredReadsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_replica_executed_reads_total")
+    .name("multipaxos_replica_deferred_reads_total")
     .help("Total number of reads that have been executed.")
     .register()
 
