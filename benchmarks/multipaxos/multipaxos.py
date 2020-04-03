@@ -637,11 +637,6 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
         dummy_output = benchmark.RecorderOutput(
             latency = dummy_latency,
             start_throughput_1s = dummy_throughput,
-            start_throughput_2s = dummy_throughput,
-            start_throughput_5s = dummy_throughput,
-            stop_throughput_1s = dummy_throughput,
-            stop_throughput_2s = dummy_throughput,
-            stop_throughput_5s = dummy_throughput,
         )
 
         labeled_data = benchmark.parse_labeled_recorder_data(

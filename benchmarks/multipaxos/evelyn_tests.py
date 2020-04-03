@@ -30,8 +30,8 @@ def main(args) -> None:
                     warmup_duration = datetime.timedelta(seconds=5),
                     warmup_timeout = datetime.timedelta(seconds=10),
                     warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=8),
-                    timeout = datetime.timedelta(seconds=10),
+                    duration = datetime.timedelta(seconds=20),
+                    timeout = datetime.timedelta(seconds=30),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
                     workload = read_write_workload.UniformReadWriteWorkload(
@@ -80,7 +80,7 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for num_acceptor_groups in [3]
+                for num_acceptor_groups in [2]
                 for num_replicas in [4]
                 for num_keys in [100]
                 for read_fraction in [0.9]
@@ -94,12 +94,12 @@ def main(args) -> None:
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'write.latency.median_ms': \
                     f'{output.write_output.latency.median_ms:.6}',
-                'write.stop_throughput_1s.p90': \
-                    f'{output.write_output.stop_throughput_1s.p90:.6}',
+                'write.start_throughput_1s.p90': \
+                    f'{output.write_output.start_throughput_1s.p90:.6}',
                 'read.latency.median_ms': \
                     f'{output.read_output.latency.median_ms:.6}',
-                'read.stop_throughput_1s.p90': \
-                    f'{output.read_output.stop_throughput_1s.p90:.6}',
+                'read.start_throughput_1s.p90': \
+                    f'{output.read_output.start_throughput_1s.p90:.6}',
             })
 
     suite = EvelynTestsMultiPaxosSuite()

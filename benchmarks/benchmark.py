@@ -261,7 +261,7 @@ class Suite(Generic[Input, Output]):
             # Display some information about the benchmark.
             colorful.use_style('monokai')
 
-            #First, we show the progress of the suite.
+            # First, we show the progress of the suite.
             n = len(inputs)
             percent = (i / n) * 100
             info = f'{colorful.bold}[{i:03}/{n:03}{colorful.reset}; '
@@ -310,11 +310,6 @@ class ThroughputOutput(NamedTuple):
 class RecorderOutput(NamedTuple):
     latency: LatencyOutput
     start_throughput_1s: ThroughputOutput
-    start_throughput_2s: ThroughputOutput
-    start_throughput_5s: ThroughputOutput
-    stop_throughput_1s: ThroughputOutput
-    stop_throughput_2s: ThroughputOutput
-    stop_throughput_5s: ThroughputOutput
 
 
 def _latency(s):
@@ -345,23 +340,32 @@ def _wrangle_recorder_data(bench: BenchmarkDirectory,
                            filenames: Iterable[str],
                            drop_prefix: datetime.timedelta,
                            save_data: bool = True) -> pd.DataFrame:
+    bench.log('Reading recorder data from the following CSVs:')
+    for filename in filenames:
+        bench.log(f'- {filename}')
     df = pd_util.read_csvs(filenames, parse_dates=['start', 'stop'])
-    bench.log('Aggregate recorder data read.')
+    bench.log('Recorder data read.')
+    bench.log('Setting aggregate recorder data index.')
     df = df.set_index('start')
     bench.log('Aggregate recorder data index set.')
+    bench.log('Sorting aggregate recorder data on index.')
     df = df.sort_index(0)
-    bench.log('Aggregate recorder data index sorted.')
+    bench.log('Aggregate recorder data sorted on index.')
     if save_data:
-        df.to_csv(bench.abspath('data.csv'))
+        save_data_filename = bench.abspath('data.csv')
+        bench.log(f'Saving aggregate recorder data to {save_data_filename}.')
+        df.to_csv(save_data_filename)
         bench.log('Aggregate recorder data written.')
 
     # Since we concatenate and save the file, we can throw away the originals.
     for filename in filenames:
+        bench.log(f'Removing {filename}.')
         os.remove(filename)
     bench.log('Individual recorder data removed.')
 
     # We also compress the output data since it can get big.
     if save_data:
+        bench.log('Compressing aggregate recorder data.')
         subprocess.call(['gzip', bench.abspath('data.csv')])
         bench.log('Aggregate recorder data compressed.')
 
@@ -369,7 +373,9 @@ def _wrangle_recorder_data(bench: BenchmarkDirectory,
     start_time = df.index[0]
     new_start_time = (start_time +
                       pd.DateOffset(seconds=drop_prefix.total_seconds()))
+    bench.log('Dropping prefix of aggregate recorder data.')
     df = df[df.index >= new_start_time]
+    bench.log('Prefix of aggregate recorder data dropped.')
 
     return df
 
@@ -387,11 +393,6 @@ def parse_recorder_data(bench: BenchmarkDirectory,
     return RecorderOutput(
         latency=_latency(df['latency_nanos'] / 1e6),
         start_throughput_1s=_throughput(pd_util.throughput(df.index, 1000)),
-        start_throughput_2s=_throughput(pd_util.throughput(df.index, 2000)),
-        start_throughput_5s=_throughput(pd_util.throughput(df.index, 5000)),
-        stop_throughput_1s=_throughput(pd_util.throughput(df['stop'], 1000)),
-        stop_throughput_2s=_throughput(pd_util.throughput(df['stop'], 2000)),
-        stop_throughput_5s=_throughput(pd_util.throughput(df['stop'], 5000)),
     )
 
 
@@ -408,21 +409,21 @@ def parse_labeled_recorder_data(bench: BenchmarkDirectory,
     # Record output for each label.
     outputs = dict()
     for label in df['label'].unique():
+        bench.log(f'Computing on aggregate recorder data for {label}.')
         ldf = df[df['label'] == label]
+
+        bench.log(f'- Computing latency.')
+        latency = _latency(ldf['latency_nanos'] / 1e6)
+        bench.log(f'- Latency computed.')
+
+        bench.log(f'- Computing 1 second start throughput.')
+        start_throughput_1s = _throughput(pd_util.throughput(ldf.index, 1000))
+        bench.log(f'- 1 second start throughput computed.')
+
         outputs[label] = RecorderOutput(
-            latency = _latency(ldf['latency_nanos'] / 1e6),
-            start_throughput_1s = \
-                _throughput(pd_util.throughput(ldf.index, 1000)),
-            start_throughput_2s = \
-                _throughput(pd_util.throughput(ldf.index, 2000)),
-            start_throughput_5s = \
-                _throughput(pd_util.throughput(ldf.index, 5000)),
-            stop_throughput_1s = \
-                _throughput(pd_util.throughput(ldf['stop'], 1000)),
-            stop_throughput_2s = \
-                _throughput(pd_util.throughput(ldf['stop'], 2000)),
-            stop_throughput_5s = \
-                _throughput(pd_util.throughput(ldf['stop'], 5000)),
+            latency = latency,
+            start_throughput_1s = start_throughput_1s,
         )
+        bench.log(f'Aggregate recorder data for {label} computed.')
 
     return outputs
