@@ -119,8 +119,8 @@ def main(args) -> None:
                     input.replica_options.execute_graph_batch_size,
                 'latency.median_ms':
                     f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.p90':
-                    f'{output.stop_throughput_1s.p90:.6}',
+                'start_throughput_1s.p90':
+                    f'{output.start_throughput_1s.p90:.6}',
             })
 
     suite = NsdiFig1LtSimpleBPaxosSuite()

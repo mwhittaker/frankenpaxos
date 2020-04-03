@@ -72,7 +72,7 @@ def main(args) -> None:
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.6}',
+                'start_throughput_1s.p90': f'{output.start_throughput_1s.p90:.6}',
             })
 
     suite = SmokeSimpleGcBPaxosSuite()

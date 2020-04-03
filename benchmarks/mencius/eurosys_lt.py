@@ -160,8 +160,8 @@ def main(args) -> None:
                     input.leader_options.send_noop_range_if_lagging_by,
                 'latency.median_ms':
                     f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.p90':
-                    f'{output.stop_throughput_1s.p90:.8}',
+                'start_throughput_1s.p90':
+                    f'{output.start_throughput_1s.p90:.8}',
             })
 
     suite = SmokeMenciusSuite()

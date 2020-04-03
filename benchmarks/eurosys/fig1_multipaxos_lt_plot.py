@@ -21,7 +21,7 @@ def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
 def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, marker: str,
                             label: str) -> None:
     grouped = df.groupby('num_clients')
-    throughput = grouped['stop_throughput_1s.p90'].agg(np.mean).sort_index()
+    throughput = grouped['start_throughput_1s.p90'].agg(np.mean).sort_index()
     latency = grouped['latency.median_ms'].agg(np.mean).sort_index()
     print(throughput)
     print(latency)

@@ -23,11 +23,11 @@ def std_latency(df):
 
 
 def avg_throughput(df):
-    return df['stop_throughput_1s.p90'].agg(np.mean)
+    return df['start_throughput_1s.p90'].agg(np.mean)
 
 
 def std_throughput(df):
-    return df['stop_throughput_1s.p90'].agg(np.std)
+    return df['start_throughput_1s.p90'].agg(np.std)
 
 
 def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
@@ -37,7 +37,7 @@ def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
 
 def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
     grouped = df.groupby('num_clients')
-    ax.plot(grouped['stop_throughput_1s.p90'].agg(np.mean).sort_index(),
+    ax.plot(grouped['start_throughput_1s.p90'].agg(np.mean).sort_index(),
             grouped['latency.median_ms'].agg(np.mean).sort_index(),
             '.-',
             label=label)

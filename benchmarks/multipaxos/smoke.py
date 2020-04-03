@@ -91,8 +91,8 @@ def main(args) -> None:
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'write.latency.median_ms': \
                     f'{output.write_output.latency.median_ms:.6}',
-                'write.stop_throughput_1s.p90': \
-                    f'{output.write_output.stop_throughput_1s.p90:.6}',
+                'write.start_throughput_1s.p90': \
+                    f'{output.write_output.start_throughput_1s.p90:.6}',
             })
 
     suite = SmokeMultiPaxosSuite()

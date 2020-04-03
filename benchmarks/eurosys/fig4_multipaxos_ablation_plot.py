@@ -22,11 +22,11 @@ def std_latency(df):
 
 
 def avg_tput(df):
-    return df['stop_throughput_1s.p90'].agg(np.mean)
+    return df['start_throughput_1s.p90'].agg(np.mean)
 
 
 def std_tput(df):
-    return df['stop_throughput_1s.p90'].agg(np.std)
+    return df['start_throughput_1s.p90'].agg(np.std)
 
 
 def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:

@@ -49,7 +49,7 @@ def main(args) -> None:
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'flush_every_n': input.server_options.flush_every_n,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'stop_throughput_1s.p90': f'{output.stop_throughput_1s.p90:.7}',
+                'start_throughput_1s.p90': f'{output.start_throughput_1s.p90:.7}',
             })
 
     suite = EuroSysLtUnreplicatedSuite()
