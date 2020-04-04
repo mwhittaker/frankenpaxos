@@ -319,18 +319,19 @@ class Suite(Generic[Input, Output]):
             duration_per_iteration = suite_duration / i
             remaining_duration = (n - i) * duration_per_iteration
 
-            def round_timedelta(d):
+            def round_delta(d):
                 return datetime.timedelta(seconds=int(d.total_seconds()))
 
-            info += f'{colorful.blue(round_timedelta(bench_duration))} / '
-            info += f'{colorful.green(round_timedelta(suite_duration))} + '
-            info += f'{colorful.magenta(round_timedelta(remaining_duration))}? '
+            info += f'{colorful.blue(round_delta(bench_duration))} / '
+            info += f'{colorful.green(round_delta(suite_duration))} + '
+            info += f'{colorful.magenta(round_delta(remaining_duration))}? '
 
             # Finally, we display a summary of the benchmark.
             info += f'{colorful.lightGray(self.summary(input, output))}'
             print(info)
 
     class _RemoteInput(NamedTuple):
+        bench_stack: contextlib.ExitStack
         suite: SuiteDirectory
         args: Dict[Any, Any]
         input: Any # Really, Input
@@ -362,12 +363,13 @@ class Suite(Generic[Input, Output]):
             bench_start_time = datetime.datetime.now()
             bench = in_data.suite.benchmark_directory()
             bench.__enter__()
+            in_data.bench_stack.enter_context(bench)
 
             # Run the benchmark.
             bench.write_string('input.txt', str(in_data.input))
             bench.write_dict('input.json', util.tuple_to_dict(in_data.input))
             data = self.run_remote_benchmark(in_data.suite,
-                                             in_data.bench,
+                                             bench,
                                              in_data.args,
                                              in_data.input)
 
@@ -396,7 +398,7 @@ class Suite(Generic[Input, Output]):
                                               args = in_data.args,
                                               input = in_data.input,
                                               data = in_data.data)
-            in_data.bench.__exit__()
+            in_data.bench.__exit__(None, None, None)
 
             # Relay the output to the next phase of the pipeline.
             now = datetime.datetime.now()
@@ -424,9 +426,9 @@ class Suite(Generic[Input, Output]):
         results_writer = csv.writer(results_file)
 
         # Start the threads.
-        remote_in = queue.Queue[Optional[Suite._RemoteInput]]()
-        remote_out = queue.Queue[Optional[Suite._LocalInput]]()
-        local_out = queue.Queue[Optional[Suite._Output]]()
+        remote_in: queue.Queue[Optional[Suite._RemoteInput]] = queue.Queue()
+        remote_out: queue.Queue[Optional[Suite._LocalInput]] = queue.Queue()
+        local_out: queue.Queue[Optional[Suite._Output]] = queue.Queue()
         remote_thread = threading.Thread(target=self._run_remote_benchmarks,
                                          args=(remote_in, remote_out))
         local_thread = threading.Thread(target=self._run_local_benchmarks,
@@ -435,60 +437,64 @@ class Suite(Generic[Input, Output]):
         local_thread.start()
 
         # Fill the pipeline.
-        suite_start_time = datetime.datetime.now()
-        for input in inputs:
-            remote_in.put(Suite._RemoteInput(
-                suite = suite_dir,
-                args = args,
-                input = input,
-            ))
-        remote_in.put(None)
+        with contextlib.ExitStack() as bench_stack:
+            suite_start_time = datetime.datetime.now()
+            for input in inputs:
+                remote_in.put(Suite._RemoteInput(
+                    bench_stack = bench_stack,
+                    suite = suite_dir,
+                    args = args,
+                    input = input,
+                ))
+            remote_in.put(None)
 
-        # Pull from the pipeline.
-        i = 0
-        while True:
-            out = local_out.get()
-            if out is None:
-                break
+            # Pull from the pipeline.
+            i = 0
+            while True:
+                out = local_out.get()
+                if out is None:
+                    break
 
-            # Write the header if needed.
-            i += 1
-            if i == 1:
-                results_writer.writerow(
-                    util.flatten_tuple_fields(out.input) +
-                    util.flatten_tuple_fields(out.output))
+                # Write the header if needed.
+                i += 1
+                if i == 1:
+                    results_writer.writerow(
+                        util.flatten_tuple_fields(out.input) +
+                        util.flatten_tuple_fields(out.output))
 
-            # Write the results.
-            row = util.flatten_tuple(out.input) + util.flatten_tuple(out.output)
-            results_writer.writerow([str(x) for x in row])
-            results_file.flush()
+                # Write the results.
+                row = (util.flatten_tuple(out.input) +
+                       util.flatten_tuple(out.output))
+                results_writer.writerow([str(x) for x in row])
+                results_file.flush()
 
-            # Display some information about the benchmark.
-            colorful.use_style('monokai')
+                # Display some information about the benchmark.
+                colorful.use_style('monokai')
 
-            # First, we show the progress of the suite.
-            n = len(inputs)
-            percent = (i / n) * 100
-            info = f'{colorful.bold}[{i:03}/{n:03}{colorful.reset}; '
-            info += f'{percent:#.4}%] '
+                # First, we show the progress of the suite.
+                n = len(inputs)
+                percent = (i / n) * 100
+                info = f'{colorful.bold}[{i:03}/{n:03}{colorful.reset}; '
+                info += f'{percent:#.4}%] '
 
-            # Next, we show the time taken to run this benchmark, the total
-            # elapsed time, and the estimated time left.
-            current_time = datetime.datetime.now()
-            suite_duration = current_time - suite_start_time
-            duration_per_iteration = suite_duration / i
-            remaining_duration = (n - i) * duration_per_iteration
+                # Next, we show the time taken to run this benchmark, the total
+                # elapsed time, and the estimated time left.
+                current_time = datetime.datetime.now()
+                suite_duration = current_time - suite_start_time
+                duration_per_iteration = suite_duration / i
+                remaining_duration = (n - i) * duration_per_iteration
 
-            def round_timedelta(d):
-                return datetime.timedelta(seconds=int(d.total_seconds()))
+                def round_delta(d):
+                    return datetime.timedelta(seconds=int(d.total_seconds()))
 
-            info += f'{colorful.blue(round_timedelta(out.bench_duration))} / '
-            info += f'{colorful.green(round_timedelta(suite_duration))} + '
-            info += f'{colorful.magenta(round_timedelta(remaining_duration))}? '
+                info += f'{colorful.blue(round_delta(out.bench_duration))} / '
+                info += f'{colorful.green(round_delta(suite_duration))} + '
+                info += f'{colorful.magenta(round_delta(remaining_duration))}? '
 
-            # Finally, we display a summary of the benchmark.
-            info += f'{colorful.lightGray(self.summary(out.input, out.output))}'
-            print(info)
+                # Finally, we display a summary of the benchmark.
+                summary = self.summary(out.input, out.output)
+                info += f'{colorful.lightGray(summary)}'
+                print(info)
 
 
 class LatencyOutput(NamedTuple):

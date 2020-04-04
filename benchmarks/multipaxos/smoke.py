@@ -98,7 +98,7 @@ def main(args) -> None:
     suite = SmokeMultiPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
                                   'multipaxos_smoke') as dir:
-        suite.run_suite(dir)
+        suite.run_multithreaded_suite(dir)
 
 
 if __name__ == '__main__':
