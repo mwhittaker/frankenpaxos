@@ -38,6 +38,14 @@ case class ClientOptions(
     // 0. With this option enabled, our protocol is not safe. Reads are no
     // longer linearizable. This should be used only for performance debugging.
     unsafeReadAtFirstSlot: Boolean,
+    // To perform a linearizable quorum read, a client contacts a quorum of
+    // acceptors and asks them for the largest log entry in which they have
+    // voted. It then computes the maximum of these log entries; let's call
+    // this value i. It issues the read at i + n where n is the number of
+    // acceptor groups. If `unsafeReadAtI` is true, the client instead issues
+    // the read at index i. If unsafeReadAtFirstSlot is true, we instead read
+    // at 0.
+    unsafeReadAtI: Boolean,
     measureLatencies: Boolean
 )
 
@@ -48,6 +56,7 @@ object ClientOptions {
     resendMaxSlotRequestsPeriod = java.time.Duration.ofSeconds(10),
     resendReadRequestPeriod = java.time.Duration.ofSeconds(10),
     unsafeReadAtFirstSlot = false,
+    unsafeReadAtI = false,
     measureLatencies = true
   )
 }
@@ -501,10 +510,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         // TODO(mwhittaker): Double check that the `- 1` is safe.
         val slot = if (options.unsafeReadAtFirstSlot) {
           0
+        } else if (options.unsafeReadAtI) {
+          maxSlot.maxSlotReplies.values.map(_.slot).max
         } else {
-          maxSlot.maxSlotReplies.values
-            .map(_.slot)
-            .max + acceptors.size - 1
+          maxSlot.maxSlotReplies.values.map(_.slot).max + acceptors.size - 1
         }
 
         // Send the read.

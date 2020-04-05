@@ -96,6 +96,8 @@ object ClientMain extends App {
       .optionAction((x, o) => o.copy(resendReadRequestPeriod = x))
     opt[Boolean]("options.unsafeReadAtFirstSlot")
       .optionAction((x, o) => o.copy(unsafeReadAtFirstSlot = x))
+    opt[Boolean]("options.unsafeReadAtI")
+      .optionAction((x, o) => o.copy(unsafeReadAtI = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {
