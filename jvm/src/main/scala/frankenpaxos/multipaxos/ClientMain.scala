@@ -94,6 +94,8 @@ object ClientMain extends App {
       .optionAction((x, o) => o.copy(resendMaxSlotRequestsPeriod = x))
     opt[java.time.Duration]("options.resendReadRequestPeriod")
       .optionAction((x, o) => o.copy(resendReadRequestPeriod = x))
+    opt[Boolean]("options.unsafeReadAtFirstSlot")
+      .optionAction((x, o) => o.copy(unsafeReadAtFirstSlot = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {

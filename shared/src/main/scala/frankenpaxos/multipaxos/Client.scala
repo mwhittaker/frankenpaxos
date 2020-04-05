@@ -34,6 +34,10 @@ case class ClientOptions(
     resendClientRequestPeriod: java.time.Duration,
     resendMaxSlotRequestsPeriod: java.time.Duration,
     resendReadRequestPeriod: java.time.Duration,
+    // If `unsafeReadAtFirstSlot` is true, all ReadRequests are issued in slot
+    // 0. With this option enabled, our protocol is not safe. Reads are no
+    // longer linearizable. This should be used only for performance debugging.
+    unsafeReadAtFirstSlot: Boolean,
     measureLatencies: Boolean
 )
 
@@ -43,6 +47,7 @@ object ClientOptions {
     resendClientRequestPeriod = java.time.Duration.ofSeconds(10),
     resendMaxSlotRequestsPeriod = java.time.Duration.ofSeconds(10),
     resendReadRequestPeriod = java.time.Duration.ofSeconds(10),
+    unsafeReadAtFirstSlot = false,
     measureLatencies = true
   )
 }
@@ -494,9 +499,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         // Compute the slot.
         //
         // TODO(mwhittaker): Double check that the `- 1` is safe.
-        val slot = maxSlot.maxSlotReplies.values
-          .map(_.slot)
-          .max + acceptors.size - 1
+        val slot = if (options.unsafeReadAtFirstSlot) {
+          0
+        } else {
+          maxSlot.maxSlotReplies.values
+            .map(_.slot)
+            .max + acceptors.size - 1
+        }
 
         // Send the read.
         val readRequest = ReadRequest(

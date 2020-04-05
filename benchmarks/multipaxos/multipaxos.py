@@ -34,7 +34,11 @@ class DistributionScheme(enum.Enum):
 class ClientOptions(NamedTuple):
     resend_client_request_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
-
+    resend_max_slot_requests_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
+    resend_read_request_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
+    unsafe_read_at_first_slot: bool = False
 
 class BatcherOptions(NamedTuple):
     batch_size: int = 1
@@ -594,6 +598,14 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     '--options.resendClientRequestPeriod',
                     '{}s'.format(input.client_options.
                                  resend_client_request_period.total_seconds()),
+                    '--options.resendMaxSlotRequestsPeriod',
+                    '{}s'.format(input.client_options.
+                                 resend_max_slot_requests_period.total_seconds()),
+                    '--options.resendReadRequestPeriod',
+                    '{}s'.format(input.client_options.
+                                 resend_read_request_period.total_seconds()),
+                    '--options.unsafeReadAtFirstSlot',
+                    f'{input.client_options.unsafe_read_at_first_slot}',
                 ])
             if input.profiled:
                 p = perf_util.JavaPerfProc(bench, client.host, p, f'client_{i}')
