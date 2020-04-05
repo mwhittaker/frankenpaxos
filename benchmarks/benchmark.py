@@ -139,6 +139,9 @@ class BenchmarkDirectory(object):
         # A file for logging.
         self.logfile = self.create_file('log.txt')
 
+        # Whether we have already exited. We want to avoid exiting twice.
+        self.exited = False
+
     def __str__(self) -> str:
         return f'BenchmarkDirectory({self.path})'
 
@@ -148,7 +151,12 @@ class BenchmarkDirectory(object):
         return self
 
     def __exit__(self, cls, exn, trace):
+        if self.exited:
+            return
+
+        print(f'BenchmarkDirectory {self.path} exiting.')
         self.process_stack.__exit__(cls, exn, trace)
+        self.exited = True
         self.write_dict(
             'pids.json',
             {f'{ip}:{pid}': label for ((ip, pid), label) in self.pids.items()})
@@ -430,9 +438,11 @@ class Suite(Generic[Input, Output]):
         remote_out: queue.Queue[Optional[Suite._LocalInput]] = queue.Queue()
         local_out: queue.Queue[Optional[Suite._Output]] = queue.Queue()
         remote_thread = threading.Thread(target=self._run_remote_benchmarks,
-                                         args=(remote_in, remote_out))
+                                         args=(remote_in, remote_out),
+                                         daemon=True)
         local_thread = threading.Thread(target=self._run_local_benchmarks,
-                                        args=(remote_out, local_out))
+                                        args=(remote_out, local_out),
+                                        daemon=True)
         remote_thread.start()
         local_thread.start()
 
@@ -495,6 +505,9 @@ class Suite(Generic[Input, Output]):
                 summary = self.summary(out.input, out.output)
                 info += f'{colorful.lightGray(summary)}'
                 print(info)
+
+        remote_thread.join()
+        local_thread.join()
 
 
 class LatencyOutput(NamedTuple):
