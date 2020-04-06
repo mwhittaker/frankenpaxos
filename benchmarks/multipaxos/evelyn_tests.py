@@ -10,15 +10,15 @@ def main(args) -> None:
             return [
                 Input(
                     f = 1,
-                    num_client_procs = 5,
-                    num_warmup_clients_per_proc = 40,
-                    num_clients_per_proc = 40,
+                    num_client_procs = num_client_procs,
+                    num_warmup_clients_per_proc = num_clients_per_proc,
+                    num_clients_per_proc = num_clients_per_proc,
                     num_batchers = 0,
                     num_leaders = 2,
-                    num_proxy_leaders = 5,
+                    num_proxy_leaders = num_proxy_leaders,
                     num_acceptor_groups = num_acceptor_groups,
                     num_replicas = num_replicas,
-                    num_proxy_replicas = 4,
+                    num_proxy_replicas = num_proxy_replicas,
                     distribution_scheme = DistributionScheme.HASH,
                     client_jvm_heap_size = '12g',
                     batcher_jvm_heap_size = '12g',
@@ -30,8 +30,8 @@ def main(args) -> None:
                     warmup_duration = datetime.timedelta(seconds=5),
                     warmup_timeout = datetime.timedelta(seconds=10),
                     warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=20),
-                    timeout = datetime.timedelta(seconds=30),
+                    duration = datetime.timedelta(seconds=15),
+                    timeout = datetime.timedelta(seconds=20),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
                     workload = read_write_workload.UniformReadWriteWorkload(
@@ -77,14 +77,23 @@ def main(args) -> None:
                     client_options = ClientOptions(
                         resend_client_request_period = \
                             datetime.timedelta(seconds=120),
+                        unsafe_read_at_first_slot = unsafe_read_at_first_slot,
+                        unsafe_read_at_i = unsafe_read_at_i,
                     ),
                     client_log_level = args.log_level,
                 )
-                for num_acceptor_groups in [2]
-                for num_replicas in [4]
                 for num_keys in [100]
                 for read_fraction in [0.9]
-            ]
+                for (unsafe_read_at_first_slot, unsafe_read_at_i) in
+                    [(False, False),
+                    (False, True),
+                    (True, False),]
+
+                for (num_client_procs, num_clients_per_proc) in [(5, 100)]
+                for num_proxy_leaders in [4]
+                for num_acceptor_groups in [2]
+                for (num_replicas, num_proxy_replicas) in [(2, 2)]
+            ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
@@ -92,6 +101,10 @@ def main(args) -> None:
                 'num_batchers': input.num_batchers,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
+                'unsafe_read_at_i': \
+                    input.client_options.unsafe_read_at_i,
+                'unsafe_read_at_first_slot': \
+                    input.client_options.unsafe_read_at_first_slot,
                 'write.latency.median_ms': \
                     f'{output.write_output.latency.median_ms:.6}',
                 'write.start_throughput_1s.p90': \
@@ -105,7 +118,7 @@ def main(args) -> None:
     suite = EvelynTestsMultiPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
                                   'multipaxos_evelyn_tests') as dir:
-        suite.run_suite(dir)
+        suite.run_multithreaded_suite(dir)
 
 
 if __name__ == '__main__':

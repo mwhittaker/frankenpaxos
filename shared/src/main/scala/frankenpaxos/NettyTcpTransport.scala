@@ -438,7 +438,7 @@ class NettyTcpTransport(private val logger: Logger)
                 if (!future.isSuccess()) {
                   unregisterChannel(src, dst)
                 } else {
-                  logger.debug(
+                  logger.info(
                     s"Client socket on address " +
                       s"${future.channel.localAddress} established " +
                       s"connection with ${future.channel.remoteAddress}."

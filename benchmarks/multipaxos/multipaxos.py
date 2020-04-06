@@ -621,6 +621,8 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
         for p in (batcher_procs + leader_procs + proxy_leader_procs +
                   acceptor_procs + replica_procs + proxy_replica_procs):
             p.kill()
+        if input.monitored:
+            prometheus_server.kill()
         bench.log('Clients finished and processes terminated.')
 
 
