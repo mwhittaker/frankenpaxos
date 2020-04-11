@@ -82,18 +82,35 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for num_keys in [100]
-                for read_fraction in [0.9]
+                for num_keys in [1]
+                # for read_fraction in [0.9]
                 for (unsafe_read_at_first_slot, unsafe_read_at_i) in
-                    [(False, False),
-                    (False, True),
-                    (True, False),]
+                    [(True, False)]
+                    # [(False, False),
+                    # (False, True),
+                    # (True, False),]
 
-                for (num_client_procs, num_clients_per_proc) in [(5, 100)]
-                for num_proxy_leaders in [4]
-                for num_acceptor_groups in [2]
-                for (num_replicas, num_proxy_replicas) in [(2, 2)]
-            ] * 3
+                for (num_client_procs, num_clients_per_proc, read_fraction) in [
+                    # (1, 100, 0.5),
+                    # (2, 100, 1 - (100 / 200)),
+                    (3, 100, 1 - (100 / 300)),
+                    (4, 100, 1 - (100 / 400)),
+                    (5, 100, 1 - (100 / 500)),
+                    (6, 100, 1 - (100 / 600)),
+                    (7, 100, 1 - (100 / 700)),
+                    (8, 100, 1 - (100 / 800)),
+                    (9, 100, 1 - (100 / 900)),
+                    (10, 100, 1 - (100 / 1000)),
+                    (11, 100, 1 - (100 / 1100)),
+                    (12, 100, 1 - (100 / 1200)),
+                    (13, 100, 1 - (100 / 1300)),
+                    (14, 100, 1 - (100 / 1400)),
+                    (15, 100, 1 - (100 / 1500)),
+                ]
+                for num_proxy_leaders in [2]
+                for num_acceptor_groups in [3]
+                for (num_replicas, num_proxy_replicas) in [(4, 2)]
+            ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
