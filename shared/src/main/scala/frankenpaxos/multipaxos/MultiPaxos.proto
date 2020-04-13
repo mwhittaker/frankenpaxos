@@ -1,4 +1,23 @@
-// A protocol cheatsheet, similar to [1].
+// # MultiPaxos / Compartmentalized Paxos / Evelyn Paxos
+//
+// MultiPaxos is the de facto standard state machine replication protocol. This
+// directory contains an implementation of MultiPaxos with two major
+// improvements:
+//
+//   1. We implement compartmentalization. As described in [1],
+//      compartmentalization is the technique of decoupling and scaling
+//      protocol components to improve throughput. Specifically, we introduce
+//      proxy leaders, multiple acceptor groups, batchers, and proxy replicas
+//      (aka unbatchers). With compartmentalization, we call the protocol
+//      Compartmentalized MultiPaxos.
+//
+//   2. We introduce eventually consistent, sequentially consistent, and
+//      linearizable reads [2]. All three types of reads scale. With these
+//      reads, we call the protocol Evelyn Paxos.
+//
+// Here is a protocol cheatsheet, similar to [2].
+//
+// ## Normal Case Processing
 //
 //                         Leader                Replica
 //   Client Batcher Leader Proxy Acceptor Replica Proxy
@@ -16,6 +35,13 @@
 //
 // ## Linearizable Reads
 //
+// We implement scalable linearizable reads using a modification of the
+// technique described in [2]. First, a client contacts a quorum of some
+// acceptor group. Each replica responds with the largest log entry in which
+// its voted. The client computes the maximum such log entry, call it i, and
+// then issues a read to any replica at log entry i + n - 1 where n is the
+// number of acceptor groups.
+//
 //                         Leader                Replica
 //   Client Batcher Leader Proxy Acceptor Replica Proxy
 //      | -----^------^------^----> |        |      |   MaxSlotRequest
@@ -23,12 +49,39 @@
 //      | -----^------^------^------^------> |      |   ReadRequest
 //      | <----^------^------^------^------- |      |   ReadReply
 //
+// ## Sequentially Consistent Reads
+//
+// To implement sequentially consistent reads, we have to ensure that
+// every client's read is at a log entry larger than any previous read or
+// write. To ensure this, writes and reads all return the log entry in which
+// they occur. Future reads wait to occur after the largest such log entry.
+// Note that sequentially consistent reads do not have to contact the
+// acceptors.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      | -----^------^------^------^------> |      |   SequentialReadRequest
+//      | <----^------^------^------^------- |      |   ReadReply
+//
 // ## Eventually Consistent Reads
+//
+// We call an "eventually consistent read" any read that takes place on some
+// prefix of the committed log entries. To implement an eventually consistent
+// read, a client sends a read to any replica, and the replica executes the
+// read immediately. Simple as that.
 //
 //                         Leader                Replica
 //   Client Batcher Leader Proxy Acceptor Replica Proxy
 //      | -----^------^------^------^------> |      |   EventualReadRequest
 //      | <----^------^------^------^------- |      |   ReadReply
+//
+// ## Learning Who The Leader Is
+//
+// If the leader changes, how do clients know who to send messages to? Well, if
+// a client (or batcher) sends a message to a node that isn't the leader, the
+// node lets the client know using a NotLeader message. Upon receiving a
+// NotLeader message, the client broadcasts a LeaderInfoRequest message to all
+// the nodes. The leader responds to it informing the client of its leadership.
 //
 //                         Leader                Replica
 //   Client Batcher Leader Proxy Acceptor Replica Proxy
@@ -38,13 +91,43 @@
 //      |      | <--- |      |      |        |      |   NotLeaderBatcher
 //      |      | ---> |      |      |        |      |   LeaderInfoRequestBatcher
 //      |      | <--- |      |      |        |      |   LeaderInfoReplyBatcher
-//      |      |      | <----^----- |        |      |   Nack
-//      |      |      |      |      |        | ---> |   ChosenWatermark
-//      |      |      | <----^------^--------^----- |   ChosenWatermark
+//
+// ## Recovering Holes
+//
+// If a replica has a hole in its log for too long, it informs a proxy replica
+// and the proxy replica broadcasts a recover message to all the leaders. When
+// the current leader receives this message, it makes sure a value in that log
+// entry has been chosen and informs the replicas.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
 //      |      |      |      |      |        | ---> |   Recover
 //      |      |      | <----^------^--------^----- |   Recover
 //
-// [1]: https://ndpsoftware.com/git-cheatsheet.html
+// ## Learning Chosen Entries
+//
+// When a new leader is elected, it runs Phase 1. To run Phase 1 efficiently, a
+// leader will not run Phase 1 for the prefix of committed commands in the log.
+// To learn of this prefix, replicas periodically send a chosen watermark to
+// all leaders.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      |      |      |      |      |        | ---> |   ChosenWatermark
+//      |      |      | <----^------^--------^----- |   ChosenWatermark
+//
+// ## Nacks
+//
+// As with MultiPaxos, acceptors nack messages in stale rounds. Note that the
+// acceptor directly nacks the leader rather than the proxy leader.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      |      |      | <----^----- |        |      |   Nack
+//
+// [1]: https://mwhittaker.github.io/publications/compartmentalized_consensus.pdf
+// [2]: https://www.usenix.org/system/files/hotstorage19-paper-charapko.pdf
+// [3]: https://ndpsoftware.com/git-cheatsheet.html
 
 syntax = "proto2";
 
