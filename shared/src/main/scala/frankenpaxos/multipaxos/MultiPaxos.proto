@@ -14,11 +14,24 @@
 //      |      |      |      |      |        | ---> |   ClientReplyBatch
 //      | <----^------^------^------^--------^----- |   ClientReply
 //
+// ## Linearizable Reads
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
 //      | -----^------^------^----> |        |      |   MaxSlotRequest
 //      | <----^------^------^----- |        |      |   MaxSlotReply
 //      | -----^------^------^------^------> |      |   ReadRequest
 //      | <----^------^------^------^------- |      |   ReadReply
 //
+// ## Eventually Consistent Reads
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      | -----^------^------^------^------> |      |   EventualReadRequest
+//      | <----^------^------^------^------- |      |   ReadReply
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
 //      | <----^----- |      |      |        |      |   NotLeaderClient
 //      | -----^----> |      |      |        |      |   LeaderInfoRequestClient
 //      | <----^----- |      |      |        |      |   LeaderInfoReplyClient
@@ -200,6 +213,13 @@ message ReadRequest {
   required Command command = 2;
 }
 
+message EventualReadRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Command command = 1;
+}
+
 message ReadReply {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -351,6 +371,7 @@ message ReplicaInbound {
   oneof request {
     Chosen chosen = 1;
     ReadRequest read_request = 2;
+    EventualReadRequest eventual_read_request = 3;
   }
 }
 

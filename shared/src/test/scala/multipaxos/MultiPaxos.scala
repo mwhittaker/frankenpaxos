@@ -160,6 +160,11 @@ object SimulatedMultiPaxos {
       clientPseudonym: Int
   ) extends Command
 
+  case class EventualRead(
+      clientIndex: Int,
+      clientPseudonym: Int
+  ) extends Command
+
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
@@ -206,6 +211,12 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
         for {
           clientId <- Gen.choose(0, paxos.numClients - 1)
         } yield Read(clientId, clientPseudonym = 0)
+      },
+      // Eventual Read.
+      paxos.numClients -> {
+        for {
+          clientId <- Gen.choose(0, paxos.numClients - 1)
+        } yield EventualRead(clientId, clientPseudonym = 0)
       }
     )
     FakeTransport
@@ -225,6 +236,8 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
         paxos.clients(clientId).write(clientPseudonym, request)
       case Read(clientId, clientPseudonym) =>
         paxos.clients(clientId).read(clientPseudonym, "")
+      case EventualRead(clientId, clientPseudonym) =>
+        paxos.clients(clientId).eventualRead(clientPseudonym, "")
       case TransportCommand(command) =>
         FakeTransport.runCommand(paxos.transport, command)
     }
@@ -278,6 +291,10 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
       case Read(clientIndex, clientPseudonym) =>
         val clientAddress = paxos.clients(clientIndex).address.address
         s"Read($clientAddress, $clientPseudonym)"
+
+      case EventualRead(clientIndex, clientPseudonym) =>
+        val clientAddress = paxos.clients(clientIndex).address.address
+        s"EventualRead($clientAddress, $clientPseudonym)"
 
       case TransportCommand(FakeTransport.DeliverMessage(msg)) =>
         val dstActor = paxos.transport.actors(msg.dst)

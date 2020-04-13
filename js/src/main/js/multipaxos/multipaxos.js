@@ -72,6 +72,16 @@ const client_info = {
       }
     },
 
+    eventual_read: function() {
+      this.node.actor.eventualRead(0, "");
+    },
+
+    eventual_read_ten: function() {
+      for (let i = 0; i < 10; ++i) {
+        this.node.actor.eventualRead(i, "");
+      }
+    },
+
     write: function() {
       if (this.write_value === "") {
         return;
@@ -162,8 +172,14 @@ const client_info = {
       </div>
 
       <div>
-        <button v-on:click="read">Read</button>
-        <button v-on:click="read_ten">Read Ten</button>
+        <button v-on:click="read">Linearizable Read</button>
+        <button v-on:click="read_ten">Linearizable Read Ten</button>
+      </div>
+      <div>
+        <button v-on:click="eventual_read">Eventually Consistent Read</button>
+        <button v-on:click="eventual_read_ten">
+          Eventually Consistent Read Ten
+        </button>
       </div>
       <div>
         <button v-on:click="write">Write</button>

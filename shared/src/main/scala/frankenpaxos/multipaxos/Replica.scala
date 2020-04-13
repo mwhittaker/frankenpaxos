@@ -412,8 +412,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Chosen(_)      => "Chosen"
-        case Request.ReadRequest(_) => "ReadRequest"
+        case Request.Chosen(_)              => "Chosen"
+        case Request.ReadRequest(_)         => "ReadRequest"
+        case Request.EventualReadRequest(_) => "EventualReadRequest"
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -421,8 +422,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.Chosen(r)      => handleChosen(src, r)
-        case Request.ReadRequest(r) => handleReadRequest(src, r)
+        case Request.Chosen(r)              => handleChosen(src, r)
+        case Request.ReadRequest(r)         => handleReadRequest(src, r)
+        case Request.EventualReadRequest(r) => handleEventualReadRequest(src, r)
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -510,5 +512,26 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       )
     )
     metrics.executedReadsTotal.inc()
+  }
+
+  private def handleEventualReadRequest(
+      src: Transport#Address,
+      eventualReadRequest: EventualReadRequest
+  ): Unit = {
+    // Eventually consistent reads can be executed right away. The only thing
+    // we have to ensure is that an eventually consistent read is performed on
+    // some prefix of the log. Our state machine is always in such a state.
+    val result = ByteString.copyFrom(
+      stateMachine.run(eventualReadRequest.command.command.toByteArray())
+    )
+    val client = chan[Client[Transport]](src, Client.serializer)
+    client.send(
+      ClientInbound().withReadReply(
+        ReadReply(
+          commandId = eventualReadRequest.command.commandId,
+          result = result
+        )
+      )
+    )
   }
 }
