@@ -185,7 +185,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
   // In Evelyn Paxos, a client can issue a read directly to a replica. The read
   // is associated with a slot i. The replica must wait until log entry i has
-  // been executed bbefore executing the read. If a replica receives the read
+  // been executed before executing the read. If a replica receives the read
   // request before i has been executed, then it stores the read request in
   // this log for later.
   @JSExportAll
@@ -284,7 +284,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
         clientTable(clientIdentity) = (commandId.clientId, result)
         if (slot % config.numReplicas == index) {
-          clientReplies += ClientReply(commandId = commandId, result = result)
+          clientReplies += ClientReply(commandId = commandId,
+                                       slot = slot,
+                                       result = result)
         }
         metrics.executedCommandsTotal.inc()
 
@@ -293,6 +295,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           metrics.reduntantlyExecutedCommandsTotal.inc()
         } else if (commandId.clientId == largestClientId) {
           clientReplies += ClientReply(commandId = commandId,
+                                       slot = slot,
                                        result = cachedResult)
           metrics.reduntantlyExecutedCommandsTotal.inc()
         } else {
@@ -300,7 +303,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
             ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
           clientTable(clientIdentity) = (commandId.clientId, result)
           if (slot % config.numReplicas == index) {
-            clientReplies += ClientReply(commandId = commandId, result = result)
+            clientReplies += ClientReply(commandId = commandId,
+                                         slot = slot,
+                                         result = result)
           }
           metrics.executedCommandsTotal.inc()
         }
@@ -358,6 +363,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
                 client.send(
                   ClientInbound().withReadReply(
                     ReadReply(commandId = read.command.commandId,
+                              slot = slot,
                               result = result)
                   )
                 )
@@ -412,9 +418,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Chosen(_)              => "Chosen"
-        case Request.ReadRequest(_)         => "ReadRequest"
-        case Request.EventualReadRequest(_) => "EventualReadRequest"
+        case Request.Chosen(_)                => "Chosen"
+        case Request.ReadRequest(_)           => "ReadRequest"
+        case Request.SequentialReadRequest(_) => "SequentialReadRequest"
+        case Request.EventualReadRequest(_)   => "EventualReadRequest"
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -422,9 +429,14 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.Chosen(r)              => handleChosen(src, r)
-        case Request.ReadRequest(r)         => handleReadRequest(src, r)
-        case Request.EventualReadRequest(r) => handleEventualReadRequest(src, r)
+        case Request.Chosen(r) =>
+          handleChosen(src, r)
+        case Request.ReadRequest(r) =>
+          handleReadRequest(src, r)
+        case Request.SequentialReadRequest(r) =>
+          handleSequentialReadRequest(src, r)
+        case Request.EventualReadRequest(r) =>
+          handleEventualReadRequest(src, r)
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -479,39 +491,57 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def handleReadRequest(
+  private def handleDeferrableRead(
       src: Transport#Address,
-      readRequest: ReadRequest
+      slot: Int,
+      command: Command
   ): Unit = {
-    // We have to wait for `readRequest.slot` to be executed before we execute
-    // the read. If `readRequest.slot >= executedWatermark`, then the slot
-    // hasn't yet been executed and we have to defer the read to later.
-    if (readRequest.slot >= executedWatermark) {
-      val read = DeferredRead(command = readRequest.command,
-                              startTimeNanos = System.nanoTime)
-      deferredReads.get(readRequest.slot) match {
-        case None =>
-          deferredReads.put(readRequest.slot, mutable.Buffer(read))
-        case Some(otherReads) =>
-          otherReads += read
+    // We have to wait for `slot` to be executed before we execute the read. If
+    // `slot >= executedWatermark`, then the slot hasn't yet been executed and
+    // we have to defer the read to later.
+    if (slot >= executedWatermark) {
+      val read =
+        DeferredRead(command = command, startTimeNanos = System.nanoTime)
+      deferredReads.get(slot) match {
+        case None             => deferredReads.put(slot, mutable.Buffer(read))
+        case Some(otherReads) => otherReads += read
       }
       metrics.deferredReadsTotal.inc()
       return
     }
 
-    val result = ByteString.copyFrom(
-      stateMachine.run(readRequest.command.command.toByteArray())
-    )
+    val result =
+      ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
     val client = chan[Client[Transport]](src, Client.serializer)
     client.send(
       ClientInbound().withReadReply(
         ReadReply(
-          commandId = readRequest.command.commandId,
+          commandId = command.commandId,
+          // The `- 1` here is needed because of a difference in slot vs
+          // watermark. If the watermark is 0, then we have executed only slot
+          // -1.
+          slot = executedWatermark - 1,
           result = result
         )
       )
     )
     metrics.executedReadsTotal.inc()
+  }
+
+  private def handleReadRequest(
+      src: Transport#Address,
+      readRequest: ReadRequest
+  ): Unit = {
+    handleDeferrableRead(src, readRequest.slot, readRequest.command)
+  }
+
+  private def handleSequentialReadRequest(
+      src: Transport#Address,
+      sequentialReadRequest: SequentialReadRequest
+  ): Unit = {
+    handleDeferrableRead(src,
+                         sequentialReadRequest.slot,
+                         sequentialReadRequest.command)
   }
 
   private def handleEventualReadRequest(
@@ -529,6 +559,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       ClientInbound().withReadReply(
         ReadReply(
           commandId = eventualReadRequest.command.commandId,
+          // The `- 1` here is needed because of a difference in slot vs
+          // watermark. If the watermark is 0, then we have executed only slot
+          // -1.
+          slot = executedWatermark - 1,
           result = result
         )
       )

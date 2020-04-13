@@ -262,7 +262,8 @@ message ClientReply {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required CommandId command_id = 1;
-  required bytes result = 2;
+  required int32 slot = 2;
+  required bytes result = 3;
 }
 
 message ClientReplyBatch {
@@ -296,6 +297,14 @@ message ReadRequest {
   required Command command = 2;
 }
 
+message SequentialReadRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required Command command = 2;
+}
+
 message EventualReadRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -308,7 +317,8 @@ message ReadReply {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required CommandId command_id = 1;
-  required bytes result = 2;
+  required int32 slot = 2;
+  required bytes result = 3;
 }
 
 // If a client or batcher sends a request to a leader, but the leader is
@@ -454,7 +464,8 @@ message ReplicaInbound {
   oneof request {
     Chosen chosen = 1;
     ReadRequest read_request = 2;
-    EventualReadRequest eventual_read_request = 3;
+    SequentialReadRequest sequential_read_request = 3;
+    EventualReadRequest eventual_read_request = 4;
   }
 }
 
