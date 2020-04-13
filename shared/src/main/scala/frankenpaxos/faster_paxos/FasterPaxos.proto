@@ -118,12 +118,12 @@
 
 syntax = "proto2";
 
-package frankenpaxos.faster_paxos;
+package frankenpaxos.fasterpaxos;
 
 import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
-  package_name: "frankenpaxos.faster_paxos"
+  package_name: "frankenpaxos.fasterpaxos"
   flat_package: true
 };
 
