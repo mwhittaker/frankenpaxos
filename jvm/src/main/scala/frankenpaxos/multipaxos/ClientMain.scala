@@ -23,6 +23,16 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 object ClientMain extends App {
+  sealed trait ReadConsistency
+  case object Linearizable extends ReadConsistency
+  case object Sequential extends ReadConsistency
+  case object Eventual extends ReadConsistency
+  implicit val read: scopt.Read[ReadConsistency] = scopt.Read.reads({
+    case "linearizable" => Linearizable
+    case "sequential"   => Sequential
+    case "eventual"     => Eventual
+  })
+
   case class Flags(
       // Basic flags.
       host: String = "localhost",
@@ -42,6 +52,7 @@ object ClientMain extends App {
       numClients: Int = 1,
       workload: ReadWriteWorkload = new UniformReadWriteWorkload(1, 1, 1, 0),
       outputFilePrefix: String = "",
+      readConsistency: ReadConsistency = Linearizable,
       // Options.
       options: ClientOptions = ClientOptions.default
   )
@@ -86,6 +97,8 @@ object ClientMain extends App {
       .action((x, f) => f.copy(workload = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
+    opt[ReadConsistency]("read_consistency")
+      .action((x, f) => f.copy(readConsistency = x))
 
     // Options.
     opt[java.time.Duration]("options.resendClientRequestPeriod")
@@ -94,6 +107,10 @@ object ClientMain extends App {
       .optionAction((x, o) => o.copy(resendMaxSlotRequestsPeriod = x))
     opt[java.time.Duration]("options.resendReadRequestPeriod")
       .optionAction((x, o) => o.copy(resendReadRequestPeriod = x))
+    opt[java.time.Duration]("options.resendSequentialReadRequestPeriod")
+      .optionAction((x, o) => o.copy(resendSequentialReadRequestPeriod = x))
+    opt[java.time.Duration]("options.resendEventualReadRequestPeriod")
+      .optionAction((x, o) => o.copy(resendEventualReadRequestPeriod = x))
     opt[Boolean]("options.unsafeReadAtFirstSlot")
       .optionAction((x, o) => o.copy(unsafeReadAtFirstSlot = x))
     opt[Boolean]("options.unsafeReadAtI")
@@ -127,78 +144,66 @@ object ClientMain extends App {
   // any stats.
   def warmupRun(pseudonym: Int): Future[Unit] = {
     implicit val context = transport.executionContext
-    flags.workload.get() match {
-      case Write(command) =>
-        client
-          .write(pseudonym, command)
-          .transformWith({
-            case scala.util.Failure(_) =>
-              logger.debug("Write failed.")
-              Future.successful(())
+    val (future, error) = (flags.workload.get(), flags.readConsistency) match {
+      case (Write(command), _) =>
+        (client.write(pseudonym, command), "Write failed.")
 
-            case scala.util.Success(_) =>
-              Future.successful(())
-          })
-
-      case Read(command) =>
-        client
-          .read(pseudonym, command)
-          .transformWith({
-            case scala.util.Failure(_) =>
-              logger.debug("Read failed.")
-              Future.successful(())
-
-            case scala.util.Success(_) =>
-              Future.successful(())
-          })
+      case (Read(command), Linearizable) =>
+        (client.read(pseudonym, command), "Read failed.")
+      case (Read(command), Sequential) =>
+        (client.sequentialRead(pseudonym, command), "Sequential read failed.")
+      case (Read(command), Eventual) =>
+        (client.eventualRead(pseudonym, command), "Eventual read failed.")
     }
+
+    future.transformWith({
+      case scala.util.Failure(_) =>
+        logger.debug(error)
+        Future.successful(())
+
+      case scala.util.Success(_) =>
+        Future.successful(())
+    })
   }
 
   val recorder =
     new BenchmarkUtil.LabeledRecorder(s"${flags.outputFilePrefix}_data.csv")
   def run(pseudonym: Int): Future[Unit] = {
     implicit val context = transport.executionContext
-    flags.workload.get() match {
-      case Write(command) =>
-        BenchmarkUtil
-          .timed(() => client.write(pseudonym, command))
-          .transformWith({
-            case scala.util.Failure(_) =>
-              logger.debug("Write failed.")
-              Future.successful(())
+    val (f, error, label) =
+      (flags.workload.get(), flags.readConsistency) match {
+        case (Write(command), _) =>
+          (() => client.write(pseudonym, command), "Write failed.", "write")
+        case (Read(command), Linearizable) =>
+          (() => client.read(pseudonym, command), "Read failed.", "read")
+        case (Read(command), Sequential) =>
+          (() => client.sequentialRead(pseudonym, command),
+           "Sequential read failed.",
+           "read")
+        case (Read(command), Eventual) =>
+          (() => client.eventualRead(pseudonym, command),
+           "Eventual read failed.",
+           "read")
+      }
 
-            case scala.util.Success((_, timing)) =>
-              recorder.record(
-                start = timing.startTime,
-                stop = timing.stopTime,
-                latencyNanos = timing.durationNanos,
-                host = flags.host,
-                port = flags.port,
-                label = "write"
-              )
-              Future.successful(())
-          })
+    BenchmarkUtil
+      .timed(f)
+      .transformWith({
+        case scala.util.Failure(_) =>
+          logger.debug(error)
+          Future.successful(())
 
-      case Read(command) =>
-        BenchmarkUtil
-          .timed(() => client.read(pseudonym, command))
-          .transformWith({
-            case scala.util.Failure(_) =>
-              logger.debug("Read failed.")
-              Future.successful(())
-
-            case scala.util.Success((_, timing)) =>
-              recorder.record(
-                start = timing.startTime,
-                stop = timing.stopTime,
-                latencyNanos = timing.durationNanos,
-                host = flags.host,
-                port = flags.port,
-                label = "read"
-              )
-              Future.successful(())
-          })
-    }
+        case scala.util.Success((_, timing)) =>
+          recorder.record(
+            start = timing.startTime,
+            stop = timing.stopTime,
+            latencyNanos = timing.durationNanos,
+            host = flags.host,
+            port = flags.port,
+            label = label
+          )
+          Future.successful(())
+      })
   }
 
   // Warm up the protocol.
