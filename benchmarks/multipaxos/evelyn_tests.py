@@ -37,6 +37,7 @@ def main(args) -> None:
                     workload = read_write_workload.UniformReadWriteWorkload(
                         num_keys=num_keys, read_fraction=read_fraction,
                         write_size_mean=1, write_size_std=0),
+                    read_consistency = read_consistency,
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -84,6 +85,7 @@ def main(args) -> None:
                 )
                 for num_keys in [1]
                 # for read_fraction in [0.9]
+                for read_consistency in ["eventual"]
                 for (unsafe_read_at_first_slot, unsafe_read_at_i) in
                     [(True, False)]
                     # [(False, False),

@@ -38,8 +38,13 @@ class ClientOptions(NamedTuple):
         datetime.timedelta(seconds=1)
     resend_read_request_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
+    resend_sequential_read_request_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
+    resend_eventual_read_request_period: datetime.timedelta = \
+        datetime.timedelta(seconds=1)
     unsafe_read_at_first_slot: bool = False
     unsafe_read_at_i: bool = False
+
 
 class BatcherOptions(NamedTuple):
     batch_size: int = 1
@@ -110,6 +115,7 @@ class Input(NamedTuple):
     client_lag: datetime.timedelta
     state_machine: str
     workload: read_write_workload.ReadWriteWorkload
+    read_consistency: str # "linearizable", "sequential", or "eventual"
     profiled: bool
     monitored: bool
     prometheus_scrape_interval: datetime.timedelta
@@ -596,6 +602,8 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     f'{workload_filename}',
                     '--output_file_prefix',
                     bench.abspath(f'client_{i}'),
+                    '--read_consistency',
+                    f'{input.read_consistency}',
                     '--options.resendClientRequestPeriod',
                     '{}s'.format(input.client_options.
                                  resend_client_request_period.total_seconds()),
@@ -605,6 +613,14 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     '--options.resendReadRequestPeriod',
                     '{}s'.format(input.client_options.
                                  resend_read_request_period.total_seconds()),
+                    '--options.resendSequentialReadRequestPeriod',
+                    '{}s'.format(input.client_options.
+                                 resend_sequential_read_request_period.
+                                 total_seconds()),
+                    '--options.resendEventualReadRequestPeriod',
+                    '{}s'.format(input.client_options.
+                                 resend_eventual_read_request_period.
+                                 total_seconds()),
                     '--options.unsafeReadAtFirstSlot',
                     f'{input.client_options.unsafe_read_at_first_slot}',
                     '--options.unsafeReadAtI',
