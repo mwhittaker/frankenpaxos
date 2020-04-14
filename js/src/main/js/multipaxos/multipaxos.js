@@ -72,6 +72,16 @@ const client_info = {
       }
     },
 
+    sequential_read: function() {
+      this.node.actor.sequentialRead(0, "");
+    },
+
+    sequential_read_ten: function() {
+      for (let i = 0; i < 10; ++i) {
+        this.node.actor.sequentialRead(i, "");
+      }
+    },
+
     eventual_read: function() {
       this.node.actor.eventualRead(0, "");
     },
@@ -109,6 +119,12 @@ const client_info = {
 
       <div>
         ids = <frankenpaxos-map :map="node.actor.ids"></frankenpaxos-map>
+      </div>
+
+      <div>
+        largestSeenSlots =
+        <frankenpaxos-map :map="node.actor.largestSeenSlots">
+        </frankenpaxos-map>
       </div>
 
       <div>
@@ -174,6 +190,12 @@ const client_info = {
       <div>
         <button v-on:click="read">Linearizable Read</button>
         <button v-on:click="read_ten">Linearizable Read Ten</button>
+      </div>
+      <div>
+        <button v-on:click="sequential_read">Sequentially Consistent Read</button>
+        <button v-on:click="sequential_read_ten">
+          Sequentially Consistent Read Ten
+        </button>
       </div>
       <div>
         <button v-on:click="eventual_read">Eventually Consistent Read</button>

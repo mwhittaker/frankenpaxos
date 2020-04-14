@@ -34,6 +34,7 @@ case class ClientOptions(
     resendClientRequestPeriod: java.time.Duration,
     resendMaxSlotRequestsPeriod: java.time.Duration,
     resendReadRequestPeriod: java.time.Duration,
+    resendSequentialReadRequestPeriod: java.time.Duration,
     resendEventualReadRequestPeriod: java.time.Duration,
     // If `unsafeReadAtFirstSlot` is true, all ReadRequests are issued in slot
     // 0. With this option enabled, our protocol is not safe. Reads are no
@@ -56,6 +57,7 @@ object ClientOptions {
     resendClientRequestPeriod = java.time.Duration.ofSeconds(10),
     resendMaxSlotRequestsPeriod = java.time.Duration.ofSeconds(10),
     resendReadRequestPeriod = java.time.Duration.ofSeconds(10),
+    resendSequentialReadRequestPeriod = java.time.Duration.ofSeconds(10),
     resendEventualReadRequestPeriod = java.time.Duration.ofSeconds(10),
     unsafeReadAtFirstSlot = false,
     unsafeReadAtI = false,
@@ -115,6 +117,12 @@ class ClientMetrics(collectors: Collectors) {
     .help("Total number of times a client resends a ReadRequest.")
     .register()
 
+  val resendSequentialReadRequestsTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_client_resend_sequential_read_requests_total")
+    .help("Total number of times a client resends an SequentialReadRequest.")
+    .register()
+
   val resendEventualReadRequestsTotal: Counter = collectors.counter
     .build()
     .name("multipaxos_client_resend_eventual_read_requests_total")
@@ -147,7 +155,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExportAll
   case class PendingWrite(
-      pseudonym: Pseudonym,
       id: Id,
       command: Array[Byte],
       result: Promise[Array[Byte]],
@@ -156,7 +163,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExportAll
   case class MaxSlot(
-      pseudonym: Pseudonym,
       id: Id,
       command: Array[Byte],
       result: Promise[Array[Byte]],
@@ -166,7 +172,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExportAll
   case class PendingRead(
-      pseudonym: Pseudonym,
       id: Id,
       command: Array[Byte],
       result: Promise[Array[Byte]],
@@ -174,8 +179,15 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   ) extends State
 
   @JSExportAll
+  case class PendingSequentialRead(
+      id: Id,
+      command: Array[Byte],
+      result: Promise[Array[Byte]],
+      resendSequentialReadRequest: Transport#Timer
+  ) extends State
+
+  @JSExportAll
   case class PendingEventualRead(
-      pseudonym: Pseudonym,
       id: Id,
       command: Array[Byte],
       result: Promise[Array[Byte]],
@@ -231,6 +243,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // client ids increase over time, even after crashes and restarts.
   @JSExport
   protected var ids = mutable.Map[Pseudonym, Id]()
+
+  // To implement sequentially consistent reads, a client must keep track of
+  // the largest slot in which any previous read or write has occured.
+  @JSExport
+  protected var largestSeenSlots = mutable.Map[Pseudonym, Int]()
 
   // Clients can only propose one request at a time (per pseudonym), so if
   // there is a pending command, no other command can be proposed. This
@@ -291,6 +308,25 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         val replica = replicas(rand.nextInt(replicas.size))
         replica.send(ReplicaInbound().withReadRequest(readRequest))
         metrics.resendReadRequestsTotal.inc()
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendSequentialReadRequestTimer(
+      pseudonym: Pseudonym,
+      id: Id,
+      readRequest: SequentialReadRequest
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendSequentialReadRequest [pseudonym=${pseudonym}; id=${id}]",
+      options.resendSequentialReadRequestPeriod,
+      () => {
+        val replica = replicas(rand.nextInt(replicas.size))
+        replica.send(ReplicaInbound().withSequentialReadRequest(readRequest))
+        metrics.resendSequentialReadRequestsTotal.inc()
         t.start()
       }
     )
@@ -385,7 +421,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         // Update our state.
         states(pseudonym) = PendingWrite(
-          pseudonym = pseudonym,
           id = id,
           command = command,
           result = promise,
@@ -429,13 +464,55 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         // Update our state.
         states(pseudonym) = MaxSlot(
-          pseudonym = pseudonym,
           id = id,
           command = command,
           result = promise,
           maxSlotReplies = mutable.Map(),
           resendMaxSlotRequests =
             makeResendMaxSlotRequestsTimer(pseudonym, id, group, maxSlotRequest)
+        )
+        ids(pseudonym) = id + 1
+    }
+  }
+
+  private def sequentialReadImpl(
+      pseudonym: Pseudonym,
+      command: Array[Byte],
+      promise: Promise[Array[Byte]]
+  ): Unit = {
+    states.get(pseudonym) match {
+      case Some(_) =>
+        promise.failure(
+          new IllegalStateException(
+            s"You attempted to issue a read with pseudonym $pseudonym, " +
+              s"but this pseudonym already has a request pending. A client " +
+              s"can only have one pending request at a time. Try waiting or " +
+              s"use a different pseudonym."
+          )
+        )
+
+      case None =>
+        // Send the SequentialReadRequest to a random replica.
+        val id = ids.getOrElse(pseudonym, 0)
+        val readRequest = SequentialReadRequest(
+          slot = largestSeenSlots.getOrElse(pseudonym, -1),
+          command = Command(
+            commandId = CommandId(clientAddress = addressAsBytes,
+                                  clientPseudonym = pseudonym,
+                                  clientId = id),
+            command = ByteString.copyFrom(command)
+          )
+        )
+        val replica = replicas(scala.util.Random.nextInt(replicas.size))
+        replica.send(ReplicaInbound().withSequentialReadRequest(readRequest))
+
+        // Update our state.
+        states(pseudonym) = PendingSequentialRead(
+          id = id,
+          command = command,
+          result = promise,
+          resendSequentialReadRequest =
+            makeResendSequentialReadRequestTimer(pseudonym, id, readRequest)
         )
         ids(pseudonym) = id + 1
     }
@@ -473,7 +550,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         // Update our state.
         states(pseudonym) = PendingEventualRead(
-          pseudonym = pseudonym,
           id = id,
           command = command,
           result = promise,
@@ -525,7 +601,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     val state = states.get(pseudonym)
     state match {
       case None | Some(_: MaxSlot) | Some(_: PendingRead) |
-          Some(_: PendingEventualRead) =>
+          Some(_: PendingSequentialRead) | Some(_: PendingEventualRead) =>
         logger.debug(
           s"A client received a ClientReply, but the state is $state. The " +
             s"ClientReply is being ignored."
@@ -533,8 +609,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         metrics.staleClientRepliesReceivedTotal.inc()
 
       case Some(pendingWrite: PendingWrite) =>
-        logger.checkEq(pseudonym, pendingWrite.pseudonym)
-
         if (clientReply.commandId.clientId != pendingWrite.id) {
           logger.debug(
             s"A client received a ClientReply for pseudonym ${pseudonym}, " +
@@ -548,7 +622,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         pendingWrite.resendClientRequest.stop()
         pendingWrite.result.success(clientReply.result.toByteArray())
-        states -= pendingWrite.pseudonym
+        largestSeenSlots(pseudonym) = Math.max(
+          largestSeenSlots.getOrElse(pseudonym, -1),
+          clientReply.slot
+        )
+        states -= pseudonym
         metrics.clientRepliesReceivedTotal.inc()
     }
   }
@@ -561,15 +639,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     val state = states.get(pseudonym)
     state match {
       case None | Some(_: PendingWrite) | Some(_: PendingRead) |
-          Some(_: PendingEventualRead) =>
+          Some(_: PendingSequentialRead) | Some(_: PendingEventualRead) =>
         logger.debug(
           s"A client received a MaxSlotReply, but the state is $state. The " +
             s"MaxSlotReply is being ignored."
         )
 
       case Some(maxSlot: MaxSlot) =>
-        logger.checkEq(pseudonym, maxSlot.pseudonym)
-
         if (maxSlotReply.commandId.clientId != maxSlot.id) {
           logger.debug(
             s"A client received a MaxSlotReply for pseudonym ${pseudonym}, " +
@@ -612,7 +688,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         // Update our state.
         states(pseudonym) = PendingRead(
-          pseudonym = pseudonym,
           id = maxSlot.id,
           command = maxSlot.command,
           result = maxSlot.result,
@@ -640,8 +715,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case Some(pendingRead: PendingRead) =>
-        logger.checkEq(pseudonym, pendingRead.pseudonym)
-
         if (readReply.commandId.clientId != pendingRead.id) {
           logger.debug(
             s"A client received a ReadReply for pseudonym ${pseudonym}, " +
@@ -654,11 +727,32 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         pendingRead.resendReadRequest.stop()
         pendingRead.result.success(readReply.result.toByteArray())
+        largestSeenSlots(pseudonym) = Math.max(
+          largestSeenSlots.getOrElse(pseudonym, -1),
+          readReply.slot
+        )
+        states -= pseudonym
+
+      case Some(pendingSequentialRead: PendingSequentialRead) =>
+        if (readReply.commandId.clientId != pendingSequentialRead.id) {
+          logger.debug(
+            s"A client received a ReadReply for pseudonym ${pseudonym}, " +
+              s"but the client id ${readReply.commandId.clientId} doesn't " +
+              s"match the expected client id ${pendingSequentialRead.id}. " +
+              s"The ReadReply is being ignored."
+          )
+          return
+        }
+
+        pendingSequentialRead.resendSequentialReadRequest.stop()
+        pendingSequentialRead.result.success(readReply.result.toByteArray())
+        largestSeenSlots(pseudonym) = Math.max(
+          largestSeenSlots.getOrElse(pseudonym, -1),
+          readReply.slot
+        )
         states -= pseudonym
 
       case Some(pendingEventualRead: PendingEventualRead) =>
-        logger.checkEq(pseudonym, pendingEventualRead.pseudonym)
-
         if (readReply.commandId.clientId != pendingEventualRead.id) {
           logger.debug(
             s"A client received a ReadReply for pseudonym ${pseudonym}, " +
@@ -738,6 +832,27 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
       () => readImpl(pseudonym, command.getBytes(), promise)
+    )
+    promise.future.map(new String(_))(
+      concurrent.ExecutionContext.Implicits.global
+    )
+  }
+
+  def sequentialRead(
+      pseudonym: Pseudonym,
+      command: Array[Byte]
+  ): Future[Array[Byte]] = {
+    val promise = Promise[Array[Byte]]()
+    transport.executionContext.execute(
+      () => sequentialReadImpl(pseudonym, command, promise)
+    )
+    promise.future
+  }
+
+  def sequentialRead(pseudonym: Pseudonym, command: String): Future[String] = {
+    val promise = Promise[Array[Byte]]()
+    transport.executionContext.execute(
+      () => sequentialReadImpl(pseudonym, command.getBytes(), promise)
     )
     promise.future.map(new String(_))(
       concurrent.ExecutionContext.Implicits.global
