@@ -160,6 +160,11 @@ object SimulatedMultiPaxos {
       clientPseudonym: Int
   ) extends Command
 
+  case class SequentialRead(
+      clientIndex: Int,
+      clientPseudonym: Int
+  ) extends Command
+
   case class EventualRead(
       clientIndex: Int,
       clientPseudonym: Int
@@ -199,7 +204,7 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
   override def generateCommand(paxos: System): Option[Command] = {
     val subgens = mutable.Buffer[(Int, Gen[Command])](
       // Write.
-      paxos.numClients -> {
+      paxos.numClients * 3 -> {
         for {
           clientId <- Gen.choose(0, paxos.numClients - 1)
           request <- Gen.alphaLowerStr.filter(_.size > 0)
@@ -211,6 +216,12 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
         for {
           clientId <- Gen.choose(0, paxos.numClients - 1)
         } yield Read(clientId, clientPseudonym = 0)
+      },
+      // Sequential Read.
+      paxos.numClients -> {
+        for {
+          clientId <- Gen.choose(0, paxos.numClients - 1)
+        } yield SequentialRead(clientId, clientPseudonym = 0)
       },
       // Eventual Read.
       paxos.numClients -> {
@@ -236,6 +247,8 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
         paxos.clients(clientId).write(clientPseudonym, request)
       case Read(clientId, clientPseudonym) =>
         paxos.clients(clientId).read(clientPseudonym, "")
+      case SequentialRead(clientId, clientPseudonym) =>
+        paxos.clients(clientId).sequentialRead(clientPseudonym, "")
       case EventualRead(clientId, clientPseudonym) =>
         paxos.clients(clientId).eventualRead(clientPseudonym, "")
       case TransportCommand(command) =>
@@ -291,6 +304,10 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
       case Read(clientIndex, clientPseudonym) =>
         val clientAddress = paxos.clients(clientIndex).address.address
         s"Read($clientAddress, $clientPseudonym)"
+
+      case SequentialRead(clientIndex, clientPseudonym) =>
+        val clientAddress = paxos.clients(clientIndex).address.address
+        s"SequentialRead($clientAddress, $clientPseudonym)"
 
       case EventualRead(clientIndex, clientPseudonym) =>
         val clientAddress = paxos.clients(clientIndex).address.address
