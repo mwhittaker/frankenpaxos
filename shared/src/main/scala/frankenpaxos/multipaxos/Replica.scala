@@ -551,21 +551,25 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // Eventually consistent reads can be executed right away. The only thing
     // we have to ensure is that an eventually consistent read is performed on
     // some prefix of the log. Our state machine is always in such a state.
-    val result = ByteString.copyFrom(
-      stateMachine.run(eventualReadRequest.command.command.toByteArray())
-    )
+    val result = timed("handleEventualReadRequest/execute read") {
+      ByteString.copyFrom(
+        stateMachine.run(eventualReadRequest.command.command.toByteArray())
+      )
+    }
     val client = chan[Client[Transport]](src, Client.serializer)
-    client.send(
-      ClientInbound().withReadReply(
-        ReadReply(
-          commandId = eventualReadRequest.command.commandId,
-          // The `- 1` here is needed because of a difference in slot vs
-          // watermark. If the watermark is 0, then we have executed only slot
-          // -1.
-          slot = executedWatermark - 1,
-          result = result
+    timed("handleEventualReadRequest/send response") {
+      client.send(
+        ClientInbound().withReadReply(
+          ReadReply(
+            commandId = eventualReadRequest.command.commandId,
+            // The `- 1` here is needed because of a difference in slot vs
+            // watermark. If the watermark is 0, then we have executed only slot
+            // -1.
+            slot = executedWatermark - 1,
+            result = result
+          )
         )
       )
-    )
+    }
   }
 }
