@@ -30,8 +30,8 @@ def main(args) -> None:
                     warmup_duration = datetime.timedelta(seconds=5),
                     warmup_timeout = datetime.timedelta(seconds=10),
                     warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=15),
-                    timeout = datetime.timedelta(seconds=20),
+                    duration = datetime.timedelta(seconds=10),
+                    timeout = datetime.timedelta(seconds=15),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
                     workload = read_write_workload.UniformReadWriteWorkload(
@@ -87,31 +87,52 @@ def main(args) -> None:
                 # for read_fraction in [0.9]
                 for read_consistency in ["eventual"]
                 for (unsafe_read_at_first_slot, unsafe_read_at_i) in
-                    [(True, False)]
+                    [(False, False)]
                     # [(False, False),
                     # (False, True),
                     # (True, False),]
 
+                for num_proxy_leaders in [2]
+                for num_acceptor_groups in [1]
+                for (num_replicas, num_proxy_replicas) in [(10, 2)]
                 for (num_client_procs, num_clients_per_proc, read_fraction) in [
                     # (1, 100, 0.5),
                     # (2, 100, 1 - (100 / 200)),
-                    (3, 100, 1 - (100 / 300)),
-                    (4, 100, 1 - (100 / 400)),
-                    (5, 100, 1 - (100 / 500)),
-                    (6, 100, 1 - (100 / 600)),
-                    (7, 100, 1 - (100 / 700)),
-                    (8, 100, 1 - (100 / 800)),
-                    (9, 100, 1 - (100 / 900)),
+                    # (3, 100, 1 - (100 / 300)),
+                    # (4, 100, 1 - (100 / 400)),
+                    # (5, 100, 1 - (100 / 500)),
+                    # (6, 100, 1 - (100 / 600)),
+                    # (7, 100, 1 - (100 / 700)),
+                    # (8, 100, 1 - (100 / 800)),
+                    # (9, 100, 1 - (100 / 900)),
+                    # (10, 100, 1 - (100 / 1000)),
+                    # (11, 100, 1 - (100 / 1100)),
+                    # (12, 100, 1 - (100 / 1200)),
+                    # (13, 100, 1 - (100 / 1300)),
+                    # (14, 100, 1 - (100 / 1400)),
+                    # (15, 100, 1 - (100 / 1500)),
+
+                    # (1, 100, 1.0),
+                    # (2, 100, 1.0),
+                    # (3, 100, 1.0),
+                    # (4, 100, 1.0),
+                    # (5, 100, 1.0),
+                    # (6, 100, 1.0),
+                    # (7, 100, 1.0),
+                    # (8, 100, 1.0),
+                    # (9, 100, 1.0),
                     (10, 100, 1 - (100 / 1000)),
-                    (11, 100, 1 - (100 / 1100)),
-                    (12, 100, 1 - (100 / 1200)),
-                    (13, 100, 1 - (100 / 1300)),
-                    (14, 100, 1 - (100 / 1400)),
-                    (15, 100, 1 - (100 / 1500)),
+                    # (11, 100, 1 - (150 / 1100)),
+                    # (12, 100, 1 - (150 / 1200)),
+                    # (13, 100, 1 - (150 / 1300)),
+                    # (14, 100, 1 - (150 / 1400)),
+                    # (15, 100, 1 - (150 / 1500)),
+                    # (16, 100, 1 - (150 / 1600)),
+                    # (17, 100, 1 - (150 / 1700)),
+                    # (18, 100, 1 - (150 / 1800)),
+                    # (19, 100, 1 - (150 / 1900)),
+                    # (20, 100, 1 - (150 / 2000)),
                 ]
-                for num_proxy_leaders in [2]
-                for num_acceptor_groups in [3]
-                for (num_replicas, num_proxy_replicas) in [(4, 2)]
             ]
 
         def summary(self, input: Input, output: Output) -> str:
