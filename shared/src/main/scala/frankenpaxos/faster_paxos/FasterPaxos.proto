@@ -17,6 +17,7 @@
 //       |           | <---------^---------- |      Phase2b
 //       |           | ----------^---------> |      Phase3a
 //       |           | --------> |           |      Phase2aAny
+//       |           | <-------- |           |      Phase2aAnyAck
 //
 // ## Normal Operation
 //
@@ -31,6 +32,7 @@
 //
 // ## Learning Who the Delegates Are
 //
+// TODO(mwhittaker): Update text.
 // Clients can send their commands to any of the delegates, but how do the
 // clients know who the delegates are? Every client keeps track of what it
 // thinks is the current round and current set of delegates. When a client
@@ -43,9 +45,7 @@
 //
 //     Client      Leader     Delegate     Server
 //       | ----------^---------> |           |      ClientRequest
-//       | <---------^---------- |           |      StaleRound
-//       | ----------^-----------^---------> |      RoundInfoRequest
-//       | <-------- |           |           |      RoundInfoReply
+//       | <---------^---------- |           |      RoundInfo
 //
 // ## Knowing When to Change Rounds
 //
@@ -167,7 +167,8 @@ message ClientRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required Command command = 1;
+  required int32 round = 1;
+  required Command command = 2;
 }
 
 message ClientReply {
@@ -247,6 +248,14 @@ message Phase2aAny {
   required int32 any_watermark = 3;
 }
 
+message Phase2aAnyAck {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required int32 delegate_index = 2;
+}
+
 message Phase3a {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -255,17 +264,17 @@ message Phase3a {
   required CommandOrNoop command_or_noop = 2;
 }
 
-message StaleRound {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-}
+// message StaleRound {
+//   option (scalapb.message).annotations =
+//     "@scala.scalajs.js.annotation.JSExportAll";
+// }
 
-message RoundInfoRequest {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-}
+// message RoundInfoRequest {
+//   option (scalapb.message).annotations =
+//     "@scala.scalajs.js.annotation.JSExportAll";
+// }
 
-message RoundInfoReply {
+message RoundInfo {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
@@ -296,7 +305,7 @@ message ClientInbound {
 
   oneof request {
     ClientReply client_reply = 1;
-    StaleRound stale_round = 2;
+    RoundInfo round_info = 2;
   }
 }
 
@@ -311,9 +320,9 @@ message ServerInbound {
     Phase2a phase2a = 4;
     Phase2b phase2b = 5;
     Phase2aAny phase2a_any = 6;
-    Phase3a phase3a = 7;
-    RoundInfoRequest round_info_request = 8;
-    Recover recover = 9;
-    Nack nack = 10;
+    Phase2aAnyAck phase2a_any_ack = 7;
+    Phase3a phase3a = 8;
+    Recover recover = 10;
+    Nack nack = 11;
   }
 }
