@@ -13,6 +13,9 @@ class BufferMap[V](val growSize: Int = 5000) {
   @JSExport
   protected var watermark: Int = 0
 
+  @JSExport
+  protected var largestKey: Int = -1
+
   override def toString(): String = buffer.toString()
 
   private def normalize(key: Int): Int = key - watermark
@@ -32,6 +35,8 @@ class BufferMap[V](val growSize: Int = 5000) {
   }
 
   def put(key: Int, value: V): Unit = {
+    largestKey = Math.max(largestKey, key)
+
     if (normalize(key) < 0) {
       return
     }
@@ -55,6 +60,46 @@ class BufferMap[V](val growSize: Int = 5000) {
     buffer.remove(0, Math.min(watermark - this.watermark, buffer.size))
     this.watermark = watermark
   }
+
+  // An iterator that iterates from index `startInclusive` to `endExclusive`.
+  // If `endExclusive` is -1, then the iterator is empty.
+  class BufferMapIterator(startInclusive: Int, endInclusive: Int)
+      extends Iterator[(Int, V)] {
+    private var index: Int = startInclusive
+
+    private def seekToNext(): Option[(Int, V)] = {
+      while (index <= endInclusive) {
+        get(index) match {
+          case None =>
+            index += 1
+          case Some(v) =>
+            index += 1
+            return Some(index - 1, v)
+        }
+      }
+      None
+    }
+
+    private var nextValue: Option[(Int, V)] = seekToNext()
+
+    override def hasNext: Boolean = nextValue.isDefined
+
+    override def next(): (Int, V) = {
+      nextValue match {
+        case None =>
+          throw new NoSuchElementException()
+        case Some(v) =>
+          nextValue = seekToNext()
+          v
+      }
+    }
+  }
+
+  def iterator(): Iterator[(Int, V)] =
+    new BufferMapIterator(0, largestKey)
+
+  def iteratorFrom(key: Int): Iterator[(Int, V)] =
+    new BufferMapIterator(key, largestKey)
 
   // Converts this BufferMap into a normal map. All garbage collected entries
   // are not returned in the map. This should really only be used for testing.

@@ -114,4 +114,130 @@ class BufferMapTest extends FlatSpec with Matchers {
     map.get(50) shouldBe Some("50")
     map.get(60) shouldBe Some("60")
   }
+
+  it should "empty iterator correctly" in {
+    val map = new BufferMap[String](10)
+    map.iterator().toSeq shouldBe Seq()
+  }
+
+  it should "single element at 0 iterator correctly" in {
+    val map = new BufferMap[String](10)
+    map.put(0, "0")
+    map.iterator().toSeq shouldBe Seq((0, "0"))
+  }
+
+  it should "single element iterator correctly" in {
+    val map = new BufferMap[String](10)
+    map.put(10, "10")
+    map.iterator().toSeq shouldBe Seq((10, "10"))
+  }
+
+  it should "multiple element with 0 iterator correctly" in {
+    val map = new BufferMap[String](10)
+    map.put(0, "0")
+    map.put(5, "5")
+    map.put(6, "6")
+    map.put(7, "7")
+    map.put(10, "10")
+    map.put(20, "20")
+    map.iterator().toSeq shouldBe Seq((0, "0"),
+                                      (5, "5"),
+                                      (6, "6"),
+                                      (7, "7"),
+                                      (10, "10"),
+                                      (20, "20"))
+  }
+
+  it should "multiple element without 0 iterator correctly" in {
+    val map = new BufferMap[String](10)
+    map.put(5, "5")
+    map.put(6, "6")
+    map.put(7, "7")
+    map.put(10, "10")
+    map.put(20, "20")
+    map.iterator().toSeq shouldBe Seq((5, "5"),
+                                      (6, "6"),
+                                      (7, "7"),
+                                      (10, "10"),
+                                      (20, "20"))
+  }
+
+  it should "multiple element with gc iterator correctly" in {
+    val map = new BufferMap[String](10)
+    map.put(0, "0")
+    map.put(5, "5")
+    map.put(6, "6")
+    map.put(7, "7")
+    map.put(10, "10")
+    map.put(15, "15")
+    map.put(20, "20")
+    map.garbageCollect(10)
+    map.iterator().toSeq shouldBe Seq((10, "10"), (15, "15"), (20, "20"))
+  }
+
+  it should "single element at 0 iteratorFrom correctly" in {
+    val map = new BufferMap[String](10)
+    map.put(0, "0")
+    map.iteratorFrom(0).toSeq shouldBe Seq((0, "0"))
+    map.iteratorFrom(1).toSeq shouldBe Seq()
+    map.iteratorFrom(2).toSeq shouldBe Seq()
+  }
+
+  it should "single element iteratorFrom correctly" in {
+    val map = new BufferMap[String](10)
+    map.put(10, "10")
+    map.iteratorFrom(0).toSeq shouldBe Seq((10, "10"))
+    map.iteratorFrom(1).toSeq shouldBe Seq((10, "10"))
+    map.iteratorFrom(9).toSeq shouldBe Seq((10, "10"))
+    map.iteratorFrom(10).toSeq shouldBe Seq((10, "10"))
+    map.iteratorFrom(11).toSeq shouldBe Seq()
+    map.iteratorFrom(12).toSeq shouldBe Seq()
+  }
+
+  it should "multiple element with 0 iteratorFrom correctly" in {
+    val map = new BufferMap[String](10)
+    map.put(0, "0")
+    map.put(5, "5")
+    map.put(6, "6")
+    map.put(7, "7")
+    map.put(10, "10")
+    map.put(20, "20")
+    map.iteratorFrom(0).toSeq shouldBe
+      Seq((0, "0"), (5, "5"), (6, "6"), (7, "7"), (10, "10"), (20, "20"))
+    map.iteratorFrom(1).toSeq shouldBe
+      Seq((5, "5"), (6, "6"), (7, "7"), (10, "10"), (20, "20"))
+    map.iteratorFrom(4).toSeq shouldBe
+      Seq((5, "5"), (6, "6"), (7, "7"), (10, "10"), (20, "20"))
+    map.iteratorFrom(5).toSeq shouldBe
+      Seq((5, "5"), (6, "6"), (7, "7"), (10, "10"), (20, "20"))
+    map.iteratorFrom(6).toSeq shouldBe
+      Seq((6, "6"), (7, "7"), (10, "10"), (20, "20"))
+    map.iteratorFrom(7).toSeq shouldBe Seq((7, "7"), (10, "10"), (20, "20"))
+    map.iteratorFrom(8).toSeq shouldBe Seq((10, "10"), (20, "20"))
+    map.iteratorFrom(10).toSeq shouldBe Seq((10, "10"), (20, "20"))
+    map.iteratorFrom(11).toSeq shouldBe Seq((20, "20"))
+    map.iteratorFrom(20).toSeq shouldBe Seq((20, "20"))
+    map.iteratorFrom(21).toSeq shouldBe Seq()
+  }
+
+  it should "multiple element with gc iteratorFrom correctly" in {
+    val map = new BufferMap[String](10)
+    map.put(0, "0")
+    map.put(5, "5")
+    map.put(6, "6")
+    map.put(7, "7")
+    map.put(10, "10")
+    map.put(15, "15")
+    map.put(20, "20")
+    map.garbageCollect(10)
+    map.iteratorFrom(0).toSeq shouldBe Seq((10, "10"), (15, "15"), (20, "20"))
+    map.iteratorFrom(1).toSeq shouldBe Seq((10, "10"), (15, "15"), (20, "20"))
+    map.iteratorFrom(9).toSeq shouldBe Seq((10, "10"), (15, "15"), (20, "20"))
+    map.iteratorFrom(10).toSeq shouldBe Seq((10, "10"), (15, "15"), (20, "20"))
+    map.iteratorFrom(11).toSeq shouldBe Seq((15, "15"), (20, "20"))
+    map.iteratorFrom(15).toSeq shouldBe Seq((15, "15"), (20, "20"))
+    map.iteratorFrom(16).toSeq shouldBe Seq((20, "20"))
+    map.iteratorFrom(20).toSeq shouldBe Seq((20, "20"))
+    map.iteratorFrom(21).toSeq shouldBe Seq()
+  }
 }
