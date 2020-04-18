@@ -130,6 +130,23 @@ class ServerMetrics(collectors: Collectors) {
         "enters Phase 2."
     )
     .register()
+
+  val stalePhase1asTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_stale_phase1as_total")
+    .help("Total number of Phase1as received with a stale round.")
+    .register()
+
+  val sameRoundDelegatePhase1asTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_same_round_delegate_phase1as_total")
+    .help(
+      "Total number of Phase1as received by a Delegate in the same round. " +
+        "A Delegate only becomes a Delegate after the leader finishes Phase " +
+        "1 and proceeds ot Phase 2. Thus, a Delegate that receives a Phase1a " +
+        "is a stale Phase1a from when it was still Idle."
+    )
+    .register()
 }
 
 @JSExportAll
@@ -179,7 +196,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Phase1(
       round: Round,
-      delegates: mutable.Buffer[ServerIndex],
+      delegates: Seq[ServerIndex],
       phase1bs: mutable.Map[ServerIndex, Phase1b],
       pendingClientRequests: mutable.Buffer[ClientRequest],
       resendPhase1as: Transport#Timer
@@ -188,7 +205,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Phase2(
       round: Round,
-      delegates: mutable.Buffer[ServerIndex],
+      delegates: Seq[ServerIndex],
       delegateIndex: DelegateIndex,
       anyWatermark: Slot,
       var nextSlot: Slot,
@@ -203,7 +220,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Delegate(
       round: Round,
-      delegates: mutable.Buffer[ServerIndex],
+      delegates: Seq[ServerIndex],
       delegateIndex: DelegateIndex,
       var nextSlot: Slot,
       pendingValues: mutable.Map[Slot, CommandOrNoop],
@@ -214,7 +231,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Idle(
       round: Round,
-      delegates: mutable.Buffer[ServerIndex]
+      delegates: Seq[ServerIndex]
   ) extends State
 
   @JSExportAll
@@ -374,11 +391,20 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private def stopTimers(state: State): Unit = {
+    state match {
+      case phase1: Phase1 => phase1.resendPhase1as.stop()
+      case phase2: Phase2 => phase2.resendPhase2aAnys.stop()
+      case _: Delegate    =>
+      case _: Idle        =>
+    }
+  }
+
   // processClientRequest is called by a leader in Phase2 or by a delegate to
   // process a client request. processClientRequest returns the next open slot
   // to use.
   private def processClientRequest(
-      delegates: mutable.Buffer[ServerIndex],
+      delegates: Seq[ServerIndex],
       delegateIndex: DelegateIndex,
       slot: Slot,
       round: Round,
@@ -716,27 +742,73 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase1a(src: Transport#Address, phase1a: Phase1a): Unit = {
-    // TODO(mwhittaker): Implement.
-    state match {
-      case phase1: Phase1 =>
-      // if stale round, ignore
-      // if larger round, become idle
-      // same round impossible
-
-      case phase2: Phase2 =>
-      // if stale round, ignore
-      // if larger round, become idle
-      // same round impossible
-
-      case delegate: Delegate =>
-      // if stale round, ignore
-      // if larger round, become idle
-      // same round impossible
-
-      case idle: Idle =>
-      // respond with 1bs
+    // Ignore stale rounds.
+    val (round, delegates) = roundInfo(state)
+    if (phase1a.round < round) {
+      logger.debug(
+        s"Server recevied a Phase1a in round ${phase1a.round} but is already " +
+          s"in round $round. The Phase1a is being ignored."
+      )
+      metrics.stalePhase1asTotal.inc()
+      return
     }
-    ???
+
+    //            Stale Round   Same Round   Future Round
+    //          +-------------+------------+----------------------+
+    // Phase1   | ignore      | impossible | become idle; process |
+    // Phase2   | ignore      | impossible | become idle; process |
+    // Delegate | ignore      | ignore     | become idle; process |
+    // Idle     | ignore      | process    | process              |
+    //          +-------------+------------+----------------------+
+    val idle = (state, phase1a.round == round) match {
+      case (_: Delegate, true) =>
+        // A Delegate only becomes a Delegate after the leader finishes Phase 1
+        // and proceeds ot Phase 2. Thus, a Delegate that receives a Phase1a is
+        // a stale Phase1a from when it was still Idle.
+        logger.debug(
+          s"Delegate received a Phase1a in round $round and is in round " +
+            s"$round. The Phase1a is being ignored."
+        )
+        metrics.sameRoundDelegatePhase1asTotal.inc()
+        return
+
+      case (_: Phase1, true) | (_: Phase2, true) =>
+        logger.fatal(
+          s"Server in state $state received a Phase1a in its round " +
+            s"(round $round), but this should be impossible."
+        )
+
+      case (idle: Idle, true) =>
+        idle
+
+      case (_, false) =>
+        stopTimers(state)
+        Idle(round = phase1a.round,
+             delegates = phase1a.delegate.map(ServerIndex(_)))
+    }
+    state = idle
+
+    val leader = chan[Server[Transport]](src, Server.serializer)
+    val phase1b = Phase1b(
+      serverIndex = index.x,
+      round = idle.round,
+      info = log
+        .iteratorFrom(phase1a.chosenWatermark)
+        .map({
+          case (slot, pending: PendingEntry) =>
+            Phase1bSlotInfo().withPendingSlotInfo(
+              PendingSlotInfo(slot = slot,
+                              voteRound = pending.voteRound,
+                              voteValue = pending.voteValue)
+            )
+          case (slot, chosen: ChosenEntry) =>
+            Phase1bSlotInfo().withChosenSlotInfo(
+              ChosenSlotInfo(slot = slot, value = chosen.value)
+            )
+        })
+        .toSeq
+    )
+    leader.send(ServerInbound().withPhase1B(phase1b))
   }
 
   private def handlePhase1b(src: Transport#Address, phase1b: Phase1b): Unit = {

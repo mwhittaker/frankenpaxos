@@ -199,13 +199,31 @@ message Phase1a {
   repeated int32 delegate = 3;
 }
 
-message Phase1bSlotInfo {
+message PendingSlotInfo {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 slot = 1;
   required int32 vote_round = 2;
   required CommandOrNoop vote_value = 3;
+}
+
+message ChosenSlotInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required CommandOrNoop value = 2;
+}
+
+message Phase1bSlotInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof info {
+    PendingSlotInfo pending_slot_info = 1;
+    ChosenSlotInfo chosen_slot_info = 2;
+  }
 }
 
 message Phase1b {
