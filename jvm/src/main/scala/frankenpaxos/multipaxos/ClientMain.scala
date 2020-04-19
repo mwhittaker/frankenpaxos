@@ -9,8 +9,6 @@ import frankenpaxos.NettyTcpAddress
 import frankenpaxos.NettyTcpTransport
 import frankenpaxos.PrintLogger
 import frankenpaxos.PrometheusUtil
-// import frankenpaxos.StringWorkload
-// import frankenpaxos.Workload
 import frankenpaxos.monitoring.PrometheusCollectors
 import java.io.File
 import java.net.InetAddress
@@ -50,9 +48,34 @@ object ClientMain extends App {
       duration: java.time.Duration = java.time.Duration.ofSeconds(5),
       timeout: Duration = 10 seconds,
       numClients: Int = 1,
-      workload: ReadWriteWorkload = new UniformReadWriteWorkload(1, 1, 1, 0),
       outputFilePrefix: String = "",
       readConsistency: ReadConsistency = Linearizable,
+      // Workload flags.
+      //
+      // If we say a workload is "90% reads", that can mean one of two things.
+      //
+      //   1. It could mean that every client repeatedly flips a coin that
+      //      lands heads 90% of the time. If the coin lands heads, the client
+      //      reads; otherwise, it writes.
+      //   2. It could mean that 90% of clients are predetermined to only read
+      //      while 10% of clients are predetermined to only write.
+      //
+      // Option 1 is more natural and I think is what people typically think
+      // when they hear about a "90% read" workload. Option 1, however, can be
+      // a little annoying for performance debugging. If writes are slow, it
+      // can stall reads. Option 2 leads allows reads and writes to operate
+      // more independently, which lets us debug a little better.
+      //
+      // If predeterminedReadFraction is -1, then option 1 is used and
+      // `workload` is used. Otherwise, predeterminedReadFraction must fall in
+      // the range 0 to 100 and specifies the fraction of clients that are
+      // predetermined to read. These clients use `readWorkload`. The writes
+      // use `writeWorkload`.
+      predeterminedReadFraction: Int = -1,
+      workload: ReadWriteWorkload = new UniformReadWriteWorkload(1, 1, 1, 0),
+      readWorkload: ReadWriteWorkload = new UniformReadWriteWorkload(1, 1, 1, 0),
+      writeWorkload: ReadWriteWorkload =
+        new UniformReadWriteWorkload(1, 1, 1, 0),
       // Options.
       options: ClientOptions = ClientOptions.default
   )
@@ -93,12 +116,27 @@ object ClientMain extends App {
       .action((x, f) => f.copy(timeout = x))
     opt[Int]("num_clients")
       .action((x, f) => f.copy(numClients = x))
-    opt[ReadWriteWorkload]("workload")
-      .action((x, f) => f.copy(workload = x))
     opt[String]("output_file_prefix")
       .action((x, f) => f.copy(outputFilePrefix = x))
     opt[ReadConsistency]("read_consistency")
       .action((x, f) => f.copy(readConsistency = x))
+
+    // Workload flags.
+    opt[Int]("predetermined_read_fraction")
+      .validate(x => {
+        if (-1 <= x && x <= 100) {
+          Right(())
+        } else {
+          Left("predetermined_read_fraction must be in the range [-1, 100]")
+        }
+      })
+      .action((x, f) => f.copy(predeterminedReadFraction = x))
+    opt[ReadWriteWorkload]("workload")
+      .action((x, f) => f.copy(workload = x))
+    opt[ReadWriteWorkload]("read_workload")
+      .action((x, f) => f.copy(readWorkload = x))
+    opt[ReadWriteWorkload]("write_workload")
+      .action((x, f) => f.copy(writeWorkload = x))
 
     // Options.
     opt[java.time.Duration]("options.resendClientRequestPeriod")
@@ -142,12 +180,14 @@ object ClientMain extends App {
 
   // Functions to warmup and run the clients. When warming up, we don't record
   // any stats.
-  def warmupRun(pseudonym: Int): Future[Unit] = {
+  def warmupRun(
+      pseudonym: Int,
+      workload: ReadWriteWorkload
+  ): Future[Unit] = {
     implicit val context = transport.executionContext
-    val (future, error) = (flags.workload.get(), flags.readConsistency) match {
+    val (future, error) = (workload.get(), flags.readConsistency) match {
       case (Write(command), _) =>
         (client.write(pseudonym, command), "Write failed.")
-
       case (Read(command), Linearizable) =>
         (client.read(pseudonym, command), "Read failed.")
       case (Read(command), Sequential) =>
@@ -168,23 +208,22 @@ object ClientMain extends App {
 
   val recorder =
     new BenchmarkUtil.LabeledRecorder(s"${flags.outputFilePrefix}_data.csv")
-  def run(pseudonym: Int): Future[Unit] = {
+  def run(pseudonym: Int, workload: ReadWriteWorkload): Future[Unit] = {
     implicit val context = transport.executionContext
-    val (f, error, label) =
-      (flags.workload.get(), flags.readConsistency) match {
-        case (Write(command), _) =>
-          (() => client.write(pseudonym, command), "Write failed.", "write")
-        case (Read(command), Linearizable) =>
-          (() => client.read(pseudonym, command), "Read failed.", "read")
-        case (Read(command), Sequential) =>
-          (() => client.sequentialRead(pseudonym, command),
-           "Sequential read failed.",
-           "read")
-        case (Read(command), Eventual) =>
-          (() => client.eventualRead(pseudonym, command),
-           "Eventual read failed.",
-           "read")
-      }
+    val (f, error, label) = (workload.get(), flags.readConsistency) match {
+      case (Write(command), _) =>
+        (() => client.write(pseudonym, command), "Write failed.", "write")
+      case (Read(command), Linearizable) =>
+        (() => client.read(pseudonym, command), "Read failed.", "read")
+      case (Read(command), Sequential) =>
+        (() => client.sequentialRead(pseudonym, command),
+         "Sequential read failed.",
+         "read")
+      case (Read(command), Eventual) =>
+        (() => client.eventualRead(pseudonym, command),
+         "Eventual read failed.",
+         "read")
+    }
 
     BenchmarkUtil
       .timed(f)
@@ -208,8 +247,27 @@ object ClientMain extends App {
 
   // Warm up the protocol.
   implicit val context = transport.executionContext
-  val warmupFutures = for (pseudonym <- 0 until flags.numWarmupClients)
-    yield BenchmarkUtil.runFor(() => warmupRun(pseudonym), flags.warmupDuration)
+  val warmupFutures = {
+    if (flags.predeterminedReadFraction == -1) {
+      for (pseudonym <- 0 until flags.numWarmupClients)
+        yield
+          BenchmarkUtil.runFor(() => warmupRun(pseudonym, flags.workload),
+                               flags.warmupDuration)
+    } else {
+      val readerFraction = flags.predeterminedReadFraction.toFloat / 100
+      val numReaders = (readerFraction * flags.numWarmupClients).ceil.toInt
+      for (pseudonym <- 0 until flags.numWarmupClients)
+        yield {
+          val workload = if (pseudonym < numReaders) {
+            flags.readWorkload
+          } else {
+            flags.writeWorkload
+          }
+          BenchmarkUtil.runFor(() => warmupRun(pseudonym, workload),
+                               flags.warmupDuration)
+        }
+    }
+  }
   try {
     logger.info("Client warmup started.")
     concurrent.Await.result(Future.sequence(warmupFutures), flags.warmupTimeout)
@@ -224,9 +282,28 @@ object ClientMain extends App {
   Thread.sleep(flags.warmupSleep.toMillis())
 
   // Run the benchmark.
-  val futures = for (pseudonym <- flags.numWarmupClients until
-                       flags.numWarmupClients + flags.numClients)
-    yield BenchmarkUtil.runFor(() => run(pseudonym), flags.duration)
+  val futures = {
+    if (flags.predeterminedReadFraction == -1) {
+      for (pseudonym <- flags.numWarmupClients until
+             flags.numWarmupClients + flags.numClients)
+        yield
+          BenchmarkUtil.runFor(() => run(pseudonym, flags.workload),
+                               flags.duration)
+    } else {
+      val readerFraction = flags.predeterminedReadFraction.toFloat / 100
+      val numReaders = (readerFraction * flags.numClients).ceil.toInt
+      for (pseudonym <- flags.numWarmupClients until
+             flags.numWarmupClients + flags.numClients)
+        yield {
+          val workload = if (pseudonym - flags.numWarmupClients < numReaders) {
+            flags.readWorkload
+          } else {
+            flags.writeWorkload
+          }
+          BenchmarkUtil.runFor(() => run(pseudonym, workload), flags.duration)
+        }
+    }
+  }
   try {
     logger.info("Clients started.")
     concurrent.Await.result(Future.sequence(futures), flags.timeout)

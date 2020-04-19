@@ -114,7 +114,10 @@ class Input(NamedTuple):
     timeout: datetime.timedelta
     client_lag: datetime.timedelta
     state_machine: str
+    predetermined_read_fraction: int
     workload: read_write_workload.ReadWriteWorkload
+    read_workload: read_write_workload.ReadWriteWorkload
+    write_workload: read_write_workload.ReadWriteWorkload
     read_consistency: str # "linearizable", "sequential", or "eventual"
     profiled: bool
     monitored: bool
@@ -559,6 +562,14 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
         bench.write_string(
             workload_filename,
             proto_util.message_to_pbtext(input.workload.to_proto()))
+        read_workload_filename = bench.abspath('read_workload.pbtxt')
+        bench.write_string(
+            read_workload_filename,
+            proto_util.message_to_pbtext(input.read_workload.to_proto()))
+        write_workload_filename = bench.abspath('write_workload.pbtxt')
+        bench.write_string(
+            write_workload_filename,
+            proto_util.message_to_pbtext(input.write_workload.to_proto()))
 
         client_procs: List[proc.Proc] = []
         for (i, client) in enumerate(net.placement().clients):
@@ -598,12 +609,18 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     f'{input.timeout.total_seconds()}s',
                     '--num_clients',
                     f'{input.num_clients_per_proc}',
-                    '--workload',
-                    f'{workload_filename}',
                     '--output_file_prefix',
                     bench.abspath(f'client_{i}'),
                     '--read_consistency',
                     f'{input.read_consistency}',
+                    '--predetermined_read_fraction',
+                    f'{input.predetermined_read_fraction}',
+                    '--workload',
+                    f'{workload_filename}',
+                    '--read_workload',
+                    f'{read_workload_filename}',
+                    '--write_workload',
+                    f'{write_workload_filename}',
                     '--options.resendClientRequestPeriod',
                     '{}s'.format(input.client_options.
                                  resend_client_request_period.total_seconds()),
@@ -691,296 +708,20 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
         return MultiPaxosOutput(read_output = read_output,
                                 write_output = write_output)
 
-    def run_benchmark(self, bench: benchmark.BenchmarkDirectory,
-                      args: Dict[Any, Any], input: Input) -> Output:
-        net = MultiPaxosNet(args['cluster'], args['identity_file'], input)
-        return self._run_benchmark(bench, args, input, net)
-
-    def _run_benchmark(self, bench: benchmark.BenchmarkDirectory,
-                       args: Dict[Any, Any], input: Input,
-                       net: MultiPaxosNet) -> Output:
-        # Write config file.
-        config = net.config()
-        config_filename = bench.abspath('config.pbtxt')
-        bench.write_string(config_filename,
-                           proto_util.message_to_pbtext(config))
-        bench.log('Config file config.pbtxt written.')
-
-        def java(heap_size: str) -> List[str]:
-            cmd = ['java', f'-Xms{heap_size}', f'-Xmx{heap_size}']
-            if input.monitored:
-                cmd += [
-                    '-verbose:gc',
-                    '-XX:-PrintGC',
-                    '-XX:+PrintHeapAtGC',
-                    '-XX:+PrintGCDetails',
-                    '-XX:+PrintGCTimeStamps',
-                    '-XX:+PrintGCDateStamps',
-                ]
-            return cmd
-
-        # Launch acceptors.
-        acceptor_procs: List[proc.Proc] = []
-        for (group_index, group) in enumerate(net.placement().acceptors):
-            for (i, acceptor) in enumerate(group):
-                p = bench.popen(
-                    host=acceptor.host,
-                    label=f'acceptor_{group_index}_{i}',
-                    cmd=java(input.acceptor_jvm_heap_size) + [
-                        '-cp',
-                        os.path.abspath(args['jar']),
-                        'frankenpaxos.multipaxos.AcceptorMain',
-                        '--group_index',
-                        str(group_index),
-                        '--index',
-                        str(i),
-                        '--config',
-                        config_filename,
-                        '--log_level',
-                        input.acceptor_log_level,
-                        '--prometheus_host',
-                        acceptor.host.ip(),
-                        '--prometheus_port',
-                        str(acceptor.port + 1) if input.monitored else '-1',
-                    ],
-                )
-                if input.profiled:
-                    p = perf_util.JavaPerfProc(bench, acceptor.host, p,
-                                               f'acceptor_{group_index}_{i}')
-                acceptor_procs.append(p)
-        bench.log('Acceptors started.')
-
-        # Launch batchers.
-        batcher_procs: List[proc.Proc] = []
-        for (i, batcher) in enumerate(net.placement().batchers):
-            p = bench.popen(
-                host=batcher.host,
-                label=f'batcher_{i}',
-                cmd=java(input.batcher_jvm_heap_size) + [
-                    '-cp',
-                    os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.BatcherMain',
-                    '--index',
-                    str(i),
-                    '--config',
-                    config_filename,
-                    '--log_level',
-                    input.batcher_log_level,
-                    '--prometheus_host',
-                    batcher.host.ip(),
-                    '--prometheus_port',
-                    str(batcher.port + 1) if input.monitored else '-1',
-                    '--options.batchSize',
-                    str(input.batcher_options.batch_size),
-                ],
-            )
-            if input.profiled:
-                p = perf_util.JavaPerfProc(bench, batcher.host, p,
-                                           f'batcher_{i}')
-            batcher_procs.append(p)
-        bench.log('Batchers started.')
-
-        # Launch proxy_leaders.
-        proxy_leader_procs: List[proc.Proc] = []
-        for (i, proxy_leader) in enumerate(net.placement().proxy_leaders):
-            p = bench.popen(
-                host=proxy_leader.host,
-                label=f'proxy_leader_{i}',
-                cmd=java(input.proxy_leader_jvm_heap_size) + [
-                    '-cp',
-                    os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.ProxyLeaderMain',
-                    '--index',
-                    str(i),
-                    '--config',
-                    config_filename,
-                    '--log_level',
-                    input.proxy_leader_log_level,
-                    '--prometheus_host',
-                    proxy_leader.host.ip(),
-                    '--prometheus_port',
-                    str(proxy_leader.port + 1) if input.monitored else '-1',
-                    '--options.flushPhase2asEveryN',
-                    str(input.proxy_leader_options.flush_phase2as_every_n),
-                ],
-            )
-            if input.profiled:
-                p = perf_util.JavaPerfProc(bench, proxy_leader.host, p,
-                                           f'proxy_leader_{i}')
-            proxy_leader_procs.append(p)
-        bench.log('ProxyLeaders started.')
-
-        # Launch replicas.
-        replica_procs: List[proc.Proc] = []
-        for (i, replica) in enumerate(net.placement().replicas):
-            p = bench.popen(
-                host=replica.host,
-                label=f'replica_{i}',
-                cmd=java(input.replica_jvm_heap_size) + [
-                    '-cp',
-                    os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.ReplicaMain',
-                    '--index',
-                    str(i),
-                    '--config',
-                    config_filename,
-                    '--log_level',
-                    input.replica_log_level,
-                    '--state_machine',
-                    input.state_machine,
-                    '--prometheus_host',
-                    replica.host.ip(),
-                    '--prometheus_port',
-                    str(replica.port + 1) if input.monitored else '-1',
-                    '--options.logGrowSize',
-                    str(input.replica_options.log_grow_size),
-                    '--options.unsafeDontUseClientTable',
-                    str(input.replica_options.unsafe_dont_use_client_table),
-                    '--options.sendChosenWatermarkEveryNEntries',
-                    str(input.replica_options.
-                        send_chosen_watermark_every_n_entries),
-                    '--options.recoverLogEntryMinPeriod',
-                    '{}s'.format(input.replica_options.
-                                 recover_log_entry_min_period.total_seconds()),
-                    '--options.recoverLogEntryMaxPeriod',
-                    '{}s'.format(input.replica_options.
-                                 recover_log_entry_max_period.total_seconds()),
-                    '--options.unsafeDontRecover',
-                    str(input.replica_options.unsafe_dont_recover),
-                ],
-            )
-            if input.profiled:
-                p = perf_util.JavaPerfProc(bench, replica.host, p,
-                                           f'replica_{i}')
-            replica_procs.append(p)
-        bench.log('Replicas started.')
-
-        # Launch proxy_replicas.
-        proxy_replica_procs: List[proc.Proc] = []
-        for (i, proxy_replica) in enumerate(net.placement().proxy_replicas):
-            p = bench.popen(
-                host=proxy_replica.host,
-                label=f'proxy_replica_{i}',
-                cmd=java(input.proxy_replica_jvm_heap_size) + [
-                    '-cp',
-                    os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.ProxyReplicaMain',
-                    '--index',
-                    str(i),
-                    '--config',
-                    config_filename,
-                    '--log_level',
-                    input.proxy_replica_log_level,
-                    '--prometheus_host',
-                    proxy_replica.host.ip(),
-                    '--prometheus_port',
-                    str(proxy_replica.port + 1) if input.monitored else '-1',
-                    '--options.flushEveryN',
-                    str(input.proxy_replica_options.flush_every_n),
-                ],
-            )
-            if input.profiled:
-                p = perf_util.JavaPerfProc(bench, proxy_replica.host, p,
-                                           f'proxy_replica_{i}')
-            proxy_replica_procs.append(p)
-        bench.log('ProxyReplicas started.')
-
-        # Launch leaders.
-        leader_procs: List[proc.Proc] = []
-        for (i, leader) in enumerate(net.placement().leaders):
-            p = bench.popen(
-                host=leader.host,
-                label=f'leader_{i}',
-                cmd=java(input.leader_jvm_heap_size) + [
-                    '-cp',
-                    os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.LeaderMain',
-                    '--index',
-                    str(i),
-                    '--config',
-                    config_filename,
-                    '--log_level',
-                    input.leader_log_level,
-                    '--prometheus_host',
-                    leader.host.ip(),
-                    '--prometheus_port',
-                    str(leader.port + 1) if input.monitored else '-1',
-                    '--options.resendPhase1asPeriod',
-                    '{}s'.format(input.leader_options.resend_phase1as_period.
-                                 total_seconds()),
-                    '--options.flushPhase2asEveryN',
-                    str(input.leader_options.flush_phase2as_every_n),
-                    '--options.election.pingPeriod',
-                    '{}s'.format(input.leader_options.election_options.
-                                 ping_period.total_seconds()),
-                    '--options.election.noPingTimeoutMin',
-                    '{}s'.format(input.leader_options.election_options.
-                                 no_ping_timeout_min.total_seconds()),
-                    '--options.election.noPingTimeoutMax',
-                    '{}s'.format(input.leader_options.election_options.
-                                 no_ping_timeout_max.total_seconds()),
-                ],
-            )
-            if input.profiled:
-                p = perf_util.JavaPerfProc(bench, leader.host, p, f'leader_{i}')
-            leader_procs.append(p)
-        bench.log('Leaders started.')
-
-        # Launch Prometheus.
-        if input.monitored:
-            prometheus_config = prometheus.prometheus_config(
-                int(input.prometheus_scrape_interval.total_seconds() * 1000), {
-                    'multipaxos_client': [
-                        f'{e.host.ip()}:{e.port+1}'
-                        for e in net.placement().clients
-                    ],
-                    'multipaxos_batcher': [
-                        f'{e.host.ip()}:{e.port+1}'
-                        for e in net.placement().batchers
-                    ],
-                    'multipaxos_leader': [
-                        f'{e.host.ip()}:{e.port+1}'
-                        for e in net.placement().leaders
-                    ],
-                    'multipaxos_proxy_leader': [
-                        f'{e.host.ip()}:{e.port+1}'
-                        for e in net.placement().proxy_leaders
-                    ],
-                    'multipaxos_acceptor': [
-                        f'{e.host.ip()}:{e.port+1}'
-                        for group in net.placement().acceptors
-                        for e in group
-                    ],
-                    'multipaxos_replica': [
-                        f'{e.host.ip()}:{e.port+1}'
-                        for e in net.placement().replicas
-                    ],
-                    'multipaxos_proxy_replica': [
-                        f'{e.host.ip()}:{e.port+1}'
-                        for e in net.placement().proxy_replicas
-                    ],
-                })
-            bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
-            prometheus_server = bench.popen(
-                host=net.placement().clients[0].host,
-                label='prometheus',
-                cmd=[
-                    'prometheus',
-                    f'--config.file={bench.abspath("prometheus.yml")}',
-                    f'--storage.tsdb.path={bench.abspath("prometheus_data")}',
-                ],
-            )
-            bench.log('Prometheus started.')
-
-        # Lag clients.
-        time.sleep(input.client_lag.total_seconds())
-        bench.log('Client lag ended.')
 
         # Launch clients.
         workload_filename = bench.abspath('workload.pbtxt')
         bench.write_string(
             workload_filename,
             proto_util.message_to_pbtext(input.workload.to_proto()))
+        read_workload_filename = bench.abspath('read_workload.pbtxt')
+        bench.write_string(
+            read_workload_filename,
+            proto_util.message_to_pbtext(input.read_workload.to_proto()))
+        write_workload_filename = bench.abspath('write_workload.pbtxt')
+        bench.write_string(
+            write_workload_filename,
+            proto_util.message_to_pbtext(input.write_workload.to_proto()))
 
         client_procs: List[proc.Proc] = []
         for (i, client) in enumerate(net.placement().clients):
