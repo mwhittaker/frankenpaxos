@@ -14,6 +14,7 @@ import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.RoundSystem
+import frankenpaxos.statemachine.StateMachine
 import scala.scalajs.js.annotation._
 import scala.util.Random
 
@@ -147,6 +148,45 @@ class ServerMetrics(collectors: Collectors) {
         "is a stale Phase1a from when it was still Idle."
     )
     .register()
+
+  val stalePhase1bsTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_stale_phase1bs_total")
+    .help("Total number of Phase1bs received with a stale round.")
+    .register()
+
+  val chosenInPhase1Total: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_chosen_in_phase1_total")
+    .help(
+      "The total number of times a leader in Phase 1 learns of a chosen value."
+    )
+    .register()
+
+  val executedUniqueCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_executed_unique_commands_total")
+    .help(
+      "The total number of unique commands executed. If a command is chosen " +
+        "more than once, it only counts once towards this total."
+    )
+    .register()
+
+  val executedDuplicatedCommandsTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_executed_duplicate_commands_total")
+    .help(
+      "The total number of duplicate commands \"executed\". A command can " +
+        "be chosen more than once. Every time it is chosen, except the " +
+        "first time, counts towards this total."
+    )
+    .register()
+
+  val executedNoopsTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_executed_noops_total")
+    .help("The total number of noops \"executed\".")
+    .register()
 }
 
 @JSExportAll
@@ -154,6 +194,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     address: Transport#Address,
     transport: Transport,
     logger: Logger,
+    // Public for Javascript visualizations.
+    val stateMachine: StateMachine,
     config: Config[Transport],
     options: ServerOptions = ServerOptions.default,
     metrics: ServerMetrics = new ServerMetrics(PrometheusCollectors),
@@ -248,9 +290,9 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       value: CommandOrNoop
   ) extends LogEntry
 
-  // Fields ////////////////////////////////////////////////////////////////////
-  // A random number generator instantiated from `seed`. This allows us to
-  // perform deterministic randomized tests.
+// Fields ////////////////////////////////////////////////////////////////////
+// A random number generator instantiated from `seed`. This allows us to
+// perform deterministic randomized tests.
   private val rand = new Random(seed)
 
   private val index = ServerIndex(config.serverAddresses.indexOf(address))
@@ -286,6 +328,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   // periodically send their chosenWatermarks to the servers.
   @JSExport
   protected var chosenWatermark: Slot = 0
+
+  // Every log entry less than `executedWatermark` has been executed. There may
+  // be commands larger than `executedWatermark` pending execution.
+  // `executedWatermark` is public for testing.
+  @JSExport
+  var executedWatermark: Int = 0
 
   @JSExport
   val log = new frankenpaxos.util.BufferMap[LogEntry](options.logGrowSize)
@@ -448,21 +496,148 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  //  private def thriftyQuorum(
-  //      acceptors: Seq[Chan[Acceptor[Transport]]]
-  //  ): Seq[Chan[Acceptor[Transport]]] =
-  //    scala.util.Random.shuffle(acceptors).take(config.quorumSize)
+  // Given the Phase1bSlotInfos returned in Phase1 for a given slot, compute a
+  // safe value: a value v such that no value other than v has been or will be
+  // chosen in any previous round.
+  sealed trait SafeValue
+  case class Safe(value: CommandOrNoop) extends SafeValue
+  case class AlreadyChosen(value: CommandOrNoop) extends SafeValue
+
+  private def safeValue(infos: Seq[Phase1bSlotInfo]): SafeValue = {
+    // If there were no votes for this slot, then it is safe for us to
+    // propose anything. We propose noop.
+    if (infos.size == 0) {
+      return Safe(CommandOrNoop().withNoop(Noop()))
+    }
+
+    // Segment the infos into pending and chosen info.
+    val pendingSlotInfos = infos.flatMap(_.info.pendingSlotInfo)
+    val chosenSlotInfos = infos.flatMap(_.info.chosenSlotInfo)
+
+    // If a value has already been chosen, then we don't have to find a safe
+    // value to propose. We don't have to propose anything, actually.
+    chosenSlotInfos.headOption match {
+      case Some(chosenSlotInfo) => return AlreadyChosen(chosenSlotInfo.value)
+      case None                 =>
+    }
+
+    // At this point, infos is non-empty and full of votes. We find the largest
+    // round in which a vote is cast and then focus on the votes in that round.
+    // In normal Paxos, there can be only one value in this round. Here, there
+    // can be a noop or a command. If there is only one value (a noop or a
+    // command), we have to go with it. If there are both a noop and a command,
+    // we go with the command.
+    val largestRound = pendingSlotInfos.map(_.voteRound).max
+    for (info <- pendingSlotInfos.filter(_.voteRound == largestRound)) {
+      if (info.voteValue.value.isCommand) {
+        return Safe(info.voteValue)
+      }
+    }
+    Safe(CommandOrNoop().withNoop(Noop()))
+  }
+
+  private def pick(
+      servers: Seq[Chan[Server[Transport]]],
+      n: Int
+  ): Seq[Chan[Server[Transport]]] =
+    scala.util.Random.shuffle(servers).take(n)
+
+  // `executeCommand(slot, command, clientReplies)` attempts to execute the
+  // command `command` in slot `slot`. Attempting to execute `command` may or
+  // may not produce a corresponding ClientReply. If the command is stale, it
+  // may not produce a ClientReply. If it isn't stale, it will produce a
+  // ClientReply.
   //
-  //  // `maxPhase1bSlot(phase1b)` finds the largest slot present in `phase1b` or
-  //  // -1 if no slots are present.
-  //  private def maxPhase1bSlot(phase1b: Phase1b): Slot = {
-  //    if (phase1b.info.isEmpty) {
-  //      -1
-  //    } else {
-  //      phase1b.info.map(_.slot).max
-  //    }
-  //  }
-  //
+  // If a ClientReply is produced, it is sent back to the client, but only if
+  // `replyIf` returns true.
+  private def executeCommand(
+      slot: Slot,
+      command: Command,
+      replyIf: (Slot => Boolean)
+  ): Unit = {
+    val commandId = command.commandId
+    val clientIdentity = (commandId.clientAddress, commandId.clientPseudonym)
+    val clientAddress = transport.addressSerializer
+      .fromBytes(commandId.clientAddress.toByteArray())
+    val client = chan[Client[Transport]](clientAddress, Client.serializer)
+
+    clientTable.get(clientIdentity) match {
+      case None =>
+        val result =
+          ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
+        clientTable(clientIdentity) = (commandId.clientId, result)
+        if (replyIf(slot)) {
+          client.send(
+            ClientInbound().withClientReply(
+              ClientReply(commandId = commandId, result = result)
+            )
+          )
+        }
+        metrics.executedUniqueCommandsTotal.inc()
+
+      case Some((largestClientId, cachedResult)) =>
+        if (commandId.clientId < largestClientId) {
+          metrics.executedDuplicatedCommandsTotal.inc()
+        } else if (commandId.clientId == largestClientId) {
+          // For liveness, we always send back the result here.
+          client.send(
+            ClientInbound().withClientReply(
+              ClientReply(commandId = commandId, result = cachedResult)
+            )
+          )
+          metrics.executedDuplicatedCommandsTotal.inc()
+        } else {
+          val result =
+            ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
+          clientTable(clientIdentity) = (commandId.clientId, result)
+          if (replyIf(slot)) {
+            client.send(
+              ClientInbound().withClientReply(
+                ClientReply(commandId = commandId, result = result)
+              )
+            )
+          }
+          metrics.executedUniqueCommandsTotal.inc()
+        }
+    }
+  }
+
+  private def executeLog(replyIf: (Slot) => Boolean): Unit = {
+    while (true) {
+      log.get(executedWatermark) match {
+        case None | Some(_: PendingEntry) =>
+          return
+
+        case Some(ChosenEntry(value)) =>
+          val slot = executedWatermark
+          executedWatermark += 1
+
+          value.value match {
+            case CommandOrNoop.Value.Noop(Noop()) =>
+              metrics.executedNoopsTotal.inc()
+            case CommandOrNoop.Value.Command(command) =>
+              executeCommand(slot, command, replyIf)
+            case CommandOrNoop.Value.Empty =>
+              logger.fatal("Empty CommandOrNoop encountered.")
+          }
+      }
+    }
+
+    logger.fatal(
+      "The loop above should always return. This should be unreachable."
+    )
+  }
+
+  // `maxPhase1bSlot(phase1b)` finds the largest slot present in `phase1b` or
+  // -1 if no slots are present.
+  // private def maxPhase1bSlot(phase1b: Phase1b): Slot = {
+  //   if (phase1b.info.isEmpty) {
+  //     -1
+  //   } else {
+  //     phase1b.info.map(_.slot).max
+  //   }
+  // }
+
   //  // Given a quorum of Phase1b messages, `safeValue` finds a value that is safe
   //  // to propose in a particular slot. If the Phase1b messages have at least one
   //  // vote in the slot, then the value with the highest vote round is safe.
@@ -796,15 +971,13 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         .iteratorFrom(phase1a.chosenWatermark)
         .map({
           case (slot, pending: PendingEntry) =>
-            Phase1bSlotInfo().withPendingSlotInfo(
-              PendingSlotInfo(slot = slot,
-                              voteRound = pending.voteRound,
+            Phase1bSlotInfo(slot = slot).withPendingSlotInfo(
+              PendingSlotInfo(voteRound = pending.voteRound,
                               voteValue = pending.voteValue)
             )
           case (slot, chosen: ChosenEntry) =>
-            Phase1bSlotInfo().withChosenSlotInfo(
-              ChosenSlotInfo(slot = slot, value = chosen.value)
-            )
+            Phase1bSlotInfo(slot = slot)
+              .withChosenSlotInfo(ChosenSlotInfo(value = chosen.value))
         })
         .toSeq
     )
@@ -812,16 +985,94 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase1b(src: Transport#Address, phase1b: Phase1b): Unit = {
-    // TODO(mwhittaker): Implement.
-    state match {
-      case phase1: Phase1 =>
-      // round checks
-      // round checks
-      case phase2: Phase2     =>
-      case delegate: Delegate =>
-      case idle: Idle         =>
+    // Ignore stale rounds.
+    val (round, delegates) = roundInfo(state)
+    if (phase1b.round < round) {
+      logger.debug(
+        s"Server recevied a Phase1b in round ${phase1b.round} but is already " +
+          s"in round $round. The Phase1b is being ignored."
+      )
+      metrics.stalePhase1bsTotal.inc()
+      return
     }
-    ???
+
+    state match {
+      case _: Phase2 | _: Delegate | _: Idle =>
+        // Note that unlike some other functions, we don't have to fuss with
+        // checking to see if phase1b.round is larger than our round. That is
+        // impossible. We can't receive Phase1bs in a round if we haven't send
+        // Phase1as.
+        logger.debug(
+          s"Server received a Phase1b but is in state $state. The Phase1b " +
+            s"is being ignored."
+        )
+        return
+
+      case phase1: Phase1 =>
+        // As noted above, we can't receive Phase1bs in a round in which we
+        // didn't send Phase1as.
+        logger.checkEq(phase1b.round, round)
+
+        // Wait until we have a quorum of Phase1bs.
+        phase1.phase1bs(ServerIndex(phase1b.serverIndex)) = phase1b
+        if (phase1.phase1bs.size < config.f + 1) {
+          return
+        }
+
+        // Find the largest slot with a vote.
+        val slotInfos = phase1.phase1bs.values.flatMap(phase1b => phase1b.info)
+        val maxSlot = if (slotInfos.size == 0) {
+          -1
+        } else {
+          slotInfos.map(_.slot).max
+        }
+
+        // Iterate from chosenWatermark to maxSlot proposing safe values to
+        // fill in the log.
+        val infosBySlot = slotInfos.groupBy(_.slot)
+        val pendingValues = mutable.Map[Slot, CommandOrNoop]()
+        val phase2bs = mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]()
+        for (slot <- chosenWatermark to maxSlot) {
+          safeValue(infosBySlot.get(slot).map(_.toSeq).getOrElse(Seq())) match {
+            case AlreadyChosen(value) =>
+              log.put(slot, ChosenEntry(value))
+              metrics.chosenInPhase1Total.inc()
+
+            case Safe(value) =>
+              // Send Phase2as to a thrifty quorum of servers.
+              for (server <- pick(otherServers, config.f)) {
+                server.send(
+                  ServerInbound().withPhase2A(
+                    Phase2a(slot = slot, round = round, commandOrNoop = value)
+                  )
+                )
+              }
+
+              // Cast our own vote for the value.
+              log.put(slot, PendingEntry(voteRound = round, voteValue = value))
+
+              // Update our metadata.
+              pendingValues(slot) = value
+              phase2bs(slot) = mutable.Map(
+                index -> Phase2b(serverIndex = index.x,
+                                 slot = slot,
+                                 round = round)
+              )
+          }
+        }
+
+        // We may have inserted some chosen commands into the log just now, so
+        // we try and execute as much of the log as we can. We don't reply back
+        // to the clients since they probably already received a reply.
+        executeLog((slot) => false)
+
+        // TODO(mwhittaker):
+        // - Add pending client entries to the end of the log and send out
+        //   Phase2as for them similar to what we did above.
+        // - Compute anyWatermark, Send Phase2aAny messages, and start timer.
+        // - Update state.
+        ???
+    }
   }
 
   private def handlePhase2a(src: Transport#Address, phase2a: Phase2a): Unit = {

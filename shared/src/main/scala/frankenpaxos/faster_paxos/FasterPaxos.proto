@@ -203,26 +203,25 @@ message PendingSlotInfo {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 slot = 1;
-  required int32 vote_round = 2;
-  required CommandOrNoop vote_value = 3;
+  required int32 vote_round = 1;
+  required CommandOrNoop vote_value = 2;
 }
 
 message ChosenSlotInfo {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 slot = 1;
-  required CommandOrNoop value = 2;
+  required CommandOrNoop value = 1;
 }
 
 message Phase1bSlotInfo {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
+  required int32 slot = 1;
   oneof info {
-    PendingSlotInfo pending_slot_info = 1;
-    ChosenSlotInfo chosen_slot_info = 2;
+    PendingSlotInfo pending_slot_info = 2;
+    ChosenSlotInfo chosen_slot_info = 3;
   }
 }
 
