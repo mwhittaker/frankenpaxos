@@ -37,7 +37,7 @@ case class ServerOptions(
     // `growSize` argument used to construct the BufferMap.
     logGrowSize: Int,
     heartbeatOptions: HeartbeatOptions,
-    // resendPhase1asPeriod: java.time.Duration,
+    resendPhase2aAnysPeriod: java.time.Duration,
     // A server flushes all of its channels to the proxy servers after every
     // `flushPhase2asEveryN` Phase2a messages sent. For example, if
     // `flushPhase2asEveryN` is 1, then the server flushes after every send.
@@ -51,6 +51,7 @@ object ServerOptions {
   val default = ServerOptions(
     heartbeatOptions = HeartbeatOptions.default,
     logGrowSize = 1000,
+    resendPhase2aAnysPeriod = java.time.Duration.ofSeconds(5),
     // resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
     // flushPhase2asEveryN = 1,
     // electionOptions = ElectionOptions.default,
@@ -186,6 +187,12 @@ class ServerMetrics(collectors: Collectors) {
     .build()
     .name("fasterpaxos_server_executed_noops_total")
     .help("The total number of noops \"executed\".")
+    .register()
+
+  val resendPhase2aAnysTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_resend_phase2a_anys_total")
+    .help("Total number of times the server resent Phase2aAny messages.")
     .register()
 }
 
@@ -397,23 +404,25 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     mutable.Map[(ByteString, ClientPseudonym), (ClientId, ByteString)]()
 
   // Timers ////////////////////////////////////////////////////////////////////
-  // private def makeResendPhase1asTimer(
-  //     phase1a: Phase1a
-  // ): Transport#Timer = {
-  //   lazy val t: Transport#Timer = timer(
-  //     s"resendPhase1as",
-  //     options.resendPhase1asPeriod,
-  //     () => {
-  //       metrics.resendPhase1asTotal.inc()
-  //       for (group <- acceptors; acceptor <- group) {
-  //         acceptor.send(AcceptorInbound().withPhase1A(phase1a))
-  //       }
-  //       t.start()
-  //     }
-  //   )
-  //   t.start()
-  //   t
-  // }
+  private def makeResendPhase2aAnysTimer(
+      delegates: Seq[ServerIndex],
+      phase2aAny: Phase2aAny
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendPhase2aAnys",
+      options.resendPhase2aAnysPeriod,
+      () => {
+        metrics.resendPhase2aAnysTotal.inc()
+        for (serverIndex <- delegates if serverIndex != index) {
+          servers(serverIndex.x)
+            .send(ServerInbound().withPhase2AAny(phase2aAny))
+        }
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -1066,12 +1075,75 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         // to the clients since they probably already received a reply.
         executeLog((slot) => false)
 
-        // TODO(mwhittaker):
-        // - Add pending client entries to the end of the log and send out
-        //   Phase2as for them similar to what we did above.
-        // - Compute anyWatermark, Send Phase2aAny messages, and start timer.
-        // - Update state.
-        ???
+        for ((clientRequest, i) <- phase1.pendingClientRequests.zipWithIndex) {
+          val slot = maxSlot + i + 1
+          val value = CommandOrNoop().withCommand(clientRequest.command)
+
+          // Send Phase2as to a thrifty quorum of servers.
+          for (server <- pick(otherServers, config.f)) {
+            server.send(
+              ServerInbound().withPhase2A(
+                Phase2a(slot = slot, round = round, commandOrNoop = value)
+              )
+            )
+          }
+
+          // Cast our own vote for the value.
+          log.put(slot, PendingEntry(voteRound = round, voteValue = value))
+
+          // Update our metadata.
+          pendingValues(slot) = value
+          phase2bs(slot) = mutable.Map(
+            index -> Phase2b(serverIndex = index.x, slot = slot, round = round)
+          )
+        }
+
+        // Send Phase2aAnys to delegates.
+        val anyWatermark = maxSlot + phase1.pendingClientRequests.size + 1
+        val phase2aAny = Phase2aAny(round = round,
+                                    delegate = phase1.delegates.map(_.x),
+                                    anyWatermark = anyWatermark)
+        for (serverIndex <- phase1.delegates if serverIndex != index) {
+          servers(serverIndex.x)
+            .send(ServerInbound().withPhase2AAny(phase2aAny))
+        }
+
+        // If chosenWatermark = 3, maxSlot = 5, and we have two pending client
+        // requests, then the log looks something like the picture below. We
+        // have four different types of log entries:
+        //
+        // - A: The leader already knows these log entries have been chosen.
+        // - B: The leader learned about these log entries during Phase 1 and
+        //      gets them chosen with any quorum.
+        // - C: The leader proposes pending client requests in these log entries.
+        // - D: These log entries are empty. The delegates will get them full.
+        //
+        //     0   1   2   3   4   5   6   7   8   9
+        //   +---+---+---+---+---+---+---+---+---+---+
+        //   | A | A | A | B | B | B | C | C | D | D | ...
+        //   +---+---+---+---+---+---+---+---+---+---+
+        //               ^         ^         ^
+        //               |         |         |
+        //               chosenWatermark (3) |
+        //                         |         |
+        //                         maxSlot (5)
+        //                                   |
+        //                                   anyWatermark (7)
+
+        val delegateIndex = DelegateIndex(phase1.delegates.indexOf(index))
+        state = Phase2(
+          round = round,
+          delegates = phase1.delegates,
+          delegateIndex = delegateIndex,
+          anyWatermark = anyWatermark,
+          nextSlot = slotSystem.nextClassicRound(leaderIndex = delegateIndex.x,
+                                                 round = anyWatermark - 1),
+          pendingValues = pendingValues,
+          phase2bs = phase2bs,
+          waitingPhase2aAnyAcks = mutable.Set(),
+          resendPhase2aAnys =
+            makeResendPhase2aAnysTimer(phase1.delegates, phase2aAny)
+        )
     }
   }
 
