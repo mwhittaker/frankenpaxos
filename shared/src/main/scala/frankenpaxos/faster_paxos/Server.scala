@@ -31,9 +31,16 @@ object Server {
   val serializer = ServerInboundSerializer
 }
 
+// TODO(mwhittaker): Tidy up options.
 @JSExportAll
 case class ServerOptions(
-    // A Replica implements its log as a BufferMap. `logGrowSize` is the
+    // When a delegate receives a Phase2a with a noop for a slot in which it
+    // already has a command, it can send back a Phase2b with the command,
+    // letting the sending delegate know about the command. If
+    // ackNoopsWithCommands, servers do this. Otherwise, they ignore the
+    // Phase2a.
+    ackNoopsWithCommands: Boolean,
+    // A Server implements its log as a BufferMap. `logGrowSize` is the
     // `growSize` argument used to construct the BufferMap.
     logGrowSize: Int,
     heartbeatOptions: HeartbeatOptions,
@@ -49,6 +56,7 @@ case class ServerOptions(
 @JSExportAll
 object ServerOptions {
   val default = ServerOptions(
+    ackNoopsWithCommands = true,
     heartbeatOptions = HeartbeatOptions.default,
     logGrowSize = 1000,
     resendPhase2aAnysPeriod = java.time.Duration.ofSeconds(5),
@@ -193,6 +201,30 @@ class ServerMetrics(collectors: Collectors) {
     .build()
     .name("fasterpaxos_server_resend_phase2a_anys_total")
     .help("Total number of times the server resent Phase2aAny messages.")
+    .register()
+
+  val stalePhase2asTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_stale_phase2as_total")
+    .help("Total number of Phase2as received with a stale round.")
+    .register()
+
+  val futurePhase2asTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_future_phase2as_total")
+    .help(
+      "The total number of times a server received a Phase2a with a " +
+        "round that was larger than its own."
+    )
+    .register()
+
+  val votedCommandGotNoopTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_voted_command_got_noop_total")
+    .help(
+      "The total number of times a server received a noop in a round and " +
+        "log entry for which the server had already received a command."
+    )
     .register()
 }
 
@@ -1150,28 +1182,103 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase2a(src: Transport#Address, phase2a: Phase2a): Unit = {
+    // Nack stale rounds.
+    val (round, _) = roundInfo(state)
+    if (phase2a.round < round) {
+      logger.debug(
+        s"Server recevied a Phase2a in round ${phase2a.round} but is already " +
+          s"in round $round. A nack is being sent."
+      )
+      val leader = chan[Server[Transport]](src, Server.serializer)
+      leader.send(ServerInbound().withNack(Nack(round = round)))
+      metrics.stalePhase2asTotal.inc()
+      return
+    }
+
+    // Ignore rounds from the future. In regular Paxos, it's okay to receive a
+    // Phase2a from a round larger than your own. Here, however, it's a little
+    // more complicated. In theory, we could transition to being a delegate in
+    // the future round, but we don't know the anyWatermark, the other
+    // delegates, and so on. This makes things complicated. Instead, we just
+    // ignore it and wait for the Phase2aAny.
+    if (phase2a.round > round) {
+      logger.debug(
+        s"Server recevied a Phase2a in round ${phase2a.round} but is only " +
+          s"in round $round. The Phase2a is being ignored."
+      )
+      metrics.futurePhase2asTotal.inc()
+      return
+    }
+
     state match {
-      case phase1: Phase1 =>
-      // current round impossible
-      case phase2: Phase2 =>
-      // current round impossible
-      case idle: Idle =>
-      // current round impossible
+      case _: Phase1 | _: Phase2 | _: Idle =>
+        logger.fatal(
+          s"Server in state $state received a Phase2a in its round " +
+            s"(round $round), but this should be impossible."
+        )
 
       case delegate: Delegate =>
-      // look in log
-      // if nothing there,
-      //   vote and return
-      // if noop but receive command
-      //   vote and return
-      // if command but receive noop:
-      //   return vote for the command!
-      // if noope receive noop:
-      //   send back dup
-      // if value receive value:
-      //   send back dup
+        //                have noop   have cmd   have nothing
+        //               +-----------+----------+------------+
+        // received noop | vote noop | vote cmd | vote noop  |
+        // received cmd  | vote cmd  | vote cmd | vote cmd   |
+        //               +-----------+----------+------------+
+        val sender = chan[Server[Transport]](src, Server.serializer)
+        val pendingEntry =
+          PendingEntry(voteRound = round, voteValue = phase2a.commandOrNoop)
+        val phase2b = Phase2b(serverIndex = index.x,
+                              slot = phase2a.slot,
+                              round = round,
+                              command = None)
+        log.get(phase2a.slot) match {
+          // If we already know of a chosen value, we can skip the entire
+          // protocol and just let the sender delegate know.
+          case Some(ChosenEntry(chosen)) =>
+            sender.send(
+              ServerInbound().withPhase3A(
+                Phase3a(slot = phase2a.slot, commandOrNoop = chosen)
+              )
+            )
+
+          // If we haven't voted for anything yet, then we vote for the value
+          // the sender delegate sent to us.
+          case None =>
+            log.put(phase2a.slot, pendingEntry)
+            sender.send(ServerInbound().withPhase2B(phase2b))
+
+          case Some(pendingEntry: PendingEntry) =>
+            import CommandOrNoop.Value
+            (phase2a.commandOrNoop.value, pendingEntry.voteValue.value) match {
+              // If we've already voted for a noop and receive a noop, then we
+              // can safely re-send our Phase2a. This is just normal Paxos. If
+              // we've already voted for a nnop and receive a command, it is
+              // surprisingly safe for us to re-vote for the command. This is
+              // special to Faster Paxos, but is in fact safe.
+              case (_, Value.Noop(Noop())) =>
+                log.put(phase2a.slot, pendingEntry)
+                sender.send(ServerInbound().withPhase2B(phase2b))
+
+              // If we've already voted for a command and received a command,
+              // well, they must be the same command!
+              case (Value.Command(proposed), Value.Command(voted)) =>
+                logger.checkEq(proposed, voted)
+                sender.send(ServerInbound().withPhase2B(phase2b))
+
+              // See the documentation of ackNoopsWithCommands for information
+              // on this optimization.
+              case (Value.Noop(Noop()), Value.Command(command)) =>
+                if (options.ackNoopsWithCommands) {
+                  sender.send(
+                    ServerInbound().withPhase2B(phase2b.withCommand(command))
+                  )
+                }
+                metrics.votedCommandGotNoopTotal.inc()
+
+              case (Value.Empty, _) | (_, Value.Empty) =>
+                logger.fatal("Empty CommandOrNoop encountered.")
+            }
+        }
     }
-    ???
   }
 
   private def handlePhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {

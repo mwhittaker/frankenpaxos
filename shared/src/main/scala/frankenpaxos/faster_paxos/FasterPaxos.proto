@@ -250,6 +250,16 @@ message Phase2b {
   required int32 server_index = 1;
   required int32 slot = 2;
   required int32 round = 3;
+
+  // Here is an optimization to Faster Paxos. Assume a delegate A sends a
+  // Phase2a with a noop to another delegate B in slot s. Assume that when B
+  // receives the noop, it has already voted for a command in slot s. That is,
+  // it has already sent back a Phase2b for some command. B can send the same
+  // Phase2b to A. This way, A learns of the command sooner. This is only an
+  // optimization. B can instead ignore the Phase2a from A and the protocol
+  // will work just fine. If we do this optimization, then B includes the
+  // command here. Otherwise, it's empty.
+  optional Command command = 4;
 }
 
 message Phase2aAny {
