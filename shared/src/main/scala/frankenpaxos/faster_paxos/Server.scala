@@ -926,13 +926,15 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase1a(src: Transport#Address, phase1a: Phase1a): Unit = {
-    // Ignore stale rounds.
-    val (round, delegates) = roundInfo(state)
+    // Nack stale rounds.
+    val (round, _) = roundInfo(state)
     if (phase1a.round < round) {
       logger.debug(
         s"Server recevied a Phase1a in round ${phase1a.round} but is already " +
-          s"in round $round. The Phase1a is being ignored."
+          s"in round $round. A nack is being sent."
       )
+      val leader = chan[Server[Transport]](src, Server.serializer)
+      leader.send(ServerInbound().withNack(Nack(round = round)))
       metrics.stalePhase1asTotal.inc()
       return
     }
@@ -1148,12 +1150,26 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase2a(src: Transport#Address, phase2a: Phase2a): Unit = {
-    // TODO(mwhittaker): Implement.
     state match {
-      case phase1: Phase1     =>
-      case phase2: Phase2     =>
+      case phase1: Phase1 =>
+      // current round impossible
+      case phase2: Phase2 =>
+      // current round impossible
+      case idle: Idle =>
+      // current round impossible
+
       case delegate: Delegate =>
-      case idle: Idle         =>
+      // look in log
+      // if nothing there,
+      //   vote and return
+      // if noop but receive command
+      //   vote and return
+      // if command but receive noop:
+      //   return vote for the command!
+      // if noope receive noop:
+      //   send back dup
+      // if value receive value:
+      //   send back dup
     }
     ???
   }
