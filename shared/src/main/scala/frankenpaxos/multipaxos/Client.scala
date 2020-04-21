@@ -209,6 +209,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     for (a <- config.batcherAddresses)
       yield chan[Batcher[Transport]](a, Batcher.serializer)
 
+  // ReadBatcher channels.
+  private val readBatchers: Seq[Chan[ReadBatcher[Transport]]] =
+    for (a <- config.readBatcherAddresses)
+      yield chan[ReadBatcher[Transport]](a, ReadBatcher.serializer)
+
   // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
     for (a <- config.leaderAddresses)
@@ -305,8 +310,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       s"resendReadRequest [pseudonym=${pseudonym}; id=${id}]",
       options.resendReadRequestPeriod,
       () => {
-        val replica = replicas(rand.nextInt(replicas.size))
-        replica.send(ReplicaInbound().withReadRequest(readRequest))
+        if (readBatchers.size == 0) {
+          val replica = replicas(rand.nextInt(replicas.size))
+          replica.send(ReplicaInbound().withReadRequest(readRequest))
+        } else {
+          val readBatcher = readBatchers(rand.nextInt(readBatchers.size))
+          readBatcher.send(ReadBatcherInbound().withReadRequest(readRequest))
+        }
         metrics.resendReadRequestsTotal.inc()
         t.start()
       }
@@ -324,8 +334,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       s"resendSequentialReadRequest [pseudonym=${pseudonym}; id=${id}]",
       options.resendSequentialReadRequestPeriod,
       () => {
-        val replica = replicas(rand.nextInt(replicas.size))
-        replica.send(ReplicaInbound().withSequentialReadRequest(readRequest))
+        sendSequentialReadRequest(readRequest)
         metrics.resendSequentialReadRequestsTotal.inc()
         t.start()
       }
@@ -343,8 +352,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       s"resendEventualReadRequest [pseudonym=${pseudonym}; id=${id}]",
       options.resendEventualReadRequestPeriod,
       () => {
-        val replica = replicas(rand.nextInt(replicas.size))
-        replica.send(ReplicaInbound().withEventualReadRequest(readRequest))
+        sendEventualReadRequest(readRequest)
         metrics.resendEventualReadRequestsTotal.inc()
         t.start()
       }
@@ -387,6 +395,50 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       // TODO(mwhittaker): Abstract out the policy that determines which
       // batcher we propose to.
       getBatcher().send(BatcherInbound().withClientRequest(clientRequest))
+    }
+  }
+
+  private def sendSequentialReadRequest(
+      sequentialReadRequest: SequentialReadRequest
+  ): Unit = {
+    if (config.readBatcherAddresses.size == 0) {
+      // If there are no read batchers, then we send to a random replica.
+      val replica = replicas(rand.nextInt(replicas.size))
+      replica.send(
+        ReplicaInbound().withSequentialReadRequest(sequentialReadRequest)
+      )
+    } else {
+      // If there are read batchers, then we send to a randomly selected read
+      // batcher.
+      //
+      // TODO(mwhittaker): Abstract out the policy that determines which
+      // batcher we propose to.
+      val readBatcher = readBatchers(rand.nextInt(readBatchers.size))
+      readBatcher.send(
+        ReadBatcherInbound().withSequentialReadRequest(sequentialReadRequest)
+      )
+    }
+  }
+
+  private def sendEventualReadRequest(
+      eventualReadRequest: EventualReadRequest
+  ): Unit = {
+    if (config.readBatcherAddresses.size == 0) {
+      // If there are no read batchers, then we send to a random replica.
+      val replica = replicas(rand.nextInt(replicas.size))
+      replica.send(
+        ReplicaInbound().withEventualReadRequest(eventualReadRequest)
+      )
+    } else {
+      // If there are read batchers, then we send to a randomly selected read
+      // batcher.
+      //
+      // TODO(mwhittaker): Abstract out the policy that determines which
+      // batcher we propose to.
+      val readBatcher = readBatchers(rand.nextInt(readBatchers.size))
+      readBatcher.send(
+        ReadBatcherInbound().withEventualReadRequest(eventualReadRequest)
+      )
     }
   }
 
@@ -448,29 +500,58 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case None =>
-        // Send the MaxSlotRequests to a random quorum of acceptors (thrifty by
-        // default).
+        // If there are no batchers, then we compute a max slot directly with
+        // the acceptors ourselves. Otherwise, we send the message to a batcher
+        // and let it do it for us.
         val id = ids.getOrElse(pseudonym, 0)
-        val maxSlotRequest = MaxSlotRequest(
-          commandId = CommandId(clientAddress = addressAsBytes,
-                                clientPseudonym = pseudonym,
-                                clientId = id)
-        )
-        val group = acceptors(rand.nextInt(acceptors.size))
-        val quorum = scala.util.Random.shuffle(group).take(config.f + 1)
-        quorum.foreach(
-          _.send(AcceptorInbound().withMaxSlotRequest(maxSlotRequest))
-        )
+        if (readBatchers.size == 0) {
+          // Send the MaxSlotRequests to a random quorum of acceptors (thrifty
+          // by default).
+          val maxSlotRequest = MaxSlotRequest(
+            commandId = CommandId(clientAddress = addressAsBytes,
+                                  clientPseudonym = pseudonym,
+                                  clientId = id)
+          )
+          val group = acceptors(rand.nextInt(acceptors.size))
+          val quorum = scala.util.Random.shuffle(group).take(config.f + 1)
+          quorum.foreach(
+            _.send(AcceptorInbound().withMaxSlotRequest(maxSlotRequest))
+          )
 
-        // Update our state.
-        states(pseudonym) = MaxSlot(
-          id = id,
-          command = command,
-          result = promise,
-          maxSlotReplies = mutable.Map(),
-          resendMaxSlotRequests =
-            makeResendMaxSlotRequestsTimer(pseudonym, id, group, maxSlotRequest)
-        )
+          // Update our state.
+          states(pseudonym) = MaxSlot(
+            id = id,
+            command = command,
+            result = promise,
+            maxSlotReplies = mutable.Map(),
+            resendMaxSlotRequests =
+              makeResendMaxSlotRequestsTimer(pseudonym,
+                                             id,
+                                             group,
+                                             maxSlotRequest)
+          )
+        } else {
+          val readRequest = ReadRequest(
+            slot = -1,
+            command = Command(
+              commandId = CommandId(clientAddress = addressAsBytes,
+                                    clientPseudonym = pseudonym,
+                                    clientId = id),
+              command = ByteString.copyFrom(command)
+            )
+          )
+          val readBatcher = readBatchers(rand.nextInt(readBatchers.size))
+          readBatcher.send(ReadBatcherInbound().withReadRequest(readRequest))
+
+          // Update our state.
+          states(pseudonym) = PendingRead(
+            id = id,
+            command = command,
+            result = promise,
+            resendReadRequest =
+              makeResendReadRequestTimer(pseudonym, id, readRequest)
+          )
+        }
         ids(pseudonym) = id + 1
     }
   }
@@ -503,8 +584,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             command = ByteString.copyFrom(command)
           )
         )
-        val replica = replicas(scala.util.Random.nextInt(replicas.size))
-        replica.send(ReplicaInbound().withSequentialReadRequest(readRequest))
+        sendSequentialReadRequest(readRequest)
 
         // Update our state.
         states(pseudonym) = PendingSequentialRead(
@@ -545,8 +625,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             command = ByteString.copyFrom(command)
           )
         )
-        val replica = replicas(scala.util.Random.nextInt(replicas.size))
-        replica.send(ReplicaInbound().withEventualReadRequest(readRequest))
+        sendEventualReadRequest(readRequest)
 
         // Update our state.
         states(pseudonym) = PendingEventualRead(

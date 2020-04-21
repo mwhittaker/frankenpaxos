@@ -350,6 +350,7 @@ message ReadRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
+  // If a client sends a ReadRequest to a ReadBatcher, the slot is set to -1.
   required int32 slot = 1;
   required Command command = 2;
 }
