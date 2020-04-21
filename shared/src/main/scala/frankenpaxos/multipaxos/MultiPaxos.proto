@@ -496,6 +496,17 @@ message ClientInbound {
   }
 }
 
+message BatcherInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientRequest client_request = 1;
+    NotLeaderBatcher not_leader_batcher = 2;
+    LeaderInfoReplyBatcher leader_info_reply_batcher = 3;
+  }
+}
+
 message ReadBatcherInbound {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -505,17 +516,6 @@ message ReadBatcherInbound {
     SequentialReadRequest sequential_read_request = 2;
     EventualReadRequest eventual_read_request = 3;
     BatchMaxSlotReply batch_max_slot_reply = 4;
-  }
-}
-
-message BatcherInbound {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  oneof request {
-    ClientRequest client_request = 1;
-    NotLeaderBatcher not_leader_batcher = 2;
-    LeaderInfoReplyBatcher leader_info_reply_batcher = 3;
   }
 }
 
@@ -553,6 +553,7 @@ message AcceptorInbound {
     Phase1a phase1a = 1;
     Phase2a phase2a = 2;
     MaxSlotRequest max_slot_request = 3;
+    BatchMaxSlotRequest batch_max_slot_request = 4;
   }
 }
 

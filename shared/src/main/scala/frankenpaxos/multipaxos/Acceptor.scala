@@ -124,9 +124,10 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Phase1A(_)        => "Phase1a"
-        case Request.Phase2A(_)        => "Phase2a"
-        case Request.MaxSlotRequest(_) => "MaxSlotRequest"
+        case Request.Phase1A(_)             => "Phase1a"
+        case Request.Phase2A(_)             => "Phase2a"
+        case Request.MaxSlotRequest(_)      => "MaxSlotRequest"
+        case Request.BatchMaxSlotRequest(_) => "BatchMaxSlotRequest"
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -134,9 +135,10 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.Phase1A(r)        => handlePhase1a(src, r)
-        case Request.Phase2A(r)        => handlePhase2a(src, r)
-        case Request.MaxSlotRequest(r) => handleMaxSlotRequest(src, r)
+        case Request.Phase1A(r)             => handlePhase1a(src, r)
+        case Request.Phase2A(r)             => handlePhase2a(src, r)
+        case Request.MaxSlotRequest(r)      => handleMaxSlotRequest(src, r)
+        case Request.BatchMaxSlotRequest(r) => handleBatchMaxSlotRequest(src, r)
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -223,6 +225,23 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       ClientInbound().withMaxSlotReply(
         MaxSlotReply(
           commandId = maxSlotRequest.commandId,
+          acceptorIndex = index,
+          slot = maxVotedSlot
+        )
+      )
+    )
+  }
+
+  private def handleBatchMaxSlotRequest(
+      src: Transport#Address,
+      batchMaxSlotRequest: BatchMaxSlotRequest
+  ): Unit = {
+    val readBatcher = chan[ReadBatcher[Transport]](src, ReadBatcher.serializer)
+    readBatcher.send(
+      ReadBatcherInbound().withBatchMaxSlotReply(
+        BatchMaxSlotReply(
+          readBatcherIndex = batchMaxSlotRequest.readBatcherIndex,
+          readBatcherId = batchMaxSlotRequest.readBatcherId,
           acceptorIndex = index,
           slot = maxVotedSlot
         )
