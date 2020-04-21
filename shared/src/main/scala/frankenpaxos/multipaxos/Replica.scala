@@ -125,7 +125,7 @@ class ReplicaMetrics(collectors: Collectors) {
   val deferredReadsTotal: Counter = collectors.counter
     .build()
     .name("multipaxos_replica_deferred_reads_total")
-    .help("Total number of reads that have been executed.")
+    .help("Total number of reads that have been deferred.")
     .register()
 
   val deferredReadLatency: Summary = collectors.summary
@@ -258,6 +258,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       x
     } else {
       e
+    }
+  }
+
+  private def getProxyReplica(): Chan[ProxyReplica[Transport]] = {
+    config.distributionScheme match {
+      case Hash      => proxyReplicas(rand.nextInt(proxyReplicas.size))
+      case Colocated => proxyReplicas(index)
     }
   }
 
@@ -412,6 +419,62 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     throw new IllegalStateException()
   }
 
+  private def handleDeferrableRead(
+      src: Transport#Address,
+      slot: Int,
+      command: Command
+  ): Unit = {
+    // We have to wait for `slot` to be executed before we execute the read. If
+    // `slot >= executedWatermark`, then the slot hasn't yet been executed and
+    // we have to defer the read to later.
+    if (slot >= executedWatermark) {
+      val read =
+        DeferredRead(command = command, startTimeNanos = System.nanoTime)
+      deferredReads.get(slot) match {
+        case None             => deferredReads.put(slot, mutable.Buffer(read))
+        case Some(otherReads) => otherReads += read
+      }
+      metrics.deferredReadsTotal.inc()
+      return
+    }
+
+    val result =
+      ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
+    val client = chan[Client[Transport]](src, Client.serializer)
+    client.send(
+      ClientInbound().withReadReply(
+        ReadReply(
+          commandId = command.commandId,
+          // The `- 1` here is needed because of a difference in slot vs
+          // watermark. If the watermark is 0, then we have executed only slot
+          // -1.
+          slot = executedWatermark - 1,
+          result = result
+        )
+      )
+    )
+    metrics.executedReadsTotal.inc()
+  }
+
+  private def executeEventualRead(command: Command): ReadReply = {
+    // Eventually consistent reads can be executed right away. The only thing
+    // we have to ensure is that an eventually consistent read is performed on
+    // some prefix of the log. Our state machine is always in such a state.
+    val result = timed("executeEventualRead/execute read") {
+      ByteString.copyFrom(
+        stateMachine.run(command.command.toByteArray())
+      )
+    }
+    ReadReply(
+      commandId = command.commandId,
+      // The `- 1` here is needed because of a difference in slot vs
+      // watermark. If the watermark is 0, then we have executed only slot
+      // -1.
+      slot = executedWatermark - 1,
+      result = result
+    )
+  }
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ReplicaInbound.Request
@@ -450,13 +513,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
-    }
-  }
-
-  private def getProxyReplica(): Chan[ProxyReplica[Transport]] = {
-    config.distributionScheme match {
-      case Hash      => proxyReplicas(rand.nextInt(proxyReplicas.size))
-      case Colocated => proxyReplicas(index)
     }
   }
 
@@ -501,43 +557,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def handleDeferrableRead(
-      src: Transport#Address,
-      slot: Int,
-      command: Command
-  ): Unit = {
-    // We have to wait for `slot` to be executed before we execute the read. If
-    // `slot >= executedWatermark`, then the slot hasn't yet been executed and
-    // we have to defer the read to later.
-    if (slot >= executedWatermark) {
-      val read =
-        DeferredRead(command = command, startTimeNanos = System.nanoTime)
-      deferredReads.get(slot) match {
-        case None             => deferredReads.put(slot, mutable.Buffer(read))
-        case Some(otherReads) => otherReads += read
-      }
-      metrics.deferredReadsTotal.inc()
-      return
-    }
-
-    val result =
-      ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
-    val client = chan[Client[Transport]](src, Client.serializer)
-    client.send(
-      ClientInbound().withReadReply(
-        ReadReply(
-          commandId = command.commandId,
-          // The `- 1` here is needed because of a difference in slot vs
-          // watermark. If the watermark is 0, then we have executed only slot
-          // -1.
-          slot = executedWatermark - 1,
-          result = result
-        )
-      )
-    )
-    metrics.executedReadsTotal.inc()
-  }
-
   private def handleReadRequest(
       src: Transport#Address,
       readRequest: ReadRequest
@@ -558,29 +577,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       eventualReadRequest: EventualReadRequest
   ): Unit = {
-    // Eventually consistent reads can be executed right away. The only thing
-    // we have to ensure is that an eventually consistent read is performed on
-    // some prefix of the log. Our state machine is always in such a state.
-    val result = timed("handleEventualReadRequest/execute read") {
-      ByteString.copyFrom(
-        stateMachine.run(eventualReadRequest.command.command.toByteArray())
-      )
-    }
     val client = chan[Client[Transport]](src, Client.serializer)
-    timed("handleEventualReadRequest/send response") {
-      client.send(
-        ClientInbound().withReadReply(
-          ReadReply(
-            commandId = eventualReadRequest.command.commandId,
-            // The `- 1` here is needed because of a difference in slot vs
-            // watermark. If the watermark is 0, then we have executed only slot
-            // -1.
-            slot = executedWatermark - 1,
-            result = result
-          )
-        )
-      )
-    }
+    client.send(
+      ClientInbound()
+        .withReadReply(executeEventualRead(eventualReadRequest.command))
+    )
   }
 
   private def handleReadRequestBatch(
@@ -603,7 +604,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       eventualReadRequestBatch: EventualReadRequestBatch
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    val results = timed("handleEventualReadBatch/execute read") {
+      eventualReadRequestBatch.command.map(executeEventualRead)
+    }
+    getProxyReplica().send(
+      ProxyReplicaInbound().withReadReplyBatch(ReadReplyBatch(batch = results))
+    )
   }
 }
