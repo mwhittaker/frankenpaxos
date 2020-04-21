@@ -6,6 +6,7 @@ import scala.scalajs.js.annotation.JSExportAll
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     batcherAddresses: Seq[Transport#Address],
+    readBatcherAddresses: Seq[Transport#Address],
     leaderAddresses: Seq[Transport#Address],
     leaderElectionAddresses: Seq[Transport#Address],
     proxyLeaderAddresses: Seq[Transport#Address],
@@ -16,6 +17,7 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
 ) {
   val quorumSize = f + 1
   val numBatchers = batcherAddresses.size
+  val numReadBatchers = readBatcherAddresses.size
   val numLeaders = leaderAddresses.size
   val numProxyLeaders = proxyLeaderAddresses.size
   val numAcceptorGroups = acceptorAddresses.size
@@ -39,6 +41,11 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
             s"It's $numBatchers."
         )
     }
+    require(
+      numReadBatchers == 0 || numReadBatchers >= f + 1,
+      s"numReadBatchers must be 0 or >= f + 1 (${f + 1}). It's " +
+        s"$numReadBatchers."
+    )
     require(
       numLeaders >= f + 1,
       s"numLeaders must be >= f + 1 (${f + 1}). It's $numLeaders."

@@ -111,6 +111,7 @@ class ProxyReplica[Transport <: frankenpaxos.Transport[Transport]](
     val label =
       inbound.request match {
         case Request.ClientReplyBatch(_) => "ClientReplyBatch"
+        case Request.ReadReplyBatch(_)   => "ReadReplyBatch"
         case Request.ChosenWatermark(_)  => "ChosenWatermark"
         case Request.Recover(_)          => "Recover"
         case Request.Empty =>
@@ -121,6 +122,7 @@ class ProxyReplica[Transport <: frankenpaxos.Transport[Transport]](
     timed(label) {
       inbound.request match {
         case Request.ClientReplyBatch(r) => handleClientReplyBatch(src, r)
+        case Request.ReadReplyBatch(r)   => handleReadReplyBatch(src, r)
         case Request.ChosenWatermark(r)  => handleChosenWatermark(src, r)
         case Request.Recover(r)          => handleRecover(src, r)
         case Request.Empty =>
@@ -152,6 +154,14 @@ class ProxyReplica[Transport <: frankenpaxos.Transport[Transport]](
         }
       }
     }
+  }
+
+  private def handleReadReplyBatch(
+      src: Transport#Address,
+      readReplyBatch: ReadReplyBatch
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
   }
 
   private def handleChosenWatermark(

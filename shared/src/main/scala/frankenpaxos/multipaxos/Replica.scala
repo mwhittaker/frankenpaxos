@@ -422,6 +422,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         case Request.ReadRequest(_)           => "ReadRequest"
         case Request.SequentialReadRequest(_) => "SequentialReadRequest"
         case Request.EventualReadRequest(_)   => "EventualReadRequest"
+        case Request.ReadRequestBatch(_)      => "ReadRequestBatch"
+        case Request.SequentialReadRequestBatch(_) =>
+          "SequentialReadRequestBatch"
+        case Request.EventualReadRequestBatch(_) => "EventualReadRequestBatch"
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -437,6 +441,12 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           handleSequentialReadRequest(src, r)
         case Request.EventualReadRequest(r) =>
           handleEventualReadRequest(src, r)
+        case Request.ReadRequestBatch(r) =>
+          handleReadRequestBatch(src, r)
+        case Request.SequentialReadRequestBatch(r) =>
+          handleSequentialReadRequestBatch(src, r)
+        case Request.EventualReadRequestBatch(r) =>
+          handleEventualReadRequestBatch(src, r)
         case Request.Empty =>
           logger.fatal("Empty ReplicaInbound encountered.")
       }
@@ -571,5 +581,29 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
         )
       )
     }
+  }
+
+  private def handleReadRequestBatch(
+      src: Transport#Address,
+      readRequestBatch: ReadRequestBatch
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
+  }
+
+  private def handleSequentialReadRequestBatch(
+      src: Transport#Address,
+      sequentialReadRequestBatch: SequentialReadRequestBatch
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
+  }
+
+  private def handleEventualReadRequestBatch(
+      src: Transport#Address,
+      eventualReadRequestBatch: EventualReadRequestBatch
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
   }
 }

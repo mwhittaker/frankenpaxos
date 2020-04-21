@@ -22,6 +22,10 @@ class MultiPaxos {
       JsTransportAddress("Batcher 1"),
       JsTransportAddress("Batcher 2")
     ),
+    readBatcherAddresses = Seq(
+      JsTransportAddress("ReadBatcher 1"),
+      JsTransportAddress("ReadBatcher 2")
+    ),
     leaderAddresses = Seq(
       JsTransportAddress("Leader 1"),
       JsTransportAddress("Leader 2")

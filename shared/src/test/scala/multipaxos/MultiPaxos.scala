@@ -34,6 +34,8 @@ class MultiPaxos(val f: Int, batched: Boolean, seed: Long) {
     f = f,
     batcherAddresses =
       (1 to numBatchers).map(i => FakeTransportAddress(s"Batcher $i")),
+    readBatcherAddresses =
+      (1 to numBatchers).map(i => FakeTransportAddress(s"ReadBatcher $i")),
     leaderAddresses =
       (1 to numLeaders).map(i => FakeTransportAddress(s"Leader $i")),
     leaderElectionAddresses =
