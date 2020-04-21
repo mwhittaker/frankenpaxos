@@ -501,6 +501,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       pendingValues: mutable.Map[Slot, CommandOrNoop],
       phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
   ): Slot = {
+    // TODO(mwhittaker): Propose noops in the previous entries! We'll need to
+    // pass anyWatermark to know which once are safe and which ones are not.
+    ???
+
     log.get(slot) match {
       case Some(entry) =>
         logger.fatal(
@@ -1182,6 +1186,9 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase2a(src: Transport#Address, phase2a: Phase2a): Unit = {
+    // TODO(mwhittaker): Implement the f=1 optimization behind a flag.
+    ???
+
     // Nack stale rounds.
     val (round, _) = roundInfo(state)
     if (phase2a.round < round) {
@@ -1271,6 +1278,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
                   sender.send(
                     ServerInbound().withPhase2B(phase2b.withCommand(command))
                   )
+                } else {
+                  // Do nothing.
                 }
                 metrics.votedCommandGotNoopTotal.inc()
 
@@ -1282,12 +1291,33 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
+    // ignore past rounds
+    // assert future round impossible
+
     // TODO(mwhittaker): Implement.
     state match {
-      case phase1: Phase1     =>
-      case phase2: Phase2     =>
+      case phase1: Phase1 =>
+      // impossible
+      case idle: Idle =>
+      // impossible
+      case phase2: Phase2 =>
+      // if no value
+      // add to phase2bs
+      // wait for quorum
+      // put pending value in log as chosen
+      // send phase3as
+      // clear phase2bs
+      // clear pending values
+      //
+      // if value
+      // assert pending value is noop or same value
+      // clear pending value and replace with new command if noop
+      // vote ourselves for the value! if noop
+      // relay the phase2b back to the laeder delegate and count it for ourselves
+      // wait for quorum to fast track know its chosen
+      // if f = 1: do something special behind a flag
       case delegate: Delegate =>
-      case idle: Idle         =>
+      // possible
     }
     ???
   }
@@ -1322,6 +1352,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
   private def handlePhase3a(src: Transport#Address, phase3a: Phase3a): Unit = {
     // TODO(mwhittaker): Implement.
+    // TODO(mwhittaker): If we ack nnops with commands, when a command is
+    // chosen, a delegate may have to clear its phase2bs and pendingValues.
     state match {
       case phase1: Phase1     =>
       case phase2: Phase2     =>
