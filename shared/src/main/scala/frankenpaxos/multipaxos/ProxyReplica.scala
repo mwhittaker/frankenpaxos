@@ -30,8 +30,12 @@ object ProxyReplica {
 @JSExportAll
 case class ProxyReplicaOptions(
     // A proxy replica flushes all of its channels to the clients after every
-    // `flushEveryN` commands processed.
+    // `flushEveryN` (write or read) commands processed.
     flushEveryN: Int,
+    // If batchFlush is true, then flushEveryN is ignored. Instead, the replica
+    // flushes all client channels after every batch of commands (write or
+    // read) is processed.
+    batchFlush: Boolean,
     measureLatencies: Boolean
 )
 
@@ -39,6 +43,7 @@ case class ProxyReplicaOptions(
 object ProxyReplicaOptions {
   val default = ProxyReplicaOptions(
     flushEveryN = 1,
+    batchFlush = false,
     measureLatencies = true
   )
 }
@@ -143,7 +148,10 @@ class ProxyReplica[Transport <: frankenpaxos.Transport[Transport]](
         chan[Client[Transport]](clientAddress, Client.serializer)
       )
 
-      if (options.flushEveryN == 1) {
+      if (options.batchFlush) {
+        client.sendNoFlush(ClientInbound().withClientReply(clientReply))
+        // Do nothing here. We'll flush at the end of the batch.
+      } else if (options.flushEveryN == 1) {
         client.send(ClientInbound().withClientReply(clientReply))
       } else {
         client.sendNoFlush(ClientInbound().withClientReply(clientReply))
@@ -154,14 +162,42 @@ class ProxyReplica[Transport <: frankenpaxos.Transport[Transport]](
         }
       }
     }
+
+    if (options.batchFlush) {
+      clients.values.foreach(_.flush())
+    }
   }
 
   private def handleReadReplyBatch(
       src: Transport#Address,
       readReplyBatch: ReadReplyBatch
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    for (readReply <- readReplyBatch.batch) {
+      val clientAddress = transport.addressSerializer
+        .fromBytes(readReply.commandId.clientAddress.toByteArray())
+      val client = clients.getOrElseUpdate(
+        clientAddress,
+        chan[Client[Transport]](clientAddress, Client.serializer)
+      )
+
+      if (options.batchFlush) {
+        client.sendNoFlush(ClientInbound().withReadReply(readReply))
+        // Do nothing here. We'll flush at the end of the batch.
+      } else if (options.flushEveryN == 1) {
+        client.send(ClientInbound().withReadReply(readReply))
+      } else {
+        client.sendNoFlush(ClientInbound().withReadReply(readReply))
+        numMessagesSinceLastFlush += 1
+        if (numMessagesSinceLastFlush >= options.flushEveryN) {
+          clients.values.foreach(_.flush())
+          numMessagesSinceLastFlush = 0
+        }
+      }
+    }
+
+    if (options.batchFlush) {
+      clients.values.foreach(_.flush())
+    }
   }
 
   private def handleChosenWatermark(
