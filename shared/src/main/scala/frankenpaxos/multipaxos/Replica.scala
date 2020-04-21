@@ -355,31 +355,40 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           deferredReads.get(slot) match {
             case None =>
               // Do nothing.
-              {}
+              ()
 
             case Some(reads) =>
-              for (read <- reads) {
-                val result = ByteString.copyFrom(
-                  stateMachine.run(read.command.command.toByteArray())
-                )
-
+              // If we only have one read to perform, we send the result
+              // directly back to the client. Otherwise, we send a batch of
+              // reads to the proxy replica.
+              if (reads.size == 1) {
                 val clientAddress = transport.addressSerializer
-                  .fromBytes(read.command.commandId.clientAddress.toByteArray())
+                  .fromBytes(
+                    reads(0).command.commandId.clientAddress.toByteArray()
+                  )
                 val client =
                   chan[Client[Transport]](clientAddress, Client.serializer)
                 client.send(
-                  ClientInbound().withReadReply(
-                    ReadReply(commandId = read.command.commandId,
-                              slot = slot,
-                              result = result)
-                  )
+                  ClientInbound().withReadReply(executeRead(reads(0).command))
                 )
 
-                metrics.executedReadsTotal.inc()
-                metrics.deferredReadLatency
-                  .observe(
+                metrics.deferredReadLatency.observe(
+                  (System.nanoTime - reads(0).startTimeNanos).toDouble / 1000000
+                )
+              } else {
+                val readReplies = mutable.Buffer[ReadReply]()
+                for (read <- reads) {
+                  readReplies += executeRead(read.command)
+                  metrics.deferredReadLatency.observe(
                     (System.nanoTime - read.startTimeNanos).toDouble / 1000000
                   )
+                }
+
+                getProxyReplica().send(
+                  ProxyReplicaInbound().withReadReplyBatch(
+                    ReadReplyBatch(batch = readReplies)
+                  )
+                )
               }
           }
 
@@ -438,33 +447,46 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    val result =
-      ByteString.copyFrom(stateMachine.run(command.command.toByteArray()))
     val client = chan[Client[Transport]](src, Client.serializer)
-    client.send(
-      ClientInbound().withReadReply(
-        ReadReply(
-          commandId = command.commandId,
-          // The `- 1` here is needed because of a difference in slot vs
-          // watermark. If the watermark is 0, then we have executed only slot
-          // -1.
-          slot = executedWatermark - 1,
-          result = result
-        )
-      )
-    )
-    metrics.executedReadsTotal.inc()
+    client.send(ClientInbound().withReadReply(executeRead(command)))
   }
 
-  private def executeEventualRead(command: Command): ReadReply = {
+  private def handleDeferrableReads(slot: Int, commands: Seq[Command]): Unit = {
+    // We have to wait for `slot` to be executed before we execute the read. If
+    // `slot >= executedWatermark`, then the slot hasn't yet been executed and
+    // we have to defer the read to later.
+    if (slot >= executedWatermark) {
+      val startTimeNanos = System.nanoTime
+      val reads = commands.map(
+        command =>
+          DeferredRead(command = command, startTimeNanos = startTimeNanos)
+      )
+      deferredReads.get(slot) match {
+        case None             => deferredReads.put(slot, reads.toBuffer)
+        case Some(otherReads) => otherReads ++= reads
+      }
+      metrics.deferredReadsTotal.inc()
+      return
+    }
+
+    getProxyReplica().send(
+      ProxyReplicaInbound()
+        .withReadReplyBatch(ReadReplyBatch(batch = commands.map(executeRead)))
+    )
+  }
+
+  // Execute the read `command` on the current state of the state machine.
+  private def executeRead(command: Command): ReadReply = {
     // Eventually consistent reads can be executed right away. The only thing
     // we have to ensure is that an eventually consistent read is performed on
     // some prefix of the log. Our state machine is always in such a state.
-    val result = timed("executeEventualRead/execute read") {
+    val result = timed("executeRead/execute read") {
       ByteString.copyFrom(
         stateMachine.run(command.command.toByteArray())
       )
     }
+    metrics.executedReadsTotal.inc()
+
     ReadReply(
       commandId = command.commandId,
       // The `- 1` here is needed because of a difference in slot vs
@@ -580,7 +602,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val client = chan[Client[Transport]](src, Client.serializer)
     client.send(
       ClientInbound()
-        .withReadReply(executeEventualRead(eventualReadRequest.command))
+        .withReadReply(executeRead(eventualReadRequest.command))
     )
   }
 
@@ -588,16 +610,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       readRequestBatch: ReadRequestBatch
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    handleDeferrableReads(readRequestBatch.slot, readRequestBatch.command)
   }
 
   private def handleSequentialReadRequestBatch(
       src: Transport#Address,
       sequentialReadRequestBatch: SequentialReadRequestBatch
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    handleDeferrableReads(sequentialReadRequestBatch.slot,
+                          sequentialReadRequestBatch.command)
   }
 
   private def handleEventualReadRequestBatch(
@@ -605,7 +626,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       eventualReadRequestBatch: EventualReadRequestBatch
   ): Unit = {
     val results = timed("handleEventualReadBatch/execute read") {
-      eventualReadRequestBatch.command.map(executeEventualRead)
+      eventualReadRequestBatch.command.map(executeRead)
     }
     getProxyReplica().send(
       ProxyReplicaInbound().withReadReplyBatch(ReadReplyBatch(batch = results))
