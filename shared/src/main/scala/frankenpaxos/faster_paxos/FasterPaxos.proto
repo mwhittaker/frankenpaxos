@@ -280,7 +280,7 @@ message Phase2aAnyAck {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
-  required int32 delegate_index = 2;
+  required int32 server_index = 2;
 }
 
 message Phase3a {

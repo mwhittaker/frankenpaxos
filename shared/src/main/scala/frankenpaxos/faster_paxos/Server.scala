@@ -113,15 +113,6 @@ class ServerMetrics(collectors: Collectors) {
     )
     .register()
 
-  val staleClientRequestRoundTotal: Counter = collectors.counter
-    .build()
-    .name("fasterpaxos_server_stale_client_request_round_total")
-    .help(
-      "The total number of times a server received a ClientRequest with a " +
-        "stale round."
-    )
-    .register()
-
   val tooFreshClientRequestRoundTotal: Counter = collectors.counter
     .build()
     .name("fasterpaxos_server_too_fresh_client_request_round_total")
@@ -141,12 +132,6 @@ class ServerMetrics(collectors: Collectors) {
     )
     .register()
 
-  val stalePhase1asTotal: Counter = collectors.counter
-    .build()
-    .name("fasterpaxos_server_stale_phase1as_total")
-    .help("Total number of Phase1as received with a stale round.")
-    .register()
-
   val sameRoundDelegatePhase1asTotal: Counter = collectors.counter
     .build()
     .name("fasterpaxos_server_same_round_delegate_phase1as_total")
@@ -156,12 +141,6 @@ class ServerMetrics(collectors: Collectors) {
         "1 and proceeds ot Phase 2. Thus, a Delegate that receives a Phase1a " +
         "is a stale Phase1a from when it was still Idle."
     )
-    .register()
-
-  val stalePhase1bsTotal: Counter = collectors.counter
-    .build()
-    .name("fasterpaxos_server_stale_phase1bs_total")
-    .help("Total number of Phase1bs received with a stale round.")
     .register()
 
   val chosenInPhase1Total: Counter = collectors.counter
@@ -203,12 +182,6 @@ class ServerMetrics(collectors: Collectors) {
     .help("Total number of times the server resent Phase2aAny messages.")
     .register()
 
-  val stalePhase2asTotal: Counter = collectors.counter
-    .build()
-    .name("fasterpaxos_server_stale_phase2as_total")
-    .help("Total number of Phase2as received with a stale round.")
-    .register()
-
   val futurePhase2asTotal: Counter = collectors.counter
     .build()
     .name("fasterpaxos_server_future_phase2as_total")
@@ -225,6 +198,13 @@ class ServerMetrics(collectors: Collectors) {
       "The total number of times a server received a noop in a round and " +
         "log entry for which the server had already received a command."
     )
+    .register()
+
+  val staleRoundTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_stale_round_total")
+    .labelNames("type")
+    .help("Total number of messages received with a stale round.")
     .register()
 }
 
@@ -303,6 +283,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       round: Round,
       delegates: Seq[ServerIndex],
       delegateIndex: DelegateIndex,
+      anyWatermark: Slot,
       var nextSlot: Slot,
       pendingValues: mutable.Map[Slot, CommandOrNoop],
       phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
@@ -973,7 +954,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
             RoundInfo(round = round, delegate = delegates.map(_.x))
           )
       )
-      metrics.staleClientRequestRoundTotal.inc()
+      metrics.staleRoundTotal.labels("ClientRequest").inc()
       return
     } else if (clientRequest.round > round) {
       // TODO(mwhittaker): This server should maybe seek out the leader to
@@ -1037,7 +1018,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       )
       val leader = chan[Server[Transport]](src, Server.serializer)
       leader.send(ServerInbound().withNack(Nack(round = round)))
-      metrics.stalePhase1asTotal.inc()
+      metrics.staleRoundTotal.labels("Phase1a").inc()
       return
     }
 
@@ -1105,7 +1086,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         s"Server recevied a Phase1b in round ${phase1b.round} but is already " +
           s"in round $round. The Phase1b is being ignored."
       )
-      metrics.stalePhase1bsTotal.inc()
+      metrics.staleRoundTotal.labels("Phase1b").inc()
       return
     }
 
@@ -1264,7 +1245,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       )
       val leader = chan[Server[Transport]](src, Server.serializer)
       leader.send(ServerInbound().withNack(Nack(round = round)))
-      metrics.stalePhase2asTotal.inc()
+      metrics.staleRoundTotal.labels("Phase2a").inc()
       return
     }
 
@@ -1364,10 +1345,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     val (round, _) = roundInfo(state)
     if (phase2b.round < round) {
       logger.debug(
-        s"Server recevied a Phase1b in round ${phase2b.round} but is already " +
-          s"in round $round. The Phase1b is being ignored."
+        s"Server recevied a Phase2b in round ${phase2b.round} but is already " +
+          s"in round $round. The Phase2b is being ignored."
       )
-      metrics.stalePhase1bsTotal.inc()
+      metrics.staleRoundTotal.labels("Phase2b").inc()
       return
     }
 
@@ -1400,14 +1381,67 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2aAny: Phase2aAny
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    state match {
-      case phase1: Phase1     =>
-      case phase2: Phase2     =>
-      case delegate: Delegate =>
-      case idle: Idle         =>
+    // Ignore stale rounds.
+    val (round, _) = roundInfo(state)
+    if (phase2aAny.round < round) {
+      logger.debug(
+        s"Server recevied a Phase2aAny in round ${phase2aAny.round} but is " +
+          s"already in round $round. The Phase2aAny is being ignored."
+      )
+      metrics.staleRoundTotal.labels("Phase2aAny").inc()
+      return
     }
-    ???
+
+    state match {
+      case phase1: Phase1 =>
+        // We don't send Phase2aAnys to ourself.
+        logger.checkGt(phase2aAny.round, round)
+
+      case phase2: Phase2 =>
+        // We don't send Phase2aAnys to ourself.
+        logger.checkGt(phase2aAny.round, round)
+
+      case delegate: Delegate =>
+        if (phase2aAny.round == round) {
+          logger.debug(
+            s"Delegate received a Phase2aAny in round $round but is already " +
+              s"in round $round. This must be a duplicate. We're sending " +
+              s"back an ack."
+          )
+          val server = chan[Server[Transport]](src, Server.serializer)
+          server.send(
+            ServerInbound().withPhase2AAnyAck(
+              Phase2aAnyAck(round = round, serverIndex = index.x)
+            )
+          )
+          return
+        }
+
+      case idle: Idle =>
+    }
+
+    // Update our state.
+    stopTimers(state)
+    val delegateIndex = DelegateIndex(phase2aAny.delegate.indexOf(index.x))
+    state = Delegate(
+      round = phase2aAny.round,
+      delegates = phase2aAny.delegate.map(ServerIndex(_)),
+      delegateIndex = delegateIndex,
+      anyWatermark = phase2aAny.anyWatermark,
+      nextSlot =
+        slotSystem.nextClassicRound(leaderIndex = delegateIndex.x,
+                                    round = phase2aAny.anyWatermark - 1),
+      pendingValues = mutable.Map[Slot, CommandOrNoop](),
+      phase2bs = mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]()
+    )
+
+    // Send back an ack.
+    val server = chan[Server[Transport]](src, Server.serializer)
+    server.send(
+      ServerInbound().withPhase2AAnyAck(
+        Phase2aAnyAck(round = phase2aAny.round, serverIndex = index.x)
+      )
+    )
   }
 
   private def handlePhase2aAnyAck(
