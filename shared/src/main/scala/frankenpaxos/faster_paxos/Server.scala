@@ -363,11 +363,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   private val slotSystem =
     new RoundSystem.ClassicRoundRobin(config.f + 1)
 
-  // Every slot less than chosenWatermark has been chosen. Replicas
-  // periodically send their chosenWatermarks to the servers.
-  @JSExport
-  protected var chosenWatermark: Slot = 0
-
   // Every log entry less than `executedWatermark` has been executed. There may
   // be commands larger than `executedWatermark` pending execution.
   // `executedWatermark` is public for testing.
@@ -671,6 +666,77 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     logger.fatal(
       "The loop above should always return. This should be unreachable."
     )
+  }
+
+  // processPhase2b captures the logic that a Leader or Delegate performs to
+  // process a phase2b.
+  private def processPhase2b(
+      phase2b: Phase2b,
+      delegateIndex: DelegateIndex,
+      pendingValues: mutable.Map[Slot, CommandOrNoop],
+      phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
+  ): Unit = {
+    phase2b.command match {
+      case None =>
+        phase2bs(phase2b.slot)(ServerIndex(phase2b.serverIndex)) = phase2b
+
+      case Some(command) =>
+        // Okay, the situation here is a little complicated. Previously, we
+        // sent a noop to the other delegates. A delegate received our noop
+        // but had already received a value. They sent us back a Phase2b
+        // not for the noop, but for the value. We want to ditch our noop
+        // then, and go with the value. Also note that this may be the
+        // first such valued Phase2b we received or a subsequent one.
+
+        // Update our pendingValues and phase2bs.
+        pendingValues(phase2b.slot).value match {
+          // This is the first time receiving a valued nack.
+          case CommandOrNoop.Value.Noop(Noop()) =>
+            pendingValues(phase2b.slot) = CommandOrNoop().withCommand(command)
+            phase2bs(phase2b.slot) = mutable.Map(
+              // The other delegates Phase2b.
+              ServerIndex(phase2b.serverIndex) -> phase2b,
+              // Our Phase2b.
+              index -> Phase2b(
+                serverIndex = index.x,
+                slot = phase2b.slot,
+                round = phase2b.round
+              )
+            )
+
+          // This is not the first time.
+          case CommandOrNoop.Value.Command(existingCommand) =>
+            logger.checkEq(command, existingCommand)
+            phase2bs(phase2b.slot)(
+              ServerIndex(phase2b.serverIndex)
+            ) = phase2b
+
+          case CommandOrNoop.Value.Empty =>
+            logger.fatal("Empty CommandOrNoop encountered.")
+        }
+
+        // Wait for a quorum of Phase2bs.
+        if (phase2bs(phase2b.slot).size < config.f + 1) {
+          return
+        }
+
+        // Update our metadata.
+        val chosen = pendingValues(phase2b.slot)
+        log.put(phase2b.slot, ChosenEntry(chosen))
+        pendingValues.remove(phase2b.slot)
+        phase2bs.remove(phase2b.slot)
+
+        // Send Phase3as to the other servers.
+        otherServers.foreach(
+          _.send(
+            ServerInbound().withPhase3A(
+              Phase3a(slot = phase2b.slot, commandOrNoop = chosen)
+            )
+          )
+        )
+    }
+
+    executeLog((slot) => slotSystem.leader(slot) == delegateIndex.x)
   }
 
   // `maxPhase1bSlot(phase1b)` finds the largest slot present in `phase1b` or
@@ -1074,12 +1140,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           slotInfos.map(_.slot).max
         }
 
-        // Iterate from chosenWatermark to maxSlot proposing safe values to
+        // Iterate from executedWatermark to maxSlot proposing safe values to
         // fill in the log.
         val infosBySlot = slotInfos.groupBy(_.slot)
         val pendingValues = mutable.Map[Slot, CommandOrNoop]()
         val phase2bs = mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]()
-        for (slot <- chosenWatermark to maxSlot) {
+        for (slot <- executedWatermark to maxSlot) {
           safeValue(infosBySlot.get(slot).map(_.toSeq).getOrElse(Seq())) match {
             case AlreadyChosen(value) =>
               log.put(slot, ChosenEntry(value))
@@ -1294,32 +1360,40 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // ignore past rounds
     // assert future round impossible
 
-    // TODO(mwhittaker): Implement.
-    state match {
-      case phase1: Phase1 =>
-      // impossible
-      case idle: Idle =>
-      // impossible
-      case phase2: Phase2 =>
-      // if no value
-      // add to phase2bs
-      // wait for quorum
-      // put pending value in log as chosen
-      // send phase3as
-      // clear phase2bs
-      // clear pending values
-      //
-      // if value
-      // assert pending value is noop or same value
-      // clear pending value and replace with new command if noop
-      // vote ourselves for the value! if noop
-      // relay the phase2b back to the laeder delegate and count it for ourselves
-      // wait for quorum to fast track know its chosen
-      // if f = 1: do something special behind a flag
-      case delegate: Delegate =>
-      // possible
+    // Ignore stale rounds.
+    val (round, _) = roundInfo(state)
+    if (phase2b.round < round) {
+      logger.debug(
+        s"Server recevied a Phase1b in round ${phase2b.round} but is already " +
+          s"in round $round. The Phase1b is being ignored."
+      )
+      metrics.stalePhase1bsTotal.inc()
+      return
     }
-    ???
+
+    // We can't receive a Phase2b in a round unless we've sent out Phase2as in
+    // that round. Thus, we can receive Phase2bs from the future.
+    logger.checkEq(phase2b.round, round)
+
+    state match {
+      case _: Phase1 | _: Idle =>
+        logger.fatal(
+          s"Server received a Phase2b in round $round but is in state " +
+            s"$state. This should be impossible."
+        )
+
+      case phase2: Phase2 =>
+        processPhase2b(phase2b,
+                       phase2.delegateIndex,
+                       phase2.pendingValues,
+                       phase2.phase2bs)
+
+      case delegate: Delegate =>
+        processPhase2b(phase2b,
+                       delegate.delegateIndex,
+                       delegate.pendingValues,
+                       delegate.phase2bs)
+    }
   }
 
   private def handlePhase2aAny(
