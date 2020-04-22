@@ -1503,12 +1503,35 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleRecover(src: Transport#Address, recover: Recover): Unit = {
-    // TODO(mwhittaker): Implement.
+    // If we've already chosen this log entry, then we're good!
+    log.get(recover.slot) match {
+      case None | Some(_: PendingEntry) =>
+      case Some(chosen: ChosenEntry) =>
+        val server = chan[Server[Transport]](src, Server.serializer)
+        server.send(
+          ServerInbound().withPhase3A(
+            Phase3a(
+              slot = recover.slot,
+              commandOrNoop = chosen.value
+            )
+          )
+        )
+    }
+
+    // Otherwise, we have to make sure the log enty gets chosen.
     state match {
-      case phase1: Phase1     =>
-      case phase2: Phase2     =>
+      case phase1: Phase1 =>
+      // Ignore. If nothing has failed, eventually the leader is going to
+      // become a delegate and then weill handle the recover. If failure,
+      // then we'll do a leader change.
+      case phase2: Phase2 =>
+      // Resend phase2as?
       case delegate: Delegate =>
-      case idle: Idle         =>
+      // Resend phase2as?
+      case idle: Idle =>
+      // Ignore. If nothing has failed, eventually the leader is going to
+      // become a delegate and then weill handle the recover. If failure,
+      // then we'll do a leader change.
     }
     ???
   }
@@ -1523,4 +1546,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     }
     ???
   }
+
+  // TODO(mwhittaker): Add a recover timer.
 }
