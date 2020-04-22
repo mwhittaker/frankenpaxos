@@ -285,7 +285,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       var nextSlot: Slot,
       pendingValues: mutable.Map[Slot, CommandOrNoop],
       phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
-      // something to resend?
   ) extends State
 
   @JSExportAll
@@ -657,6 +656,13 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       pendingValues: mutable.Map[Slot, CommandOrNoop],
       phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
   ): Unit = {
+    // If this log entry has already been chosen, then we can skip the entire
+    // protocol.
+    log.get(phase2b.slot) match {
+      case None | Some(_: PendingEntry) =>
+      case Some(_: ChosenEntry)         => return
+    }
+
     phase2b.command match {
       case None =>
         phase2bs(phase2b.slot)(ServerIndex(phase2b.serverIndex)) = phase2b
@@ -1479,16 +1485,21 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase3a(src: Transport#Address, phase3a: Phase3a): Unit = {
-    // TODO(mwhittaker): Implement.
-    // TODO(mwhittaker): If we ack nnops with commands, when a command is
-    // chosen, a delegate may have to clear its phase2bs and pendingValues.
+    log.put(phase3a.slot, ChosenEntry(phase3a.commandOrNoop))
+
     state match {
-      case phase1: Phase1     =>
-      case phase2: Phase2     =>
+      case _: Phase1 | _: Idle =>
+        // Do nothing.
+        ()
+
+      case phase2: Phase2 =>
+        phase2.pendingValues.remove(phase3a.slot)
+        phase2.phase2bs.remove(phase3a.slot)
+
       case delegate: Delegate =>
-      case idle: Idle         =>
+        delegate.pendingValues.remove(phase3a.slot)
+        delegate.phase2bs.remove(phase3a.slot)
     }
-    ???
   }
 
   private def handleRecover(src: Transport#Address, recover: Recover): Unit = {
