@@ -26,11 +26,12 @@ message AcceptorGroup {
 message NettyConfigProto {
   required int32 f = 1;
   repeated HostPortProto batcher_address = 2;
-  repeated HostPortProto leader_address = 3;
-  repeated HostPortProto leader_election_address = 4;
-  repeated HostPortProto proxy_leader_address = 5;
-  repeated AcceptorGroup acceptor_address = 6;
-  repeated HostPortProto replica_address = 7;
-  repeated HostPortProto proxy_replica_address = 8;
-  required DistributionSchemeProto distribution_scheme = 9;
+  repeated HostPortProto read_batcher_address = 3;
+  repeated HostPortProto leader_address = 4;
+  repeated HostPortProto leader_election_address = 5;
+  repeated HostPortProto proxy_leader_address = 6;
+  repeated AcceptorGroup acceptor_address = 7;
+  repeated HostPortProto replica_address = 8;
+  repeated HostPortProto proxy_replica_address = 9;
+  required DistributionSchemeProto distribution_scheme = 10;
 }

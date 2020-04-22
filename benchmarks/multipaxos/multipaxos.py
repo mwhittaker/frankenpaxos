@@ -50,6 +50,12 @@ class BatcherOptions(NamedTuple):
     batch_size: int = 1
 
 
+class ReadBatcherOptions(NamedTuple):
+    read_batching_scheme: str = "size,1,10s"
+    unsafe_read_at_first_slot: bool = False
+    unsafe_read_at_i: bool = False
+
+
 class ElectionOptions(NamedTuple):
     ping_period: datetime.timedelta = datetime.timedelta(seconds=1)
     no_ping_timeout_min: datetime.timedelta = datetime.timedelta(seconds=5)
@@ -92,6 +98,7 @@ class Input(NamedTuple):
     num_warmup_clients_per_proc: int
     num_clients_per_proc: int
     num_batchers: int
+    num_read_batchers: int
     num_leaders: int
     num_proxy_leaders: int
     num_acceptor_groups: int
@@ -183,6 +190,7 @@ class MultiPaxosNet:
     class Placement(NamedTuple):
         clients: List[host.Endpoint]
         batchers: List[host.Endpoint]
+        read_batchers: List[host.Endpoint]
         leaders: List[host.Endpoint]
         leader_elections: List[host.Endpoint]
         proxy_leaders: List[host.Endpoint]
@@ -214,6 +222,9 @@ class MultiPaxosNet:
             batchers=portify(
                 cycle_take_n(self._input.num_batchers,
                              self._cluster['batchers'])),
+            read_batchers=portify(
+                cycle_take_n(self._input.num_read_batchers,
+                             self._cluster['read_batchers'])),
             leaders=portify(
                 cycle_take_n(self._input.num_leaders,
                              self._cluster['leaders'])),
@@ -242,6 +253,10 @@ class MultiPaxosNet:
                 'host': e.host.ip(),
                 'port': e.port
             } for e in self.placement().batchers],
+            'read_batcher_address': [{
+                'host': e.host.ip(),
+                'port': e.port
+            } for e in self.placement().read_batchers],
             'leader_address': [{
                 'host': e.host.ip(),
                 'port': e.port
@@ -360,6 +375,40 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                                            f'batcher_{i}')
             batcher_procs.append(p)
         bench.log('Batchers started.')
+
+        # Launch read_batchers.
+        read_batcher_procs: List[proc.Proc] = []
+        for (i, read_batcher) in enumerate(net.placement().read_batchers):
+            p = bench.popen(
+                host=read_batcher.host,
+                label=f'read_batcher_{i}',
+                cmd=java(input.read_batcher_jvm_heap_size) + [
+                    '-cp',
+                    os.path.abspath(args['jar']),
+                    'frankenpaxos.multipaxos.ReadBatcherMain',
+                    '--index',
+                    str(i),
+                    '--config',
+                    config_filename,
+                    '--log_level',
+                    input.read_batcher_log_level,
+                    '--prometheus_host',
+                    read_batcher.host.ip(),
+                    '--prometheus_port',
+                    str(read_batcher.port + 1) if input.monitored else '-1',
+                    '--options.read_batching_scheme',
+                    f'{input.read_batcher_options.read_batching_scheme}',
+                    '--options.unsafe_read_at_first_slot',
+                    f'{input.read_batcher_options.unsafe_read_at_first_slot}',
+                    '--options.unsafe_read_at_i',
+                    f'{input.read_batcher_options.unsafe_read_at_i}',
+                ],
+            )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, read_batcher.host, p,
+                                           f'read_batcher_{i}')
+            read_batcher_procs.append(p)
+        bench.log('ReadBatchers started.')
 
         # Launch proxy_leaders.
         proxy_leader_procs: List[proc.Proc] = []
@@ -651,8 +700,9 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
         # Wait for clients to finish and then terminate leaders and acceptors.
         for p in client_procs:
             p.wait()
-        for p in (batcher_procs + leader_procs + proxy_leader_procs +
-                  acceptor_procs + replica_procs + proxy_replica_procs):
+        for p in (batcher_procs + read_batcher_procs + leader_procs +
+                  proxy_leader_procs + acceptor_procs + replica_procs +
+                  proxy_replica_procs):
             p.kill()
         if input.monitored:
             prometheus_server.kill()

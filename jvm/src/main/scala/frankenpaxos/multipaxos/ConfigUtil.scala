@@ -12,6 +12,7 @@ object ConfigUtil {
     Config(
       f = proto.f,
       batcherAddresses = proto.batcherAddress.map(addr),
+      readBatcherAddresses = proto.readBatcherAddress.map(addr),
       leaderAddresses = proto.leaderAddress.map(addr),
       leaderElectionAddresses = proto.leaderElectionAddress.map(addr),
       proxyLeaderAddresses = proto.proxyLeaderAddress.map(addr),
