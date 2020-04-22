@@ -37,6 +37,31 @@ object ReadBatchingScheme {
       extends ReadBatchingScheme
   case class Time(timeout: java.time.Duration) extends ReadBatchingScheme
   case object Adaptive extends ReadBatchingScheme
+
+  implicit val read: scopt.Read[ReadBatchingScheme] = scopt.Read.reads(s => {
+    s.trim().split(",") match {
+      case Array("size", batchSize, timeout) =>
+        ReadBatchingScheme.Size(
+          scopt.Read.intRead.reads(batchSize),
+          java.time.Duration
+            .ofNanos(scopt.Read.durationRead.reads(timeout).toNanos)
+        )
+
+      case Array("time", timeout) =>
+        ReadBatchingScheme.Time(
+          java.time.Duration
+            .ofNanos(scopt.Read.durationRead.reads(timeout).toNanos)
+        )
+
+      case Array("adaptive") =>
+        ReadBatchingScheme.Adaptive
+
+      case _ =>
+        throw new IllegalArgumentException(
+          s"$s must look like 'size,1,1s', 'time,1s' or 'adaptive'."
+        )
+    }
+  })
 }
 
 @JSExportAll
