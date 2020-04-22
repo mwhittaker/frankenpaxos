@@ -274,8 +274,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]],
       waitingPhase2aAnyAcks: mutable.Set[ServerIndex],
       resendPhase2aAnys: Transport#Timer
-      // TODO(mwhittaker): phase2aAny resend timer
-      // TODO(mwhittaker): phase2aAnyAcks
   ) extends State
 
   @JSExportAll
@@ -416,6 +414,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       delegates: Seq[ServerIndex],
       phase2aAny: Phase2aAny
   ): Transport#Timer = {
+    // TODO(mwhittaker): We only need to re-send the Phase2Anys to the
+    // delegates which have not acked us yet.
     lazy val t: Transport#Timer = timer(
       s"resendPhase2aAnys",
       options.resendPhase2aAnysPeriod,
@@ -1225,7 +1225,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
                                                  round = anyWatermark - 1),
           pendingValues = pendingValues,
           phase2bs = phase2bs,
-          waitingPhase2aAnyAcks = mutable.Set(),
+          waitingPhase2aAnyAcks = phase1.delegates.to[mutable.Set],
           resendPhase2aAnys =
             makeResendPhase2aAnysTimer(phase1.delegates, phase2aAny)
         )
@@ -1338,9 +1338,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handlePhase2b(src: Transport#Address, phase2b: Phase2b): Unit = {
-    // ignore past rounds
-    // assert future round impossible
-
     // Ignore stale rounds.
     val (round, _) = roundInfo(state)
     if (phase2b.round < round) {
@@ -1448,14 +1445,37 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2aAnyAck: Phase2aAnyAck
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    state match {
-      case phase1: Phase1     =>
-      case phase2: Phase2     =>
-      case delegate: Delegate =>
-      case idle: Idle         =>
+    // Ignore stale rounds.
+    val (round, _) = roundInfo(state)
+    if (phase2aAnyAck.round < round) {
+      logger.debug(
+        s"Server recevied a Phase2aAnyAck in round ${phase2aAnyAck.round} " +
+          s"but is already in round $round. The Phase2aAnyAck is being ignored."
+      )
+      metrics.staleRoundTotal.labels("Phase2aAnyAck").inc()
+      return
     }
-    ???
+
+    // We can't receive a Phase2aAnyAck in a round unless we've sent out
+    // Phase2aAnys in that round. Thus, we can receive Phase2aAnyAcks from the
+    // future.
+    logger.checkEq(phase2aAnyAck.round, round)
+
+    state match {
+      case _: Phase1 | _: Delegate | _: Idle =>
+        logger.fatal(
+          s"Server received a Phase2aAnyAck in round $round but is in " +
+            s"state $state. This should be impossible."
+        )
+
+      case phase2: Phase2 =>
+        phase2.waitingPhase2aAnyAcks.remove(
+          ServerIndex(phase2aAnyAck.serverIndex)
+        )
+        if (phase2.waitingPhase2aAnyAcks.isEmpty) {
+          phase2.resendPhase2aAnys.stop()
+        }
+    }
   }
 
   private def handlePhase3a(src: Transport#Address, phase3a: Phase3a): Unit = {
