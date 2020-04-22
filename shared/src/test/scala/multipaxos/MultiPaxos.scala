@@ -79,6 +79,23 @@ class MultiPaxos(val f: Int, batched: Boolean, seed: Long) {
     )
   }
 
+  // ReadBatchers.
+  val readBatchers = for (address <- config.readBatcherAddresses) yield {
+    new ReadBatcher[FakeTransport](
+      address = address,
+      transport = transport,
+      logger = new FakeLogger(),
+      config = config,
+      options = ReadBatcherOptions.default.copy(
+        readBatchingScheme =
+          ReadBatchingScheme.Size(batchSize = 1,
+                                  timeout = java.time.Duration.ofSeconds(1))
+      ),
+      metrics = new ReadBatcherMetrics(FakeCollectors),
+      seed = seed
+    )
+  }
+
   // Leaders.
   val leaders = for (address <- config.leaderAddresses) yield {
     new Leader[FakeTransport](

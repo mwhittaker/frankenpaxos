@@ -10,7 +10,7 @@ import frankenpaxos.statemachine.ReadableAppendLog
 import scala.scalajs.js.annotation._
 
 @JSExportAll
-class MultiPaxos {
+class MultiPaxos(batch: Boolean) {
   // Transport.
   val logger = new JsLogger()
   val transport = new JsTransport(logger)
@@ -18,14 +18,22 @@ class MultiPaxos {
   // Configuration.
   val config = Config[JsTransport](
     f = 1,
-    batcherAddresses = Seq(
-      JsTransportAddress("Batcher 1"),
-      JsTransportAddress("Batcher 2")
-    ),
-    readBatcherAddresses = Seq(
-      JsTransportAddress("ReadBatcher 1"),
-      JsTransportAddress("ReadBatcher 2")
-    ),
+    batcherAddresses = if (batch) {
+      Seq(
+        JsTransportAddress("Batcher 1"),
+        JsTransportAddress("Batcher 2")
+      )
+    } else {
+      Seq()
+    },
+    readBatcherAddresses = if (batch) {
+      Seq(
+        JsTransportAddress("ReadBatcher 1"),
+        JsTransportAddress("ReadBatcher 2")
+      )
+    } else {
+      Seq()
+    },
     leaderAddresses = Seq(
       JsTransportAddress("Leader 1"),
       JsTransportAddress("Leader 2")
@@ -92,8 +100,47 @@ class MultiPaxos {
       metrics = new BatcherMetrics(FakeCollectors)
     )
   }
-  val batcher1 = batchers(0)
-  val batcher2 = batchers(1)
+  val batcher1 = if (batch) {
+    batchers(0)
+  } else {
+    null
+  }
+  val batcher2 = if (batch) {
+    batchers(1)
+  } else {
+    null
+  }
+
+  // ReadBatchers.
+  val readBatchers = for (address <- config.readBatcherAddresses) yield {
+    new ReadBatcher[JsTransport](
+      address = address,
+      transport = transport,
+      logger = new JsLogger(),
+      config = config,
+      options = ReadBatcherOptions.default.copy(
+        // readBatchingScheme = ReadBatchingScheme.Size(
+        //   batchSize = 2,
+        //   timeout = java.time.Duration.ofSeconds(1)
+        // )
+        // readBatchingScheme = ReadBatchingScheme.Time(
+        //   timeout = java.time.Duration.ofSeconds(1)
+        // )
+        readBatchingScheme = ReadBatchingScheme.Adaptive
+      ),
+      metrics = new ReadBatcherMetrics(FakeCollectors)
+    )
+  }
+  val readBatcher1 = if (batch) {
+    readBatchers(0)
+  } else {
+    null
+  }
+  val readBatcher2 = if (batch) {
+    readBatchers(1)
+  } else {
+    null
+  }
 
   // Leaders.
   val leaders = for (address <- config.leaderAddresses) yield {
@@ -189,5 +236,11 @@ class MultiPaxos {
 @JSExportAll
 @JSExportTopLevel("frankenpaxos.multipaxos.MultiPaxos")
 object MultiPaxos {
-  val MultiPaxos = new MultiPaxos();
+  val MultiPaxos = new MultiPaxos(batch = false);
+}
+
+@JSExportAll
+@JSExportTopLevel("frankenpaxos.multipaxos.BatchedMultiPaxos")
+object BatchedMultiPaxos {
+  val MultiPaxos = new MultiPaxos(batch = true);
 }

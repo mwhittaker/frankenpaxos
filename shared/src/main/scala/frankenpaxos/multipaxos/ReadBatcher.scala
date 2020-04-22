@@ -56,6 +56,18 @@ object ReadBatcher {
 @JSExportAll
 case class ReadBatcherOptions(
     readBatchingScheme: ReadBatchingScheme,
+    // If `unsafeReadAtFirstSlot` is true, all ReadRequests are issued in slot
+    // 0. With this option enabled, our protocol is not safe. Reads are no
+    // longer linearizable. This should be used only for performance debugging.
+    unsafeReadAtFirstSlot: Boolean,
+    // To perform a linearizable quorum read, a client contacts a quorum of
+    // acceptors and asks them for the largest log entry in which they have
+    // voted. It then computes the maximum of these log entries; let's call
+    // this value i. It issues the read at i + n where n is the number of
+    // acceptor groups. If `unsafeReadAtI` is true, the client instead issues
+    // the read at index i. If unsafeReadAtFirstSlot is true, we instead read
+    // at 0.
+    unsafeReadAtI: Boolean,
     measureLatencies: Boolean
 )
 
@@ -66,6 +78,8 @@ object ReadBatcherOptions {
       batchSize = 100,
       timeout = java.time.Duration.ofSeconds(1)
     ),
+    unsafeReadAtFirstSlot = false,
+    unsafeReadAtI = false,
     measureLatencies = true
   )
 }
@@ -126,7 +140,8 @@ class ReadBatcherMetrics(collectors: Collectors) {
     .build()
     .name("multipaxos_read_batcher_linearizable_batch_not_found_total")
     .help(
-      "Total number of times we receive a BatchMaxSlotReply for a batch we don't have."
+      "Total number of times we receive a BatchMaxSlotReply for a batch we " +
+        "don't have."
     )
     .register()
 
@@ -154,6 +169,9 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = ReadBatcherInbound
   override val serializer = ReadBatcherInboundSerializer
 
+  type ReadBatcherId = Int
+  type AcceptorIndex = Int
+
   // Fields ////////////////////////////////////////////////////////////////////
   // A random number generator instantiated from `seed`. This allows us to
   // perform deterministic randomized tests.
@@ -175,8 +193,9 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
 
   // Linearizable reads.
   //
-  // TODO(mwhittaker): We could resend BatchMaxSlotReply requests, but it is
-  // not strictly needed. We don't do it for now.
+  // TODO(mwhittaker): We need to resend BatchMaxSlotReply requests when using
+  // an adaptive batching scheme. Otherwise, if a BatchMaxSlotReply is dropped,
+  // we stall.
   @JSExport
   protected var linearizableId = 0
 
@@ -188,7 +207,11 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
   // slot response comes back. The batches are keyed by id.
   @JSExport
   protected val pendingLinearizableBatches =
-    mutable.Map[Int, mutable.Buffer[Command]]()
+    mutable.Map[ReadBatcherId, mutable.Buffer[Command]]()
+
+  @JSExport
+  protected val batchMaxSlotReplies =
+    mutable.Map[ReadBatcherId, mutable.Map[AcceptorIndex, BatchMaxSlotReply]]()
 
   @JSExport
   protected val linearizableTimer: Option[Transport#Timer] =
@@ -208,6 +231,7 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
             )
           )
         )
+        batchMaxSlotReplies(-1) = mutable.Map()
         None
     }
 
@@ -267,25 +291,31 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
       s"linearizableTimer",
       timeout,
       () => {
-        // Send a BatchMaxSlotRequest to a randomly chosen acceptor group and
-        // update our batch.
-        val group = acceptors(rand.nextInt(acceptors.size))
-        val quorum = scala.util.Random.shuffle(group).take(config.f + 1)
-        quorum.foreach(
-          _.send(
-            AcceptorInbound().withBatchMaxSlotRequest(
-              BatchMaxSlotRequest(
-                readBatcherIndex = index,
-                readBatcherId = linearizableId
+        metrics.linearizableTimeoutsFiredTotal.inc()
+
+        if (linearizableBatch.size > 0) {
+          // Send a BatchMaxSlotRequest to a randomly chosen acceptor group and
+          // update our batch.
+          val group = acceptors(rand.nextInt(acceptors.size))
+          val quorum = scala.util.Random.shuffle(group).take(config.f + 1)
+          quorum.foreach(
+            _.send(
+              AcceptorInbound().withBatchMaxSlotRequest(
+                BatchMaxSlotRequest(
+                  readBatcherIndex = index,
+                  readBatcherId = linearizableId
+                )
               )
             )
           )
-        )
 
-        metrics.linearizableTimeoutsFiredTotal.inc()
-        pendingLinearizableBatches(linearizableId) = linearizableBatch
-        linearizableId += 1
-        linearizableBatch = mutable.Buffer()
+          batchMaxSlotReplies(linearizableId) = mutable.Map()
+          pendingLinearizableBatches(linearizableId) = linearizableBatch
+          linearizableId += 1
+          linearizableBatch = mutable.Buffer()
+        }
+
+        t.start()
       }
     )
     t.start()
@@ -299,21 +329,26 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
       s"sequentialTimer",
       timeout,
       () => {
+        metrics.sequentialTimeoutsFiredTotal.inc()
+
         // Send the batch to a randomly chosen replica and reset our batch.
-        replicas(rand.nextInt(replicas.size)).send(
-          ReplicaInbound().withSequentialReadRequestBatch(
-            SequentialReadRequestBatch(
-              slot = sequentialSlot,
-              command = sequentialBatch.toSeq
+        if (sequentialBatch.size > 0) {
+          replicas(rand.nextInt(replicas.size)).send(
+            ReplicaInbound().withSequentialReadRequestBatch(
+              SequentialReadRequestBatch(
+                slot = sequentialSlot,
+                command = sequentialBatch.toSeq
+              )
             )
           )
-        )
 
-        metrics.sequentialReadBatchesSentTotal.inc()
-        metrics.batchSize.observe(sequentialBatch.size)
-        metrics.sequentialTimeoutsFiredTotal.inc()
-        sequentialSlot = -1
-        sequentialBatch.clear()
+          metrics.sequentialReadBatchesSentTotal.inc()
+          metrics.batchSize.observe(sequentialBatch.size)
+          sequentialSlot = -1
+          sequentialBatch.clear()
+        }
+
+        t.start()
       }
     )
     t.start()
@@ -327,16 +362,22 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
       s"eventualTimer",
       timeout,
       () => {
-        // Send the batch to a randomly chosen replica and reset our batch.
-        replicas(rand.nextInt(replicas.size)).send(
-          ReplicaInbound().withEventualReadRequestBatch(
-            EventualReadRequestBatch(command = eventualBatch.toSeq)
-          )
-        )
-        metrics.eventualReadBatchesSentTotal.inc()
-        metrics.batchSize.observe(eventualBatch.size)
         metrics.eventualTimeoutsFiredTotal.inc()
-        eventualBatch.clear()
+
+        // Send the batch to a randomly chosen replica and reset our batch.
+        if (eventualBatch.size > 0) {
+          replicas(rand.nextInt(replicas.size)).send(
+            ReplicaInbound().withEventualReadRequestBatch(
+              EventualReadRequestBatch(command = eventualBatch.toSeq)
+            )
+          )
+
+          metrics.eventualReadBatchesSentTotal.inc()
+          metrics.batchSize.observe(eventualBatch.size)
+          eventualBatch.clear()
+        }
+
+        t.start()
       }
     )
     t.start()
@@ -402,6 +443,7 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
 
+        batchMaxSlotReplies(linearizableId) = mutable.Map()
         pendingLinearizableBatches(linearizableId) = linearizableBatch
         linearizableId += 1
         linearizableBatch = mutable.Buffer()
@@ -501,6 +543,40 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       batchMaxSlotReply: BatchMaxSlotReply
   ): Unit = {
+    val slot = batchMaxSlotReplies.get(batchMaxSlotReply.readBatcherId) match {
+      case None =>
+        logger.debug(
+          s"ReadBatcher received a batchMaxSlotReply for id " +
+            s"${batchMaxSlotReply.readBatcherId} but doesn't have any " +
+            s"batchMaxSlotReplies entry for it. A batchMaxSlotReply may have " +
+            s"been duplicated. We are ignoring it."
+        )
+        return
+
+      case Some(replies) =>
+        // Wait until we have f+1 responses.
+        replies(batchMaxSlotReply.acceptorIndex) = batchMaxSlotReply
+        if (replies.size < config.f + 1) {
+          return
+        }
+
+        // Compute the slot.
+        //
+        // TODO(mwhittaker): Double check that the `- 1` is safe.
+        val slot = if (options.unsafeReadAtFirstSlot) {
+          0
+        } else if (options.unsafeReadAtI) {
+          replies.values.map(_.slot).max
+        } else {
+          replies.values.map(_.slot).max + acceptors.size - 1
+        }
+
+        // Clean up metadata.
+        batchMaxSlotReplies.remove(batchMaxSlotReply.readBatcherId)
+
+        slot
+    }
+
     pendingLinearizableBatches.get(batchMaxSlotReply.readBatcherId) match {
       case None =>
         // We may not have a batch because (a) we've already received the
@@ -511,8 +587,7 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
       case Some(batch) =>
         replicas(rand.nextInt(replicas.size)).send(
           ReplicaInbound().withReadRequestBatch(
-            ReadRequestBatch(slot = batchMaxSlotReply.slot,
-                             command = batch.toSeq)
+            ReadRequestBatch(slot = slot, command = batch.toSeq)
           )
         )
 
@@ -542,7 +617,10 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
 
-        pendingLinearizableBatches(linearizableId) = linearizableBatch
+        batchMaxSlotReplies(linearizableId) = mutable.Map()
+        if (linearizableBatch.size > 0) {
+          pendingLinearizableBatches(linearizableId) = linearizableBatch
+        }
         linearizableId += 1
         linearizableBatch = mutable.Buffer()
     }

@@ -19,10 +19,36 @@
   <div id="container">
     <h1>MultiPaxos</h1>
 
-    <svg id="animation" viewBox="0 0 1000 500"></svg>
+    <svg id="animation" viewBox="0 0 1100 500"></svg>
 
     <frankenpaxos-tweened-app
       id="app"
+      :transport="transport"
+      :send_message="send_message"
+      :settings="settings"
+      v-slot="{timer_tweens: timer_tweens}">
+      <frankenpaxos-settings
+        :transport="transport"
+        v-model="settings">
+      </frankenpaxos-settings>
+
+      <frankenpaxos-actor
+        :transport="transport"
+        :node="node"
+        :timer_tweens="timer_tweens"
+        v-on:partition="partition"
+        v-on:unpartition="unpartition">
+      </frankenpaxos-actor>
+
+      <frankenpaxos-unittest :transport="transport"></frankenpaxos-unittest>
+    </frankenpaxos-tweened-app>
+
+    <h1>Batched MultiPaxos</h1>
+
+    <svg id="batched_animation" viewBox="0 0 1100 500"></svg>
+
+    <frankenpaxos-tweened-app
+      id="batched_app"
       :transport="transport"
       :send_message="send_message"
       :settings="settings"

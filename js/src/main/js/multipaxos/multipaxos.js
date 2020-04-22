@@ -238,6 +238,56 @@ const batcher_info = {
   `,
 }
 
+const read_batcher_info = {
+  props: {
+    node: Object,
+  },
+
+  template: `
+    <div>
+      <div>
+        linearizableId = {{node.actor.linearizableId}}
+      </div>
+      <div>
+        linearizableBatch =
+        <frankenpaxos-horizontal-seq :seq="node.actor.linearizableBatch">
+        </frankenpaxos-horizontal-seq>
+      </div>
+      <div>
+        pendingLinearizableBatches =
+        <frankenpaxos-map :map="node.actor.pendingLinearizableBatches"
+                          v-slot="{value: batch}">
+          <frankenpaxos-horizontal-seq :seq="batch">
+          </frankenpaxos-horizontal-seq>
+        </frankenpaxos-map>
+      </div>
+      <div>
+        batchMaxSlotReplies =
+        <frankenpaxos-map :map="node.actor.batchMaxSlotReplies"
+                          v-slot="{value: replies}">
+          <frankenpaxos-map :map="replies">
+          </frankenpaxos-map>
+        </frankenpaxos-map>
+      </div>
+
+      <div>
+        sequentialSlot = {{node.actor.sequentialSlot}}
+      </div>
+      <div>
+        sequentialBatch =
+        <frankenpaxos-horizontal-seq :seq="node.actor.sequentialBatch">
+        </frankenpaxos-horizontal-seq>
+      </div>
+
+      <div>
+        eventualBatch =
+        <frankenpaxos-horizontal-seq :seq="node.actor.eventualBatch">
+        </frankenpaxos-horizontal-seq>
+      </div>
+    </div>
+  `,
+}
+
 const leader_info = {
   props: {
     node: Object,
@@ -427,10 +477,17 @@ const proxy_replica_info = {
 }
 
 // Main app ////////////////////////////////////////////////////////////////////
-function make_nodes(MultiPaxos, snap) {
+function distance(x1, y1, x2, y2) {
+  const dx = x1 - x2;
+  const dy = y1 - y2;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+function make_nodes(MultiPaxos, snap, batched) {
   // https://flatuicolors.com/palette/defo
   const flat_red = '#e74c3c';
   const flat_blue = '#3498db';
+  const flat_yellow = '#f1c40f';
   const flat_orange = '#f39c12';
   const flat_green = '#2ecc71';
   const flat_purple = '#9b59b6';
@@ -454,12 +511,13 @@ function make_nodes(MultiPaxos, snap) {
     'stroke-width': '1px',
   }
 
-  const client_x = 100;
-  const batcher_x = 200;
-  const leader_x = 300;
-  const proxy_leader_x = 400;
-  const replica_x = 800;
-  const proxy_replica_x = 900;
+  const client_x        = batch ? 100  : 100;
+  const batcher_x       = batch ? 200  : -1;
+  const read_batcher_x  = batch ? 300  : -1;
+  const leader_x        = batch ? 400  : 250;
+  const proxy_leader_x  = batch ? 500  : 400;
+  const replica_x       = batch ? 900  : 850;
+  const proxy_replica_x = batch ? 1000 : 1000;
 
   const nodes = {};
 
@@ -484,21 +542,44 @@ function make_nodes(MultiPaxos, snap) {
   }
 
   // Batchers.
-  const batchers = [
-    {batcher: MultiPaxos.batcher1, y: 200},
-    {batcher: MultiPaxos.batcher2, y: 300},
-  ]
-  for (const [index, {batcher, y}] of batchers.entries()) {
-    const color = flat_blue;
-    nodes[batcher.address] = {
-      actor: batcher,
-      color: color,
-      component: batcher_info,
-      svgs: [
-        snap.circle(batcher_x, y, 20).attr(colored(color)),
-        snap.text(batcher_x, y, (index + 1).toString()).attr(number_style),
-      ],
-    };
+  if (batch) {
+    const batchers = [
+      {batcher: MultiPaxos.batcher1, y: 200},
+      {batcher: MultiPaxos.batcher2, y: 300},
+    ]
+    for (const [index, {batcher, y}] of batchers.entries()) {
+      const color = flat_blue;
+      nodes[batcher.address] = {
+        actor: batcher,
+        color: color,
+        component: batcher_info,
+        svgs: [
+          snap.circle(batcher_x, y, 20).attr(colored(color)),
+          snap.text(batcher_x, y, (index + 1).toString()).attr(number_style),
+        ],
+      };
+    }
+  }
+
+  // ReadBatchers.
+  if (batch) {
+    const read_batchers = [
+      {read_batcher: MultiPaxos.readBatcher1, y: 200},
+      {read_batcher: MultiPaxos.readBatcher2, y: 300},
+    ]
+    for (const [index, {read_batcher, y}] of read_batchers.entries()) {
+      const color = flat_yellow;
+      nodes[read_batcher.address] = {
+        actor: read_batcher,
+        color: color,
+        component: read_batcher_info,
+        svgs: [
+          snap.circle(read_batcher_x, y, 20).attr(colored(color)),
+          snap.text(read_batcher_x, y, (index + 1).toString())
+              .attr(number_style),
+        ],
+      };
+    }
   }
 
   // Leaders.
@@ -606,7 +687,10 @@ function make_nodes(MultiPaxos, snap) {
   // Node titles.
   const anchor_middle = (text) => text.attr({'text-anchor': 'middle'});
   anchor_middle(snap.text(client_x, 50, 'Clients'));
-  anchor_middle(snap.text(batcher_x, 50, 'Batchers'));
+  if(batch) {
+      anchor_middle(snap.text(batcher_x, 50, 'Batchers'));
+      anchor_middle(snap.text(read_batcher_x, 50, 'Read Batchers'));
+  }
   anchor_middle(snap.text(leader_x, 50, 'Leaders'));
   anchor_middle(snap.text(proxy_leader_x, 50, 'Proxy Leaders'));
   anchor_middle(snap.text(proxy_leader_x + 200, 50, 'Acceptors'));
@@ -616,10 +700,10 @@ function make_nodes(MultiPaxos, snap) {
   return nodes;
 }
 
-function main() {
+function unbatched() {
   const MultiPaxos = frankenpaxos.multipaxos.MultiPaxos.MultiPaxos;
   const snap = Snap('#animation');
-  const nodes = make_nodes(MultiPaxos, snap);
+  const nodes = make_nodes(MultiPaxos, snap, batch=false);
 
   // Create the vue app.
   let vue_app = new Vue({
@@ -637,12 +721,6 @@ function main() {
     },
 
     methods: {
-      distance: function(x1, y1, x2, y2) {
-        const dx = x1 - x2;
-        const dy = y1 - y2;
-        return Math.sqrt(dx*dx + dy*dy);
-      },
-
       send_message: function(message) {
         let src = nodes[message.src];
         let dst = nodes[message.dst];
@@ -650,7 +728,7 @@ function main() {
         let src_y = src.svgs[0].attr("cy");
         let dst_x = dst.svgs[0].attr("cx");
         let dst_y = dst.svgs[0].attr("cy");
-        let d = this.distance(src_x, src_y, dst_x, dst_y);
+        let d = distance(src_x, src_y, dst_x, dst_y);
         let speed = 400 + (Math.random() * 50); // px per second.
 
         let svg_message = snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
@@ -681,6 +759,72 @@ function main() {
       }
     }
   }
+}
+
+function batched() {
+  const MultiPaxos = frankenpaxos.multipaxos.BatchedMultiPaxos.MultiPaxos;
+  const snap = Snap('#batched_animation');
+  const nodes = make_nodes(MultiPaxos, snap, batch=true);
+
+  // Create the vue app.
+  let vue_app = new Vue({
+    el: '#batched_app',
+
+    data: {
+      nodes: nodes,
+      node: nodes[MultiPaxos.client1.address],
+      transport: MultiPaxos.transport,
+      settings: {
+        time_scale: 1,
+        auto_deliver_messages: true,
+        auto_start_timers: true,
+      },
+    },
+
+    methods: {
+      send_message: function(message) {
+        let src = nodes[message.src];
+        let dst = nodes[message.dst];
+        let src_x = src.svgs[0].attr("cx");
+        let src_y = src.svgs[0].attr("cy");
+        let dst_x = dst.svgs[0].attr("cx");
+        let dst_y = dst.svgs[0].attr("cy");
+        let d = distance(src_x, src_y, dst_x, dst_y);
+        let speed = 400 + (Math.random() * 50); // px per second.
+
+        let svg_message = snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
+        snap.prepend(svg_message);
+        let duration = d / speed;
+        return TweenMax.to(svg_message.node, duration, {
+          attr: { cx: dst_x, cy: dst_y },
+          ease: Linear.easeNone,
+          onComplete: () => { svg_message.remove(); },
+        });
+      },
+
+      partition: function(address) {
+        nodes[address].svgs[0].attr({fill: "#7f8c8d"})
+      },
+
+      unpartition: function(address) {
+        nodes[address].svgs[0].attr({fill: nodes[address].color})
+      },
+    },
+  });
+
+  // Select a node by clicking it.
+  for (const node of Object.values(nodes)) {
+    for (const svg of node.svgs) {
+      svg.node.onclick = () => {
+        vue_app.node = node;
+      }
+    }
+  }
+}
+
+function main() {
+  unbatched();
+  batched();
 }
 
 window.onload = main
