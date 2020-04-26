@@ -107,6 +107,7 @@ class Input(NamedTuple):
     distribution_scheme: DistributionScheme
     client_jvm_heap_size: str
     batcher_jvm_heap_size: str
+    read_batcher_jvm_heap_size: str
     leader_jvm_heap_size: str
     proxy_leader_jvm_heap_size: str
     acceptor_jvm_heap_size: str
@@ -133,6 +134,10 @@ class Input(NamedTuple):
     # Batcher options. #########################################################
     batcher_options: BatcherOptions
     batcher_log_level: str
+
+    # ReadBatcher options. #####################################################
+    read_batcher_options: ReadBatcherOptions
+    read_batcher_log_level: str
 
     # Leader options. ##########################################################
     leader_options: LeaderOptions
@@ -396,11 +401,11 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     read_batcher.host.ip(),
                     '--prometheus_port',
                     str(read_batcher.port + 1) if input.monitored else '-1',
-                    '--options.read_batching_scheme',
+                    '--options.readBatchingScheme',
                     f'{input.read_batcher_options.read_batching_scheme}',
-                    '--options.unsafe_read_at_first_slot',
+                    '--options.unsafeReadAtFirstSlot',
                     f'{input.read_batcher_options.unsafe_read_at_first_slot}',
-                    '--options.unsafe_read_at_i',
+                    '--options.unsafeReadAtI',
                     f'{input.read_batcher_options.unsafe_read_at_i}',
                 ],
             )

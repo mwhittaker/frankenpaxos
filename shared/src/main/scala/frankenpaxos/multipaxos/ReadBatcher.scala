@@ -173,7 +173,6 @@ class ReadBatcherMetrics(collectors: Collectors) {
   val batchSize: Summary = collectors.summary
     .build()
     .name("multipaxos_read_batcher_batch_size")
-    .labelNames("type")
     .help("Batch size.")
     .register()
 }

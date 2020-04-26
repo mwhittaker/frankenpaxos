@@ -14,6 +14,7 @@ def main(args) -> None:
                     num_warmup_clients_per_proc = 1,
                     num_clients_per_proc = 1,
                     num_batchers = num_batchers,
+                    num_read_batchers = num_batchers,
                     num_leaders = 2,
                     num_proxy_leaders = 2,
                     num_acceptor_groups = 2,
@@ -22,6 +23,7 @@ def main(args) -> None:
                     distribution_scheme = DistributionScheme.HASH,
                     client_jvm_heap_size = '100m',
                     batcher_jvm_heap_size = '100m',
+                    read_batcher_jvm_heap_size = '100m',
                     leader_jvm_heap_size = '100m',
                     proxy_leader_jvm_heap_size = '100m',
                     acceptor_jvm_heap_size = '100m',
@@ -34,9 +36,17 @@ def main(args) -> None:
                     timeout = datetime.timedelta(seconds=3),
                     client_lag = datetime.timedelta(seconds=3),
                     state_machine = 'KeyValueStore',
+                    predetermined_read_fraction = -1,
                     workload = read_write_workload.UniformReadWriteWorkload(
+                        num_keys=1, read_fraction=0.5, write_size_mean=1,
+                        write_size_std=0),
+                    read_workload = read_write_workload.UniformReadWriteWorkload(
+                        num_keys=1, read_fraction=1.0, write_size_mean=1,
+                        write_size_std=0),
+                    write_workload = read_write_workload.UniformReadWriteWorkload(
                         num_keys=1, read_fraction=0.0, write_size_mean=1,
                         write_size_std=0),
+                    read_consistency = 'eventual',
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -45,6 +55,12 @@ def main(args) -> None:
                         batch_size = 1,
                     ),
                     batcher_log_level = args.log_level,
+                    read_batcher_options = ReadBatcherOptions(
+                        read_batching_scheme = "size,1,10s",
+                        unsafe_read_at_first_slot = False,
+                        unsafe_read_at_i = False,
+                    ),
+                    read_batcher_log_level = args.log_level,
                     leader_options = LeaderOptions(
                         resend_phase1as_period = datetime.timedelta(seconds=60),
                         flush_phase2as_every_n = 1,
