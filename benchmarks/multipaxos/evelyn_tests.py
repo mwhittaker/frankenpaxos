@@ -27,15 +27,22 @@ def main(args) -> None:
                     acceptor_jvm_heap_size = '12g',
                     replica_jvm_heap_size = '12g',
                     proxy_replica_jvm_heap_size = '12g',
-                    warmup_duration = datetime.timedelta(seconds=5),
-                    warmup_timeout = datetime.timedelta(seconds=10),
+                    warmup_duration = datetime.timedelta(seconds=15),
+                    warmup_timeout = datetime.timedelta(seconds=20),
                     warmup_sleep = datetime.timedelta(seconds=5),
                     duration = datetime.timedelta(seconds=10),
                     timeout = datetime.timedelta(seconds=15),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
+                    predetermined_read_fraction = predetermined_read_fraction,
                     workload = read_write_workload.UniformReadWriteWorkload(
                         num_keys=num_keys, read_fraction=read_fraction,
+                        write_size_mean=1, write_size_std=0),
+                    read_workload = read_write_workload.UniformReadWriteWorkload(
+                        num_keys=num_keys, read_fraction=1.0,
+                        write_size_mean=1, write_size_std=0),
+                    write_workload = read_write_workload.UniformReadWriteWorkload(
+                        num_keys=num_keys, read_fraction=0.0,
                         write_size_mean=1, write_size_std=0),
                     read_consistency = read_consistency,
                     profiled = args.profile,
@@ -83,20 +90,36 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
+
                 for num_keys in [1]
-                # for read_fraction in [0.9]
                 for read_consistency in ["eventual"]
                 for (unsafe_read_at_first_slot, unsafe_read_at_i) in
                     [(False, False)]
-                    # [(False, False),
-                    # (False, True),
-                    # (True, False),]
 
-                for num_proxy_leaders in [2]
-                for num_acceptor_groups in [1]
-                for (num_replicas, num_proxy_replicas) in [(10, 2)]
-                for (num_client_procs, num_clients_per_proc, read_fraction) in [
-                    # (1, 100, 0.5),
+                for num_proxy_leaders in [7]
+                for num_acceptor_groups in [2]
+                for (num_replicas, num_proxy_replicas) in [(3, 4)]
+                for read_fraction in [0]
+                for (num_client_procs,
+                     num_clients_per_proc,
+                     predetermined_read_fraction) in [
+                    # (1, 100, int((1 - (100 / 100)) * 100)),
+                    (2, 100, int((1 - (100 / 200)) * 100)),
+                    (3, 100, int((1 - (100 / 300)) * 100)),
+                    (4, 100, int((1 - (100 / 400)) * 100)),
+                    (5, 100, int((1 - (100 / 500)) * 100)),
+                    (6, 100, int((1 - (100 / 600)) * 100)),
+                    (7, 100, int((1 - (100 / 700)) * 100)),
+                    (8, 100, int((1 - (100 / 800)) * 100)),
+                    (9, 100, int((1 - (100 / 900)) * 100)),
+                    (10, 100, int((1 - (100 / 1000)) * 100)),
+                    # (10, 100, 0),
+                    # (11, 100, 0),
+                    # (12, 100, 0),
+                    # (13, 100, 0),
+                    # (14, 100, 0),
+                    # (15, 100, 0),
+
                     # (2, 100, 1 - (100 / 200)),
                     # (3, 100, 1 - (100 / 300)),
                     # (4, 100, 1 - (100 / 400)),
@@ -121,7 +144,7 @@ def main(args) -> None:
                     # (7, 100, 1.0),
                     # (8, 100, 1.0),
                     # (9, 100, 1.0),
-                    (10, 100, 1 - (100 / 1000)),
+                    # (10, 100, 1 - (100 / 1000)),
                     # (11, 100, 1 - (150 / 1100)),
                     # (12, 100, 1 - (150 / 1200)),
                     # (13, 100, 1 - (150 / 1300)),
