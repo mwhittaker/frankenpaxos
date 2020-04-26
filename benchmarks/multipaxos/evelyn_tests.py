@@ -14,6 +14,7 @@ def main(args) -> None:
                     num_warmup_clients_per_proc = num_clients_per_proc,
                     num_clients_per_proc = num_clients_per_proc,
                     num_batchers = 0,
+                    num_read_batchers = 0,
                     num_leaders = 2,
                     num_proxy_leaders = num_proxy_leaders,
                     num_acceptor_groups = num_acceptor_groups,
@@ -22,6 +23,7 @@ def main(args) -> None:
                     distribution_scheme = DistributionScheme.HASH,
                     client_jvm_heap_size = '12g',
                     batcher_jvm_heap_size = '12g',
+                    read_batcher_jvm_heap_size = '12g',
                     leader_jvm_heap_size = '12g',
                     proxy_leader_jvm_heap_size = '12g',
                     acceptor_jvm_heap_size = '12g',
@@ -53,6 +55,12 @@ def main(args) -> None:
                         batch_size = 1,
                     ),
                     batcher_log_level = args.log_level,
+                    read_batcher_options = ReadBatcherOptions(
+                        read_batching_scheme = "size,1,10s",
+                        unsafe_read_at_first_slot = False,
+                        unsafe_read_at_i = False,
+                    ),
+                    read_batcher_log_level = args.log_level,
                     leader_options = LeaderOptions(
                         resend_phase1as_period = datetime.timedelta(seconds=60),
                         flush_phase2as_every_n = 1,
@@ -92,82 +100,56 @@ def main(args) -> None:
                 )
 
                 for num_keys in [1]
-                for read_consistency in ["eventual"]
+                for read_consistency in ["linearizable"]
                 for (unsafe_read_at_first_slot, unsafe_read_at_i) in
                     [(False, False)]
 
                 for num_proxy_leaders in [7]
-                for num_acceptor_groups in [2]
+                for num_acceptor_groups in [3]
                 for (num_replicas, num_proxy_replicas) in [(3, 4)]
                 for read_fraction in [0]
                 for (num_client_procs,
                      num_clients_per_proc,
                      predetermined_read_fraction) in [
-                    # (1, 100, int((1 - (100 / 100)) * 100)),
-                    (2, 100, int((1 - (100 / 200)) * 100)),
-                    (3, 100, int((1 - (100 / 300)) * 100)),
-                    (4, 100, int((1 - (100 / 400)) * 100)),
-                    (5, 100, int((1 - (100 / 500)) * 100)),
-                    (6, 100, int((1 - (100 / 600)) * 100)),
-                    (7, 100, int((1 - (100 / 700)) * 100)),
-                    (8, 100, int((1 - (100 / 800)) * 100)),
-                    (9, 100, int((1 - (100 / 900)) * 100)),
-                    (10, 100, int((1 - (100 / 1000)) * 100)),
+                    # (1, 100, 0),
+                    # (2, 100, 0),
+                    # (3, 100, 0),
+                    # (4, 100, 0),
+                    # (5, 100, 0),
+                    # (6, 100, 0),
+                    # (7, 100, 0),
+                    # (8, 100, 0),
+                    # (9, 100, 0),
                     # (10, 100, 0),
-                    # (11, 100, 0),
-                    # (12, 100, 0),
-                    # (13, 100, 0),
-                    # (14, 100, 0),
-                    # (15, 100, 0),
 
-                    # (2, 100, 1 - (100 / 200)),
-                    # (3, 100, 1 - (100 / 300)),
-                    # (4, 100, 1 - (100 / 400)),
-                    # (5, 100, 1 - (100 / 500)),
-                    # (6, 100, 1 - (100 / 600)),
-                    # (7, 100, 1 - (100 / 700)),
-                    # (8, 100, 1 - (100 / 800)),
-                    # (9, 100, 1 - (100 / 900)),
-                    # (10, 100, 1 - (100 / 1000)),
-                    # (11, 100, 1 - (100 / 1100)),
-                    # (12, 100, 1 - (100 / 1200)),
-                    # (13, 100, 1 - (100 / 1300)),
-                    # (14, 100, 1 - (100 / 1400)),
-                    # (15, 100, 1 - (100 / 1500)),
-
-                    # (1, 100, 1.0),
-                    # (2, 100, 1.0),
-                    # (3, 100, 1.0),
-                    # (4, 100, 1.0),
-                    # (5, 100, 1.0),
-                    # (6, 100, 1.0),
-                    # (7, 100, 1.0),
-                    # (8, 100, 1.0),
-                    # (9, 100, 1.0),
-                    # (10, 100, 1 - (100 / 1000)),
-                    # (11, 100, 1 - (150 / 1100)),
-                    # (12, 100, 1 - (150 / 1200)),
-                    # (13, 100, 1 - (150 / 1300)),
-                    # (14, 100, 1 - (150 / 1400)),
-                    # (15, 100, 1 - (150 / 1500)),
-                    # (16, 100, 1 - (150 / 1600)),
-                    # (17, 100, 1 - (150 / 1700)),
-                    # (18, 100, 1 - (150 / 1800)),
-                    # (19, 100, 1 - (150 / 1900)),
-                    # (20, 100, 1 - (150 / 2000)),
+                    # (1, 100, int((1 - (50 / 100)) * 100)),
+                    # (2, 100, int((1 - (50 / 200)) * 100)),
+                    (3, 100, int((1 - (50 / 300)) * 100)),
+                    (4, 100, int((1 - (50 / 400)) * 100)),
+                    (5, 100, int((1 - (50 / 500)) * 100)),
+                    (6, 100, int((1 - (50 / 600)) * 100)),
+                    (7, 100, int((1 - (50 / 700)) * 100)),
+                    (8, 100, int((1 - (50 / 800)) * 100)),
+                    (9, 100, int((1 - (50 / 900)) * 100)),
+                    (10, 100, int((1 - (50 / 1000)) * 100)),
+                    (11, 100, int((1 - (50 / 1100)) * 100)),
+                    (12, 100, int((1 - (50 / 1200)) * 100)),
+                    (13, 100, int((1 - (50 / 1300)) * 100)),
+                    (14, 100, int((1 - (50 / 1400)) * 100)),
+                    (15, 100, int((1 - (50 / 1500)) * 100)),
                 ]
             ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
-                'f': input.f,
-                'num_batchers': input.num_batchers,
+                # 'f': input.f,
+                # 'num_batchers': input.num_batchers,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
-                'unsafe_read_at_i': \
-                    input.client_options.unsafe_read_at_i,
-                'unsafe_read_at_first_slot': \
-                    input.client_options.unsafe_read_at_first_slot,
+                # 'unsafe_read_at_i': \
+                #     input.client_options.unsafe_read_at_i,
+                # 'unsafe_read_at_first_slot': \
+                #     input.client_options.unsafe_read_at_first_slot,
                 'write.latency.median_ms': \
                     f'{output.write_output.latency.median_ms:.6}',
                 'write.start_throughput_1s.p90': \
