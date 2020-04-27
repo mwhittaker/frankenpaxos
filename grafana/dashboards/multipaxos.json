@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1585525198376,
+  "iteration": 1587958162364,
   "links": [],
   "panels": [
     {
@@ -370,6 +370,125 @@
         "x": 0,
         "y": 21
       },
+      "id": 27,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(multipaxos_read_batcher_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(multipaxos_read_batcher_requests_total[1s])) by (instance)",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Inbound ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(multipaxos_read_batcher_read_batches_sent_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Read batches sent ({{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(multipaxos_read_batcher_sequential_read_batches_sent_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Sequential read batches sent ({{instance}})",
+          "refId": "D"
+        },
+        {
+          "expr": "rate(multipaxos_read_batcher_eventual_read_batches_sent_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Eventual read batches sent ({{instance}})",
+          "refId": "E"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Read Batcher Request Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
       "id": 21,
       "legend": {
         "alignAsTable": false,
@@ -466,7 +585,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 35
       },
       "id": 22,
       "legend": {
@@ -564,7 +683,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 42
       },
       "id": 23,
       "legend": {
@@ -662,7 +781,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 49
       },
       "id": 24,
       "legend": {
@@ -788,7 +907,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 56
       },
       "id": 25,
       "legend": {
@@ -884,7 +1003,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 63
       },
       "id": 6,
       "legend": {
@@ -1019,7 +1138,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 63
+        "y": 70
       },
       "id": 4,
       "legend": {
@@ -1128,7 +1247,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 71
+        "y": 78
       },
       "id": 26,
       "legend": {
@@ -1210,6 +1329,98 @@
     {
       "aliasColors": {},
       "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 85
+      },
+      "id": 29,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(multipaxos_read_batcher_batch_size_sum[1s])\n/ rate(multipaxos_read_batcher_batch_size_count[1s])",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 1,
+          "legendFormat": "Batch size ({{instance}})",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Read Batch Sizes",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
       "dashLength": 10,
       "dashes": false,
       "datasource": "Prometheus",
@@ -1218,7 +1429,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 92
       },
       "id": 7,
       "legend": {
@@ -1311,7 +1522,107 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 100
+      },
+      "id": 28,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(multipaxos_read_batcher_linearizable_timeouts_fired_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Linearizable read timeouts fired ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(multipaxos_read_batcher_sequential_timeouts_fired_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Sequential read timeouts fired ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(multipaxos_read_batcher_eventual_timeouts_fired_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Eventual read timeouts fired ({{instance}})",
+          "refId": "C"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Read Batcher Timeout Rate",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 108
       },
       "id": 8,
       "legend": {
@@ -1890,8 +2201,8 @@
     ]
   },
   "time": {
-    "from": "2020-03-30T00:00:07.484Z",
-    "to": "2020-03-30T00:00:14.221Z"
+    "from": "2020-04-27T03:31:21.440Z",
+    "to": "2020-04-27T03:31:59.987Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1921,5 +2232,5 @@
   "timezone": "",
   "title": "MultiPaxos",
   "uid": "rFE0aw2Zk",
-  "version": 2
+  "version": 3
 }
