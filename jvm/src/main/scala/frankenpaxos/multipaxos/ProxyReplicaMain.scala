@@ -53,6 +53,8 @@ object ProxyReplicaMain extends App {
     // Options.
     opt[Int]("options.flushEveryN")
       .optionAction((x, o) => o.copy(flushEveryN = x))
+    opt[Boolean]("options.batchFlush")
+      .optionAction((x, o) => o.copy(batchFlush = x))
   }
 
   // Parse flags.

@@ -89,6 +89,7 @@ class ReplicaOptions(NamedTuple):
 
 class ProxyReplicaOptions(NamedTuple):
     flush_every_n: int = 1
+    batch_flush: bool = False
 
 
 class Input(NamedTuple):
@@ -512,6 +513,8 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     str(proxy_replica.port + 1) if input.monitored else '-1',
                     '--options.flushEveryN',
                     str(input.proxy_replica_options.flush_every_n),
+                    '--options.batchFlush',
+                    str(input.proxy_replica_options.batch_flush),
                 ],
             )
             if input.profiled:
@@ -572,6 +575,10 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     'multipaxos_batcher': [
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().batchers
+                    ],
+                    'multipaxos_read_batcher': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().read_batchers
                     ],
                     'multipaxos_leader': [
                         f'{e.host.ip()}:{e.port+1}'

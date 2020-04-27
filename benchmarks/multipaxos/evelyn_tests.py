@@ -14,7 +14,7 @@ def main(args) -> None:
                     num_warmup_clients_per_proc = num_clients_per_proc,
                     num_clients_per_proc = num_clients_per_proc,
                     num_batchers = 0,
-                    num_read_batchers = 0,
+                    num_read_batchers = num_read_batchers,
                     num_leaders = 2,
                     num_proxy_leaders = num_proxy_leaders,
                     num_acceptor_groups = num_acceptor_groups,
@@ -56,7 +56,7 @@ def main(args) -> None:
                     ),
                     batcher_log_level = args.log_level,
                     read_batcher_options = ReadBatcherOptions(
-                        read_batching_scheme = "size,1,10s",
+                        read_batching_scheme = f'size,{batch_size},1s',
                         unsafe_read_at_first_slot = False,
                         unsafe_read_at_i = False,
                     ),
@@ -88,7 +88,9 @@ def main(args) -> None:
                         unsafe_dont_recover = False,
                     ),
                     replica_log_level = args.log_level,
-                    proxy_replica_options = ProxyReplicaOptions(),
+                    proxy_replica_options = ProxyReplicaOptions(
+                        batch_flush = True,
+                    ),
                     proxy_replica_log_level = args.log_level,
                     client_options = ClientOptions(
                         resend_client_request_period = \
@@ -100,52 +102,65 @@ def main(args) -> None:
                 )
 
                 for num_keys in [1]
-                for read_consistency in ["linearizable"]
+                for read_consistency in ["eventual"]
                 for (unsafe_read_at_first_slot, unsafe_read_at_i) in
                     [(False, False)]
 
-                for num_proxy_leaders in [7]
-                for num_acceptor_groups in [3]
-                for (num_replicas, num_proxy_replicas) in [(3, 4)]
+                for num_proxy_leaders in [5]
+                for num_acceptor_groups in [2]
+                for (num_replicas, num_proxy_replicas) in [(2, 4)]
+                for num_read_batchers in [3]
+                for batch_size in [10]
                 for read_fraction in [0]
                 for (num_client_procs,
                      num_clients_per_proc,
                      predetermined_read_fraction) in [
-                    # (1, 100, 0),
-                    # (2, 100, 0),
-                    # (3, 100, 0),
-                    # (4, 100, 0),
-                    # (5, 100, 0),
-                    # (6, 100, 0),
-                    # (7, 100, 0),
-                    # (8, 100, 0),
-                    # (9, 100, 0),
-                    # (10, 100, 0),
+                    # (1, 100, 100),
+                    # (2, 100, 100),
+                    # (3, 100, 100),
+                    # (4, 100, 100),
+                    (5, 10, 100),
+                    (5, 50, 100),
+                    (5, 100, 100),
+                    (5, 150, 100),
+                    (5, 200, 100),
+                    # (6, 100, 100),
+                    # (7, 100, 100),
+                    # (8, 100, 100),
+                    # (9, 100, 100),
+                    # (10, 100, 100),
+                    # (11, 100, 100),
+                    # (12, 100, 100),
+                    # (13, 100, 100),
+                    # (14, 100, 100),
+                    # (15, 100, 100),
 
                     # (1, 100, int((1 - (50 / 100)) * 100)),
                     # (2, 100, int((1 - (50 / 200)) * 100)),
-                    (3, 100, int((1 - (50 / 300)) * 100)),
-                    (4, 100, int((1 - (50 / 400)) * 100)),
-                    (5, 100, int((1 - (50 / 500)) * 100)),
-                    (6, 100, int((1 - (50 / 600)) * 100)),
-                    (7, 100, int((1 - (50 / 700)) * 100)),
-                    (8, 100, int((1 - (50 / 800)) * 100)),
-                    (9, 100, int((1 - (50 / 900)) * 100)),
-                    (10, 100, int((1 - (50 / 1000)) * 100)),
-                    (11, 100, int((1 - (50 / 1100)) * 100)),
-                    (12, 100, int((1 - (50 / 1200)) * 100)),
-                    (13, 100, int((1 - (50 / 1300)) * 100)),
-                    (14, 100, int((1 - (50 / 1400)) * 100)),
-                    (15, 100, int((1 - (50 / 1500)) * 100)),
+                    # (3, 100, int((1 - (50 / 300)) * 100)),
+                    # (4, 100, int((1 - (50 / 400)) * 100)),
+                    # (5, 100, int((1 - (50 / 500)) * 100)),
+                    # (6, 100, int((1 - (50 / 600)) * 100)),
+                    # (7, 100, int((1 - (50 / 700)) * 100)),
+                    # (8, 100, int((1 - (50 / 800)) * 100)),
+                    # (9, 100, int((1 - (50 / 900)) * 100)),
+                    # (10, 100, int((1 - (50 / 1000)) * 100)),
+                    # (11, 100, int((1 - (50 / 1100)) * 100)),
+                    # (12, 100, int((1 - (50 / 1200)) * 100)),
+                    # (13, 100, int((1 - (50 / 1300)) * 100)),
+                    # (14, 100, int((1 - (50 / 1400)) * 100)),
+                    # (15, 100, int((1 - (50 / 1500)) * 100)),
                 ]
             ]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 # 'f': input.f,
-                # 'num_batchers': input.num_batchers,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
+                'num_read_batchers': input.num_read_batchers,
+                'read_batching_scheme':
+                    input.read_batcher_options.read_batching_scheme,
                 # 'unsafe_read_at_i': \
                 #     input.client_options.unsafe_read_at_i,
                 # 'unsafe_read_at_first_slot': \
@@ -157,7 +172,7 @@ def main(args) -> None:
                 'read.latency.median_ms': \
                     f'{output.read_output.latency.median_ms:.6}',
                 'read.start_throughput_1s.p90': \
-                    f'{output.read_output.start_throughput_1s.p90:.6}',
+                    f'{output.read_output.start_throughput_1s.p90:.8}',
             })
 
     suite = EvelynTestsMultiPaxosSuite()
