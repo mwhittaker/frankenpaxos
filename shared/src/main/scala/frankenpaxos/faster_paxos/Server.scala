@@ -43,13 +43,13 @@ case class ServerOptions(
     // A Server implements its log as a BufferMap. `logGrowSize` is the
     // `growSize` argument used to construct the BufferMap.
     logGrowSize: Int,
-    heartbeatOptions: HeartbeatOptions,
+    resendPhase1asPeriod: java.time.Duration,
+    // A leader periodically resends Phase2aAnys to make sure the delegates
+    // know they're delegates.
     resendPhase2aAnysPeriod: java.time.Duration,
-    // A server flushes all of its channels to the proxy servers after every
-    // `flushPhase2asEveryN` Phase2a messages sent. For example, if
-    // `flushPhase2asEveryN` is 1, then the server flushes after every send.
-    // flushPhase2asEveryN: Int,
-    // electionOptions: ElectionOptions,
+    // Servers use heartbeats to monitor which other servers are dead. The
+    // heartbeat subprotocol uses these options.
+    heartbeatOptions: HeartbeatOptions,
     measureLatencies: Boolean
 )
 
@@ -57,12 +57,10 @@ case class ServerOptions(
 object ServerOptions {
   val default = ServerOptions(
     ackNoopsWithCommands = true,
-    heartbeatOptions = HeartbeatOptions.default,
     logGrowSize = 1000,
+    resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
     resendPhase2aAnysPeriod = java.time.Duration.ofSeconds(5),
-    // resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
-    // flushPhase2asEveryN = 1,
-    // electionOptions = ElectionOptions.default,
+    heartbeatOptions = HeartbeatOptions.default,
     measureLatencies = true
   )
 }
@@ -83,18 +81,6 @@ class ServerMetrics(collectors: Collectors) {
     .help("Latency (in milliseconds) of a request.")
     .register()
 
-  // val serverChangesTotal: Counter = collectors.counter
-  //   .build()
-  //   .name("fasterpaxos_server_server_changes_total")
-  //   .help("Total number of server changes.")
-  //   .register()
-  //
-  // val resendPhase1asTotal: Counter = collectors.counter
-  //   .build()
-  //   .name("fasterpaxos_server_resend_phase1as_total")
-  //   .help("Total number of times the server resent phase 1a messages.")
-  //   .register()
-
   val veryStaleClientRequestsTotal: Counter = collectors.counter
     .build()
     .name("fasterpaxos_server_very_stale_client_requests_total")
@@ -113,12 +99,12 @@ class ServerMetrics(collectors: Collectors) {
     )
     .register()
 
-  val tooFreshClientRequestRoundTotal: Counter = collectors.counter
+  val futureClientRequestRoundTotal: Counter = collectors.counter
     .build()
-    .name("fasterpaxos_server_too_fresh_client_request_round_total")
+    .name("fasterpaxos_server_future_client_request_round_total")
     .help(
       "The total number of times a server received a ClientRequest with a " +
-        "round that was larger than its own (too fresh)."
+        "round that was larger than its own (from the future)."
     )
     .register()
 
@@ -174,6 +160,12 @@ class ServerMetrics(collectors: Collectors) {
     .build()
     .name("fasterpaxos_server_executed_noops_total")
     .help("The total number of noops \"executed\".")
+    .register()
+
+  val resendPhase1asTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_resend_phase1as_total")
+    .help("Total number of times the server resent Phase1a messages.")
     .register()
 
   val resendPhase2aAnysTotal: Counter = collectors.counter
@@ -314,9 +306,9 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       value: CommandOrNoop
   ) extends LogEntry
 
-// Fields ////////////////////////////////////////////////////////////////////
-// A random number generator instantiated from `seed`. This allows us to
-// perform deterministic randomized tests.
+  // Fields ////////////////////////////////////////////////////////////////////
+  // A random number generator instantiated from `seed`. This allows us to
+  // perform deterministic randomized tests.
   private val rand = new Random(seed)
 
   private val index = ServerIndex(config.serverAddresses.indexOf(address))
@@ -357,33 +349,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   val log = new frankenpaxos.util.BufferMap[LogEntry](options.logGrowSize)
 
-  //  // Server election address. This field exists for the javascript
-  //  // visualizations.
-  //  @JSExport
-  //  protected val electionAddress = config.serverElectionAddresses(index)
-  //
-  //  // Server election participant.
-  //  @JSExport
-  //  protected val election = new Participant[Transport](
-  //    address = electionAddress,
-  //    transport = transport,
-  //    logger = logger,
-  //    addresses = config.serverElectionAddresses,
-  //    initialServerIndex = 0,
-  //    options = options.electionOptions
-  //  )
-  //  election.register((serverIndex) => {
-  //    serverChange(serverIndex == index)
-  //  })
-
-  // The server's state.
-  // @JSExport
-  // protected var state: State = if (index == 0) {
-  //   startPhase1(round, chosenWatermark)
-  // } else {
-  //   Inactive
-  // }
-
   // Leaders monitor acceptors to make sure they are still alive.
   @JSExport
   protected val heartbeatAddress: Transport#Address =
@@ -395,15 +360,16 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       address = heartbeatAddress,
       transport = transport,
       logger = logger,
-      addresses = config.heartbeatAddresses,
+      addresses = config.heartbeatAddresses.filter(_ != heartbeatAddress),
       options = options.heartbeatOptions
     )
 
-  // TODO(mwhittaker): Need to run a timer which checks for dead guys
-  // if dead, random timer wait to become new leader
-
   @JSExport
-  protected var state: State = ???
+  protected var state: State =
+    Idle(round = 0, delegates = (0 to config.f + 1).map(ServerIndex(_)))
+  if (index.x == 0) {
+    startPhase1(0, (0 to config.f + 1).map(ServerIndex(_)))
+  }
 
   // The client table used to ensure exactly once execution semantics. Every
   // entry in the client table is keyed by a clients address and its pseudonym
@@ -414,6 +380,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var clientTable =
     mutable.Map[(ByteString, ClientPseudonym), (ClientId, ByteString)]()
+
+  // TODO(mwhittaker): Need to run a timer which checks for dead guys
+  // if dead, random timer wait to become new leader
+  //
+  // TODO(mwhittaker): Need to run recover timer.
 
   // Timers ////////////////////////////////////////////////////////////////////
   private def makeResendPhase2aAnysTimer(
@@ -438,6 +409,24 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     t
   }
 
+  private def makeResendPhase1asTimer(
+      phase1a: Phase1a
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendPhase1as",
+      options.resendPhase1asPeriod,
+      () => {
+        metrics.resendPhase1asTotal.inc()
+        for (server <- otherServers) {
+          server.send(ServerInbound().withPhase1A(phase1a))
+        }
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
     if (options.measureLatencies) {
@@ -452,6 +441,9 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       e
     }
   }
+
+  private def pick[A](xs: Seq[A], n: Int): Seq[A] =
+    scala.util.Random.shuffle(xs).take(n)
 
   private def roundInfo(state: State): (Round, Seq[ServerIndex]) = {
     state match {
@@ -469,6 +461,54 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       case _: Delegate    =>
       case _: Idle        =>
     }
+  }
+
+  private def pickDelegates(): Seq[ServerIndex] = {
+    // We only pick delegates that we think are alive, and
+    // we always make sure that we're a delegate as well.
+    val alive = heartbeat.unsafeAlive()
+    logger.checkGe(alive.size, config.f)
+    Seq(index) ++ pick(alive.toSeq, config.f)
+      .map(address => ServerIndex(config.heartbeatAddresses.indexOf(address)))
+  }
+
+  private def startPhase1(round: Round, delegates: Seq[ServerIndex]): Unit = {
+    val phase1a = Phase1a(round = round,
+                          chosenWatermark = executedWatermark,
+                          delegate = delegates.map(_.x))
+
+    // Send Phase1a to other servers.
+    for (otherServer <- otherServers) {
+      otherServer.send(ServerInbound().withPhase1A(phase1a))
+    }
+
+    // Reply to the Phase1a ourselves.
+    val phase1b = Phase1b(
+      serverIndex = index.x,
+      round = round,
+      info = log
+        .iteratorFrom(executedWatermark)
+        .map({
+          case (slot, pending: PendingEntry) =>
+            Phase1bSlotInfo(slot = slot).withPendingSlotInfo(
+              PendingSlotInfo(voteRound = pending.voteRound,
+                              voteValue = pending.voteValue)
+            )
+          case (slot, chosen: ChosenEntry) =>
+            Phase1bSlotInfo(slot = slot)
+              .withChosenSlotInfo(ChosenSlotInfo(value = chosen.value))
+        })
+        .toSeq
+    )
+
+    // Update our state
+    state = Phase1(
+      round = round,
+      delegates = delegates,
+      phase1bs = mutable.Map(index -> phase1b),
+      pendingClientRequests = mutable.Buffer(),
+      resendPhase1as = makeResendPhase1asTimer(phase1a)
+    )
   }
 
   // Say we have delegates A, B, and C with B being the leader. Then, the log
@@ -623,12 +663,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     }
     Safe(CommandOrNoop().withNoop(Noop()))
   }
-
-  private def pick(
-      servers: Seq[Chan[Server[Transport]]],
-      n: Int
-  ): Seq[Chan[Server[Transport]]] =
-    scala.util.Random.shuffle(servers).take(n)
 
   // `executeCommand(slot, command, clientReplies)` attempts to execute the
   // command `command` in slot `slot`. Attempting to execute `command` may or
@@ -794,144 +828,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     executeLog((slot) => slotSystem.leader(slot) == delegateIndex.x)
   }
 
-  // `maxPhase1bSlot(phase1b)` finds the largest slot present in `phase1b` or
-  // -1 if no slots are present.
-  // private def maxPhase1bSlot(phase1b: Phase1b): Slot = {
-  //   if (phase1b.info.isEmpty) {
-  //     -1
-  //   } else {
-  //     phase1b.info.map(_.slot).max
-  //   }
-  // }
-
-  //  // Given a quorum of Phase1b messages, `safeValue` finds a value that is safe
-  //  // to propose in a particular slot. If the Phase1b messages have at least one
-  //  // vote in the slot, then the value with the highest vote round is safe.
-  //  // Otherwise, everything is safe. In this case, we return Noop.
-  //  private def safeValue(
-  //      phase1bs: Iterable[Phase1b],
-  //      slot: Slot
-  //  ): CommandBatchOrNoop = {
-  //    val slotInfos =
-  //      phase1bs.flatMap(phase1b => phase1b.info.find(_.slot == slot))
-  //    if (slotInfos.isEmpty) {
-  //      CommandBatchOrNoop().withNoop(Noop())
-  //    } else {
-  //      slotInfos.maxBy(_.voteRound).voteValue
-  //    }
-  //  }
-  //
-  //  private def processClientRequestBatch(
-  //      clientRequestBatch: ClientRequestBatch
-  //  ): Unit = {
-  //    logger.checkEq(state, Phase2)
-  //
-  //    // Normally, we'd have the following code, but to measure the time taken
-  //    // for serialization vs sending, we split it up. It's less readable, but it
-  //    // leads to some better performance insights.
-  //    //
-  //    // getProxyServer().send(
-  //    //   ProxyServerInbound().withPhase2A(
-  //    //     Phase2a(slot = nextSlot,
-  //    //             round = round,
-  //    //             commandBatchOrNoop = CommandBatchOrNoop()
-  //    //               .withCommandBatch(clientRequestBatch.batch))
-  //    //   )
-  //    // )
-  //
-  //    val proxyServerIndex = timed("processClientRequestBatch/getProxyServer") {
-  //      config.distributionScheme match {
-  //        case Hash      => currentProxyServer
-  //        case Colocated => index
-  //      }
-  //    }
-  //
-  //    val bytes = timed("processClientRequestBatch/serialize") {
-  //      ProxyServerInbound()
-  //        .withPhase2A(
-  //          Phase2a(slot = nextSlot,
-  //                  round = round,
-  //                  commandBatchOrNoop = CommandBatchOrNoop()
-  //                    .withCommandBatch(clientRequestBatch.batch))
-  //        )
-  //        .toByteArray
-  //    }
-  //
-  //    if (options.flushPhase2asEveryN == 1) {
-  //      // If we flush every message, don't bother managing
-  //      // `numPhase2asSentSinceLastFlush` or flushing channels.
-  //      timed("processClientRequestBatch/send") {
-  //        send(config.proxyServerAddresses(proxyServerIndex), bytes)
-  //      }
-  //      currentProxyServer += 1
-  //      if (currentProxyServer >= config.numProxyServers) {
-  //        currentProxyServer = 0
-  //      }
-  //    } else {
-  //      timed("processClientRequestBatch/sendNoFlush") {
-  //        sendNoFlush(config.proxyServerAddresses(proxyServerIndex), bytes)
-  //      }
-  //      numPhase2asSentSinceLastFlush += 1
-  //    }
-  //
-  //    if (numPhase2asSentSinceLastFlush >= options.flushPhase2asEveryN) {
-  //      timed("processClientRequestBatch/flush") {
-  //        config.distributionScheme match {
-  //          case Hash      => proxyServers(currentProxyServer).flush()
-  //          case Colocated => proxyServers(index).flush()
-  //        }
-  //      }
-  //      numPhase2asSentSinceLastFlush = 0
-  //      currentProxyServer += 1
-  //      if (currentProxyServer >= config.numProxyServers) {
-  //        currentProxyServer = 0
-  //      }
-  //    }
-  //
-  //    nextSlot += 1
-  //  }
-  //
-  //  private def startPhase1(round: Round, chosenWatermark: Slot): Phase1 = {
-  //    val phase1a = Phase1a(round = round, chosenWatermark = chosenWatermark)
-  //    for (group <- acceptors) {
-  //      thriftyQuorum(group).foreach(
-  //        _.send(AcceptorInbound().withPhase1A(phase1a))
-  //      )
-  //    }
-  //    Phase1(
-  //      phase1bs = mutable.Buffer.fill(config.numAcceptorGroups)(mutable.Map()),
-  //      pendingClientRequestBatches = mutable.Buffer(),
-  //      resendPhase1as = makeResendPhase1asTimer(phase1a)
-  //    )
-  //  }
-  //
-  //  private def serverChange(isNewServer: Boolean): Unit = {
-  //    metrics.serverChangesTotal.inc()
-  //
-  //    (state, isNewServer) match {
-  //      case (Inactive, false) =>
-  //      // Do nothing.
-  //      case (phase1: Phase1, false) =>
-  //        phase1.resendPhase1as.stop()
-  //        state = Inactive
-  //      case (Phase2, false) =>
-  //        state = Inactive
-  //      case (Inactive, true) =>
-  //        round = roundSystem
-  //          .nextClassicRound(serverIndex = index, round = round)
-  //        state = startPhase1(round = round, chosenWatermark = chosenWatermark)
-  //      case (phase1: Phase1, true) =>
-  //        phase1.resendPhase1as.stop()
-  //        round = roundSystem
-  //          .nextClassicRound(serverIndex = index, round = round)
-  //        state = startPhase1(round = round, chosenWatermark = chosenWatermark)
-  //      case (Phase2, true) =>
-  //        round = roundSystem
-  //          .nextClassicRound(serverIndex = index, round = round)
-  //        state = startPhase1(round = round, chosenWatermark = chosenWatermark)
-  //    }
-  //  }
-
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ServerInbound.Request
@@ -1038,7 +934,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         s"Server recevied a ClientRequest in round ${clientRequest.round} " +
           s"but is only in round $round. The ClientRequest is being ignored."
       )
-      metrics.tooFreshClientRequestRoundTotal.inc()
+      metrics.futureClientRequestRoundTotal.inc()
       return
     }
 
@@ -1674,16 +1570,30 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  // TODO(mwhittaker): We should have some sort of back-off to avoid dueling
+  // proposers. For now, we immediately try again.
   private def handleNack(src: Transport#Address, nack: Nack): Unit = {
-    // TODO(mwhittaker): Implement.
-    state match {
-      case phase1: Phase1     =>
-      case phase2: Phase2     =>
-      case delegate: Delegate =>
-      case idle: Idle         =>
+    // Ignore stale rounds.
+    val (round, _) = roundInfo(state)
+    if (nack.round <= round) {
+      logger.debug(
+        s"Server recevied a Nack in round ${nack.round} but is already " +
+          s"in round $round. The Nack is being ignored."
+      )
+      metrics.staleRoundTotal.labels("Nack").inc()
+      return
     }
-    ???
-  }
 
-  // TODO(mwhittaker): Add a recover timer.
+    state match {
+      case _: Idle =>
+        logger.fatal("Idle server received nack. This should be impossible.")
+      case _: Phase1 | _: Phase2 | _: Delegate =>
+    }
+
+    stopTimers(state)
+    startPhase1(
+      roundSystem.nextClassicRound(leaderIndex = index.x, round = nack.round),
+      pickDelegates()
+    )
+  }
 }
