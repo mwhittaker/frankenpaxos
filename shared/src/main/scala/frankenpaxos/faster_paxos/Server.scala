@@ -206,6 +206,13 @@ class ServerMetrics(collectors: Collectors) {
     .labelNames("type")
     .help("Total number of messages received with a stale round.")
     .register()
+
+  val ignoredRecoverTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_ignored_recover_total")
+    .labelNames("type")
+    .help("Total number of ignored Recovers.")
+    .register()
 }
 
 @JSExportAll
@@ -464,34 +471,48 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // processClientRequest is called by a leader in Phase2 or by a delegate to
-  // process a client request. processClientRequest returns the next open slot
-  // to use.
-  private def processClientRequest(
+  // Say we have delegates A, B, and C with B being the leader. Then, the log
+  // looks like this:
+  //
+  //       B   B   B   B   A   B   C   A   B   C   A
+  //     +---+---+---+---+---+---+---+---+---+---+---+
+  //     |   |   |   |   |   |   |   |   |   |   |   |
+  //     +---+---+---+---+---+---+---+---+---+---+---+
+  //                       ^
+  //                       anyWatermark
+  //
+  // ownsSlot returns whether the current state owns the given slot.
+  private def ownsSlot(state: State, slot: Slot): Boolean = {
+    state match {
+      case _: Phase1 => false
+      case _: Idle   => false
+      case phase2: Phase2 =>
+        slot < phase2.anyWatermark ||
+          slotSystem.leader(slot) == phase2.delegateIndex.x
+      case delegate: Delegate =>
+        slot >= delegate.anyWatermark &&
+          slotSystem.leader(slot) == delegate.delegateIndex.x
+    }
+  }
+
+  private def proposeSingleCommandOrNoop(
       delegates: Seq[ServerIndex],
       delegateIndex: DelegateIndex,
       slot: Slot,
       round: Round,
-      clientRequest: ClientRequest,
+      commandOrNoop: CommandOrNoop,
       pendingValues: mutable.Map[Slot, CommandOrNoop],
       phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
   ): Slot = {
-    // TODO(mwhittaker): Propose noops in the previous entries! We'll need to
-    // pass anyWatermark to know which once are safe and which ones are not.
-    ???
-
     log.get(slot) match {
       case Some(entry) =>
         logger.fatal(
-          s"Server received a ClientRequest and went to process it in " +
-            s"slot ${slot}, but the log already contains an entry in this " +
-            s"slot: $entry. This is a bug."
+          s"Server went to process a command in slot ${slot}, but the log " +
+            s"already contains an entry in this slot: $entry. This is a bug."
         )
 
       case None =>
         // Send Phase2as to the other delegates.
-        val commandOrNoop =
-          CommandOrNoop().withCommand(clientRequest.command)
         for (serverIndex <- delegates if serverIndex != index) {
           servers(serverIndex.x).send(
             ServerInbound().withPhase2A(
@@ -504,6 +525,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         logger.check(!phase2bs.contains(slot))
         log.put(slot,
                 PendingEntry(voteRound = round, voteValue = commandOrNoop))
+        pendingValues(slot) = commandOrNoop
         phase2bs(slot) = mutable.Map(
           index -> Phase2b(serverIndex = index.x, slot = slot, round = round)
         )
@@ -514,6 +536,52 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           round = slot
         )
     }
+  }
+
+  private def proposeCommandOrNoop(
+      delegates: Seq[ServerIndex],
+      delegateIndex: DelegateIndex,
+      anyWatermark: Slot,
+      slot: Slot,
+      round: Round,
+      commandOrNoop: CommandOrNoop,
+      pendingValues: mutable.Map[Slot, CommandOrNoop],
+      phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
+  ): Slot = {
+    logger.checkGe(slot, anyWatermark)
+
+    // Fill in the log entries before our log entry.
+    for (previousSlot <- Math.max(anyWatermark, slot - delegates.size + 1)
+           until slot) {
+      log.get(previousSlot) match {
+        case Some(_) =>
+          // Do nothing. A command is already being chosen (or has been chosen)
+          // in this log entry.
+          {}
+
+        case None =>
+          proposeSingleCommandOrNoop(
+            delegates = delegates,
+            delegateIndex = delegateIndex,
+            slot = previousSlot,
+            round = round,
+            commandOrNoop = CommandOrNoop().withNoop(Noop()),
+            pendingValues = pendingValues,
+            phase2bs = phase2bs
+          )
+      }
+    }
+
+    // Fill in our log entry.
+    proposeSingleCommandOrNoop(
+      delegates = delegates,
+      delegateIndex = delegateIndex,
+      slot = slot,
+      round = round,
+      commandOrNoop = commandOrNoop,
+      pendingValues = pendingValues,
+      phase2bs = phase2bs
+    )
   }
 
   // Given the Phase1bSlotInfos returned in Phase1 for a given slot, compute a
@@ -983,23 +1051,25 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         metrics.pendingClientRequestsTotal.inc()
 
       case phase2: Phase2 =>
-        phase2.nextSlot = processClientRequest(
+        phase2.nextSlot = proposeCommandOrNoop(
           delegates = phase2.delegates,
           delegateIndex = phase2.delegateIndex,
+          anyWatermark = phase2.anyWatermark,
           slot = phase2.nextSlot,
           round = round,
-          clientRequest = clientRequest,
+          commandOrNoop = CommandOrNoop().withCommand(clientRequest.command),
           pendingValues = phase2.pendingValues,
           phase2bs = phase2.phase2bs
         )
 
       case delegate: Delegate =>
-        delegate.nextSlot = processClientRequest(
+        delegate.nextSlot = proposeCommandOrNoop(
           delegates = delegate.delegates,
           delegateIndex = delegate.delegateIndex,
+          anyWatermark = delegate.anyWatermark,
           slot = delegate.nextSlot,
           round = round,
-          clientRequest = clientRequest,
+          commandOrNoop = CommandOrNoop().withCommand(clientRequest.command),
           pendingValues = delegate.pendingValues,
           phase2bs = delegate.phase2bs
         )
@@ -1520,20 +1590,88 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
     // Otherwise, we have to make sure the log enty gets chosen.
     state match {
-      case phase1: Phase1 =>
-      // Ignore. If nothing has failed, eventually the leader is going to
-      // become a delegate and then weill handle the recover. If failure,
-      // then we'll do a leader change.
+      case _: Phase1 | _: Idle =>
+        // If we're in Phase 1 or Idle, then we're not able to get the slot
+        // chosen. We simply ignore the message knowing that eventually some
+        // leader or delegate will recover the log entry.
+        logger.debug(
+          s"Server received a Recover message but has state $state. The " +
+            s"Recover is being ignored."
+        )
+        metrics.ignoredRecoverTotal.inc()
+
       case phase2: Phase2 =>
-      // Resend phase2as?
+        // Only recover slots that we own.
+        if (!ownsSlot(phase2, recover.slot)) {
+          return
+        }
+
+        if (recover.slot < phase2.nextSlot) {
+          // If the slot is less than nextSlot, then we should have a pending
+          // value to use.
+          logger.check(phase2.pendingValues.contains(recover.slot))
+          val phase2a = Phase2a(
+            slot = recover.slot,
+            round = phase2.round,
+            commandOrNoop = phase2.pendingValues(recover.slot)
+          )
+          for (serverIndex <- phase2.delegates if serverIndex != index) {
+            servers(serverIndex.x)
+              .send(ServerInbound().withPhase2A(phase2a))
+          }
+        } else {
+          // Otherwise, we shouldn't have any pending value, so we propose
+          // noop. We also make sure not to make a hole in our log.
+          while (phase2.nextSlot <= recover.slot) {
+            phase2.nextSlot = proposeCommandOrNoop(
+              delegates = phase2.delegates,
+              delegateIndex = phase2.delegateIndex,
+              anyWatermark = phase2.anyWatermark,
+              slot = phase2.nextSlot,
+              round = phase2.round,
+              commandOrNoop = CommandOrNoop().withNoop(Noop()),
+              pendingValues = phase2.pendingValues,
+              phase2bs = phase2.phase2bs
+            )
+          }
+        }
+
       case delegate: Delegate =>
-      // Resend phase2as?
-      case idle: Idle =>
-      // Ignore. If nothing has failed, eventually the leader is going to
-      // become a delegate and then weill handle the recover. If failure,
-      // then we'll do a leader change.
+        // Only recover slots that we own.
+        if (!ownsSlot(delegate, recover.slot)) {
+          return
+        }
+
+        if (recover.slot < delegate.nextSlot) {
+          // If the slot is less than nextSlot, then we should have a pending
+          // value to use.
+          logger.check(delegate.pendingValues.contains(recover.slot))
+          val phase2a = Phase2a(
+            slot = recover.slot,
+            round = delegate.round,
+            commandOrNoop = delegate.pendingValues(recover.slot)
+          )
+          for (serverIndex <- delegate.delegates if serverIndex != index) {
+            servers(serverIndex.x)
+              .send(ServerInbound().withPhase2A(phase2a))
+          }
+        } else {
+          // Otherwise, we shouldn't have any pending value, so we propose
+          // noop. We also make sure not to make a hole in our log.
+          while (delegate.nextSlot <= recover.slot) {
+            delegate.nextSlot = proposeCommandOrNoop(
+              delegates = delegate.delegates,
+              delegateIndex = delegate.delegateIndex,
+              anyWatermark = delegate.anyWatermark,
+              slot = delegate.nextSlot,
+              round = delegate.round,
+              commandOrNoop = CommandOrNoop().withNoop(Noop()),
+              pendingValues = delegate.pendingValues,
+              phase2bs = delegate.phase2bs
+            )
+          }
+        }
     }
-    ???
   }
 
   private def handleNack(src: Transport#Address, nack: Nack): Unit = {
