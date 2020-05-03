@@ -349,17 +349,17 @@ function make_nodes(f, FasterPaxos, snap) {
   // Servers.
   const servers = f == 1 ?
     [
-      {server: FasterPaxos.server1, x: 200, y: 150, ex: 225, ey: 175},
-      {server: FasterPaxos.server2, x: 300, y: 250, ex: 275, ey: 250},
-      {server: FasterPaxos.server3, x: 200, y: 350, ex: 225, ey: 325},
+      {server: FasterPaxos.server1, x: 300, y: 150, ex: 350, ey: 150},
+      {server: FasterPaxos.server2, x: 500, y: 250, ex: 450, ey: 250},
+      {server: FasterPaxos.server3, x: 300, y: 350, ex: 350, ey: 350},
     ]
     :
     [
-      {server: FasterPaxos.server1, x: 300, y: 100, ex: 300, ey: 125},
-      {server: FasterPaxos.server2, x: 400, y: 175, ex: 375, ey: 175},
-      {server: FasterPaxos.server3, x: 400, y: 325, ex: 375, ey: 325},
-      {server: FasterPaxos.server4, x: 300, y: 400, ex: 300, ey: 375},
-      {server: FasterPaxos.server5, x: 200, y: 250, ex: 225, ey: 250},
+      {server: FasterPaxos.server1, x: 250, y: 150, ex: 280, ey: 180},
+      {server: FasterPaxos.server2, x: 400, y: 150, ex: 370, ey: 180},
+      {server: FasterPaxos.server3, x: 550, y: 250, ex: 500, ey: 250},
+      {server: FasterPaxos.server4, x: 400, y: 350, ex: 370, ey: 320},
+      {server: FasterPaxos.server5, x: 250, y: 350, ex: 280, ey: 320},
     ];
   for (const [index, {server, x, y, ex, ey}] of servers.entries()) {
     const color = flat_blue;
@@ -386,7 +386,7 @@ function make_nodes(f, FasterPaxos, snap) {
   const anchor_middle = (text) => text.attr({'text-anchor': 'middle'});
   anchor_middle(snap.text(client_x, 50, 'Clients'));
   if (f == 1) {
-    anchor_middle(snap.text(250, 50, 'Servers'));
+    anchor_middle(snap.text(400, 50, 'Servers'));
   } else {
     anchor_middle(snap.text(300, 50, 'Servers'));
   }
