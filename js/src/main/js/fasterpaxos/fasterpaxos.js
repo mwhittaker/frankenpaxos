@@ -1,54 +1,3 @@
-// Helper components ///////////////////////////////////////////////////////////
-const phase1b_slot_info = {
-  props: {
-    value: Object,
-  },
-
-  template: `
-    <fp-object>
-      <fp-field :name="'slot'">
-        {{value.slot}}
-      </fp-field>
-      <fp-field :name="'voteRound'">
-        {{value.voteRound}}
-      </fp-field>
-      <fp-field :name="'voteValue'">
-        {{value.voteValue}}
-      </fp-field>
-    </fp-object>
-  `,
-}
-
-const phase1b_component = {
-  props: {
-    value: Object,
-  },
-
-  components: {
-    'phase1b-slot-info': phase1b_slot_info,
-  },
-
-  template: `
-    <fp-object>
-      <fp-field :name="'groupIndex'">
-        {{value.groupIndex}}
-      </fp-field>
-      <fp-field :name="'acceptorIndex'">
-        {{value.acceptorIndex}}
-      </fp-field>
-      <fp-field :name="'round'">
-        {{value.round}}
-      </fp-field>
-      <fp-field :name="'round'">
-        <frankenpaxos-seq :seq="value.info">
-          <phase1b-slot-info :value="value.info">
-          </phase1b-slot-info>
-        </frankenpaxos-seq>
-      </fp-field>
-    </fp-object>
-  `,
-}
-
 // Node components /////////////////////////////////////////////////////////////
 const client_info = {
   props: {
@@ -162,6 +111,11 @@ const server_info = {
             </template>
           </frankenpaxos-option>
         </frankenpaxos-buffer-map>
+      </div>
+
+      <div>
+        stateMachine =
+        {{node.actor.stateMachine}}
       </div>
 
       <div>
