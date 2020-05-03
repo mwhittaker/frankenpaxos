@@ -86,6 +86,11 @@ const server_info = {
       </div>
 
       <div>
+        numChosen =
+        {{node.actor.numChosen}}
+      </div>
+
+      <div>
         log =
         <frankenpaxos-buffer-map :value="node.actor.log"
                                  v-slot="{value: entry}">

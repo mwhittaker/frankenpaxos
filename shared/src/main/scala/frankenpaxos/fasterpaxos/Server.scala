@@ -52,6 +52,15 @@ case class ServerOptions(
     // that the value is chosen since it _and_ the sending delegate have both
     // voted for it. This also allows us not to not send certain Phase3as.
     useF1Optimization: Boolean,
+    // If a server has a hole in its log for a certain amount of time, it sends
+    // a Recover message to other server. The time to recover is chosen
+    // uniformly at random from the range defined by these two options.
+    recoverLogEntryMinPeriod: java.time.Duration,
+    recoverLogEntryMaxPeriod: java.time.Duration,
+    // If `unsafeDontRecover` is true, servers don't make any attempt to
+    // recover log entries. This is not live and should only be used for
+    // performance debugging.
+    unsafeDontRecover: Boolean,
     // Servers use heartbeats to monitor which other servers are dead. The
     // heartbeat subprotocol uses these options.
     heartbeatOptions: HeartbeatOptions,
@@ -66,6 +75,9 @@ object ServerOptions {
     resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
     resendPhase2aAnysPeriod = java.time.Duration.ofSeconds(5),
     useF1Optimization = true,
+    recoverLogEntryMinPeriod = java.time.Duration.ofSeconds(5),
+    recoverLogEntryMaxPeriod = java.time.Duration.ofSeconds(10),
+    unsafeDontRecover = false,
     heartbeatOptions = HeartbeatOptions.default,
     measureLatencies = true
   )
@@ -203,6 +215,13 @@ class ServerMetrics(collectors: Collectors) {
     .name("fasterpaxos_server_stale_round_total")
     .labelNames("type")
     .help("Total number of messages received with a stale round.")
+    .register()
+
+  val recoversSentTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_recovers_sent_total")
+    .labelNames("type")
+    .help("Total number of Recover messages sent.")
     .register()
 
   val ignoredRecoverTotal: Counter = collectors.counter
@@ -352,6 +371,14 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   var executedWatermark: Int = 0
 
+  // The number of log entries that have been chosen and placed in `log`. We
+  // use `numChosen` and `executedWatermark` to know whether there are commands
+  // pending execution. If `numChosen == executedWatermark`, then all chosen
+  // commands have been executed. Otherwise, there are commands waiting to get
+  // executed.
+  @JSExport
+  protected var numChosen: Int = 0
+
   @JSExport
   val log = new frankenpaxos.util.BufferMap[LogEntry](options.logGrowSize)
 
@@ -387,10 +414,34 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   protected var clientTable =
     mutable.Map[(ByteString, ClientPseudonym), (ClientId, ByteString)]()
 
+  // A timer to send Recover messages to the other servers. The timer is
+  // optional because if we set the `options.unsafeDontRecover` flag to true,
+  // then we don't even bother setting up this timer.
+  private val recoverTimer: Option[Transport#Timer] =
+    if (options.unsafeDontRecover) {
+      None
+    } else {
+      Some(
+        timer(
+          "recover",
+          frankenpaxos.Util.randomDuration(options.recoverLogEntryMinPeriod,
+                                           options.recoverLogEntryMaxPeriod),
+          () => {
+            otherServers.foreach(
+              _.send(
+                ServerInbound().withRecover(
+                  Recover(slot = executedWatermark)
+                )
+              )
+            )
+            metrics.recoversSentTotal.inc()
+          }
+        )
+      )
+    }
+
   // TODO(mwhittaker): Need to run a timer which checks for dead guys
   // if dead, random timer wait to become new leader
-
-  // TODO(mwhittaker): Need to run recover timer.
 
   // TODO(mwhittaker): When a server sends Phase2bs for a log entry and
   // previous log entries, it should send them as a single message.
@@ -481,8 +532,30 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       .map(address => ServerIndex(config.heartbeatAddresses.indexOf(address)))
   }
 
+  private def getNextSlot(delegateIndex: DelegateIndex, slot: Slot): Slot = {
+    var nextSlot = slotSystem.nextClassicRound(
+      leaderIndex = delegateIndex.x,
+      round = slot
+    )
+    while (log.get(nextSlot).isDefined) {
+      nextSlot = slotSystem.nextClassicRound(
+        leaderIndex = delegateIndex.x,
+        round = nextSlot
+      )
+    }
+    nextSlot
+  }
+
   private def choose(slot: Slot, commandOrNoop: CommandOrNoop): Unit = {
-    log.put(slot, ChosenEntry(commandOrNoop))
+    // Update numChosen if needed.
+    log.get(slot) match {
+      case None | Some(_: PendingEntry) =>
+        numChosen += 1
+        log.put(slot, ChosenEntry(commandOrNoop))
+
+      case Some(ChosenEntry(alreadyChosen)) =>
+        logger.checkEq(alreadyChosen, commandOrNoop)
+    }
 
     state match {
       case _: Phase1 | _: Idle =>
@@ -490,21 +563,15 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         ()
 
       case phase2: Phase2 =>
-        if (slot >= phase2.nextSlot) {
-          phase2.nextSlot = slotSystem.nextClassicRound(
-            leaderIndex = phase2.delegateIndex.x,
-            round = slot
-          )
+        if (slot == phase2.nextSlot) {
+          phase2.nextSlot = getNextSlot(phase2.delegateIndex, slot)
         }
         phase2.pendingValues.remove(slot)
         phase2.phase2bs.remove(slot)
 
       case delegate: Delegate =>
-        if (slot >= delegate.nextSlot) {
-          delegate.nextSlot = slotSystem.nextClassicRound(
-            leaderIndex = delegate.delegateIndex.x,
-            round = slot
-          )
+        if (slot == delegate.nextSlot) {
+          delegate.nextSlot = getNextSlot(delegate.delegateIndex, slot)
         }
         delegate.pendingValues.remove(slot)
         delegate.phase2bs.remove(slot)
@@ -610,10 +677,47 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         )
 
         // Return our next slot.
-        return slotSystem.nextClassicRound(
-          leaderIndex = delegateIndex.x,
-          round = slot
+        getNextSlot(delegateIndex, slot)
+    }
+  }
+
+  private def reproposeSingleCommandOrNoop(
+      delegates: Seq[ServerIndex],
+      delegateIndex: DelegateIndex,
+      slot: Slot,
+      round: Round,
+      pendingValues: mutable.Map[Slot, CommandOrNoop],
+      phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
+  ): Unit = {
+    pendingValues.get(slot) match {
+      case None =>
+        // Send Phase2as to the other delegates.
+        val noop = CommandOrNoop().withNoop(Noop())
+        for (serverIndex <- delegates if serverIndex != index) {
+          servers(serverIndex.x).send(
+            ServerInbound().withPhase2A(
+              Phase2a(slot = slot, round = round, commandOrNoop = noop)
+            )
+          )
+        }
+
+        // Vote for the value ourselves.
+        logger.check(!phase2bs.contains(slot))
+        log.put(slot, PendingEntry(voteRound = round, voteValue = noop))
+        pendingValues(slot) = noop
+        phase2bs(slot) = mutable.Map(
+          index -> Phase2b(serverIndex = index.x, slot = slot, round = round)
         )
+
+      case Some(value) =>
+        // Resend Phase2as to the other delegates.
+        for (serverIndex <- delegates if serverIndex != index) {
+          servers(serverIndex.x).send(
+            ServerInbound().withPhase2A(
+              Phase2a(slot = slot, round = round, commandOrNoop = value)
+            )
+          )
+        }
     }
   }
 
@@ -767,11 +871,20 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     while (true) {
       log.get(executedWatermark) match {
         case None | Some(_: PendingEntry) =>
+          // If `numChosen != executedWatermark`, then there's a hole in the
+          // log. We start or stop the timer depending on whether it is already
+          // running. If `options.unsafeDontRecover`, though, we skip all this.
+          if (options.unsafeDontRecover) {
+            // Do nothing.
+          } else if (numChosen != executedWatermark) {
+            recoverTimer.foreach(_.start())
+          }
           return
 
         case Some(ChosenEntry(value)) =>
           val slot = executedWatermark
           executedWatermark += 1
+          recoverTimer.foreach(_.stop())
 
           value.value match {
             case CommandOrNoop.Value.Noop(Noop()) =>
@@ -906,9 +1019,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
     // Update our metadata.
     val chosen = pendingValues(phase2b.slot)
-    log.put(phase2b.slot, ChosenEntry(chosen))
-    pendingValues.remove(phase2b.slot)
-    phase2bs.remove(phase2b.slot)
+    choose(phase2b.slot, chosen)
 
     // Send Phase3as to the other servers.
     otherServers.foreach(
@@ -1198,7 +1309,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         for (slot <- executedWatermark to maxSlot) {
           safeValue(infosBySlot.get(slot).map(_.toSeq).getOrElse(Seq())) match {
             case AlreadyChosen(value) =>
-              log.put(slot, ChosenEntry(value))
+              choose(slot, value)
               metrics.chosenInPhase1Total.inc()
 
             case Safe(value) =>
@@ -1289,8 +1400,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           delegates = phase1.delegates,
           delegateIndex = delegateIndex,
           anyWatermark = anyWatermark,
-          nextSlot = slotSystem.nextClassicRound(leaderIndex = delegateIndex.x,
-                                                 round = anyWatermark - 1),
+          nextSlot = getNextSlot(delegateIndex, anyWatermark - 1),
           pendingValues = pendingValues,
           phase2bs = phase2bs,
           waitingPhase2aAnyAcks =
@@ -1421,18 +1531,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     state match {
       case _: Phase1 | _: Idle =>
       case phase2: Phase2 =>
-        if (phase2a.slot >= phase2.nextSlot) {
-          phase2.nextSlot = slotSystem.nextClassicRound(
-            leaderIndex = phase2.delegateIndex.x,
-            round = phase2a.slot
-          )
+        if (phase2a.slot == phase2.nextSlot) {
+          phase2.nextSlot = getNextSlot(phase2.delegateIndex, phase2a.slot)
         }
       case delegate: Delegate =>
-        if (phase2a.slot >= delegate.nextSlot) {
-          delegate.nextSlot = slotSystem.nextClassicRound(
-            leaderIndex = delegate.delegateIndex.x,
-            round = phase2a.slot
-          )
+        if (phase2a.slot == delegate.nextSlot) {
+          delegate.nextSlot = getNextSlot(delegate.delegateIndex, phase2a.slot)
         }
     }
   }
@@ -1527,9 +1631,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       delegates = phase2aAny.delegate.map(ServerIndex(_)),
       delegateIndex = delegateIndex,
       anyWatermark = phase2aAny.anyWatermark,
-      nextSlot =
-        slotSystem.nextClassicRound(leaderIndex = delegateIndex.x,
-                                    round = phase2aAny.anyWatermark - 1),
+      nextSlot = getNextSlot(delegateIndex, phase2aAny.anyWatermark - 1),
       pendingValues = mutable.Map[Slot, CommandOrNoop](),
       phase2bs = mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]()
     )
@@ -1599,6 +1701,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
             )
           )
         )
+        return
     }
 
     // Otherwise, we have to make sure the log enty gets chosen.
@@ -1619,34 +1722,19 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
-        if (recover.slot < phase2.nextSlot) {
-          // If the slot is less than nextSlot, then we should have a pending
-          // value to use.
-          logger.check(phase2.pendingValues.contains(recover.slot))
-          val phase2a = Phase2a(
-            slot = recover.slot,
-            round = phase2.round,
-            commandOrNoop = phase2.pendingValues(recover.slot)
-          )
-          for (serverIndex <- phase2.delegates if serverIndex != index) {
-            servers(serverIndex.x)
-              .send(ServerInbound().withPhase2A(phase2a))
-          }
-        } else {
-          // Otherwise, we shouldn't have any pending value, so we propose
-          // noop. We also make sure not to make a hole in our log.
-          while (phase2.nextSlot <= recover.slot) {
-            phase2.nextSlot = proposeCommandOrNoop(
-              delegates = phase2.delegates,
-              delegateIndex = phase2.delegateIndex,
-              anyWatermark = phase2.anyWatermark,
-              slot = phase2.nextSlot,
-              round = phase2.round,
-              commandOrNoop = CommandOrNoop().withNoop(Noop()),
-              pendingValues = phase2.pendingValues,
-              phase2bs = phase2.phase2bs
-            )
-          }
+        // phase2.nextSlot is a hole in the log, and we recover in log order,
+        // so the recovering log entry can't be bigger than next slot.
+        logger.checkLe(recover.slot, phase2.nextSlot)
+        reproposeSingleCommandOrNoop(
+          delegates = phase2.delegates,
+          delegateIndex = phase2.delegateIndex,
+          slot = recover.slot,
+          round = phase2.round,
+          pendingValues = phase2.pendingValues,
+          phase2bs = phase2.phase2bs
+        )
+        if (recover.slot == phase2.nextSlot) {
+          phase2.nextSlot = getNextSlot(phase2.delegateIndex, phase2.nextSlot)
         }
 
       case delegate: Delegate =>
@@ -1655,34 +1743,20 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
-        if (recover.slot < delegate.nextSlot) {
-          // If the slot is less than nextSlot, then we should have a pending
-          // value to use.
-          logger.check(delegate.pendingValues.contains(recover.slot))
-          val phase2a = Phase2a(
-            slot = recover.slot,
-            round = delegate.round,
-            commandOrNoop = delegate.pendingValues(recover.slot)
-          )
-          for (serverIndex <- delegate.delegates if serverIndex != index) {
-            servers(serverIndex.x)
-              .send(ServerInbound().withPhase2A(phase2a))
-          }
-        } else {
-          // Otherwise, we shouldn't have any pending value, so we propose
-          // noop. We also make sure not to make a hole in our log.
-          while (delegate.nextSlot <= recover.slot) {
-            delegate.nextSlot = proposeCommandOrNoop(
-              delegates = delegate.delegates,
-              delegateIndex = delegate.delegateIndex,
-              anyWatermark = delegate.anyWatermark,
-              slot = delegate.nextSlot,
-              round = delegate.round,
-              commandOrNoop = CommandOrNoop().withNoop(Noop()),
-              pendingValues = delegate.pendingValues,
-              phase2bs = delegate.phase2bs
-            )
-          }
+        // delegate.nextSlot is a hole in the log, and we recover in log order,
+        // so the recovering log entry can't be bigger than next slot.
+        logger.checkLe(recover.slot, delegate.nextSlot)
+        reproposeSingleCommandOrNoop(
+          delegates = delegate.delegates,
+          delegateIndex = delegate.delegateIndex,
+          slot = recover.slot,
+          round = delegate.round,
+          pendingValues = delegate.pendingValues,
+          phase2bs = delegate.phase2bs
+        )
+        if (recover.slot == delegate.nextSlot) {
+          delegate.nextSlot =
+            getNextSlot(delegate.delegateIndex, delegate.nextSlot)
         }
     }
   }
