@@ -156,7 +156,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // The delegates in round `round`.
   @JSExport
   protected var delegates: Seq[ServerIndex] =
-    (0 to config.f + 1).map(ServerIndex(_))
+    (0 until config.f + 1).map(ServerIndex(_))
 
   // Every request that a client sends is annotated with a monotonically
   // increasing client id. Here, we assume that if a client fails, it does not
@@ -183,7 +183,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         s"id=${clientRequest.command.commandId.clientId}]",
       options.resendClientRequestPeriod,
       () => {
-        servers(rand.nextInt(servers.size))
+        servers(delegates(rand.nextInt(delegates.size)).x)
           .send(ServerInbound().withClientRequest(clientRequest))
         metrics.resendClientRequestTotal.inc()
         t.start()
@@ -236,7 +236,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             command = ByteString.copyFrom(command)
           )
         )
-        servers(rand.nextInt(servers.size))
+        servers(delegates(rand.nextInt(delegates.size)).x)
           .send(ServerInbound().withClientRequest(clientRequest))
 
         // Update our state.

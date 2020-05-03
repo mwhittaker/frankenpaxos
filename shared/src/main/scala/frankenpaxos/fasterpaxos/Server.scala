@@ -372,9 +372,9 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExport
   protected var state: State =
-    Idle(round = 0, delegates = (0 to config.f + 1).map(ServerIndex(_)))
+    Idle(round = 0, delegates = (0 until config.f + 1).map(ServerIndex(_)))
   if (index.x == 0) {
-    startPhase1(0, (0 to config.f + 1).map(ServerIndex(_)))
+    startPhase1(0, (0 until config.f + 1).map(ServerIndex(_)))
   }
 
   // The client table used to ensure exactly once execution semantics. Every
@@ -389,8 +389,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
   // TODO(mwhittaker): Need to run a timer which checks for dead guys
   // if dead, random timer wait to become new leader
-  //
+
   // TODO(mwhittaker): Need to run recover timer.
+
+  // TODO(mwhittaker): When a server sends Phase2bs for a log entry and
+  // previous log entries, it should send them as a single message.
 
   // Timers ////////////////////////////////////////////////////////////////////
   private def makeResendPhase2aAnysTimer(
@@ -487,10 +490,22 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         ()
 
       case phase2: Phase2 =>
+        if (slot >= phase2.nextSlot) {
+          phase2.nextSlot = slotSystem.nextClassicRound(
+            leaderIndex = phase2.delegateIndex.x,
+            round = slot
+          )
+        }
         phase2.pendingValues.remove(slot)
         phase2.phase2bs.remove(slot)
 
       case delegate: Delegate =>
+        if (slot >= delegate.nextSlot) {
+          delegate.nextSlot = slotSystem.nextClassicRound(
+            leaderIndex = delegate.delegateIndex.x,
+            round = slot
+          )
+        }
         delegate.pendingValues.remove(slot)
         delegate.phase2bs.remove(slot)
     }
@@ -820,34 +835,32 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           // This is not the first time.
           case CommandOrNoop.Value.Command(existingCommand) =>
             logger.checkEq(command, existingCommand)
-            phase2bs(phase2b.slot)(
-              ServerIndex(phase2b.serverIndex)
-            ) = phase2b
+            phase2bs(phase2b.slot)(ServerIndex(phase2b.serverIndex)) = phase2b
 
           case CommandOrNoop.Value.Empty =>
             logger.fatal("Empty CommandOrNoop encountered.")
         }
-
-        // Wait for a quorum of Phase2bs.
-        if (phase2bs(phase2b.slot).size < config.f + 1) {
-          return
-        }
-
-        // Update our metadata.
-        val chosen = pendingValues(phase2b.slot)
-        log.put(phase2b.slot, ChosenEntry(chosen))
-        pendingValues.remove(phase2b.slot)
-        phase2bs.remove(phase2b.slot)
-
-        // Send Phase3as to the other servers.
-        otherServers.foreach(
-          _.send(
-            ServerInbound().withPhase3A(
-              Phase3a(slot = phase2b.slot, commandOrNoop = chosen)
-            )
-          )
-        )
     }
+
+    // Wait for a quorum of Phase2bs.
+    if (phase2bs(phase2b.slot).size < config.f + 1) {
+      return
+    }
+
+    // Update our metadata.
+    val chosen = pendingValues(phase2b.slot)
+    log.put(phase2b.slot, ChosenEntry(chosen))
+    pendingValues.remove(phase2b.slot)
+    phase2bs.remove(phase2b.slot)
+
+    // Send Phase3as to the other servers.
+    otherServers.foreach(
+      _.send(
+        ServerInbound().withPhase3A(
+          Phase3a(slot = phase2b.slot, commandOrNoop = chosen)
+        )
+      )
+    )
 
     executeLog((slot) => ownsSlot(state, slot))
   }
@@ -1345,6 +1358,25 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
               case (Value.Empty, _) | (_, Value.Empty) =>
                 logger.fatal("Empty CommandOrNoop encountered.")
             }
+        }
+    }
+
+    // Update our nextSlot if needed.
+    state match {
+      case _: Phase1 | _: Idle =>
+      case phase2: Phase2 =>
+        if (phase2a.slot >= phase2.nextSlot) {
+          phase2.nextSlot = slotSystem.nextClassicRound(
+            leaderIndex = phase2.delegateIndex.x,
+            round = phase2a.slot
+          )
+        }
+      case delegate: Delegate =>
+        if (phase2a.slot >= delegate.nextSlot) {
+          delegate.nextSlot = slotSystem.nextClassicRound(
+            leaderIndex = delegate.delegateIndex.x,
+            round = phase2a.slot
+          )
         }
     }
   }
