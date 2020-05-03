@@ -792,6 +792,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   // processPhase2b captures the logic that a Leader or Delegate performs to
   // process a phase2b.
   private def processPhase2b(
+      state: State,
       phase2b: Phase2b,
       delegateIndex: DelegateIndex,
       pendingValues: mutable.Map[Slot, CommandOrNoop],
@@ -799,47 +800,103 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     // If this log entry has already been chosen, then we can skip the entire
     // protocol.
-    log.get(phase2b.slot) match {
-      case None | Some(_: PendingEntry) =>
-      case Some(_: ChosenEntry)         => return
-    }
-
-    phase2b.command match {
+    val pendingEntry = log.get(phase2b.slot) match {
       case None =>
-        phase2bs(phase2b.slot)(ServerIndex(phase2b.serverIndex)) = phase2b
+        logger.fatal(
+          s"Server received a Phase2b for an empty log entry. Before a " +
+            s"server proposes a value, though, it updates its log with a " +
+            s"vote. This should be impossible."
+        )
 
-      case Some(command) =>
-        // Okay, the situation here is a little complicated. Previously, we
-        // sent a noop to the other delegates. A delegate received our noop
-        // but had already received a value. They sent us back a Phase2b
-        // not for the noop, but for the value. We want to ditch our noop
-        // then, and go with the value. Also note that this may be the
-        // first such valued Phase2b we received or a subsequent one.
+      case Some(pendingEntry: PendingEntry) =>
+        pendingEntry
 
-        // Update our pendingValues and phase2bs.
-        pendingValues(phase2b.slot).value match {
-          // This is the first time receiving a valued nack.
-          case CommandOrNoop.Value.Noop(Noop()) =>
-            pendingValues(phase2b.slot) = CommandOrNoop().withCommand(command)
-            phase2bs(phase2b.slot) = mutable.Map(
-              // The other delegates Phase2b.
-              ServerIndex(phase2b.serverIndex) -> phase2b,
-              // Our Phase2b.
-              index -> Phase2b(
-                serverIndex = index.x,
-                slot = phase2b.slot,
-                round = phase2b.round
-              )
+      case Some(_: ChosenEntry) =>
+        return
+    }
+    logger.checkLe(phase2b.round, pendingEntry.voteRound)
+
+    if (!options.ackNoopsWithCommands) {
+      // If options.ackNoopsWithCommands isn't enabled, the situation is pretty
+      // straightfoward. Every Phase2b is treated equally, and all we have to
+      // do is wait for a quorum of votes.
+      phase2bs(phase2b.slot)(ServerIndex(phase2b.serverIndex)) = phase2b
+    } else {
+      // If options.ackNoopsWithCommands _is_ enabled on the other hand, the
+      // situation is a little complicated. A server A can send either a value
+      // in a slot it owns or a noop in a slot it doesn't. If a server B
+      // receives a noop in a slot for which it has already received a value,
+      // it replies with a Phase2b for the value rather than for the noop. When
+      // A receives a Phase2b for a value, when it expected one for a noop, it
+      // throws out the noop Phase2bs and starts counting Phase2bs for the
+      // value.
+      //
+      // We have the following cases:
+      //
+      //                      receive None   | receive value
+      //                     +---------------+----------------+
+      //     owned value     | (a) count it  | (b) impossible |
+      //     not owned value | (c) ignore it | (d) count it   |
+      //     noop            | (e) count it  | (f) start over |
+      //                     +---------------+----------------+
+      //
+      // Previously, we sent a noop to the
+      // other delegates. A delegate received our noop but had already received
+      // a value. They sent us back a Phase2b not for the noop, but for the
+      // value. We want to ditch our noop then, and go with the value. Also
+      // note that this may be the first such valued Phase2b we received or a
+      // subsequent one.
+      //
+      // Every Phase2b is treated equally,
+      // and all we have to do is wait for a quorum of votes.
+      import CommandOrNoop.Value
+      (ownsSlot(state, phase2b.slot),
+       pendingValues(phase2b.slot).value,
+       phase2b.command) match {
+        // Case (b).
+        case (true, Value.Command(existingCommand), Some(_)) =>
+          logger.fatal(
+            s"Server received a nack for a slot it owns (${phase2b.slot}). " +
+              s"This should be impossible."
+          )
+
+        // Cases (a), (d), and (e).
+        case (true, Value.Command(_), None) | // a
+            (false, Value.Command(_), Some(_)) | // d
+            (_, Value.Noop(Noop()), None) => // e
+          phase2bs(phase2b.slot)(ServerIndex(phase2b.serverIndex)) = phase2b
+
+        // Case (c).
+        case (false, Value.Command(existingCommand), None) => // c
+          logger.debug(
+            s"Server received a non-nack Phase2b for a slot with a value it " +
+              s"does not own. This means the Phase2b is for a noop rather " +
+              s"than the newer value. It is being ignored."
+          )
+          return
+
+        // Case (f).
+        case (_, Value.Noop(Noop()), Some(command)) => // f
+          log.put(
+            phase2b.slot,
+            PendingEntry(voteRound = phase2b.round,
+                         voteValue = CommandOrNoop().withCommand(command))
+          )
+          pendingValues(phase2b.slot) = CommandOrNoop().withCommand(command)
+          phase2bs(phase2b.slot) = mutable.Map(
+            // The other delegates Phase2b.
+            ServerIndex(phase2b.serverIndex) -> phase2b,
+            // Our Phase2b.
+            index -> Phase2b(
+              serverIndex = index.x,
+              slot = phase2b.slot,
+              round = phase2b.round
             )
+          )
 
-          // This is not the first time.
-          case CommandOrNoop.Value.Command(existingCommand) =>
-            logger.checkEq(command, existingCommand)
-            phase2bs(phase2b.slot)(ServerIndex(phase2b.serverIndex)) = phase2b
-
-          case CommandOrNoop.Value.Empty =>
-            logger.fatal("Empty CommandOrNoop encountered.")
-        }
+        case (_, Value.Empty, _) =>
+          logger.fatal("Empty CommandOrNoop encountered.")
+      }
     }
 
     // Wait for a quorum of Phase2bs.
@@ -1281,11 +1338,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case _: Phase2 | _: Delegate =>
-        //                have noop   have cmd   have nothing
-        //               +-----------+----------+------------+
-        // received noop | vote noop | vote cmd | vote noop  |
-        // received cmd  | vote cmd  | vote cmd | vote cmd   |
-        //               +-----------+----------+------------+
+        //                have noop       have cmd       have nothing
+        //               +---------------+--------------+----------------+
+        // received noop | (a) vote noop | (b) vote cmd | (c) vote noop  |
+        // received cmd  | (d) vote cmd  | (e) vote cmd | (f) vote cmd   |
+        //               +---------------+--------------+----------------+
         val sender = chan[Server[Transport]](src, Server.serializer)
         val phase2b = Phase2b(serverIndex = index.x,
                               slot = phase2a.slot,
@@ -1302,8 +1359,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
             )
 
           case None =>
-            // If we haven't voted for anything yet, then we vote for the value
-            // the sender delegate sent to us.
+            // Cases (c) and (f). If we haven't voted for anything yet, then we
+            // vote for the value the sender delegate sent to us.
             if (config.f == 1 && options.useF1Optimization) {
               choose(phase2a.slot, phase2a.commandOrNoop)
               executeLog((slot) => ownsSlot(state, slot))
@@ -1319,11 +1376,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           case Some(pendingEntry: PendingEntry) =>
             import CommandOrNoop.Value
             (phase2a.commandOrNoop.value, pendingEntry.voteValue.value) match {
-              // If we've already voted for a noop and receive a noop, then we
-              // can safely re-send our Phase2a. This is just normal Paxos. If
-              // we've already voted for a nnop and receive a command, it is
-              // surprisingly safe for us to re-vote for the command. This is
-              // special to Faster Paxos, but is in fact safe.
+              // Cases (a) and (d). If we've already voted for a noop and
+              // receive a noop, then we can safely re-send our Phase2a. This
+              // is just normal Paxos. If we've already voted for a nnop and
+              // receive a command, it is surprisingly safe for us to re-vote
+              // for the command. This is special to Faster Paxos, but is in
+              // fact safe.
               case (_, Value.Noop(Noop())) =>
                 if (config.f == 1 && options.useF1Optimization) {
                   choose(phase2a.slot, phase2a.commandOrNoop)
@@ -1335,17 +1393,15 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
                 }
                 sender.send(ServerInbound().withPhase2B(phase2b))
 
-              // If we've already voted for a command and received a command,
-              // well, they must be the same command!
+              // Case (e). If we've already voted for a command and received a
+              // command, well, they must be the same command!
               case (Value.Command(proposed), Value.Command(voted)) =>
-                logger.check(config.f != 1 || options.useF1Optimization)
                 logger.checkEq(proposed, voted)
                 sender.send(ServerInbound().withPhase2B(phase2b))
 
-              // See the documentation of ackNoopsWithCommands for information
-              // on this optimization.
+              // Case (b). See the documentation of ackNoopsWithCommands for
+              // information on this optimization.
               case (Value.Noop(Noop()), Value.Command(command)) =>
-                logger.check(config.f != 1 || options.useF1Optimization)
                 if (options.ackNoopsWithCommands) {
                   sender.send(
                     ServerInbound().withPhase2B(phase2b.withCommand(command))
@@ -1405,13 +1461,15 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case phase2: Phase2 =>
-        processPhase2b(phase2b,
+        processPhase2b(phase2,
+                       phase2b,
                        phase2.delegateIndex,
                        phase2.pendingValues,
                        phase2.phase2bs)
 
       case delegate: Delegate =>
-        processPhase2b(phase2b,
+        processPhase2b(delegate,
+                       phase2b,
                        delegate.delegateIndex,
                        delegate.pendingValues,
                        delegate.phase2bs)
