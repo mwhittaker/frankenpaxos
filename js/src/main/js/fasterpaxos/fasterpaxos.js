@@ -208,7 +208,6 @@ const server_info = {
               </frankenpaxos-map>
             </fp-field>
             <fp-field :name="'phase2bs'">
-              {{node.actor.state.phase2bs}}
               <frankenpaxos-map :map="node.actor.state.phase2bs"
                                 v-slot="{value: phase2bs}">
                 <frankenpaxos-map :map="phase2bs">
@@ -216,8 +215,8 @@ const server_info = {
               </frankenpaxos-map>
             </fp-field>
             <fp-field :name="'waitingPhase2aAnyAcks'">
-                <frankenpaxos-set :set="node.actor.state.waitingPhase2aAnyAcks">
-                </frankenpaxos-set>
+              <frankenpaxos-set :set="node.actor.state.waitingPhase2aAnyAcks">
+              </frankenpaxos-set>
             </fp-field>
           </fp-object>
         </div>
@@ -244,7 +243,6 @@ const server_info = {
               </frankenpaxos-map>
             </fp-field>
             <fp-field :name="'phase2bs'">
-              {{node.actor.state.phase2bs}}
               <frankenpaxos-map :map="node.actor.state.phase2bs"
                                 v-slot="{value: phase2bs}">
                 <frankenpaxos-map :map="phase2bs">
