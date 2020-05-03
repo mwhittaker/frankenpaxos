@@ -58,8 +58,8 @@ class FasterPaxos(f: Int) {
         resendPhase2aAnysPeriod = java.time.Duration.ofSeconds(10),
         useF1Optimization = true,
         heartbeatOptions = HeartbeatOptions(
-          failPeriod = java.time.Duration.ofSeconds(5),
-          successPeriod = java.time.Duration.ofSeconds(30),
+          failPeriod = java.time.Duration.ofSeconds(3),
+          successPeriod = java.time.Duration.ofSeconds(10),
           numRetries = 1,
           networkDelayAlpha = 0.9
         )

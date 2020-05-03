@@ -291,16 +291,6 @@ message Phase3a {
   required CommandOrNoop command_or_noop = 2;
 }
 
-// message StaleRound {
-//   option (scalapb.message).annotations =
-//     "@scala.scalajs.js.annotation.JSExportAll";
-// }
-
-// message RoundInfoRequest {
-//   option (scalapb.message).annotations =
-//     "@scala.scalajs.js.annotation.JSExportAll";
-// }
-
 message RoundInfo {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";

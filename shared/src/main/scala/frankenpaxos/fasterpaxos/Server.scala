@@ -57,6 +57,11 @@ case class ServerOptions(
     // uniformly at random from the range defined by these two options.
     recoverLogEntryMinPeriod: java.time.Duration,
     recoverLogEntryMaxPeriod: java.time.Duration,
+    // If a delegate node dies, we have to perform a leader change. A node
+    // periodically checks to see if nodes are dead. This period is chosen
+    // unformly at random between the following two options.
+    leaderChangeEntryMinPeriod: java.time.Duration,
+    leaderChangeEntryMaxPeriod: java.time.Duration,
     // If `unsafeDontRecover` is true, servers don't make any attempt to
     // recover log entries. This is not live and should only be used for
     // performance debugging.
@@ -77,6 +82,8 @@ object ServerOptions {
     useF1Optimization = true,
     recoverLogEntryMinPeriod = java.time.Duration.ofSeconds(5),
     recoverLogEntryMaxPeriod = java.time.Duration.ofSeconds(10),
+    leaderChangeEntryMinPeriod = java.time.Duration.ofSeconds(5),
+    leaderChangeEntryMaxPeriod = java.time.Duration.ofSeconds(10),
     unsafeDontRecover = false,
     heartbeatOptions = HeartbeatOptions.default,
     measureLatencies = true
@@ -220,15 +227,19 @@ class ServerMetrics(collectors: Collectors) {
   val recoversSentTotal: Counter = collectors.counter
     .build()
     .name("fasterpaxos_server_recovers_sent_total")
-    .labelNames("type")
     .help("Total number of Recover messages sent.")
     .register()
 
   val ignoredRecoverTotal: Counter = collectors.counter
     .build()
     .name("fasterpaxos_server_ignored_recover_total")
-    .labelNames("type")
     .help("Total number of ignored Recovers.")
+    .register()
+
+  val leaderChangesTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_leader_changes_total")
+    .help("Total number of leader changes.")
     .register()
 }
 
@@ -440,8 +451,35 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       )
     }
 
-  // TODO(mwhittaker): Need to run a timer which checks for dead guys
-  // if dead, random timer wait to become new leader
+  // A timer to detect dead nodes and perform a leader election.
+  private val leaderChangeTimer: Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      "leaderChange",
+      frankenpaxos.Util.randomDuration(options.leaderChangeEntryMinPeriod,
+                                       options.leaderChangeEntryMaxPeriod),
+      () => {
+        val (round, delegates) = roundInfo(state)
+        val delegateAddresses =
+          delegates.map(i => config.heartbeatAddresses(i.x)).toSet
+        val aliveAddresses = heartbeat.unsafeAlive +
+          config.heartbeatAddresses(index.x)
+
+        // If a delegate is dead, we need to perform a leader
+        if (!delegateAddresses.subsetOf(aliveAddresses)) {
+          metrics.leaderChangesTotal.inc()
+          stopTimers(state)
+          startPhase1(
+            roundSystem.nextClassicRound(leaderIndex = index.x, round = round),
+            pickDelegates()
+          )
+        }
+
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
 
   // TODO(mwhittaker): When a server sends Phase2bs for a log entry and
   // previous log entries, it should send them as a single message.
@@ -524,9 +562,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def pickDelegates(): Seq[ServerIndex] = {
-    // We only pick delegates that we think are alive, and
-    // we always make sure that we're a delegate as well.
+    // We only pick delegates that we think are alive, and we always make sure
+    // that we're a delegate as well.
     val alive = heartbeat.unsafeAlive()
+    logger.debug(s"alive = $alive.")
     logger.checkGe(alive.size, config.f)
     Seq(index) ++ pick(alive.toSeq, config.f)
       .map(address => ServerIndex(config.heartbeatAddresses.indexOf(address)))

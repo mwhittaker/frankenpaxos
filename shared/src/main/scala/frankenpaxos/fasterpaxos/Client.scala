@@ -175,16 +175,18 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def makeResendClientRequestTimer(
-      clientRequest: ClientRequest
+      command: Command
   ): Transport#Timer = {
     lazy val t: Transport#Timer = timer(
       s"resendClientRequest " +
-        s"[pseudonym=${clientRequest.command.commandId.clientPseudonym}; " +
-        s"id=${clientRequest.command.commandId.clientId}]",
+        s"[pseudonym=${command.commandId.clientPseudonym}; " +
+        s"id=${command.commandId.clientId}]",
       options.resendClientRequestPeriod,
       () => {
-        servers(delegates(rand.nextInt(delegates.size)).x)
-          .send(ServerInbound().withClientRequest(clientRequest))
+        servers(delegates(rand.nextInt(delegates.size)).x).send(
+          ServerInbound()
+            .withClientRequest(ClientRequest(round = round, command = command))
+        )
         metrics.resendClientRequestTotal.inc()
         t.start()
       }
@@ -227,15 +229,12 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
         // Send the command.
         val id = ids.getOrElse(pseudonym, 0)
-        val clientRequest = ClientRequest(
-          round = round,
-          command = Command(
-            commandId = CommandId(clientAddress = addressAsBytes,
-                                  clientPseudonym = pseudonym,
-                                  clientId = id),
-            command = ByteString.copyFrom(command)
-          )
-        )
+        val commandProto = Command(commandId =
+                                     CommandId(clientAddress = addressAsBytes,
+                                               clientPseudonym = pseudonym,
+                                               clientId = id),
+                                   command = ByteString.copyFrom(command))
+        val clientRequest = ClientRequest(round = round, command = commandProto)
         servers(delegates(rand.nextInt(delegates.size)).x)
           .send(ServerInbound().withClientRequest(clientRequest))
 
@@ -245,7 +244,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           id = id,
           command = command,
           result = promise,
-          resendClientRequest = makeResendClientRequestTimer(clientRequest)
+          resendClientRequest = makeResendClientRequestTimer(commandProto)
         )
         ids(pseudonym) = id + 1
         metrics.clientRequestsSentTotal.inc()

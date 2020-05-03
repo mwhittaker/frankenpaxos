@@ -387,7 +387,9 @@ function make_app(f, FasterPaxos, app_id, snap_id) {
         let d = distance(src_x, src_y, dst_x, dst_y);
         let speed = 400 + (Math.random() * 50); // px per second.
 
-        let svg_message = snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
+        let svg_message = src.actor.constructor.name.includes("heartbeat") ?
+          snap.circle(src_x, src_y, 6).attr({fill: '#bdc3c7'}) :
+          snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
         snap.prepend(svg_message);
         let duration = d / speed;
         return TweenMax.to(svg_message.node, duration, {
