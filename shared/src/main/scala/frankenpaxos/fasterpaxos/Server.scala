@@ -1109,6 +1109,9 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
+        // Stop timers.
+        phase1.resendPhase1as.stop()
+
         // Find the largest slot with a vote.
         val slotInfos = phase1.phase1bs.values.flatMap(phase1b => phase1b.info)
         val maxSlot = if (slotInfos.size == 0) {
@@ -1210,7 +1213,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         //                         maxSlot (5)
         //                                   |
         //                                   anyWatermark (7)
-
         val delegateIndex = DelegateIndex(phase1.delegates.indexOf(index))
         state = Phase2(
           round = round,
@@ -1221,7 +1223,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
                                                  round = anyWatermark - 1),
           pendingValues = pendingValues,
           phase2bs = phase2bs,
-          waitingPhase2aAnyAcks = phase1.delegates.to[mutable.Set],
+          waitingPhase2aAnyAcks =
+            phase1.delegates.to[mutable.Set].filter(_ != index),
           resendPhase2aAnys =
             makeResendPhase2aAnysTimer(phase1.delegates, phase2aAny)
         )
