@@ -22,6 +22,27 @@ class UniformReadWriteWorkload(NamedTuple):
         }
 
 
+class UniformMultiKeyReadWriteWorkload(NamedTuple):
+    num_keys: int
+    num_operations: int
+    read_fraction: float
+    write_size_mean: int
+    write_size_std: int
+    # We put the name here so that it appears in benchmark outputs.
+    name: str = 'UniformMultiKeyReadWriteWorkload'
+
+    def to_proto(self) -> proto_util.Message:
+        return {
+            'uniform_multi_key_read_write_workload': {
+                'num_keys': self.num_keys,
+                'num_operations': self.num_operations,
+                'read_fraction': self.read_fraction,
+                'write_size_mean': self.write_size_mean,
+                'write_size_std': self.write_size_std,
+            }
+        }
+
+
 class WriteOnlyStringWorkload(NamedTuple):
     workload: workload.StringWorkload
     # We put the name here so that it appears in benchmark outputs.
@@ -60,6 +81,8 @@ class WriteOnlyBernoulliSingleKeyWorkload(NamedTuple):
         }
 
 
-ReadWriteWorkload = Union[UniformReadWriteWorkload, WriteOnlyStringWorkload,
+ReadWriteWorkload = Union[UniformReadWriteWorkload,
+                          UniformMultiKeyReadWriteWorkload,
+                          WriteOnlyStringWorkload,
                           WriteOnlyUniformSingleKeyWorkload,
                           WriteOnlyBernoulliSingleKeyWorkload]
