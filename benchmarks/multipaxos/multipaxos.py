@@ -44,6 +44,8 @@ class ClientOptions(NamedTuple):
         datetime.timedelta(seconds=1)
     unsafe_read_at_first_slot: bool = False
     unsafe_read_at_i: bool = False
+    flush_writes_every_n: int = 1
+    flush_reads_every_n: int = 1
 
 
 class BatcherOptions(NamedTuple):
@@ -703,6 +705,10 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     f'{input.client_options.unsafe_read_at_first_slot}',
                     '--options.unsafeReadAtI',
                     f'{input.client_options.unsafe_read_at_i}',
+                    '--options.flushWritesEveryN',
+                    f'{input.client_options.flush_writes_every_n}',
+                    '--options.flushReadsEveryN',
+                    f'{input.client_options.flush_reads_every_n}',
                 ])
             if input.profiled:
                 p = perf_util.JavaPerfProc(bench, client.host, p, f'client_{i}')

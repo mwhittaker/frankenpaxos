@@ -153,6 +153,10 @@ object ClientMain extends App {
       .optionAction((x, o) => o.copy(unsafeReadAtFirstSlot = x))
     opt[Boolean]("options.unsafeReadAtI")
       .optionAction((x, o) => o.copy(unsafeReadAtI = x))
+    opt[Int]("options.flushWritesEveryN")
+      .optionAction((x, o) => o.copy(flushWritesEveryN = x))
+    opt[Int]("options.flushReadsEveryN")
+      .optionAction((x, o) => o.copy(flushReadsEveryN = x))
   }
 
   val flags: Flags = parser.parse(args, Flags()) match {

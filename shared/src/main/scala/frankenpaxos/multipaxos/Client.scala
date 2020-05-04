@@ -31,6 +31,7 @@ object Client {
 
 @JSExportAll
 case class ClientOptions(
+    // Resend periods.
     resendClientRequestPeriod: java.time.Duration,
     resendMaxSlotRequestsPeriod: java.time.Duration,
     resendReadRequestPeriod: java.time.Duration,
@@ -48,6 +49,10 @@ case class ClientOptions(
     // the read at index i. If unsafeReadAtFirstSlot is true, we instead read
     // at 0.
     unsafeReadAtI: Boolean,
+    // Clients flush write channels every flushWritesEveryN messages sent and
+    // flush read channels every flushReadsEveryN messages sent.
+    flushWritesEveryN: Int,
+    flushReadsEveryN: Int,
     measureLatencies: Boolean
 )
 
@@ -61,6 +66,8 @@ object ClientOptions {
     resendEventualReadRequestPeriod = java.time.Duration.ofSeconds(10),
     unsafeReadAtFirstSlot = false,
     unsafeReadAtI = false,
+    flushWritesEveryN = 1,
+    flushReadsEveryN = 1,
     measureLatencies = true
   )
 }
@@ -128,6 +135,18 @@ class ClientMetrics(collectors: Collectors) {
     .name("multipaxos_client_resend_eventual_read_requests_total")
     .help("Total number of times a client resends an EventualReadRequest.")
     .register()
+
+  val writeChannelsFlushedTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_client_write_channels_flushed_total")
+    .help("Total number of times a client flushes its write channels.")
+    .register()
+
+  val readChannelsFlushedTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_client_read_channels_flushed_total")
+    .help("Total number of times a client flushes its read channels.")
+    .register()
 }
 
 @JSExportAll
@@ -193,6 +212,22 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       result: Promise[Array[Byte]],
       resendEventualReadRequest: Transport#Timer
   ) extends State
+
+  @JSExportAll
+  class Ticker(fireEveryN: Int, thunk: () => Unit) {
+    logger.checkGe(fireEveryN, 1)
+
+    @JSExport
+    protected var x: Int = 0
+
+    def tick() {
+      x = x + 1
+      if (x >= fireEveryN) {
+        thunk()
+        x = 0
+      }
+    }
+  }
 
   // Fields ////////////////////////////////////////////////////////////////////
   // A random number generator instantiated from `seed`. This allows us to
@@ -261,6 +296,37 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var states = mutable.Map[Pseudonym, State]()
 
+  @JSExport
+  protected val writeTicker: Option[Ticker] =
+    if (options.flushWritesEveryN == 1) {
+      None
+    } else {
+      Some(new Ticker(options.flushWritesEveryN, () => {
+        if (batchers.size > 0) {
+          batchers.foreach(_.flush())
+        } else {
+          leaders.foreach(_.flush())
+        }
+        metrics.writeChannelsFlushedTotal.inc()
+      }))
+    }
+
+  @JSExport
+  protected val readTicker: Option[Ticker] =
+    if (options.flushReadsEveryN == 1) {
+      None
+    } else {
+      Some(new Ticker(options.flushReadsEveryN, () => {
+        if (readBatchers.size > 0) {
+          readBatchers.foreach(_.flush())
+        } else {
+          acceptors.foreach(group => group.foreach(_.flush()))
+          replicas.foreach(_.flush())
+        }
+        metrics.readChannelsFlushedTotal.inc()
+      }))
+    }
+
   // Helpers ///////////////////////////////////////////////////////////////////
   private def makeResendClientRequestTimer(
       clientRequest: ClientRequest
@@ -271,7 +337,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         s"id=${clientRequest.command.commandId.clientId}]",
       options.resendClientRequestPeriod,
       () => {
-        sendClientRequest(clientRequest)
+        sendClientRequest(clientRequest, forceFlush = true)
         metrics.resendClientRequestTotal.inc()
         t.start()
       }
@@ -334,7 +400,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       s"resendSequentialReadRequest [pseudonym=${pseudonym}; id=${id}]",
       options.resendSequentialReadRequestPeriod,
       () => {
-        sendSequentialReadRequest(readRequest)
+        sendSequentialReadRequest(readRequest, forceFlush = true)
         metrics.resendSequentialReadRequestsTotal.inc()
         t.start()
       }
@@ -352,7 +418,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       s"resendEventualReadRequest [pseudonym=${pseudonym}; id=${id}]",
       options.resendEventualReadRequestPeriod,
       () => {
-        sendEventualReadRequest(readRequest)
+        sendEventualReadRequest(readRequest, forceFlush = true)
         metrics.resendEventualReadRequestsTotal.inc()
         t.start()
       }
@@ -383,30 +449,51 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def sendClientRequest(clientRequest: ClientRequest): Unit = {
+  private def sendClientRequest(
+      clientRequest: ClientRequest,
+      forceFlush: Boolean
+  ): Unit = {
     if (config.numBatchers == 0) {
       // If there are no batchers, then we send to who we think the leader is.
       val leader = leaders(roundSystem.leader(round))
-      leader.send(LeaderInbound().withClientRequest(clientRequest))
+      val inbound = LeaderInbound().withClientRequest(clientRequest)
+      if (options.flushWritesEveryN == 1 || forceFlush) {
+        leader.send(inbound)
+      } else {
+        leader.sendNoFlush(inbound)
+        writeTicker.foreach(_.tick())
+      }
     } else {
       // If there are batchers, then we send to a randomly selected batcher.
       // The batchers will take care of forwarding our message to a leader.
       //
       // TODO(mwhittaker): Abstract out the policy that determines which
       // batcher we propose to.
-      getBatcher().send(BatcherInbound().withClientRequest(clientRequest))
+      val inbound = BatcherInbound().withClientRequest(clientRequest)
+      if (options.flushWritesEveryN == 1 || forceFlush) {
+        getBatcher().send(inbound)
+      } else {
+        getBatcher().sendNoFlush(inbound)
+        writeTicker.foreach(_.tick())
+      }
     }
   }
 
   private def sendSequentialReadRequest(
-      sequentialReadRequest: SequentialReadRequest
+      sequentialReadRequest: SequentialReadRequest,
+      forceFlush: Boolean
   ): Unit = {
     if (config.readBatcherAddresses.size == 0) {
       // If there are no read batchers, then we send to a random replica.
       val replica = replicas(rand.nextInt(replicas.size))
-      replica.send(
+      val inbound =
         ReplicaInbound().withSequentialReadRequest(sequentialReadRequest)
-      )
+      if (options.flushReadsEveryN == 1 || forceFlush) {
+        replica.send(inbound)
+      } else {
+        replica.sendNoFlush(inbound)
+        readTicker.foreach(_.tick())
+      }
     } else {
       // If there are read batchers, then we send to a randomly selected read
       // batcher.
@@ -414,21 +501,32 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       // TODO(mwhittaker): Abstract out the policy that determines which
       // batcher we propose to.
       val readBatcher = readBatchers(rand.nextInt(readBatchers.size))
-      readBatcher.send(
+      val inbound =
         ReadBatcherInbound().withSequentialReadRequest(sequentialReadRequest)
-      )
+      if (options.flushReadsEveryN == 1 || forceFlush) {
+        readBatcher.send(inbound)
+      } else {
+        readBatcher.sendNoFlush(inbound)
+        readTicker.foreach(_.tick())
+      }
     }
   }
 
   private def sendEventualReadRequest(
-      eventualReadRequest: EventualReadRequest
+      eventualReadRequest: EventualReadRequest,
+      forceFlush: Boolean
   ): Unit = {
     if (config.readBatcherAddresses.size == 0) {
       // If there are no read batchers, then we send to a random replica.
       val replica = replicas(rand.nextInt(replicas.size))
-      replica.send(
+      val inbound =
         ReplicaInbound().withEventualReadRequest(eventualReadRequest)
-      )
+      if (options.flushReadsEveryN == 1 || forceFlush) {
+        replica.send(inbound)
+      } else {
+        replica.sendNoFlush(inbound)
+        readTicker.foreach(_.tick())
+      }
     } else {
       // If there are read batchers, then we send to a randomly selected read
       // batcher.
@@ -436,9 +534,14 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       // TODO(mwhittaker): Abstract out the policy that determines which
       // batcher we propose to.
       val readBatcher = readBatchers(rand.nextInt(readBatchers.size))
-      readBatcher.send(
+      val inbound =
         ReadBatcherInbound().withEventualReadRequest(eventualReadRequest)
-      )
+      if (options.flushReadsEveryN == 1 || forceFlush) {
+        readBatcher.send(inbound)
+      } else {
+        readBatcher.sendNoFlush(inbound)
+        readTicker.foreach(_.tick())
+      }
     }
   }
 
@@ -469,7 +572,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             command = ByteString.copyFrom(command)
           )
         )
-        sendClientRequest(clientRequest)
+        sendClientRequest(clientRequest, forceFlush = false)
 
         // Update our state.
         states(pseudonym) = PendingWrite(
@@ -514,9 +617,15 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           )
           val group = acceptors(rand.nextInt(acceptors.size))
           val quorum = scala.util.Random.shuffle(group).take(config.f + 1)
-          quorum.foreach(
-            _.send(AcceptorInbound().withMaxSlotRequest(maxSlotRequest))
-          )
+          val inbound = AcceptorInbound().withMaxSlotRequest(maxSlotRequest)
+          if (options.flushReadsEveryN == 1) {
+            quorum.foreach(_.send(inbound))
+          } else {
+            for (acceptor <- quorum) {
+              acceptor.sendNoFlush(inbound)
+              readTicker.foreach(_.tick())
+            }
+          }
 
           // Update our state.
           states(pseudonym) = MaxSlot(
@@ -541,7 +650,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             )
           )
           val readBatcher = readBatchers(rand.nextInt(readBatchers.size))
-          readBatcher.send(ReadBatcherInbound().withReadRequest(readRequest))
+          val inbound = ReadBatcherInbound().withReadRequest(readRequest)
+          if (options.flushReadsEveryN == 1) {
+            readBatcher.send(inbound)
+          } else {
+            readBatcher.sendNoFlush(inbound)
+            readTicker.foreach(_.tick())
+          }
 
           // Update our state.
           states(pseudonym) = PendingRead(
@@ -584,7 +699,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             command = ByteString.copyFrom(command)
           )
         )
-        sendSequentialReadRequest(readRequest)
+        sendSequentialReadRequest(readRequest, forceFlush = false)
 
         // Update our state.
         states(pseudonym) = PendingSequentialRead(
@@ -625,7 +740,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             command = ByteString.copyFrom(command)
           )
         )
-        sendEventualReadRequest(readRequest)
+        sendEventualReadRequest(readRequest, forceFlush = false)
 
         // Update our state.
         states(pseudonym) = PendingEventualRead(
@@ -763,7 +878,13 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           )
         )
         val replica = replicas(rand.nextInt(replicas.size))
-        replica.send(ReplicaInbound().withReadRequest(readRequest))
+        val inbound = ReplicaInbound().withReadRequest(readRequest)
+        if (options.flushReadsEveryN == 1) {
+          replica.send(inbound)
+        } else {
+          replica.sendNoFlush(inbound)
+          readTicker.foreach(_.tick())
+        }
 
         // Update our state.
         states(pseudonym) = PendingRead(
