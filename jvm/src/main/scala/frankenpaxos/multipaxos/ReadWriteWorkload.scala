@@ -79,9 +79,8 @@ class UniformMultiKeyReadWriteWorkload(
       s"writeSizeStd=$writeSizeStd)"
 
   override def get(): ReadWrite = {
-    val keys =
-      for (_ <- 0 until numOperations)
-        yield Random.nextInt(numKeys).toString()
+    val keys = for (_ <- 0 until numOperations)
+      yield "%4d".format(Random.nextInt(numKeys))
     if (Random.nextFloat() <= readFraction) {
       val command = statemachine
         .KeyValueStoreInput()
