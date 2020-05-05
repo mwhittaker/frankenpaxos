@@ -37,15 +37,27 @@ def main(args) -> None:
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
                     predetermined_read_fraction = predetermined_read_fraction,
-                    workload = read_write_workload.UniformReadWriteWorkload(
-                        num_keys=num_keys, read_fraction=read_fraction,
-                        write_size_mean=1, write_size_std=0),
-                    read_workload = read_write_workload.UniformReadWriteWorkload(
-                        num_keys=num_keys, read_fraction=1.0,
-                        write_size_mean=1, write_size_std=0),
-                    write_workload = read_write_workload.UniformReadWriteWorkload(
-                        num_keys=num_keys, read_fraction=0.0,
-                        write_size_mean=1, write_size_std=0),
+                    workload =
+                      read_write_workload.UniformMultiKeyReadWriteWorkload(
+                        num_keys=num_keys,
+                        num_operations=num_operations,
+                        read_fraction=read_fraction,
+                        write_size_mean=16,
+                        write_size_std=0),
+                    read_workload =
+                      read_write_workload.UniformMultiKeyReadWriteWorkload(
+                        num_keys=num_keys,
+                        num_operations=num_operations,
+                        read_fraction=1.0,
+                        write_size_mean=16,
+                        write_size_std=0),
+                    write_workload =
+                      read_write_workload.UniformMultiKeyReadWriteWorkload(
+                        num_keys=num_keys,
+                        num_operations=num_operations,
+                        read_fraction=0.0,
+                        write_size_mean=16,
+                        write_size_std=0),
                     read_consistency = read_consistency,
                     profiled = args.profile,
                     monitored = args.monitor,
@@ -109,21 +121,31 @@ def main(args) -> None:
                 for num_proxy_leaders in [5]
                 for num_acceptor_groups in [2]
                 for (num_replicas, num_proxy_replicas) in [(2, 4)]
-                for num_read_batchers in [3]
-                for batch_size in [10]
+                for num_read_batchers in [0]
+                for batch_size in [0]
                 for read_fraction in [0]
+                for num_operations in [25]
                 for (num_client_procs,
                      num_clients_per_proc,
                      predetermined_read_fraction) in [
-                    # (1, 100, 100),
+                    (1, 100, 0),
+                    (2, 100, 0),
+                    (3, 100, 0),
+                    (4, 100, 0),
+                    (5, 100, 0),
+                    (6, 100, 0),
+                    (7, 100, 0),
+                    (8, 100, 0),
+                    (9, 100, 0),
+                    (10, 100, 0),
                     # (2, 100, 100),
                     # (3, 100, 100),
                     # (4, 100, 100),
-                    (5, 10, 100),
-                    (5, 50, 100),
-                    (5, 100, 100),
-                    (5, 150, 100),
-                    (5, 200, 100),
+                    # (5, 10, 100),
+                    # (5, 50, 100),
+                    # (5, 100, 100),
+                    # (5, 150, 100),
+                    # (5, 200, 100),
                     # (6, 100, 100),
                     # (7, 100, 100),
                     # (8, 100, 100),
@@ -161,6 +183,7 @@ def main(args) -> None:
                 'num_read_batchers': input.num_read_batchers,
                 'read_batching_scheme':
                     input.read_batcher_options.read_batching_scheme,
+                'num_operations': input.workload.num_operations,
                 # 'unsafe_read_at_i': \
                 #     input.client_options.unsafe_read_at_i,
                 # 'unsafe_read_at_first_slot': \
