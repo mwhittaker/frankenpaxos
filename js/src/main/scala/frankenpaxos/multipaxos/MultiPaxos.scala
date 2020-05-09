@@ -151,6 +151,7 @@ class MultiPaxos(batch: Boolean) {
       config = config,
       options = LeaderOptions.default.copy(
         resendPhase1asPeriod = java.time.Duration.ofSeconds(10),
+        noopFlushPeriod = java.time.Duration.ofSeconds(5),
         electionOptions = ElectionOptions.default.copy(
           pingPeriod = java.time.Duration.ofSeconds(60),
           noPingTimeoutMin = java.time.Duration.ofSeconds(120),

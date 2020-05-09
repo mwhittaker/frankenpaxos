@@ -35,6 +35,11 @@ case class LeaderOptions(
     // `flushPhase2asEveryN` Phase2a messages sent. For example, if
     // `flushPhase2asEveryN` is 1, then the leader flushes after every send.
     flushPhase2asEveryN: Int,
+    // In Evelyn Paxos, a 100% read workload would stall, as reads require at
+    // least some writes in order to be processed. Thus, a leader writes a noop
+    // to the log every noopFlushPeriod. If noopFlushPeriod is 0, then no noops
+    // are written.
+    noopFlushPeriod: java.time.Duration,
     electionOptions: ElectionOptions,
     measureLatencies: Boolean
 )
@@ -44,6 +49,7 @@ object LeaderOptions {
   val default = LeaderOptions(
     resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
     flushPhase2asEveryN = 1,
+    noopFlushPeriod = java.time.Duration.ofSeconds(0),
     electionOptions = ElectionOptions.default,
     measureLatencies = true
   )
@@ -75,6 +81,12 @@ class LeaderMetrics(collectors: Collectors) {
     .build()
     .name("multipaxos_leader_resend_phase1as_total")
     .help("Total number of times the leader resent phase 1a messages.")
+    .register()
+
+  val noopsFlushedTotal: Counter = collectors.counter
+    .build()
+    .name("multipaxos_leader_noops_flushed_total")
+    .help("Total number of times the leader flushed a noop.")
     .register()
 }
 
@@ -113,7 +125,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ) extends State
 
   @JSExportAll
-  case object Phase2 extends State
+  case class Phase2(
+      noopFlush: Option[Transport#Timer]
+  ) extends State
 
   // Fields ////////////////////////////////////////////////////////////////////
   // A random number generator instantiated from `seed`. This allows us to
@@ -207,6 +221,47 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     t
   }
 
+  private def makeNoopFlushTimer(): Option[Transport#Timer] = {
+    if (options.noopFlushPeriod == java.time.Duration.ofSeconds(0)) {
+      return None
+    }
+
+    lazy val t: Transport#Timer = timer(
+      s"noopFlush",
+      options.noopFlushPeriod,
+      () => {
+        metrics.noopsFlushedTotal.inc()
+
+        state match {
+          case Inactive | _: Phase1 =>
+            logger.fatal(
+              s"A leader tried to flush a noop but is not in Phase 2. It's " +
+                s"state is $state."
+            )
+
+          case _: Phase2 =>
+        }
+
+        getProxyLeader().send(
+          ProxyLeaderInbound().withPhase2A(
+            Phase2a(slot = nextSlot,
+                    round = round,
+                    commandBatchOrNoop = CommandBatchOrNoop().withNoop(Noop()))
+          )
+        )
+        nextSlot += 1
+        currentProxyLeader += 1
+        if (currentProxyLeader >= config.numProxyLeaders) {
+          currentProxyLeader = 0
+        }
+
+        t.start()
+      }
+    )
+    t.start()
+    Some(t)
+  }
+
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
     if (options.measureLatencies) {
@@ -264,7 +319,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private def processClientRequestBatch(
       clientRequestBatch: ClientRequestBatch
   ): Unit = {
-    logger.checkEq(state, Phase2)
+    state match {
+      case Inactive | _: Phase1 =>
+        logger.fatal(
+          s"A leader tried to process a client request batch but is not in " +
+            s"Phase 2. It's state is $state."
+        )
+
+      case _: Phase2 =>
+    }
 
     // Normally, we'd have the following code, but to measure the time taken
     // for serialization vs sending, we split it up. It's less readable, but it
@@ -354,7 +417,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case (phase1: Phase1, false) =>
         phase1.resendPhase1as.stop()
         state = Inactive
-      case (Phase2, false) =>
+      case (phase2: Phase2, false) =>
+        phase2.noopFlush.foreach(_.stop())
         state = Inactive
       case (Inactive, true) =>
         round = roundSystem
@@ -365,7 +429,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         round = roundSystem
           .nextClassicRound(leaderIndex = index, round = round)
         state = startPhase1(round = round, chosenWatermark = chosenWatermark)
-      case (Phase2, true) =>
+      case (phase2: Phase2, true) =>
+        phase2.noopFlush.foreach(_.stop())
         round = roundSystem
           .nextClassicRound(leaderIndex = index, round = round)
         state = startPhase1(round = round, chosenWatermark = chosenWatermark)
@@ -420,7 +485,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       phase1b: Phase1b
   ): Unit = {
     state match {
-      case Inactive | Phase2 =>
+      case Inactive | _: Phase2 =>
         logger.debug(
           s"A leader received a Phase1b message but is not in Phase1. Its " +
             s"state is $state. The Phase1b message is being ignored."
@@ -471,7 +536,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Update our state.
         phase1.resendPhase1as.stop()
-        state = Phase2
+        state = Phase2(makeNoopFlushTimer())
 
         // Process any pending client requests.
         for (clientRequestBatch <- phase1.pendingClientRequestBatches) {
@@ -498,7 +563,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           batch = CommandBatch(command = Seq(clientRequest.command))
         )
 
-      case Phase2 =>
+      case phase2: Phase2 =>
         processClientRequestBatch(
           ClientRequestBatch(
             batch = CommandBatch(command = Seq(clientRequest.command))
@@ -532,7 +597,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // We'll process the client request after we've finished phase 1.
         phase1.pendingClientRequestBatches += clientRequestBatch
 
-      case Phase2 =>
+      case phase2: Phase2 =>
         processClientRequestBatch(clientRequestBatch)
     }
   }
@@ -546,7 +611,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // We're inactive, so we ignore the leader info request. The active
       // leader will respond to the request.
 
-      case _: Phase1 | Phase2 =>
+      case _: Phase1 | _: Phase2 =>
         val client = chan[Client[Transport]](src, Client.serializer)
         client.send(
           ClientInbound()
@@ -564,7 +629,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // We're inactive, so we ignore the leader info request. The active
       // leader will respond to the request.
 
-      case _: Phase1 | Phase2 =>
+      case _: Phase1 | _: Phase2 =>
         val batcher = chan[Batcher[Transport]](src, Batcher.serializer)
         batcher.send(
           BatcherInbound()
@@ -593,7 +658,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         round =
           roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
         leaderChange(isNewLeader = true)
-      case Phase2 =>
+      case _: Phase2 =>
         round =
           roundSystem.nextClassicRound(leaderIndex = index, round = nack.round)
         leaderChange(isNewLeader = true)
@@ -619,7 +684,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     state match {
       case Inactive =>
       // Do nothing. The active leader will recover.
-      case _: Phase1 | Phase2 =>
+      case _: Phase1 | _: Phase2 =>
         // Leader change to make sure the slot is chosen.
         leaderChange(isNewLeader = true)
     }
