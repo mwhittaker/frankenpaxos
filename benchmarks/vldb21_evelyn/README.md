@@ -24,5 +24,7 @@ Evelyn Paxos. Our submission includes plots generated from 7 experiments.
 - `e6_harmonia`. We show a latency-throughput curve for Evelyn Paxos with and
   without early reads. The two should look similar, showing that waiting is not
   a big deal, something that Harmonia helps avoid.
-- `e7_data_size`. We show throughput vs data size. Larger data should lead to
+- `e7_flush`. We show latency-throughput curves for various periods of leader
+  flushing.
+- `e8_data_size`. We show throughput vs data size. Larger data should lead to
   lower throughput.
