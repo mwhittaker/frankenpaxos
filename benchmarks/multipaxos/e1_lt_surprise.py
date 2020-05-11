@@ -29,11 +29,11 @@ def main(args) -> None:
                     acceptor_jvm_heap_size = '12g',
                     replica_jvm_heap_size = '12g',
                     proxy_replica_jvm_heap_size = '12g',
-                    warmup_duration = datetime.timedelta(seconds=15),
-                    warmup_timeout = datetime.timedelta(seconds=20),
+                    warmup_duration = datetime.timedelta(seconds=10),
+                    warmup_timeout = datetime.timedelta(seconds=15),
                     warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=10),
-                    timeout = datetime.timedelta(seconds=15),
+                    duration = datetime.timedelta(seconds=15),
+                    timeout = datetime.timedelta(seconds=20),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
                     predetermined_read_fraction = -1,
@@ -105,29 +105,50 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                 )
 
-                for num_proxy_leaders in [7]
-                for num_acceptor_groups in [2]
                 for num_replicas in [7]
-                for num_proxy_replicas in [7]
-                for (read_fraction, noop_flush_period) in [
-                    # (0.0, datetime.timedelta(seconds=0)),
-                    (1.0, datetime.timedelta(milliseconds=1)),
-                    # (0.5, datetime.timedelta(seconds=0)),
+                for num_proxy_replicas in [8]
+                for (read_fraction, num_proxy_leaders,
+                     num_acceptor_groups, noop_flush_period) in [
+                    # (0.0, 6, 2, datetime.timedelta(seconds=0)),
+                    # (0.0, 7, 2, datetime.timedelta(seconds=0)),
+                    (0.0, 8, 2, datetime.timedelta(seconds=0)),
+                    (0.0, 9, 2, datetime.timedelta(seconds=0)),
+                    (0.0, 10, 2, datetime.timedelta(seconds=0)),
+                    # (1.0, 7, 5, datetime.timedelta(microseconds=500)),
+                    # (0.5, 7, 2, datetime.timedelta(seconds=0)),
                 ]
-                for (num_client_procs, num_clients_per_proc) in [
-                    # (1, 1),
-                    # (1, 10),
-                    # (1, 50),
-                    # (1, 100),
-                    # (2, 100),
-                    # (3, 100),
-                    # (4, 100),
-                    # (5, 100),
-                    # (6, 100),
-                    # (7, 100),
-                    # (8, 100),
-                    (15, 100),
-                ]
+                for (num_client_procs, num_clients_per_proc) in (
+                    [
+                        # (1, 1),
+                        # (1, 10),
+                        # (1, 100),
+                        (3, 100),
+                        # (3, 100),
+                        # (4, 100),
+                        # (5, 100),
+                        # (6, 100),
+                    ] if read_fraction == 0.0 else [
+                        (1, 1),
+                        (1, 10),
+                        (1, 50),
+                        (1, 100),
+                        (2, 100),
+                        (3, 100),
+                        (4, 100),
+                        (5, 100),
+                        (6, 100),
+                    ] if read_fraction == 1.0 else [
+                        (1, 1),
+                        (1, 10),
+                        (1, 50),
+                        (1, 100),
+                        (2, 100),
+                        (3, 100),
+                        (4, 100),
+                        (5, 100),
+                        (6, 100),
+                    ]
+                )
             ]
 
         def summary(self, input: Input, output: Output) -> str:
