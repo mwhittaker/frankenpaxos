@@ -69,6 +69,8 @@ object LeaderMain extends App {
       .optionAction((x, o) => o.copy(resendPhase1asPeriod = x))
     opt[Int]("options.flushPhase2asEveryN")
       .optionAction((x, o) => o.copy(flushPhase2asEveryN = x))
+    opt[java.time.Duration]("options.noopFlushPeriod")
+      .optionAction((x, o) => o.copy(noopFlushPeriod = x))
     opt[java.time.Duration]("options.election.pingPeriod")
       .electionOptionAction((x, o) => o.copy(pingPeriod = x))
     opt[java.time.Duration]("options.election.noPingTimeoutMin")
