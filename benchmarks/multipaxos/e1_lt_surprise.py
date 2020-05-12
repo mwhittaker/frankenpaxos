@@ -7,7 +7,7 @@ def main(args) -> None:
             return vars(args)
 
         def inputs(self) -> Collection[Input]:
-            return [
+            return ([
                 Input(
                     f = 1,
                     num_client_procs = num_client_procs,
@@ -32,8 +32,8 @@ def main(args) -> None:
                     warmup_duration = datetime.timedelta(seconds=10),
                     warmup_timeout = datetime.timedelta(seconds=15),
                     warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=15),
-                    timeout = datetime.timedelta(seconds=20),
+                    duration = datetime.timedelta(seconds=7),
+                    timeout = datetime.timedelta(seconds=12),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
                     predetermined_read_fraction = -1,
@@ -106,37 +106,38 @@ def main(args) -> None:
                 )
 
                 for num_replicas in [7]
-                for num_proxy_replicas in [8]
+                for num_proxy_replicas in [7]
                 for (read_fraction, num_proxy_leaders,
                      num_acceptor_groups, noop_flush_period) in [
-                    # (0.0, 6, 2, datetime.timedelta(seconds=0)),
-                    # (0.0, 7, 2, datetime.timedelta(seconds=0)),
-                    (0.0, 8, 2, datetime.timedelta(seconds=0)),
-                    (0.0, 9, 2, datetime.timedelta(seconds=0)),
-                    (0.0, 10, 2, datetime.timedelta(seconds=0)),
-                    # (1.0, 7, 5, datetime.timedelta(microseconds=500)),
+                    # (0.0, 10, 2, datetime.timedelta(seconds=0)),
+                    (1.0, 5, 5, datetime.timedelta(microseconds=500)),
                     # (0.5, 7, 2, datetime.timedelta(seconds=0)),
                 ]
                 for (num_client_procs, num_clients_per_proc) in (
                     [
-                        # (1, 1),
-                        # (1, 10),
-                        # (1, 100),
-                        (3, 100),
-                        # (3, 100),
-                        # (4, 100),
-                        # (5, 100),
-                        # (6, 100),
-                    ] if read_fraction == 0.0 else [
                         (1, 1),
                         (1, 10),
-                        (1, 50),
                         (1, 100),
                         (2, 100),
                         (3, 100),
                         (4, 100),
                         (5, 100),
                         (6, 100),
+                        (7, 100),
+                        (8, 100),
+                        (9, 100),
+                        (10, 100),
+                    ] if read_fraction == 0.0 else [
+                        (1, 1),
+                        (1, 10),
+                        (1, 100),
+                        (5, 100),
+                        (10, 100),
+                        (15, 100),
+                        (20, 100),
+                        (28, 100),
+                        (28, 150),
+                        (28, 200),
                     ] if read_fraction == 1.0 else [
                         (1, 1),
                         (1, 10),
@@ -149,7 +150,7 @@ def main(args) -> None:
                         (6, 100),
                     ]
                 )
-            ]
+            ] * 1)[:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
