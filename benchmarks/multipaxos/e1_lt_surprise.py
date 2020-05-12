@@ -150,7 +150,7 @@ def main(args) -> None:
                         (6, 100),
                     ]
                 )
-            ] * 1)[:]
+            ] * 3)
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
