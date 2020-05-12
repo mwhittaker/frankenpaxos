@@ -32,8 +32,8 @@ def main(args) -> None:
                     warmup_duration = datetime.timedelta(seconds=10),
                     warmup_timeout = datetime.timedelta(seconds=15),
                     warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=7),
-                    timeout = datetime.timedelta(seconds=12),
+                    duration = datetime.timedelta(seconds=10),
+                    timeout = datetime.timedelta(seconds=15),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
                     predetermined_read_fraction = -1,
@@ -110,8 +110,8 @@ def main(args) -> None:
                 for (read_fraction, num_proxy_leaders,
                      num_acceptor_groups, noop_flush_period) in [
                     # (0.0, 10, 2, datetime.timedelta(seconds=0)),
-                    (1.0, 5, 5, datetime.timedelta(microseconds=500)),
-                    # (0.5, 7, 2, datetime.timedelta(seconds=0)),
+                    # (1.0, 5, 5, datetime.timedelta(microseconds=500)),
+                    (0.5, 10, 2, datetime.timedelta(milliseconds=1)),
                 ]
                 for (num_client_procs, num_clients_per_proc) in (
                     [
@@ -141,16 +141,18 @@ def main(args) -> None:
                     ] if read_fraction == 1.0 else [
                         (1, 1),
                         (1, 10),
-                        (1, 50),
                         (1, 100),
                         (2, 100),
-                        (3, 100),
                         (4, 100),
-                        (5, 100),
                         (6, 100),
+                        (8, 100),
+                        (10, 100),
+                        (12, 100),
+                        (14, 100),
+                        (16, 100),
                     ]
                 )
-            ] * 3)
+            ] * 3)[:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
