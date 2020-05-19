@@ -111,12 +111,14 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   }
 
   override def send(
-      src: JsTransport#Address,
+      actor: Actor[JsTransport],
       dst: JsTransport#Address,
       bytes: Array[Byte]
   ): Unit = {
-    if (!partitionedActors.contains(src) && !partitionedActors.contains(dst)) {
-      bufferedMessages += JsTransportMessage(src, dst, bytes, messageId)
+    if (!partitionedActors.contains(actor.address) &&
+        !partitionedActors.contains(dst)) {
+      bufferedMessages +=
+        JsTransportMessage(actor.address, dst, bytes, messageId)
       messageId += 1
     }
   }
@@ -124,14 +126,14 @@ class JsTransport(logger: Logger) extends Transport[JsTransport] {
   // The JsTransport treats sendNoFlush exactly like send. We don't bother to
   // implement batching messages and flushing them at once.
   override def sendNoFlush(
-      src: JsTransport#Address,
+      actor: Actor[JsTransport],
       dst: JsTransport#Address,
       bytes: Array[Byte]
   ): Unit =
-    send(src, dst, bytes)
+    send(actor, dst, bytes)
 
   override def flush(
-      src: JsTransport#Address,
+      actor: Actor[JsTransport],
       dst: JsTransport#Address
   ): Unit = {
     // Do nothing.

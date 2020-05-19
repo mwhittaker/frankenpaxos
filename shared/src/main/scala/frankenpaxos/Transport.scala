@@ -63,7 +63,7 @@ trait Transport[Self <: Transport[Self]] {
   // Send a message from a source actor to a destination actor. You should not
   // call this method directly. Instead, use the send method inside Actor.
   private[frankenpaxos] def send(
-      src: Self#Address,
+      actor: Actor[Self],
       dst: Self#Address,
       bytes: Array[Byte]
   ): Unit
@@ -73,7 +73,7 @@ trait Transport[Self <: Transport[Self]] {
   // message may be sent before then, though. You should not call this method
   // directly.  Instead, use the `sendNoFlush` method inside Actor.
   private[frankenpaxos] def sendNoFlush(
-      src: Self#Address,
+      actor: Actor[Self],
       dst: Self#Address,
       bytes: Array[Byte]
   ): Unit
@@ -81,7 +81,7 @@ trait Transport[Self <: Transport[Self]] {
   // Flush the channel between src and dst. If no channel exists, nothing
   // happens. You should not call this method directly. Instead, use the
   // `flush` method inside Actor.
-  private[frankenpaxos] def flush(src: Self#Address, dst: Self#Address): Unit
+  private[frankenpaxos] def flush(actor: Actor[Self], dst: Self#Address): Unit
 
   // Create a named timer for a particular actor. You should not call this
   // method directly. Instead, use the timer method inside Actor.

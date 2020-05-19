@@ -19,6 +19,7 @@ abstract class Actor[Transport <: frankenpaxos.Transport[Transport]](
   logger.info(s"Actor $this registering on address $address.")
   transport.register(address, this)
 
+  // Channels.
   type Chan[A <: frankenpaxos.Actor[Transport]] =
     frankenpaxos.Chan[Transport, A]
 
@@ -26,15 +27,15 @@ abstract class Actor[Transport <: frankenpaxos.Transport[Transport]](
       dst: Transport#Address,
       serializer: Serializer[A#InboundMessage]
   ): Chan[A] = {
-    new Chan[A](transport, address, dst, serializer)
+    new Chan[A](transport, this, dst, serializer)
   }
 
   // Sending and flushing.
   def send(dst: Transport#Address, bytes: Array[Byte]): Unit =
-    transport.send(address, dst, bytes)
+    transport.send(this, dst, bytes)
   def sendNoFlush(dst: Transport#Address, bytes: Array[Byte]): Unit =
-    transport.sendNoFlush(address, dst, bytes)
-  def flush(dst: Transport#Address): Unit = transport.flush(address, dst)
+    transport.sendNoFlush(this, dst, bytes)
+  def flush(dst: Transport#Address): Unit = transport.flush(this, dst)
 
   // Creates a new Timer with the specified delay. The returned timer will not
   // be started; you have to start it yourself. Also note that name does not

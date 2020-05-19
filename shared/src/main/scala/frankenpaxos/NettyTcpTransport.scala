@@ -145,30 +145,29 @@ class NettyTcpTransport(private val logger: Logger)
   private class ServerHandler(actor: Actor[NettyTcpTransport])
       extends CommonHandler(actor) {
     override def channelRegistered(ctx: ChannelHandlerContext): Unit = {
-      val localAddress = NettyTcpAddress(ctx.channel.localAddress())
-      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress())
-      registerChannel(localAddress, remoteAddress, ctx.channel())
+      val localAddress = NettyTcpAddress(ctx.channel.localAddress)
+      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress)
+      logger.checkEq(actor.address, localAddress)
+      registerChannel(localAddress, remoteAddress, ctx.channel)
       ctx.fireChannelRegistered()
     }
 
     override def channelUnregistered(ctx: ChannelHandlerContext): Unit = {
-      val localAddress = NettyTcpAddress(ctx.channel.localAddress())
-      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress())
+      val localAddress = NettyTcpAddress(ctx.channel.localAddress)
+      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress)
       unregisterChannel(localAddress, remoteAddress)
       ctx.fireChannelUnregistered()
     }
   }
 
   private class ClientHandler(
-      localAddress: NettyTcpTransport#Address,
       actor: Actor[NettyTcpTransport]
   ) extends CommonHandler(actor) {
     override def channelUnregistered(ctx: ChannelHandlerContext): Unit = {
-      if (ctx.channel.localAddress() != null &&
-          ctx.channel.remoteAddress() != null) {
-        val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress())
-        unregisterActor(NettyTcpAddress(ctx.channel.localAddress()))
-        unregisterChannel(localAddress, remoteAddress)
+      if (ctx.channel.localAddress != null &&
+          ctx.channel.remoteAddress != null) {
+        val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress)
+        unregisterChannel(actor.address, remoteAddress)
         ctx.fireChannelUnregistered()
       } else {
         logger.debug(
@@ -212,51 +211,45 @@ class NettyTcpTransport(private val logger: Logger)
   // documentation, the boss group is responsible for establishing connections
   // while the worker group does the actual message processing. However, when
   // using two event loop groups and printing out thread ids, I found that
-  // multiple threads were being used. I'm not exactly why this is happening. I
-  // must be misunderstanding the netty API. Using a single event loop, though,
-  // seems to solve the problem. With only one event loop, only one thread is
-  // used.
+  // multiple threads were being used. I'm not exactly sure why this is
+  // happening. I must be misunderstanding the netty API. Using a single event
+  // loop, though, seems to solve the problem. With only one event loop, only
+  // one thread is used.
   //
   // [1]: https://netty.io/wiki/user-guide-for-4.x.html
   private val eventLoop = new NioEventLoopGroup(1)
-
-  private val actors =
-    mutable.Map[NettyTcpTransport#Address, Actor[NettyTcpTransport]]()
 
   sealed trait ChanOrPending
   case class Chan(channel: Channel) extends ChanOrPending
   case class Pending(msgs: mutable.Buffer[Array[Byte]]) extends ChanOrPending
 
+  // `channels` is a little hard to understand, so bear with me. There are two
+  // types of channels:
+  //
+  //   (1) _Server Channels_: Every actor has a unique address and runs a TCP
+  //       server socket that listens on this address. When a different actor
+  //       connects to this server socket, a server channel is formed. The
+  //       local address of this channel is the address of the actor. The
+  //       remote address will have the same host as the remote actor but will
+  //       probably have a random port.
+  //
+  //   (2) _Client Channels_: When an actor sends a message to a different
+  //       actor, it creates a client socket and connects to the remote actor's
+  //       address. This creates a client channel. The local address of this
+  //       channel has a random port. The remote address is the address of the
+  //       remote actor.
+  //
+  // We do not expose these random ports to programmers. Programmers only know
+  // about the addresses they give to actors. When we form a server channel, it
+  // is stored in `channels` with its local and remote address. When we form a
+  // client channel, we store it in `channels`, but with the local actor's
+  // address rather than the client channel's local address. This is because
+  // when the local actor sends a message, it doesn't even know what the random
+  // port is. All it knows is its address.
   private val channels = mutable.Map[
     (NettyTcpTransport#Address, NettyTcpTransport#Address),
     ChanOrPending
   ]()
-
-  private def registerActor(
-      address: NettyTcpTransport#Address,
-      actor: Actor[NettyTcpTransport]
-  ): Unit = {
-    if (actors.contains(address)) {
-      logger.fatal(
-        s"Attempting to register an actor with address $address, but this " +
-          s"transport already has an actor bound to $address."
-      )
-    }
-    actors.put(address, actor)
-  }
-
-  private def unregisterActor(
-      address: NettyTcpTransport#Address
-  ): Unit = {
-    actors.remove(address) match {
-      case Some(_) => {}
-      case None =>
-        logger.fatal(
-          s"Attempting to unregister an actor with address $address, but " +
-            s"this transport doesn't have an actor bound to $address."
-        )
-    }
-  }
 
   private def registerChannel(
       localAddress: NettyTcpTransport#Address,
@@ -266,17 +259,17 @@ class NettyTcpTransport(private val logger: Logger)
     channels.get((localAddress, remoteAddress)) match {
       case Some(Chan(_)) =>
         logger.fatal(
-          s"A channel between remote address $remoteAddress and " +
-            s"local address $localAddress is being registered, but an " +
-            s"existing channel between these addresses already exists."
+          s"A channel between local address $localAddress and remote address " +
+            s"$remoteAddress is being registered, but there already exists " +
+            s"such a channel."
         )
 
       case Some(Pending(msgs)) =>
         logger.debug(
-          s"A channel between remote address $remoteAddress and " +
-            s"local address $localAddress is being registered, and a set of " +
-            s"${msgs.size} pending messages was found. We are sending the " +
-            s"pending messages along the channel."
+          s"A channel between local address $localAddress and remote address " +
+            s"$remoteAddress is being registered, and a set of ${msgs.size} " +
+            s"pending messages was found. We are sending the pending " +
+            s"messages along the channel."
         )
         channels((localAddress, remoteAddress)) = Chan(channel)
         msgs.foreach(
@@ -292,8 +285,8 @@ class NettyTcpTransport(private val logger: Logger)
 
       case None =>
         logger.debug(
-          s"Successfully registering channel between remote address " +
-            s"$remoteAddress and local address $localAddress."
+          s"Successfully registered channel between local address " +
+            s"$localAddress and remote address $remoteAddress."
         )
         channels((localAddress, remoteAddress)) = Chan(channel)
     }
@@ -306,15 +299,15 @@ class NettyTcpTransport(private val logger: Logger)
     channels.remove((localAddress, remoteAddress)) match {
       case Some(_) =>
         logger.debug(
-          s"Successfully unregistered channel between remote address " +
-            s"$remoteAddress and local address $localAddress."
+          s"Successfully unregistered channel between local address " +
+            s"$localAddress and remote address $remoteAddress."
         )
 
       case None =>
         logger.fatal(
-          s"A channel between remote address $remoteAddress and local " +
-            s"address $localAddress is being unregistered, but an existing " +
-            s"channel between these addresses doesn not exists."
+          s"A channel between local address $localAddress and remote " +
+            s"address $remoteAddress is being unregistered, but an existing " +
+            s"channel between these addresses does't exists."
         )
     }
   }
@@ -323,8 +316,6 @@ class NettyTcpTransport(private val logger: Logger)
       address: NettyTcpTransport#Address,
       actor: Actor[NettyTcpTransport]
   ): Unit = {
-    registerActor(address, actor)
-
     new ServerBootstrap()
       .group(eventLoop)
       .channel(classOf[NioServerSocketChannel])
@@ -333,7 +324,7 @@ class NettyTcpTransport(private val logger: Logger)
       .childHandler(new ChannelInitializer[SocketChannel]() {
         @throws(classOf[Exception])
         override def initChannel(channel: SocketChannel): Unit = {
-          logger.debug(
+          logger.info(
             s"Server socket on address ${channel.localAddress} established " +
               s"connection with ${channel.remoteAddress}."
           )
@@ -362,52 +353,38 @@ class NettyTcpTransport(private val logger: Logger)
   // pass it directly to the actor. The one hiccup is that want to schedule the
   // sending to happen after the code calling send finishes.
   private def sendImpl(
-      src: NettyTcpTransport#Address,
+      actor: Actor[NettyTcpTransport],
       dst: NettyTcpTransport#Address,
       bytes: Array[Byte],
       flush: Boolean
   ): Unit = {
-    val actor = actors.get(src) match {
-      case Some(actor) => actor
-      case None =>
-        logger.fatal(
-          s"Attempted to send from $src to $dst, but no actor for address " +
-            s"$src was found."
-        )
-    }
-
-    channels.get((src, dst)) match {
+    channels.get((actor.address, dst)) match {
       case Some(Chan(channel)) =>
-        if (flush) {
-          channel
-            .writeAndFlush(bytes)
-            .addListener(
-              new LogFailureFutureListener(
-                s"Unable to send message from $src to $dst."
-              )
-            )
+        val future = if (flush) {
+          channel.writeAndFlush(bytes)
         } else {
-          channel
-            .write(bytes)
-            .addListener(
-              new LogFailureFutureListener(
-                s"Unable to send message from $src to $dst."
-              )
-            )
+          channel.write(bytes)
         }
+        future.addListener(
+          new LogFailureFutureListener(
+            s"Unable to send message from ${actor.address} to $dst."
+          )
+        )
 
       case Some(Pending(msgs)) =>
         logger.debug(
-          s"Attempted to send a message from $src to $dst, but a channel is " +
-            s"currently pending. The message is being buffered for later."
+          s"Attempted to send a message from ${actor.address} to $dst, but " +
+            s"a channel is currently pending. The message is being buffered " +
+            s"for later."
         )
         msgs += bytes
 
       case None =>
         logger.debug(
-          s"No channel was found between $src and $dst, so we are creating one."
+          s"No channel was found between ${actor.address} and $dst, so we " +
+            s"are creating one."
         )
-        channels((src, dst)) = Pending(mutable.Buffer(bytes))
+        channels((actor.address, dst)) = Pending(mutable.Buffer(bytes))
         new Bootstrap()
           .group(eventLoop)
           .channel(classOf[NioSocketChannel])
@@ -421,7 +398,7 @@ class NettyTcpTransport(private val logger: Logger)
               )
               channel.pipeline
                 .addLast("bytesDecoder", new ByteArrayDecoder())
-              channel.pipeline.addLast(new ClientHandler(src, actor))
+              channel.pipeline.addLast(new ClientHandler(actor))
               // channel.pipeline.addLast(new LoggingHandler())
               channel.pipeline
                 .addLast("frameEncoder", new LengthFieldPrepender(4))
@@ -436,18 +413,15 @@ class NettyTcpTransport(private val logger: Logger)
             new ChannelFutureListener() {
               override def operationComplete(future: ChannelFuture): Unit = {
                 if (!future.isSuccess()) {
-                  unregisterChannel(src, dst)
+                  unregisterChannel(actor.address, dst)
                 } else {
                   logger.info(
                     s"Client socket on address " +
-                      s"${future.channel.localAddress} established " +
-                      s"connection with ${future.channel.remoteAddress}."
+                      s"${future.channel.localAddress} (a.k.a. " +
+                      s"${actor.address}) established connection with " +
+                      s"${future.channel.remoteAddress}."
                   )
-                  registerActor(
-                    NettyTcpAddress(future.channel.localAddress),
-                    actor
-                  )
-                  registerChannel(src, dst, future.channel)
+                  registerChannel(actor.address, dst, future.channel)
                 }
               }
             }
@@ -456,37 +430,38 @@ class NettyTcpTransport(private val logger: Logger)
   }
 
   override private[frankenpaxos] def send(
-      src: NettyTcpTransport#Address,
+      actor: Actor[NettyTcpTransport],
       dst: NettyTcpTransport#Address,
       bytes: Array[Byte]
   ): Unit =
-    sendImpl(src, dst, bytes, flush = true)
+    sendImpl(actor, dst, bytes, flush = true)
 
   override private[frankenpaxos] def sendNoFlush(
-      src: NettyTcpTransport#Address,
+      actor: Actor[NettyTcpTransport],
       dst: NettyTcpTransport#Address,
       bytes: Array[Byte]
   ): Unit =
-    sendImpl(src, dst, bytes, flush = false)
+    sendImpl(actor, dst, bytes, flush = false)
 
   override private[frankenpaxos] def flush(
-      src: NettyTcpTransport#Address,
+      actor: Actor[NettyTcpTransport],
       dst: NettyTcpTransport#Address
   ): Unit = {
-    channels.get((src, dst)) match {
+    channels.get((actor.address, dst)) match {
       case Some(Chan(channel)) =>
         channel.flush()
 
       case Some(Pending(msgs)) =>
         logger.debug(
-          s"Attempted to flush the channel between $src and $dst, but the " +
-            s"channel is currently pending. The flush is being ignored."
+          s"Attempted to flush the channel between ${actor.address} and " +
+            s"$dst, but the channel is currently pending. The flush is being " +
+            s"ignored."
         )
 
       case None =>
         logger.debug(
-          s"Attempted to flush the channel between $src and $dst, but no " +
-            s"such channel exists. The flush is being ignored."
+          s"Attempted to flush the channel between ${actor.address} and " +
+            s"$dst, but no such channel exists. The flush is being ignored."
         )
     }
   }
