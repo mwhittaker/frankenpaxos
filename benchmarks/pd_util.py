@@ -88,6 +88,21 @@ def throughput(s: pd.Series, window_size_ms: float,
         return throughput[100:]
 
 
+def weighted_throughput(s: pd.Series, window_size_ms: float) -> pd.Series:
+    """
+    weighted_throughput is the same as throughput, except that every
+    measurement in `s` is weighted with some count. A measurement with count
+    `x` is counted `x` times.
+    """
+    window_size_s = window_size_ms / 1000
+    window_size_us = window_size_ms * 1000
+
+    s = s.sort_index()
+    throughput = s.rolling(f'{window_size_ms}ms').sum() / window_size_s
+    t = throughput.index[0] + pd.DateOffset(microseconds=window_size_us)
+    return throughput[throughput.index >= t]
+
+
 def rate(s: pd.Series, window_size_ms: float) -> pd.Series:
     """
     Consider a series of data `s` that looks like this:

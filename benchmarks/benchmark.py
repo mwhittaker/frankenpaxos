@@ -568,19 +568,23 @@ def _wrangle_recorder_data(bench: BenchmarkDirectory,
         bench.log(f'- {filename}')
     df = pd_util.read_csvs(filenames, parse_dates=['start', 'stop'])
     bench.log('Recorder data read.')
+
     bench.log('Setting aggregate recorder data index.')
     df = df.set_index('start')
     bench.log('Aggregate recorder data index set.')
+
     bench.log('Sorting aggregate recorder data on index.')
     df = df.sort_index(0)
     bench.log('Aggregate recorder data sorted on index.')
+
     if save_data:
         save_data_filename = bench.abspath('data.csv')
         bench.log(f'Saving aggregate recorder data to {save_data_filename}.')
         df.to_csv(save_data_filename)
         bench.log('Aggregate recorder data written.')
 
-    # Since we concatenate and save the file, we can throw away the originals.
+    # Throw away the original data. If `save_data` is true, it's stored in
+    # `save_data_filename`.
     for filename in filenames:
         bench.log(f'Removing {filename}.')
         os.remove(filename)
@@ -640,7 +644,8 @@ def parse_labeled_recorder_data(bench: BenchmarkDirectory,
         bench.log(f'- Latency computed.')
 
         bench.log(f'- Computing 1 second start throughput.')
-        start_throughput_1s = _throughput(pd_util.throughput(ldf.index, 1000))
+        start_throughput_1s = \
+            _throughput(pd_util.weighted_throughput(ldf['count'], 1000))
         bench.log(f'- 1 second start throughput computed.')
 
         outputs[label] = RecorderOutput(

@@ -1,6 +1,7 @@
 package frankenpaxos
 
 import com.github.tototoshi.csv.CSVWriter
+import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Try
@@ -91,28 +92,86 @@ object BenchmarkUtil {
 
   // A LabeledRecorder is like a recorder, but each command is annotated with a
   // label (e.g., "read" or "write").
-  class LabeledRecorder(filename: String) {
-    val writer = CSVWriter.open(new java.io.File(filename))
-    writer.writeRow(
-      Seq("start", "stop", "latency_nanos", "host", "port", "label")
+  //
+  // For systems with extremely high throughput, we can collapse measurements.
+  // That is, clients can report multiple measurements as a single output. This
+  // loses some fidelity but decreases data size and processing time.
+  // Measurements are grouped by label.
+  class LabeledRecorder(filename: String, groupSize: Int) {
+    require(groupSize >= 1)
+
+    case class Group(
+        var count: Int = 0,
+        var start: java.time.Instant = java.time.Instant.EPOCH,
+        var stop: java.time.Instant = java.time.Instant.EPOCH,
+        var latencyNanosSum: Long = 0
     )
+    val groups = mutable.Map[String, Group]()
+
+    // A measurement includes
+    //
+    //   - the start of the first request,
+    //   - the stop time of the last request,
+    //   - the number of measurements in the sample,
+    //   - the average latency of the measurements in the sample, and
+    //   - the label.
+    val writer = CSVWriter.open(new java.io.File(filename))
+    writer.writeRow(Seq("start", "stop", "count", "latency_nanos", "label"))
+
+    private def resetGroup(group: Group): Unit = {
+      group.count = 0
+      group.start = java.time.Instant.EPOCH
+      group.stop = java.time.Instant.EPOCH
+      group.latencyNanosSum = 0
+    }
+
+    private def outputGroup(label: String, group: Group): Unit = {
+      writer.writeRow(
+        Seq(group.start.toString(),
+            group.stop.toString(),
+            group.count.toString(),
+            (group.latencyNanosSum / group.count).toString(),
+            label)
+      )
+    }
 
     def record(
         start: java.time.Instant,
         stop: java.time.Instant,
         latencyNanos: Long,
-        host: String,
-        port: Int,
         label: String
     ): Unit = {
-      writer.writeRow(
-        Seq(start.toString(),
-            stop.toString(),
-            latencyNanos.toString(),
-            host,
-            port,
-            label)
-      )
+      // If we're not grouping measurements, then we don't need to jump through
+      // hoops with labelled groups. We can output right away.
+      if (groupSize == 1) {
+        writer.writeRow(
+          Seq(start.toString(), stop.toString(), latencyNanos.toString(), label)
+        )
+        return
+      }
+
+      val group = groups.getOrElseUpdate(label, Group())
+      group.count += 1
+      if (group.count == 1) {
+        group.start = start
+      }
+      group.stop = stop
+      group.latencyNanosSum += latencyNanos
+
+      if (group.count >= groupSize) {
+        outputGroup(label, group)
+        resetGroup(group)
+      }
+    }
+
+    // Flush any pending groups.
+    def flush(): Unit = {
+      for ((label, group) <- groups) {
+        if (group.count > 0) {
+          outputGroup(label, group)
+          resetGroup(group)
+        }
+      }
     }
   }
 }
