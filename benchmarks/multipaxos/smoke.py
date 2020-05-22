@@ -29,6 +29,7 @@ def main(args) -> None:
                     acceptor_jvm_heap_size = '100m',
                     replica_jvm_heap_size = '100m',
                     proxy_replica_jvm_heap_size = '100m',
+                    measurement_group_size = 1,
                     warmup_duration = datetime.timedelta(seconds=2),
                     warmup_timeout = datetime.timedelta(seconds=3),
                     warmup_sleep = datetime.timedelta(seconds=0),
@@ -114,7 +115,7 @@ def main(args) -> None:
     suite = SmokeMultiPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
                                   'multipaxos_smoke') as dir:
-        suite.run_multithreaded_suite(dir)
+        suite.run_suite(dir)
 
 
 if __name__ == '__main__':

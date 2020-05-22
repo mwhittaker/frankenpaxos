@@ -145,7 +145,11 @@ object BenchmarkUtil {
       // hoops with labelled groups. We can output right away.
       if (groupSize == 1) {
         writer.writeRow(
-          Seq(start.toString(), stop.toString(), latencyNanos.toString(), label)
+          Seq(start.toString(),
+              stop.toString(),
+              "1",
+              latencyNanos.toString(),
+              label)
         )
         return
       }

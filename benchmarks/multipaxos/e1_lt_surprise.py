@@ -29,6 +29,7 @@ def main(args) -> None:
                     acceptor_jvm_heap_size = '12g',
                     replica_jvm_heap_size = '12g',
                     proxy_replica_jvm_heap_size = '12g',
+                    measurement_group_size = 1,
                     warmup_duration = datetime.timedelta(seconds=10),
                     warmup_timeout = datetime.timedelta(seconds=15),
                     warmup_sleep = datetime.timedelta(seconds=5),
@@ -174,7 +175,7 @@ def main(args) -> None:
     suite = E1LtSurpriseMultiPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
                                   'multipaxos_e1_lt_surprise') as dir:
-        suite.run_multithreaded_suite(dir)
+        suite.run_suite(dir)
 
 
 if __name__ == '__main__':

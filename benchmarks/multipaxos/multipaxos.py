@@ -119,6 +119,7 @@ class Input(NamedTuple):
     proxy_replica_jvm_heap_size: str
 
     # Benchmark parameters. ####################################################
+    measurement_group_size: int
     warmup_duration: datetime.timedelta
     warmup_timeout: datetime.timedelta
     warmup_sleep: datetime.timedelta
@@ -298,11 +299,10 @@ class MultiPaxosNet:
 
 # Suite ########################################################################
 class MultiPaxosSuite(benchmark.Suite[Input, Output]):
-    def run_remote_benchmark(self,
-                             suite: benchmark.SuiteDirectory,
-                             bench: benchmark.BenchmarkDirectory,
-                             args: Dict[Any, Any],
-                             input: Input) -> Any:
+    def run_benchmark(self,
+                      bench: benchmark.BenchmarkDirectory,
+                      args: Dict[Any, Any],
+                      input: Input) -> Output:
         def java(heap_size: str) -> List[str]:
             cmd = ['java', f'-Xms{heap_size}', f'-Xmx{heap_size}']
             if input.monitored:
@@ -662,6 +662,8 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                     client.host.ip(),
                     '--prometheus_port',
                     str(client.port + 1) if input.monitored else '-1',
+                    '--measurement_group_size',
+                    f'{input.measurement_group_size}',
                     '--warmup_duration',
                     f'{input.warmup_duration.total_seconds()}s',
                     '--warmup_timeout',
@@ -730,13 +732,6 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             prometheus_server.kill()
         bench.log('Clients finished and processes terminated.')
 
-
-    def run_local_benchmark(self,
-                            suite: benchmark.SuiteDirectory,
-                            bench: benchmark.BenchmarkDirectory,
-                            args: Dict[Any, Any],
-                            input: Input,
-                            data: Any) -> Output:
         # Client i writes results to `client_i_data.csv`.
         client_csvs = [
             bench.abspath(f'client_{i}_data.csv')
@@ -770,124 +765,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             bench,
             client_csvs,
             drop_prefix=datetime.timedelta(seconds=0),
-            save_data=False)
-        read_output = (labeled_data['read']
-                       if 'read' in labeled_data
-                       else dummy_output)
-        write_output = (labeled_data['write']
-                        if 'write' in labeled_data
-                        else dummy_output)
-        return MultiPaxosOutput(read_output = read_output,
-                                write_output = write_output)
-
-
-        # Launch clients.
-        workload_filename = bench.abspath('workload.pbtxt')
-        bench.write_string(
-            workload_filename,
-            proto_util.message_to_pbtext(input.workload.to_proto()))
-        read_workload_filename = bench.abspath('read_workload.pbtxt')
-        bench.write_string(
-            read_workload_filename,
-            proto_util.message_to_pbtext(input.read_workload.to_proto()))
-        write_workload_filename = bench.abspath('write_workload.pbtxt')
-        bench.write_string(
-            write_workload_filename,
-            proto_util.message_to_pbtext(input.write_workload.to_proto()))
-
-        client_procs: List[proc.Proc] = []
-        for (i, client) in enumerate(net.placement().clients):
-            p = bench.popen(
-                host=client.host,
-                label=f'client_{i}',
-                # TODO(mwhittaker): For now, we don't run clients with large
-                # heaps and verbose garbage collection because they are all
-                # colocated on one machine.
-                cmd=java(input.client_jvm_heap_size) + [
-                    '-cp',
-                    os.path.abspath(args['jar']),
-                    'frankenpaxos.multipaxos.ClientMain',
-                    '--host',
-                    client.host.ip(),
-                    '--port',
-                    str(client.port),
-                    '--config',
-                    config_filename,
-                    '--log_level',
-                    input.client_log_level,
-                    '--prometheus_host',
-                    client.host.ip(),
-                    '--prometheus_port',
-                    str(client.port + 1) if input.monitored else '-1',
-                    '--warmup_duration',
-                    f'{input.warmup_duration.total_seconds()}s',
-                    '--warmup_timeout',
-                    f'{input.warmup_timeout.total_seconds()}s',
-                    '--warmup_sleep',
-                    f'{input.warmup_sleep.total_seconds()}s',
-                    '--num_warmup_clients',
-                    f'{input.num_warmup_clients_per_proc}',
-                    '--duration',
-                    f'{input.duration.total_seconds()}s',
-                    '--timeout',
-                    f'{input.timeout.total_seconds()}s',
-                    '--num_clients',
-                    f'{input.num_clients_per_proc}',
-                    '--workload',
-                    f'{workload_filename}',
-                    '--output_file_prefix',
-                    bench.abspath(f'client_{i}'),
-                    '--options.resendClientRequestPeriod',
-                    '{}s'.format(input.client_options.
-                                 resend_client_request_period.total_seconds()),
-                ])
-            if input.profiled:
-                p = perf_util.JavaPerfProc(bench, client.host, p, f'client_{i}')
-            client_procs.append(p)
-        bench.log(f'Clients started and running for {input.duration}.')
-
-        # Wait for clients to finish and then terminate leaders and acceptors.
-        for p in client_procs:
-            p.wait()
-        for p in (batcher_procs + leader_procs + proxy_leader_procs +
-                  acceptor_procs + replica_procs + proxy_replica_procs):
-            p.kill()
-        bench.log('Clients finished and processes terminated.')
-
-        # Client i writes results to `client_i_data.csv`.
-        client_csvs = [
-            bench.abspath(f'client_{i}_data.csv')
-            for i in range(input.num_client_procs)
-        ]
-
-        dummy_latency = benchmark.LatencyOutput(
-            mean_ms = -1.0,
-            median_ms = -1.0,
-            min_ms = -1.0,
-            max_ms = -1.0,
-            p90_ms = -1.0,
-            p95_ms = -1.0,
-            p99_ms = -1.0,
-        )
-        dummy_throughput = benchmark.ThroughputOutput(
-            mean = -1.0,
-            median = -1.0,
-            min = -1.0,
-            max = -1.0,
-            p90 = -1.0,
-            p95 = -1.0,
-            p99 = -1.0,
-        )
-        dummy_output = benchmark.RecorderOutput(
-            latency = dummy_latency,
-            start_throughput_1s = dummy_throughput,
-        )
-
-        labeled_data = benchmark.parse_labeled_recorder_data(
-            bench,
-            client_csvs,
-            drop_prefix=datetime.timedelta(seconds=0),
-            save_data=False)
+            save_data=True)
         read_output = (labeled_data['read']
                        if 'read' in labeled_data
                        else dummy_output)
