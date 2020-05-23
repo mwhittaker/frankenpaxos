@@ -3,8 +3,9 @@
 set -euo pipefail
 
 main() {
-    echo "TODO(mwhittaker): Implement."
-    return 1
+    local -r d="$(dirname $0)"
+    bash "$d/e1_lt_surprise/plot.sh"
+    bash "$d/e2_no_scale_replica/plot.sh"
 }
 
 main "$@"

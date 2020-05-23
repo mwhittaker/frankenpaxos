@@ -87,7 +87,7 @@ def get_parser() -> argparse.ArgumentParser:
                         help='results.csv file')
     parser.add_argument('--output',
                         type=str,
-                        default='e2_no_scale.pdf',
+                        default='e2_no_scale_replica.pdf',
                         help='Output filename.')
     return parser
 

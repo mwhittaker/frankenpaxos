@@ -177,7 +177,7 @@ def main(args) -> None:
 
     suite = E2NoScaleMultiPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'multipaxos_e2_no_scale') as dir:
+                                  'multipaxos_e2_no_scale_replica') as dir:
         suite.run_suite(dir)
 
 
