@@ -179,23 +179,9 @@ Output = MultiPaxosOutput
 
 # Networks #####################################################################
 class MultiPaxosNet:
-    def __init__(self, cluster_file: str, key_filename: Optional[str],
-                 input: Input) -> None:
-        self._key_filename = key_filename
-        # It's important that we initialize the cluster after we set
-        # _key_filename since _connect reads _key_filename.
-        self._cluster = (cluster.Cluster.from_json_file(
-            cluster_file, self._connect).f(input.f))
+    def __init__(self, cluster: cluster.Cluster, input: Input) -> None:
+        self._cluster = cluster.f(input.f)
         self._input = input
-
-    def _connect(self, address: str) -> host.Host:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
-        if self._key_filename:
-            client.connect(address, key_filename=self._key_filename)
-        else:
-            client.connect(address)
-        return host.RemoteHost(client)
 
     class Placement(NamedTuple):
         clients: List[host.Endpoint]
@@ -299,6 +285,21 @@ class MultiPaxosNet:
 
 # Suite ########################################################################
 class MultiPaxosSuite(benchmark.Suite[Input, Output]):
+    def __init__(self) -> None:
+        super().__init__()
+        self._cluster = cluster.Cluster.from_json_file(self.args()['cluster'],
+                                                       self._connect)
+
+    def _connect(self, address: str) -> host.Host:
+        print(f'Connecting to {address}')
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
+        if self.args()['identity_file']:
+            client.connect(address, key_filename=self.args()['identity_file'])
+        else:
+            client.connect(address)
+        return host.RemoteHost(client)
+
     def run_benchmark(self,
                       bench: benchmark.BenchmarkDirectory,
                       args: Dict[Any, Any],
@@ -317,7 +318,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             return cmd
 
         # Write config file.
-        net = MultiPaxosNet(args['cluster'], args['identity_file'], input)
+        net = MultiPaxosNet(self._cluster, input)
         config = net.config()
         config_filename = bench.abspath('config.pbtxt')
         bench.write_string(config_filename,
@@ -765,7 +766,7 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
             bench,
             client_csvs,
             drop_prefix=datetime.timedelta(seconds=0),
-            save_data=True)
+            save_data=False)
         read_output = (labeled_data['read']
                        if 'read' in labeled_data
                        else dummy_output)

@@ -171,6 +171,9 @@ class ParamikoProc(Proc):
 
     def wait(self) -> Optional[int]:
         self.returncode = self._channel.recv_exit_status()
+        # Once the process is over, we can close the connection.
+        self._channel.close()
+        self._killed = True
         return self.returncode
 
     def kill(self) -> None:
