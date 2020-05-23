@@ -2,7 +2,7 @@ from .multipaxos import *
 
 
 def main(args) -> None:
-    class E1LtSurpriseMultiPaxosSuite(MultiPaxosSuite):
+    class E2NoScaleMultiPaxosSuite(MultiPaxosSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -107,65 +107,64 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                 )
 
-                for num_replicas in [7]
-                for num_proxy_replicas in [7]
-                for (read_fraction, num_proxy_leaders,
-                     num_acceptor_groups, noop_flush_period) in [
-                    # (0.0, 10, 2, datetime.timedelta(seconds=0)),
-                    (1.0, 5, 5, datetime.timedelta(microseconds=500)),
-                    # (0.5, 10, 2, datetime.timedelta(milliseconds=1)),
+                for (read_fraction,
+                     num_replicas, num_client_procs, num_clients_per_proc) in [
+                    (0.0, 2, 5, 100),
+                    (0.0, 3, 5, 100),
+                    (0.0, 4, 5, 100),
+                    (0.0, 5, 5, 100),
+                    (0.0, 6, 5, 100),
+
+                    (0.4, 2, 10, 100),
+                    (0.4, 3, 15, 100),
+                    (0.4, 4, 15, 100),
+                    (0.4, 5, 15, 100),
+                    (0.4, 6, 15, 100),
+
+                    (0.8, 2, 10, 100),
+                    (0.8, 3, 15, 100),
+                    (0.8, 4, 17, 100),
+                    (0.8, 5, 18, 100),
+                    (0.8, 6, 20, 100),
+
+                    (0.95, 2, 10, 100),
+                    (0.95, 3, 15, 100),
+                    (0.95, 4, 20, 100),
+                    (0.95, 5, 20, 100),
+                    (0.95, 6, 20, 100),
+
+                    (1.000, 2, 10, 100),
+                    (1.000, 3, 15, 100),
+                    (1.000, 4, 20, 100),
+                    (1.000, 5, 23, 150),
+                    (1.000, 6, 23, 200),
+
+                    (0.0, 6, 23, 200),
+                    (0.1, 6, 23, 200),
+                    (0.2, 6, 23, 200),
+                    (0.3, 6, 23, 200),
+                    (0.4, 6, 23, 200),
+                    (0.5, 6, 23, 200),
+                    (0.6, 6, 23, 200),
+                    (0.7, 6, 23, 200),
+                    (0.8, 6, 23, 200),
+                    (0.9, 6, 23, 200),
+                    (1.0, 6, 23, 200),
                 ]
-                for workload_label in [str(read_fraction)]
-                for (num_client_procs, num_clients_per_proc) in (
-                    [
-                        (1, 1),
-                        (1, 10),
-                        (1, 100),
-                        (2, 100),
-                        (3, 100),
-                        (4, 100),
-                        (5, 100),
-                        (6, 100),
-                        (7, 100),
-                        (8, 100),
-                        (9, 100),
-                        (10, 100),
-                    ] if read_fraction == 0.0 else [
-                        (1, 1),
-                        (1, 10),
-                        (1, 100),
-                        (5, 100),
-                        (10, 100),
-                        (15, 100),
-                        (20, 100),
-                        (28, 100),
-                        (28, 150),
-                        (28, 200),
-                    ] if read_fraction == 1.0 else [
-                        (1, 1),
-                        (1, 10),
-                        (1, 100),
-                        (2, 100),
-                        (4, 100),
-                        (6, 100),
-                        (8, 100),
-                        (10, 100),
-                        (12, 100),
-                        (14, 100),
-                        (16, 100),
-                    ]
-                )
-                for measurement_group_size in (
-                    [10] if num_client_procs == 1 else [100])
-            ] * 3)[:]
+                for workload_label in [str('read_fraction')]
+                for num_proxy_leaders in [10]
+                for num_acceptor_groups in [5]
+                for num_proxy_replicas in [7]
+                for noop_flush_period in [datetime.timedelta(microseconds=500)]
+                for measurement_group_size in [100]
+            ] * 1)[:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
-                'f': input.f,
+                'workload_label': input.workload_label,
+                'num_replicas': input.num_replicas,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
-                'workload': input.workload,
-                'noop_flush_period': input.leader_options.noop_flush_period,
                 'write.latency.median_ms': \
                     f'{output.write_output.latency.median_ms:.6}',
                 'write.start_throughput_1s.p90': \
@@ -176,9 +175,9 @@ def main(args) -> None:
                     f'{output.read_output.start_throughput_1s.p90:.8}',
             })
 
-    suite = E1LtSurpriseMultiPaxosSuite()
+    suite = E2NoScaleMultiPaxosSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
-                                  'multipaxos_e1_lt_surprise') as dir:
+                                  'multipaxos_e2_no_scale') as dir:
         suite.run_suite(dir)
 
 

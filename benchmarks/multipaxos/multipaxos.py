@@ -128,6 +128,7 @@ class Input(NamedTuple):
     client_lag: datetime.timedelta
     state_machine: str
     predetermined_read_fraction: int
+    workload_label: str
     workload: read_write_workload.ReadWriteWorkload
     read_workload: read_write_workload.ReadWriteWorkload
     write_workload: read_write_workload.ReadWriteWorkload
