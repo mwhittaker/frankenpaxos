@@ -29,12 +29,12 @@ def main(args) -> None:
                     acceptor_jvm_heap_size = '12g',
                     replica_jvm_heap_size = '12g',
                     proxy_replica_jvm_heap_size = '12g',
-                    measurement_group_size = 1,
+                    measurement_group_size = measurement_group_size,
                     warmup_duration = datetime.timedelta(seconds=10),
                     warmup_timeout = datetime.timedelta(seconds=15),
                     warmup_sleep = datetime.timedelta(seconds=5),
-                    duration = datetime.timedelta(seconds=10),
-                    timeout = datetime.timedelta(seconds=15),
+                    duration = datetime.timedelta(seconds=15),
+                    timeout = datetime.timedelta(seconds=20),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
                     predetermined_read_fraction = -1,
@@ -111,8 +111,8 @@ def main(args) -> None:
                 for (read_fraction, num_proxy_leaders,
                      num_acceptor_groups, noop_flush_period) in [
                     # (0.0, 10, 2, datetime.timedelta(seconds=0)),
-                    # (1.0, 5, 5, datetime.timedelta(microseconds=500)),
-                    (0.5, 10, 2, datetime.timedelta(milliseconds=1)),
+                    (1.0, 5, 5, datetime.timedelta(microseconds=500)),
+                    # (0.5, 10, 2, datetime.timedelta(milliseconds=1)),
                 ]
                 for (num_client_procs, num_clients_per_proc) in (
                     [
@@ -153,6 +153,8 @@ def main(args) -> None:
                         (16, 100),
                     ]
                 )
+                for measurement_group_size in (
+                    [10] if num_client_procs == 1 else [100])
             ] * 3)[:]
 
         def summary(self, input: Input, output: Output) -> str:

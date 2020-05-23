@@ -25,12 +25,18 @@ def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
         return g[g['throughput'] >= cutoff]['throughput'].mean() / 100000
 
     def outlier_latency(g: pd.DataFrame) -> float:
-        cutoff = 0.5 * g['throughput'].max()
-        return g[g['throughput'] >= cutoff]['latency'].mean()
+        cutoff = 5 * g['latency'].min()
+        return g[g['latency'] <= cutoff]['latency'].mean()
 
     grouped = df.groupby('num_clients')
+    for (name, group) in grouped:
+        print(f'# {name}')
+        print(group[['throughput', 'latency']])
     throughput = grouped.apply(outlier_throughput).sort_index()
     latency = grouped.apply(outlier_latency).sort_index()
+    print(f'throughput = {throughput}.')
+    print(f'latency = {latency}.')
+    print()
     ax.plot(throughput, latency, '.-', label=label, linewidth=2)
 
 
