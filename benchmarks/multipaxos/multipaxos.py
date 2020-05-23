@@ -291,7 +291,6 @@ class MultiPaxosSuite(benchmark.Suite[Input, Output]):
                                                        self._connect)
 
     def _connect(self, address: str) -> host.Host:
-        print(f'Connecting to {address}')
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
         if self.args()['identity_file']:
