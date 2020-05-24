@@ -134,13 +134,13 @@ def main(args) -> None:
                     (0.95, 6, 23, 100),
 
                     (1.0, 2, 10, 100),
-                    (1.0, 3, 13, 100),
-                    (1.0, 4, 17, 100),
-                    (1.0, 5, 21, 100),
-                    (1.0, 6, 23, 150),
+                    (1.0, 3, 15, 150),
+                    (1.0, 4, 20, 200),
+                    (1.0, 5, 25, 200),
+                    (1.0, 6, 30, 200),
                 ]
                 for workload_label in [str(read_fraction)]
-                for num_proxy_leaders in [10]
+                for num_proxy_leaders in ([10] if read_fraction < 1.0 else [3])
                 for num_acceptor_groups in [5]
                 for num_proxy_replicas in [num_replicas]
                 for noop_flush_period in [datetime.timedelta(microseconds=500)]

@@ -135,7 +135,7 @@ def main(args) -> None:
                     (0.8125, 4, 13, 100), # 2.56x
                     (0.8750, 4, 15, 100), # 2.90x
                     (0.9375, 4, 17, 100), # 3.36x
-                    (1.0000, 4, 17, 100), # 4.00x
+                    (1.0000, 4, 20, 200), # 4.00x
 
                     (0.0000, 6, 5, 100), # 1.00x
                     (0.1250, 6, 5, 112), # 1.12x
@@ -149,10 +149,10 @@ def main(args) -> None:
                     (0.8125, 6, 15, 100), # 3.09x
                     (0.8750, 6, 19, 100), # 3.69x
                     (0.9375, 6, 20, 112), # 4.50x
-                    (1.0000, 6, 23, 150), # 6.00x
+                    (1.0000, 6, 30, 200), # 6.00x
                 ]
                 for workload_label in [str(read_fraction)]
-                for num_proxy_leaders in [10]
+                for num_proxy_leaders in ([10] if read_fraction < 1.0 else [3])
                 for num_acceptor_groups in [5]
                 for num_proxy_replicas in [num_replicas]
                 for noop_flush_period in [datetime.timedelta(microseconds=500)]
