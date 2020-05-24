@@ -7,6 +7,7 @@ matplotlib.rc('font', **font)
 from typing import Any, List
 import argparse
 import datetime
+import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -15,6 +16,7 @@ import re
 
 
 ALPHA = 1
+MARKERS = itertools.cycle(['o', '*', '^', 's', 'P'])
 VERBOSE = False
 
 
@@ -50,7 +52,7 @@ def plot_throughput(df: pd.DataFrame, ax: plt.Axes,
     vprint(f'std = {std}')
     vprint()
     line = ax.plot(throughput.index, throughput,
-                   '.-', label=label, linewidth=2)[0]
+                   '-', marker = next(MARKERS), label=label, linewidth=1.5)[0]
 
     # Draw ideal throughput.
     ns = pd.Series(range(2, 7))
@@ -58,28 +60,17 @@ def plot_throughput(df: pd.DataFrame, ax: plt.Axes,
     ax.plot(ns,
             ideal,
             '--',
-            linewidth=2,
+            linewidth=1.5,
             color=line.get_color(),
+            alpha = 0.75,
             label='_nolegend_')
 
     # Draw error bars.
-    ax.plot(throughput.index,
-            throughput - std,
-            '-',
-            linewidth=0.5,
-            color=line.get_color(),
-            alpha=0.5)
-    ax.plot(throughput.index,
-            throughput + std,
-            '-',
-            linewidth=0.5,
-            color=line.get_color(),
-            alpha=0.5)
     ax.fill_between(throughput.index,
                     throughput - std,
                     throughput + std,
                     color=line.get_color(),
-                    alpha=0.4)
+                    alpha=0.3)
 
 
 def main(args) -> None:

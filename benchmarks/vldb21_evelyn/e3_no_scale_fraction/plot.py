@@ -7,6 +7,7 @@ matplotlib.rc('font', **font)
 from typing import Any, List
 import argparse
 import datetime
+import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -15,6 +16,7 @@ import re
 
 
 ALPHA = 1
+MARKERS = itertools.cycle(['o', '*', '^', 's', 'P'])
 VERBOSE = False
 
 
@@ -49,7 +51,7 @@ def plot_throughput(df: pd.DataFrame, ax: plt.Axes, n: int, label: str) -> None:
     vprint(f'std = {std}')
     vprint()
     line = ax.plot(throughput.index, throughput,
-                   '.-', label=label, linewidth=1.5)[0]
+                   '-', marker = next(MARKERS), label=label, linewidth=1.5)[0]
 
     # Draw ideal throughput.
     frs = throughput.index.to_series()
@@ -67,7 +69,7 @@ def plot_throughput(df: pd.DataFrame, ax: plt.Axes, n: int, label: str) -> None:
                     throughput - std,
                     throughput + std,
                     color=line.get_color(),
-                    alpha=0.4)
+                    alpha=0.3)
 
 
 def main(args) -> None:
