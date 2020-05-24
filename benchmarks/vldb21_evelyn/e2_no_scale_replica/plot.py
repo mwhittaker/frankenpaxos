@@ -40,6 +40,18 @@ def plot_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
     print()
     line = ax.plot(throughput.index, throughput,
                    '.-', label=label, linewidth=2)[0]
+    ax.plot(throughput.index,
+            throughput - std,
+            '-',
+            linewidth=0.5,
+            color=line.get_color(),
+            alpha=0.5)
+    ax.plot(throughput.index,
+            throughput + std,
+            '-',
+            linewidth=0.5,
+            color=line.get_color(),
+            alpha=0.5)
     ax.fill_between(throughput.index,
                     throughput - std,
                     throughput + std,
