@@ -14,12 +14,22 @@ import pandas as pd
 import re
 
 
+ALPHA = 1
+VERBOSE = False
+
+
+def vprint(*args) -> None:
+    if VERBOSE:
+        print(*args)
+
+
 def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
     df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
     return df
 
 
-def plot_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
+def plot_throughput(df: pd.DataFrame, ax: plt.Axes,
+                    fw: float, label: str) -> None:
     def outlier_throughput(g: pd.DataFrame) -> float:
         cutoff = 0.5 * g['throughput'].max()
         return g[g['throughput'] >= cutoff]['throughput'].mean() / 100000
@@ -28,18 +38,31 @@ def plot_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
         cutoff = 0.5 * g['throughput'].max()
         return g[g['throughput'] >= cutoff]['throughput'].std() / 100000
 
+    # Draw throughput.
     grouped = df.groupby('num_replicas')
-    print(f'# {label}')
+    vprint(f'# {label}')
     for (name, group) in grouped:
-        print(f'## {name}')
-        print(group[['throughput', 'latency']])
+        vprint(f'## {name}')
+        vprint(group[['throughput', 'latency']])
     throughput = grouped.apply(outlier_throughput).sort_index()
     std = grouped.apply(outlier_throughput_std).sort_index()
-    print(f'throughput = {throughput}')
-    print(f'std = {std}')
-    print()
+    vprint(f'throughput = {throughput}')
+    vprint(f'std = {std}')
+    vprint()
     line = ax.plot(throughput.index, throughput,
                    '.-', label=label, linewidth=2)[0]
+
+    # Draw ideal throughput.
+    ns = pd.Series(range(2, 7))
+    ideal = ns * ALPHA / ((ns * fw) + ((1 - fw) * 0.66))
+    ax.plot(ns,
+            ideal,
+            '--',
+            linewidth=2,
+            color=line.get_color(),
+            label='_nolegend_')
+
+    # Draw error bars.
     ax.plot(throughput.index,
             throughput - std,
             '-',
@@ -60,6 +83,9 @@ def plot_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
 
 
 def main(args) -> None:
+    global VERBOSE
+    VERBOSE = args.verbose
+
     df = add_num_clients(pd.read_csv(args.results))
 
     # Replace -1's with 0's.
@@ -77,11 +103,11 @@ def main(args) -> None:
                      df['read_output.latency.median_ms'])
 
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    plot_throughput(df[df['workload_label'] == 0.0], ax, '100% writes')
-    plot_throughput(df[df['workload_label'] == 0.4], ax, '60% writes')
-    plot_throughput(df[df['workload_label'] == 0.8], ax, '20% writes')
-    plot_throughput(df[df['workload_label'] == 0.95], ax, '5% writes')
-    plot_throughput(df[df['workload_label'] == 1.0], ax, '0% writes')
+    plot_throughput(df[df['workload_label'] == 0.0], ax, 1.0, '100% writes')
+    plot_throughput(df[df['workload_label'] == 0.4], ax, 0.6, '60% writes')
+    plot_throughput(df[df['workload_label'] == 0.8], ax, 0.2, '20% writes')
+    plot_throughput(df[df['workload_label'] == 0.95], ax, 0.05, '5% writes')
+    plot_throughput(df[df['workload_label'] == 1.0], ax, 0.0, '0% writes')
 
     ax.set_title('')
     ax.set_xlabel('Number of replicas')
@@ -101,6 +127,7 @@ def get_parser() -> argparse.ArgumentParser:
                         type=str,
                         default='e2_no_scale_replica.pdf',
                         help='Output filename.')
+    parser.add_argument('--verbose', action='store_true')
     return parser
 
 

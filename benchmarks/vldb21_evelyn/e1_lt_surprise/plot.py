@@ -14,6 +14,14 @@ import pandas as pd
 import re
 
 
+VERBOSE = False
+
+
+def vprint(*args) -> None:
+    if VERBOSE:
+        print(*args)
+
+
 def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
     df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
     return df
@@ -30,17 +38,20 @@ def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
 
     grouped = df.groupby('num_clients')
     for (name, group) in grouped:
-        print(f'# {name}')
-        print(group[['throughput', 'latency']])
+        vprint(f'# {name}')
+        vprint(group[['throughput', 'latency']])
     throughput = grouped.apply(outlier_throughput).sort_index()
     latency = grouped.apply(outlier_latency).sort_index()
-    print(f'throughput = {throughput}.')
-    print(f'latency = {latency}.')
-    print()
+    vprint(f'throughput = {throughput}.')
+    vprint(f'latency = {latency}.')
+    vprint()
     ax.plot(throughput, latency, '.-', label=label, linewidth=2)
 
 
 def main(args) -> None:
+    global VERBOSE
+    VERBOSE = args.verbose
+
     df = add_num_clients(pd.read_csv(args.results))
 
     # Replace -1's with 0's.
@@ -93,6 +104,7 @@ def get_parser() -> argparse.ArgumentParser:
                         type=str,
                         default='e1_lt_surprise_without.pdf',
                         help='Output filename without 50% reads.')
+    parser.add_argument('--verbose', action='store_true')
     return parser
 
 
