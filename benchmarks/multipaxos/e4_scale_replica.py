@@ -1,6 +1,10 @@
 from .multipaxos import *
 
 
+def rf(num_writers: int, num_clients: int) -> int:
+    return int((1 - (num_writers / num_clients)) * 100)
+
+
 def main(args) -> None:
     class E4ScaleReplicaMultiPaxosSuite(MultiPaxosSuite):
         def args(self) -> Dict[Any, Any]:
@@ -109,13 +113,22 @@ def main(args) -> None:
 
                 for (predetermined_read_fraction,
                      num_replicas, num_client_procs, num_clients_per_proc) in [
-                    (0, 2, 5, 100),
-                    (0, 3, 5, 100),
-                    (0, 4, 5, 100),
-                    (0, 5, 5, 100),
-                    (0, 6, 5, 100),
+                    # 25,000 writes.
 
-                    # (0.4, 2, 7, 100),
+                    # 50,000 writes.
+                    # (rf(200, 8 * 100), 2, 8, 100),
+                    # (rf(212, 13 * 100), 3, 13, 100),
+                    # (rf(225, 17 * 100), 4, 17, 100),
+                    # (rf(237, 20 * 100), 5, 20, 100),
+                    # (rf(250, 23 * 100), 6, 23, 100),
+
+                    # 75,000 writes.
+                    # (rf(300, 8 * 100), 2, 8, 100),
+                    (rf(380, 13 * 100), 3, 13, 100),
+                    (rf(399, 17 * 100), 4, 17, 100),
+                    (rf(417, 20 * 100), 5, 20, 100),
+                    (rf(437, 23 * 100), 6, 23, 100),
+
                     # (0.4, 3, 8, 100),
                     # (0.4, 4, 9, 100),
                     # (0.4, 5, 10, 100),
@@ -132,20 +145,15 @@ def main(args) -> None:
                     # (0.95, 4, 18, 100),
                     # (0.95, 5, 20, 100),
                     # (0.95, 6, 23, 100),
-                    #
-                    # (1.0, 2, 10, 100),
-                    # (1.0, 3, 15, 150),
-                    # (1.0, 4, 20, 200),
-                    # (1.0, 5, 25, 200),
-                    # (1.0, 6, 30, 200),
                 ]
                 for workload_label in [str(predetermined_read_fraction)]
-                for num_proxy_leaders in ([10] if read_fraction < 1.0 else [3])
+                for num_proxy_leaders in
+                  ([10] if predetermined_read_fraction < 100 else [3])
                 for num_acceptor_groups in [5]
                 for num_proxy_replicas in [num_replicas]
                 for noop_flush_period in [datetime.timedelta(microseconds=500)]
                 for measurement_group_size in [100]
-            ] * 5)[:]
+            ] * 2)[:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
