@@ -8,6 +8,8 @@ main() {
     bash "$d/e1_lt_surprise/plot.sh"
     bash "$d/e2_no_scale_replica/plot.sh"
     bash "$d/e3_no_scale_fraction/plot.sh"
+    bash "$d/e4_scale_replica/plot.sh"
+    bash "$d/e5_scale_load/plot.sh"
 }
 
 main "$@"
