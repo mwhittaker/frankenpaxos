@@ -89,6 +89,7 @@ def main(args) -> None:
     plot_throughput(df[df['workload_label'] == 100000], ax, '100,000 writes')
     plot_throughput(df[df['workload_label'] == 75000], ax, '75,000 writes')
     plot_throughput(df[df['workload_label'] == 50000], ax, '50,000 writes')
+    plot_throughput(df[df['workload_label'] == 25000], ax, '25,000 writes')
     plot_throughput(df[df['workload_label'] == 0], ax, '0 writes')
 
     ax.set_title('')
