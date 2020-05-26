@@ -86,8 +86,10 @@ def main(args) -> None:
                      df['read_output.latency.median_ms'])
 
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    plot_throughput(df[df['workload_label'] == 50000], ax, '50,000 writes')
+    plot_throughput(df[df['workload_label'] == 100000], ax, '100,000 writes')
     plot_throughput(df[df['workload_label'] == 75000], ax, '75,000 writes')
+    plot_throughput(df[df['workload_label'] == 50000], ax, '50,000 writes')
+    plot_throughput(df[df['workload_label'] == 0], ax, '0 writes')
 
     ax.set_title('')
     ax.set_xlabel('Number of replicas')

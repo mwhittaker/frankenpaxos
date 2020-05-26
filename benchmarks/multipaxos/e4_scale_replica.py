@@ -111,23 +111,23 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                 )
 
-                for (predetermined_read_fraction,
+                for (label, predetermined_read_fraction,
                      num_replicas, num_client_procs, num_clients_per_proc) in [
                     # 25,000 writes.
 
                     # 50,000 writes.
-                    (rf(200, 8 * 100), 2, 8, 100),
-                    (rf(212, 13 * 100), 3, 13, 100),
-                    (rf(225, 17 * 100), 4, 17, 100),
-                    (rf(237, 20 * 100), 5, 20, 100),
-                    (rf(250, 23 * 100), 6, 23, 100),
+                    ('50000', rf(200, 8 * 100), 2, 8, 100),
+                    ('50000', rf(212, 13 * 100), 3, 13, 100),
+                    ('50000', rf(225, 17 * 100), 4, 17, 100),
+                    ('50000', rf(237, 20 * 100), 5, 20, 100),
+                    ('50000', rf(250, 23 * 100), 6, 23, 100),
 
                     # 75,000 writes.
-                    (rf(320, 8 * 100), 2, 8, 100),
-                    (rf(332, 11 * 100), 3, 11, 100),
-                    (rf(335, 13 * 100), 4, 13, 100),
-                    (rf(350, 16 * 100), 5, 16, 100),
-                    (rf(350, 18 * 100), 6, 18, 100),
+                    ('75000', rf(320, 8 * 100), 2, 8, 100),
+                    ('75000', rf(332, 11 * 100), 3, 11, 100),
+                    ('75000', rf(335, 13 * 100), 4, 13, 100),
+                    ('75000', rf(350, 16 * 100), 5, 16, 100),
+                    ('75000', rf(350, 18 * 100), 6, 18, 100),
 
                     # (0.4, 3, 8, 100),
                     # (0.4, 4, 9, 100),
@@ -146,7 +146,7 @@ def main(args) -> None:
                     # (0.95, 5, 20, 100),
                     # (0.95, 6, 23, 100),
                 ]
-                for workload_label in [str(predetermined_read_fraction)]
+                for workload_label in [label]
                 for num_proxy_leaders in
                   ([10] if predetermined_read_fraction < 100 else [3])
                 for num_acceptor_groups in [5]
