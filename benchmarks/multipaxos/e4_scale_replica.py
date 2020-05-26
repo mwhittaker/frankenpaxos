@@ -114,6 +114,11 @@ def main(args) -> None:
                 for (label, predetermined_read_fraction,
                      num_replicas, num_client_procs, num_clients_per_proc) in [
                     # 25,000 writes.
+                    ('25000', rf(90, 10 * 100), 2, 10, 100),
+                    ('25000', rf(110, 13 * 150), 3, 13, 150),
+                    ('25000', rf(123, 17 * 175), 4, 17, 175),
+                    ('25000', rf(120, 20 * 175), 5, 20, 175),
+                    ('25000', rf(130, 23 * 200), 6, 23, 200),
 
                     # 50,000 writes.
                     ('50000', rf(200, 8 * 100), 2, 8, 100),
@@ -128,23 +133,6 @@ def main(args) -> None:
                     ('75000', rf(335, 13 * 100), 4, 13, 100),
                     ('75000', rf(350, 16 * 100), 5, 16, 100),
                     ('75000', rf(350, 18 * 100), 6, 18, 100),
-
-                    # (0.4, 3, 8, 100),
-                    # (0.4, 4, 9, 100),
-                    # (0.4, 5, 10, 100),
-                    # (0.4, 6, 10, 100),
-                    #
-                    # (0.8, 2, 9, 100),
-                    # (0.8, 3, 11, 100),
-                    # (0.8, 4, 13, 100),
-                    # (0.8, 5, 14, 100),
-                    # (0.8, 6, 15, 100),
-                    #
-                    # (0.95, 2, 10, 100),
-                    # (0.95, 3, 15, 100),
-                    # (0.95, 4, 18, 100),
-                    # (0.95, 5, 20, 100),
-                    # (0.95, 6, 23, 100),
                 ]
                 for workload_label in [label]
                 for num_proxy_leaders in
@@ -158,6 +146,7 @@ def main(args) -> None:
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'workload_label': input.workload_label,
+                'read_fraction': input.predetermined_read_fraction,
                 'num_replicas': input.num_replicas,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
