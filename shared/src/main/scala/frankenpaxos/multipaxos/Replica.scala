@@ -174,10 +174,15 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   // perform deterministic randomized tests.
   private val rand = new Random(seed)
 
+  // Leader channels.
+  private val leaders: Seq[Chan[Leader[Transport]]] =
+    for (a <- config.leaderAddresses)
+      yield chan[Leader[Transport]](a, Leader.serializer)
+
   // ProxyReplica channels.
   private val proxyReplicas: Seq[Chan[ProxyReplica[Transport]]] =
-    for (address <- config.proxyReplicaAddresses)
-      yield chan[ProxyReplica[Transport]](address, ProxyReplica.serializer)
+    for (a <- config.proxyReplicaAddresses)
+      yield chan[ProxyReplica[Transport]](a, ProxyReplica.serializer)
 
   // Replica index.
   logger.check(config.replicaAddresses.contains(address))
@@ -241,11 +246,13 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           frankenpaxos.Util.randomDuration(options.recoverLogEntryMinPeriod,
                                            options.recoverLogEntryMaxPeriod),
           () => {
-            getProxyReplica().send(
-              ProxyReplicaInbound().withRecover(
-                Recover(slot = executedWatermark)
-              )
-            )
+            val recover = Recover(slot = executedWatermark)
+            getProxyReplica() match {
+              case Some(proxyReplica) =>
+                proxyReplica.send(ProxyReplicaInbound().withRecover(recover))
+              case None =>
+                leaders.foreach(_.send(LeaderInbound().withRecover(recover)))
+            }
             metrics.recoversSentTotal.inc()
           }
         )
@@ -267,11 +274,22 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def getProxyReplica(): Chan[ProxyReplica[Transport]] = {
-    config.distributionScheme match {
-      case Hash      => proxyReplicas(rand.nextInt(proxyReplicas.size))
-      case Colocated => proxyReplicas(index)
+  private def getProxyReplica(): Option[Chan[ProxyReplica[Transport]]] = {
+    if (proxyReplicas.isEmpty) {
+      return None
     }
+
+    config.distributionScheme match {
+      case Hash      => Some(proxyReplicas(rand.nextInt(proxyReplicas.size)))
+      case Colocated => Some(proxyReplicas(index))
+    }
+  }
+
+  private def clientChan(commandId: CommandId): Chan[Client[Transport]] = {
+    val clientAddress = transport.addressSerializer.fromBytes(
+      commandId.clientAddress.toByteArray()
+    )
+    chan[Client[Transport]](clientAddress, Client.serializer)
   }
 
   // `executeCommand(slot, command, clientReplies)` attempts to execute the
@@ -341,63 +359,58 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  // Executed any deferred reads in slot `slot`.
+  //
+  // TODO(mwhittaker): We can garbage collect reads if we want.
+  private def processDeferredReads(reads: Seq[DeferredRead]): Unit = {
+    // If we only have one read to perform, we send the result directly back to
+    // the client. Otherwise, we send a batch of reads to the proxy replica (if
+    // there are any).
+    (reads.size == 1, getProxyReplica()) match {
+      case (true, _) | (false, None) =>
+        for (read <- reads) {
+          val client = clientChan(read.command.commandId)
+          client.send(ClientInbound().withReadReply(executeRead(read.command)))
+          metrics.deferredReadLatency.observe(
+            (System.nanoTime - read.startTimeNanos).toDouble / 1000000
+          )
+        }
+
+      case (false, Some(proxyReplica)) =>
+        val readReplies = mutable.Buffer[ReadReply]()
+        for (read <- reads) {
+          readReplies += executeRead(read.command)
+          metrics.deferredReadLatency.observe(
+            (System.nanoTime - read.startTimeNanos).toDouble / 1000000
+          )
+        }
+        proxyReplica.send(
+          ProxyReplicaInbound()
+            .withReadReplyBatch(ReadReplyBatch(batch = readReplies))
+        )
+    }
+  }
+
   private def executeLog(): ClientReplyBatch = {
     val clientReplies = mutable.Buffer[ClientReply]()
 
     while (true) {
       log.get(executedWatermark) match {
+        case None =>
+          // We have to execute the log in prefix order, so if we hit an empty
+          // slot, we have to stop executing.
+          return ClientReplyBatch(batch = clientReplies.toSeq)
+
         case Some(commandBatchOrNoop) =>
           val slot = executedWatermark
           executeCommandBatchOrNoop(slot, commandBatchOrNoop, clientReplies)
-          executedWatermark += 1
-
-          // TODO(mwhittaker): We may want to relay reads through the proxy
-          // leaders as well.
-          //
-          // TODO(mwhittaker): We can garbage collect the reads here if we want
-          // to.
-          //
-          // If the slot had a deferred read, we can execute it now.
           deferredReads.get(slot) match {
             case None =>
-              // Do nothing.
-              ()
-
             case Some(reads) =>
-              // If we only have one read to perform, we send the result
-              // directly back to the client. Otherwise, we send a batch of
-              // reads to the proxy replica.
+              processDeferredReads(reads)
               metrics.deferredReadBatchSize.observe(reads.size)
-              if (reads.size == 1) {
-                val clientAddress = transport.addressSerializer
-                  .fromBytes(
-                    reads(0).command.commandId.clientAddress.toByteArray()
-                  )
-                val client =
-                  chan[Client[Transport]](clientAddress, Client.serializer)
-                client.send(
-                  ClientInbound().withReadReply(executeRead(reads(0).command))
-                )
-
-                metrics.deferredReadLatency.observe(
-                  (System.nanoTime - reads(0).startTimeNanos).toDouble / 1000000
-                )
-              } else {
-                val readReplies = mutable.Buffer[ReadReply]()
-                for (read <- reads) {
-                  readReplies += executeRead(read.command)
-                  metrics.deferredReadLatency.observe(
-                    (System.nanoTime - read.startTimeNanos).toDouble / 1000000
-                  )
-                }
-
-                getProxyReplica().send(
-                  ProxyReplicaInbound().withReadReplyBatch(
-                    ReadReplyBatch(batch = readReplies)
-                  )
-                )
-              }
           }
+          executedWatermark += 1
 
           // Replicas send a ChosenWatermark message to the leaders every
           // `options.sendChosenWatermarkEveryNEntries` command entries. The
@@ -412,20 +425,24 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
           val mod = executedWatermark % options.sendChosenWatermarkEveryNEntries
           val div = executedWatermark / options.sendChosenWatermarkEveryNEntries
           if (mod == 0 && div % config.numReplicas == index) {
-            // Select a proxy replica uniformly at random, and send the
-            // ChosenWatermark message to it. The proxy replica will forward
-            // the message to the leaders.
-            getProxyReplica().send(
-              ProxyReplicaInbound()
-                .withChosenWatermark(ChosenWatermark(slot = executedWatermark))
-            )
+            getProxyReplica() match {
+              case Some(proxyReplica) =>
+                proxyReplica.send(
+                  ProxyReplicaInbound().withChosenWatermark(
+                    ChosenWatermark(slot = executedWatermark)
+                  )
+                )
+              case None =>
+                leaders.foreach(
+                  _.send(
+                    LeaderInbound().withChosenWatermark(
+                      ChosenWatermark(slot = executedWatermark)
+                    )
+                  )
+                )
+            }
             metrics.chosenWatermarksSentTotal.inc()
           }
-
-        case None =>
-          // We have to execute the log in prefix order, so if we hit an empty
-          // slot, we have to stop executing.
-          return ClientReplyBatch(batch = clientReplies.toSeq)
       }
     }
 
@@ -476,17 +493,24 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    getProxyReplica().send(
-      ProxyReplicaInbound()
-        .withReadReplyBatch(ReadReplyBatch(batch = commands.map(executeRead)))
-    )
+    getProxyReplica() match {
+      case Some(proxyReplica) =>
+        proxyReplica.send(
+          ProxyReplicaInbound().withReadReplyBatch(
+            ReadReplyBatch(batch = commands.map(executeRead))
+          )
+        )
+
+      case None =>
+        for (command <- commands) {
+          val client = clientChan(command.commandId)
+          client.send(ClientInbound().withReadReply(executeRead(command)))
+        }
+    }
   }
 
   // Execute the read `command` on the current state of the state machine.
   private def executeRead(command: Command): ReadReply = {
-    // Eventually consistent reads can be executed right away. The only thing
-    // we have to ensure is that an eventually consistent read is performed on
-    // some prefix of the log. Our state machine is always in such a state.
     val result = timed("executeRead/execute read") {
       ByteString.copyFrom(
         stateMachine.run(command.command.toByteArray())
@@ -564,14 +588,22 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     }
     val clientReplyBatch = executeLog()
 
-    // If we have client replies, send them to a proxy replica. We choose a
-    // proxy replica uniformly at random.
-    //
-    // TODO(mwhittaker): Add flushing?
+    // If we have client replies, send them to a proxy replica (if there are
+    // any).
     if (clientReplyBatch.batch.size > 0) {
-      getProxyReplica().send(
-        ProxyReplicaInbound().withClientReplyBatch(clientReplyBatch)
-      )
+
+      getProxyReplica() match {
+        case Some(proxyReplica) =>
+          proxyReplica.send(
+            ProxyReplicaInbound().withClientReplyBatch(clientReplyBatch)
+          )
+
+        case None =>
+          for (reply <- clientReplyBatch.batch) {
+            val client = clientChan(reply.commandId)
+            client.send(ClientInbound().withClientReply(reply))
+          }
+      }
     }
 
     // If `numChosen != executedWatermark`, then there's a hole in the log. We
@@ -635,8 +667,17 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val results = timed("handleEventualReadBatch/execute read") {
       eventualReadRequestBatch.command.map(executeRead)
     }
-    getProxyReplica().send(
-      ProxyReplicaInbound().withReadReplyBatch(ReadReplyBatch(batch = results))
-    )
+    getProxyReplica() match {
+      case Some(proxyReplica) =>
+        proxyReplica.send(
+          ProxyReplicaInbound()
+            .withReadReplyBatch(ReadReplyBatch(batch = results))
+        )
+      case None =>
+        for (readReply <- results) {
+          val client = clientChan(readReply.commandId)
+          client.send(ClientInbound().withReadReply(readReply))
+        }
+    }
   }
 }
