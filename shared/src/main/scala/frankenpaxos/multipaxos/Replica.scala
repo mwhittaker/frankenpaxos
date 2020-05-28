@@ -134,6 +134,12 @@ class ReplicaMetrics(collectors: Collectors) {
     .help("Latency (in milliseconds) that a deferred read is deferred.")
     .register()
 
+  val deferredReadBatchSize: Summary = collectors.summary
+    .build()
+    .name("multipaxos_replica_deferred_read_batch_size")
+    .help("Size of a deferred read batch.")
+    .register()
+
   val executedReadsTotal: Counter = collectors.counter
     .build()
     .name("multipaxos_replica_executed_reads_total")
@@ -361,6 +367,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
               // If we only have one read to perform, we send the result
               // directly back to the client. Otherwise, we send a batch of
               // reads to the proxy replica.
+              metrics.deferredReadBatchSize.observe(reads.size)
               if (reads.size == 1) {
                 val clientAddress = transport.addressSerializer
                   .fromBytes(
