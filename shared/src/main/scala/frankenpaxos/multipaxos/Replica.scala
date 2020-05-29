@@ -591,7 +591,6 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     // If we have client replies, send them to a proxy replica (if there are
     // any).
     if (clientReplyBatch.batch.size > 0) {
-
       getProxyReplica() match {
         case Some(proxyReplica) =>
           proxyReplica.send(
