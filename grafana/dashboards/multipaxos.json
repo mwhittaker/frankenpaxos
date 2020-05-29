@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1587958162364,
+  "iteration": 1590710030085,
   "links": [],
   "panels": [
     {
@@ -1281,8 +1281,16 @@
           "format": "time_series",
           "hide": false,
           "intervalFactor": 1,
-          "legendFormat": "Deferred read latency (ms) ({{job}}:{{instance}})",
+          "legendFormat": "Deferred read latency (ms) ({{instance}})",
           "refId": "A"
+        },
+        {
+          "expr": "rate(multipaxos_replica_deferred_read_batch_size_sum[1s])\n/ rate(multipaxos_replica_deferred_read_batch_size_count[1s])",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 1,
+          "legendFormat": "Deferred read batch size ({{instance}})",
+          "refId": "B"
         }
       ],
       "thresholds": [],
@@ -2105,9 +2113,9 @@
         "current": {
           "selected": true,
           "tags": [],
-          "text": "multipaxos_proxy_replica",
+          "text": "multipaxos_replica",
           "value": [
-            "multipaxos_proxy_replica"
+            "multipaxos_replica"
           ]
         },
         "datasource": "Prometheus",
@@ -2149,12 +2157,12 @@
             "value": "multipaxos_proxy_leader"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "multipaxos_proxy_replica",
             "value": "multipaxos_proxy_replica"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "multipaxos_replica",
             "value": "multipaxos_replica"
           }
@@ -2201,8 +2209,8 @@
     ]
   },
   "time": {
-    "from": "2020-04-27T03:31:21.440Z",
-    "to": "2020-04-27T03:31:59.987Z"
+    "from": "2020-05-29T00:11:13.064Z",
+    "to": "2020-05-29T00:12:21.046Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -2232,5 +2240,5 @@
   "timezone": "",
   "title": "MultiPaxos",
   "uid": "rFE0aw2Zk",
-  "version": 3
+  "version": 4
 }
