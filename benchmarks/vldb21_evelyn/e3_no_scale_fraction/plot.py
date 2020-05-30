@@ -54,15 +54,15 @@ def plot_throughput(df: pd.DataFrame, ax: plt.Axes, n: int, label: str) -> None:
                    '-', marker = next(MARKERS), label=label, linewidth=1.5)[0]
 
     # Draw ideal throughput.
-    frs = throughput.index.to_series()
-    ideal = n * ALPHA / ((n * (1 - frs)) + (frs * 0.66))
-    ax.plot(frs,
-            ideal,
-            '--',
-            linewidth=1.5,
-            color=line.get_color(),
-            alpha = 0.75,
-            label='_nolegend_')
+    # frs = throughput.index.to_series()
+    # ideal = n * ALPHA / ((n * (1 - frs)) + (frs * 1))
+    # ax.plot(frs,
+    #         ideal,
+    #         '--',
+    #         linewidth=1.5,
+    #         color=line.get_color(),
+    #         alpha = 0.75,
+    #         label='_nolegend_')
 
     # Draw error bars.
     ax.fill_between(throughput.index,

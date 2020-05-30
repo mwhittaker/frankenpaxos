@@ -19,9 +19,9 @@ def main(args) -> None:
                     num_proxy_leaders = num_proxy_leaders,
                     num_acceptor_groups = num_acceptor_groups,
                     num_replicas = num_replicas,
-                    num_proxy_replicas = num_proxy_replicas,
+                    num_proxy_replicas = 0,
                     distribution_scheme = DistributionScheme.HASH,
-                    client_jvm_heap_size = '12g',
+                    client_jvm_heap_size = '8g',
                     batcher_jvm_heap_size = '12g',
                     read_batcher_jvm_heap_size = '12g',
                     leader_jvm_heap_size = '12g',
@@ -100,7 +100,7 @@ def main(args) -> None:
                     proxy_replica_log_level = args.log_level,
                     client_options = ClientOptions(
                         resend_client_request_period = \
-                            datetime.timedelta(seconds=120),
+                            datetime.timedelta(seconds=1),
                         unsafe_read_at_first_slot = False,
                         unsafe_read_at_i = False,
                     ),
@@ -109,53 +109,52 @@ def main(args) -> None:
 
                 for (read_fraction,
                      num_replicas, num_client_procs, num_clients_per_proc) in [
-                    (0.0000, 2, 10, 50), # 1.00x
-                    (0.1250, 2, 10, int(106 / 2)), # 1.06x
-                    (0.2500, 2, 10, int(114 / 2)), # 1.14x
-                    (0.3750, 2, 10, int(123 / 2)), # 1.23x
-                    (0.5000, 2, 10, int(133 / 2)), # 1.33x
-                    (0.5625, 2, 10, int(139 / 2)), # 1.39x
-                    (0.6250, 2, 10, int(145 / 2)), # 1.45x
-                    (0.6875, 2, 10, int(152 / 2)), # 1.52x
-                    (0.7500, 2, 10, int(160 / 2)), # 1.60x
-                    (0.8125, 2, 10, int(168 / 2)), # 1.68x
-                    (0.8750, 2, 10, int(177 / 2)), # 1.77x
-                    (0.9375, 2, 10, int(188 / 2)), # 1.88x
-                    (1.0000, 2, 10, 100), # 2.00x
+                    # 5, 100
+                    (0.1250, 2, 7*2, int(106 / 2)), # 1.06x
+                    (0.2500, 2, 7*2, int(114 / 2)), # 1.14x
+                    (0.3750, 2, 7*2, int(123 / 2)), # 1.23x
+                    (0.5000, 2, 7*2, int(133 / 2)), # 1.33x
+                    (0.5625, 2, 7*2, int(139 / 2)), # 1.39x
+                    (0.6250, 2, 7*2, int(145 / 2)), # 1.45x
+                    (0.6875, 2, 7*2, int(152 / 2)), # 1.52x
+                    (0.7500, 2, 7*2, int(160 / 2)), # 1.60x
+                    (0.8125, 2, 7*2, int(168 / 2)), # 1.68x
+                    (0.8750, 2, 7*2, int(177 / 2)), # 1.77x
+                    (0.9375, 2, 7*2, int(188 / 2)), # 1.88x
+                    # 8*2, 100
 
-                    (0.0000, 4, 5, 100), # 1.00x
-                    (0.1250, 4, 5, 110), # 1.10x
-                    (0.2500, 4, 6, 100), # 1.23x
-                    (0.3750, 4, 7, 100), # 1.39x
-                    (0.5000, 4, 8, 100), # 1.60x
-                    (0.5625, 4, 8, 150), # 1.73x
-                    (0.6250, 4, 9, 100), # 1.88x
-                    (0.6875, 4, 10, 100), # 2.06x
-                    (0.7500, 4, 11, 100), # 2.28x
-                    (0.8125, 4, 13, 100), # 2.56x
-                    (0.8750, 4, 15, 100), # 2.90x
-                    (0.9375, 4, 17, 100), # 3.36x
-                    (1.0000, 4, 20, 200), # 4.00x
+                    # 5, 100
+                    (0.1250, 4, 3*2, 100), # 1.10x
+                    (0.2500, 4, 4*2, 100), # 1.23x
+                    (0.3750, 4, 4*2, 100), # 1.39x
+                    (0.5000, 4, 4*2, 100), # 1.60x
+                    (0.5625, 4, 5*2, 100), # 1.73x
+                    (0.6250, 4, 6*2, 100), # 1.88x
+                    (0.6875, 4, 6*2, 100), # 2.06x
+                    (0.7500, 4, 7*2, 100), # 2.28x
+                    (0.8125, 4, 8*2, 100), # 2.56x
+                    (0.8750, 4, 9*2, 100), # 2.90x
+                    (0.9375, 4, 10*2, 100), # 3.36x
+                    # 12*2, 100
 
-                    (0.0000, 6, 5, 100), # 1.00x
-                    (0.1250, 6, 5, 112), # 1.12x
-                    (0.2500, 6, 6, 100), # 1.26x
-                    (0.3750, 6, 7, 100), # 1.45x
-                    (0.5000, 6, 8, 100), # 1.71x
-                    (0.5625, 6, 9, 100), # 1.88x
-                    (0.6250, 6, 10, 100), # 2.08x
-                    (0.6875, 6, 12, 100), # 2.34x
-                    (0.7500, 6, 13, 100), # 2.66x
-                    (0.8125, 6, 15, 100), # 3.09x
-                    (0.8750, 6, 19, 100), # 3.69x
-                    (0.9375, 6, 20, 112), # 4.50x
-                    (1.0000, 6, 30, 200), # 6.00x
+                    # 5, 100
+                    (0.1250, 6, 3*2, 100), # 1.12x
+                    (0.2500, 6, 3*2, 100), # 1.26x
+                    (0.3750, 6, 4*2, 100), # 1.45x
+                    (0.5000, 6, 4*2, 100), # 1.71x
+                    (0.5625, 6, 4*2, 100), # 1.88x
+                    (0.6250, 6, 5*2, 100), # 2.08x
+                    (0.6875, 6, 6*2, 100), # 2.34x
+                    (0.7500, 6, 8*2, 100), # 2.66x
+                    (0.8125, 6, 10*2, 100), # 3.09x
+                    (0.8750, 6, 12*2, 100), # 3.69x
+                    (0.9375, 6, 15*2, 100), # 4.50x
+                    # 18*2, 100
                 ]
                 for workload_label in [str(read_fraction)]
-                for num_proxy_leaders in ([10] if read_fraction < 1.0 else [3])
+                for num_proxy_leaders in [10]
                 for num_acceptor_groups in [5]
-                for num_proxy_replicas in [num_replicas]
-                for noop_flush_period in [datetime.timedelta(microseconds=500)]
+                for noop_flush_period in [datetime.timedelta(milliseconds=1)]
                 for measurement_group_size in [100]
             ] * 5)[:]
 
