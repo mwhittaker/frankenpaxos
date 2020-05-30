@@ -55,15 +55,15 @@ def plot_throughput(df: pd.DataFrame, ax: plt.Axes,
                    '-', marker = next(MARKERS), label=label, linewidth=1.5)[0]
 
     # Draw ideal throughput.
-    ns = pd.Series(range(2, 7))
-    ideal = ns * ALPHA / ((ns * fw) + ((1 - fw) * 0.66))
-    ax.plot(ns,
-            ideal,
-            '--',
-            linewidth=1.5,
-            color=line.get_color(),
-            alpha = 0.75,
-            label='_nolegend_')
+    # ns = pd.Series(range(2, 7))
+    # ideal = ns * ALPHA / ((ns * fw) + ((1 - fw) * 1.00))
+    # ax.plot(ns,
+    #         ideal,
+    #         '--',
+    #         linewidth=1.5,
+    #         color=line.get_color(),
+    #         alpha = 0.75,
+    #         label='_nolegend_')
 
     # Draw error bars.
     ax.fill_between(throughput.index,
@@ -93,12 +93,16 @@ def main(args) -> None:
     df['latency'] = (df['write_output.latency.median_ms'] +
                      df['read_output.latency.median_ms'])
 
+    # Pandas parses 0.933 as this.
+    ninethree = 0.9329999999999999
+
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    plot_throughput(df[df['workload_label'] == 0.0], ax, 1.0, '100% writes')
-    plot_throughput(df[df['workload_label'] == 0.4], ax, 0.6, '60% writes')
-    plot_throughput(df[df['workload_label'] == 0.8], ax, 0.2, '20% writes')
-    plot_throughput(df[df['workload_label'] == 0.95], ax, 0.05, '5% writes')
-    plot_throughput(df[df['workload_label'] == 1.0], ax, 0.0, '0% writes')
+    read_fraction = df['workload_label']
+    plot_throughput(df[read_fraction == 0.0], ax, 1.0, '100% writes')
+    plot_throughput(df[read_fraction == 0.4], ax, 0.6, '60% writes')
+    plot_throughput(df[read_fraction == 0.8], ax, 0.2, '20% writes')
+    plot_throughput(df[read_fraction == ninethree], ax, 0.067, '6.7% writes')
+    plot_throughput(df[read_fraction == 1.0], ax, 0.0, '0% writes')
 
     ax.set_title('')
     ax.set_xlabel('Number of replicas')

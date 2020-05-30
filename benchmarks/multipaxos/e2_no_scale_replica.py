@@ -19,9 +19,9 @@ def main(args) -> None:
                     num_proxy_leaders = num_proxy_leaders,
                     num_acceptor_groups = num_acceptor_groups,
                     num_replicas = num_replicas,
-                    num_proxy_replicas = num_proxy_replicas,
+                    num_proxy_replicas = 0,
                     distribution_scheme = DistributionScheme.HASH,
-                    client_jvm_heap_size = '12g',
+                    client_jvm_heap_size = '8g',
                     batcher_jvm_heap_size = '12g',
                     read_batcher_jvm_heap_size = '12g',
                     leader_jvm_heap_size = '12g',
@@ -100,7 +100,7 @@ def main(args) -> None:
                     proxy_replica_log_level = args.log_level,
                     client_options = ClientOptions(
                         resend_client_request_period = \
-                            datetime.timedelta(seconds=120),
+                            datetime.timedelta(seconds=1),
                         unsafe_read_at_first_slot = False,
                         unsafe_read_at_i = False,
                     ),
@@ -115,35 +115,34 @@ def main(args) -> None:
                     (0.0, 5, 5, 100),
                     (0.0, 6, 5, 100),
 
-                    (0.4, 2, 7, 100),
-                    (0.4, 3, 8, 100),
-                    (0.4, 4, 9, 100),
-                    (0.4, 5, 10, 100),
-                    (0.4, 6, 10, 100),
+                    (0.4, 2, 4*2, 100),
+                    (0.4, 3, 4*2, 100),
+                    (0.4, 4, 4*2, 100),
+                    (0.4, 5, 4*2, 100),
+                    (0.4, 6, 4*2, 100),
 
-                    (0.8, 2, 9, 100),
-                    (0.8, 3, 11, 100),
-                    (0.8, 4, 13, 100),
-                    (0.8, 5, 14, 100),
-                    (0.8, 6, 15, 100),
+                    (0.8, 2, 5*2, 100),
+                    (0.8, 3, 7*2, 100),
+                    (0.8, 4, 9*2, 100),
+                    (0.8, 5, 10*2, 100),
+                    (0.8, 6, 11*2, 100),
 
-                    (0.95, 2, 10, 100),
-                    (0.95, 3, 15, 100),
-                    (0.95, 4, 18, 100),
-                    (0.95, 5, 20, 100),
-                    (0.95, 6, 23, 100),
+                    (0.933, 2, 5*2, 100),
+                    (0.933, 3, 9*2, 100),
+                    (0.933, 4, 11*2, 100),
+                    (0.933, 5, 14*2, 100),
+                    (0.933, 6, 15*2, 100),
 
-                    (1.0, 2, 10, 100),
-                    (1.0, 3, 15, 150),
-                    (1.0, 4, 20, 200),
-                    (1.0, 5, 25, 200),
-                    (1.0, 6, 30, 200),
+                    (1.0, 2, 8*2, 100),
+                    (1.0, 3, 10*2, 100),
+                    (1.0, 4, 12*2, 100),
+                    (1.0, 5, 13*2, 100),
+                    (1.0, 6, 18*2, 100),
                 ]
                 for workload_label in [str(read_fraction)]
-                for num_proxy_leaders in ([10] if read_fraction < 1.0 else [3])
+                for num_proxy_leaders in [10]
                 for num_acceptor_groups in [5]
-                for num_proxy_replicas in [num_replicas]
-                for noop_flush_period in [datetime.timedelta(microseconds=500)]
+                for noop_flush_period in [datetime.timedelta(milliseconds=1)]
                 for measurement_group_size in [100]
             ] * 5)[:]
 
