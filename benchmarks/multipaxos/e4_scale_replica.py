@@ -23,9 +23,9 @@ def main(args) -> None:
                     num_proxy_leaders = num_proxy_leaders,
                     num_acceptor_groups = num_acceptor_groups,
                     num_replicas = num_replicas,
-                    num_proxy_replicas = num_proxy_replicas,
+                    num_proxy_replicas = 0,
                     distribution_scheme = DistributionScheme.HASH,
-                    client_jvm_heap_size = '12g',
+                    client_jvm_heap_size = '8g',
                     batcher_jvm_heap_size = '12g',
                     read_batcher_jvm_heap_size = '12g',
                     leader_jvm_heap_size = '12g',
@@ -103,10 +103,20 @@ def main(args) -> None:
                     ),
                     proxy_replica_log_level = args.log_level,
                     client_options = ClientOptions(
-                        resend_client_request_period = \
-                            datetime.timedelta(seconds=120),
+                        resend_client_request_period =
+                            datetime.timedelta(seconds=1),
+                        resend_max_slot_requests_period =
+                            datetime.timedelta(seconds=1),
+                        resend_read_request_period =
+                            datetime.timedelta(seconds=1),
+                        resend_sequential_read_request_period =
+                            datetime.timedelta(seconds=1),
+                        resend_eventual_read_request_period =
+                            datetime.timedelta(seconds=1),
                         unsafe_read_at_first_slot = False,
                         unsafe_read_at_i = False,
+                        flush_writes_every_n = 1,
+                        flush_reads_every_n = 1,
                     ),
                     client_log_level = args.log_level,
                 )
@@ -114,34 +124,39 @@ def main(args) -> None:
                 for (label, predetermined_read_fraction,
                      num_replicas, num_client_procs, num_clients_per_proc) in [
                     # 25,000 writes.
-                    ('25000', rf(90, 10 * 100), 2, 10, 100),
-                    ('25000', rf(110, 13 * 150), 3, 13, 150),
-                    ('25000', rf(123, 17 * 175), 4, 17, 175),
-                    ('25000', rf(120, 20 * 175), 5, 20, 175),
-                    ('25000', rf(130, 23 * 200), 6, 23, 200),
+                    ('25000', rf(113,  4*2*100),  2, 4*2,  100),
+                    ('25000', rf(120, 7*2*100),  3, 5*2,  100),
+                    ('25000', rf(143, 6*2*100),  4, 6*2,  100),
+                    ('25000', rf(145, 7*2*100), 5, 7*2, 100),
+                    ('25000', rf(150, 8*2*100), 6, 8*2, 100),
 
                     # 50,000 writes.
-                    ('50000', rf(200, 8 * 100), 2, 8, 100),
-                    ('50000', rf(212, 13 * 100), 3, 13, 100),
-                    ('50000', rf(225, 17 * 100), 4, 17, 100),
-                    ('50000', rf(237, 20 * 100), 5, 20, 100),
-                    ('50000', rf(250, 23 * 100), 6, 23, 100),
+                    ('50000', rf(175, 3*2*100),  2, 3*2,  100),
+                    ('50000', rf(175, 4*2*100),  3, 4*2,  100),
+                    ('50000', rf(175, 5*2*100),  4, 5*2,  100),
+                    ('50000', rf(227, 7*2*100),  5, 7*2,  100),
+                    ('50000', rf(240, 8*2*100),  6, 8*2,  100),
 
                     # 75,000 writes.
-                    ('75000', rf(320, 8 * 100), 2, 8, 100),
-                    ('75000', rf(332, 11 * 100), 3, 11, 100),
-                    ('75000', rf(335, 13 * 100), 4, 13, 100),
-                    ('75000', rf(350, 16 * 100), 5, 16, 100),
-                    ('75000', rf(350, 18 * 100), 6, 18, 100),
+                    ('75000', rf(310, 3*2*100), 2, 3*2, 100),
+                    ('75000', rf(320, 4*2*100), 3, 4*2, 100),
+                    ('75000', rf(330, 5*2*100), 4, 5*2, 100),
+                    ('75000', rf(330, 6*2*100), 5, 6*2, 100),
+                    ('75000', rf(330, 7*2*100), 6, 7*2, 100),
+
+                    # 100,000 writes.
+                    ('100000', rf(490, 5*100),  2, 5,  100),
+                    ('100000', rf(490, 5*100),  3, 5,  100),
+                    ('100000', rf(490, 5*104),  4, 5,  104),
+                    ('100000', rf(495, 5*104),  5, 5,  104),
+                    ('100000', rf(490, 5*106),  6, 5,  106),
                 ]
                 for workload_label in [label]
-                for num_proxy_leaders in
-                  ([10] if predetermined_read_fraction < 100 else [3])
+                for num_proxy_leaders in [10]
                 for num_acceptor_groups in [5]
-                for num_proxy_replicas in [num_replicas]
-                for noop_flush_period in [datetime.timedelta(microseconds=500)]
+                for noop_flush_period in [datetime.timedelta(milliseconds=1)]
                 for measurement_group_size in [100]
-            ] * 10)[:]
+            ] * 5)[:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
@@ -153,7 +168,7 @@ def main(args) -> None:
                 'write.latency.median_ms': \
                     f'{output.write_output.latency.median_ms:.6}',
                 'write.start_throughput_1s.p90': \
-                    f'{output.write_output.start_throughput_1s.p90:.6}',
+                    f'{output.write_output.start_throughput_1s.p90:.8}',
                 'read.latency.median_ms': \
                     f'{output.read_output.latency.median_ms:.6}',
                 'read.start_throughput_1s.p90': \
