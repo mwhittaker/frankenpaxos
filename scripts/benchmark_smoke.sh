@@ -3,7 +3,7 @@
 set -euo pipefail
 
 main() {
-    for protocol in unreplicated batchedunreplicated multipaxos \
+    for protocol in unreplicated batchedunreplicated multipaxos fasterpaxos \
                     supermultipaxos mencius supermencius fastmultipaxos epaxos \
                     simplebpaxos superbpaxos simplegcbpaxos unanimousbpaxos \
                     matchmakermultipaxos; do
