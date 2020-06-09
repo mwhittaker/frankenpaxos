@@ -1,7 +1,6 @@
 {
   "1": {
     "clients": ["localhost"],
-    "servers": ["localhost"],
-    "heartbeats": ["localhost"]
+    "servers": ["localhost"]
   }
 }

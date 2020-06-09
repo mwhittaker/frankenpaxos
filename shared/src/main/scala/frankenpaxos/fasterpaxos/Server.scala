@@ -208,12 +208,57 @@ class ServerMetrics(collectors: Collectors) {
     )
     .register()
 
-  val votedCommandGotNoopTotal: Counter = collectors.counter
+  val phase2aHadNothingGotNoopTotal: Counter = collectors.counter
     .build()
-    .name("fasterpaxos_server_voted_command_got_noop_total")
+    .name("fasterpaxos_server_phase2a_had_nothing_got_noop_total")
     .help(
-      "The total number of times a server received a noop in a round and " +
-        "log entry for which the server had already received a command."
+      "The total number of times a server received a Phase2a for a noop " +
+        "and previously had nothing."
+    )
+    .register()
+
+  val phase2aHadNothingGotCommandTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_phase2a_had_nothing_got_command_total")
+    .help(
+      "The total number of times a server received a Phase2a for a command " +
+        "and previously had nothing."
+    )
+    .register()
+
+  val phase2aHadNoopGotNoopTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_phase2a_had_noop_got_noop_total")
+    .help(
+      "The total number of times a server received a Phase2a for a noop " +
+        "and previously had a noop."
+    )
+    .register()
+
+  val phase2aHadNoopGotCommandTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_phase2a_had_noop_got_command_total")
+    .help(
+      "The total number of times a server received a Phase2a for a command " +
+        "and previously had a noop."
+    )
+    .register()
+
+  val phase2aHadCommandGotNoopTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_phase2a_had_command_got_noop_total")
+    .help(
+      "The total number of times a server received a Phase2a for a noop " +
+        "and previously had a command."
+    )
+    .register()
+
+  val phase2aHadCommandGotCommandTotal: Counter = collectors.counter
+    .build()
+    .name("fasterpaxos_server_phase2a_had_command_got_command_total")
+    .help(
+      "The total number of times a server received a Phase2a for a command " +
+        "and previously had a command."
     )
     .register()
 
@@ -1522,12 +1567,18 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
             }
             sender.send(ServerInbound().withPhase2B(phase2b))
 
+            if (phase2a.commandOrNoop.value.isNoop) {
+              metrics.phase2aHadNothingGotNoopTotal.inc()
+            } else {
+              metrics.phase2aHadNothingGotCommandTotal.inc()
+            }
+
           case Some(pendingEntry: PendingEntry) =>
             import CommandOrNoop.Value
             (phase2a.commandOrNoop.value, pendingEntry.voteValue.value) match {
               // Cases (a) and (d). If we've already voted for a noop and
               // receive a noop, then we can safely re-send our Phase2a. This
-              // is just normal Paxos. If we've already voted for a nnop and
+              // is just normal Paxos. If we've already voted for a noop and
               // receive a command, it is surprisingly safe for us to re-vote
               // for the command. This is special to Faster Paxos, but is in
               // fact safe.
@@ -1542,11 +1593,18 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
                 }
                 sender.send(ServerInbound().withPhase2B(phase2b))
 
+                if (phase2a.commandOrNoop.value.isNoop) {
+                  metrics.phase2aHadNoopGotNoopTotal.inc()
+                } else {
+                  metrics.phase2aHadNoopGotCommandTotal.inc()
+                }
+
               // Case (e). If we've already voted for a command and received a
               // command, well, they must be the same command!
               case (Value.Command(proposed), Value.Command(voted)) =>
                 logger.checkEq(proposed, voted)
                 sender.send(ServerInbound().withPhase2B(phase2b))
+                metrics.phase2aHadCommandGotCommandTotal.inc()
 
               // Case (b). See the documentation of ackNoopsWithCommands for
               // information on this optimization.
@@ -1558,7 +1616,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
                 } else {
                   // Do nothing.
                 }
-                metrics.votedCommandGotNoopTotal.inc()
+                metrics.phase2aHadCommandGotNoopTotal.inc()
 
               case (Value.Empty, _) | (_, Value.Empty) =>
                 logger.fatal("Empty CommandOrNoop encountered.")

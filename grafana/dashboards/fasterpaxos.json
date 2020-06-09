@@ -1,0 +1,1379 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "iteration": 1591724023866,
+  "links": [],
+  "panels": [
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 17,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "$function($metric{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 1,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Misc",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 18,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fasterpaxos_server_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(fasterpaxos_server_requests_latency_count{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(fasterpaxos_client_requests_latency_sum{job=~\"$job\"}[1s])\n/ rate(fasterpaxos_client_requests_latency_count{job=~\"$job\"}[1s])",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} latency (ms) ({{job}}:{{instance}})",
+          "refId": "G"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Latency",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 16,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fasterpaxos_server_requests_total[1s])",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(fasterpaxos_server_requests_total[1s])) by (instance)",
+          "format": "time_series",
+          "hide": false,
+          "intervalFactor": 1,
+          "legendFormat": "Total Inbound ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_phase2a_had_nothing_got_noop_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Had nothing got noop ({{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_phase2a_had_nothing_got_command_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Had nothing got command ({{instance}})",
+          "refId": "D"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_phase2a_had_noop_got_noop_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Had noop got noop ({{instance}})",
+          "refId": "E"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_phase2a_had_noop_got_command_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Had noop got command ({{instance}})",
+          "refId": "F"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_phase2a_had_command_got_noop_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Had command got noop ({{instance}})",
+          "refId": "G"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_phase2a_had_command_got_command_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Had command got command ({{instance}})",
+          "refId": "H"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Server Request Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "id": 6,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fasterpaxos_client_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} ({{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(fasterpaxos_client_client_requests_sent_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Requests sent ({{instance}})",
+          "refId": "I"
+        },
+        {
+          "expr": "rate(fasterpaxos_client_replies_received_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Non-stale replies received ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(fasterpaxos_client_stale_replies_received_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Stale replies received ({{instance}})",
+          "refId": "F"
+        },
+        {
+          "expr": "sum(rate(fasterpaxos_client_client_requests_sent_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total requests sent",
+          "refId": "J"
+        },
+        {
+          "expr": "sum(rate(fasterpaxos_client_replies_received_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total non-stale replies received ({{instance}})",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(fasterpaxos_client_stale_replies_received_total[1s]))",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total stale replies received ({{instance}})",
+          "refId": "K"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Client Request Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "id": 4,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fasterpaxos_server_executed_unique_commands_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Unique commands executed (({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_executed_duplicate_commands_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Duplicate commands executed (({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_executed_noops_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Noops executed (({{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_executed_unique_commands_total[1s]) + rate(fasterpaxos_server_executed_duplicate_commands_total[1s]) + rate(fasterpaxos_server_executed_noops_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total executed (({{instance}})",
+          "refId": "D"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Command Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "id": 8,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fasterpaxos_client_resend_client_request_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Resend client request ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_resend_phase1as_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Resend Phase1as ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_resend_phase2as_anys_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Resend Phase2a Anys ({{instance}})",
+          "refId": "C"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Timeouts",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "id": 19,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fasterpaxos_server_recovers_sent_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Recovers sent ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_ignored_recover_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Ignored Recovers ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_leader_changes_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Leader changes ({{instance}})",
+          "refId": "C"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Recovery and Leader Change",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "id": 20,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(fasterpaxos_server_very_stale_client_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Very stale client requests ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_stale_client_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Stale client requests ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_future_client_request_round_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Future client requests ({{instance}})",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_pending_client_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Pending client requests ({{instance}})",
+          "refId": "D"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_same_round_delegate_phase1as_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Same round delegate Phase1a ({{instance}})",
+          "refId": "E"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_chosen_in_phase1_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Chosen in Phase 1 ({{instance}})",
+          "refId": "F"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_future_phase2as_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Future Phase2as ({{instance}})",
+          "refId": "G"
+        },
+        {
+          "expr": "rate(fasterpaxos_server_stale_round_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Stale round ({{type}}, {{instance}})",
+          "refId": "H"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Rare Events",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    }
+  ],
+  "refresh": false,
+  "schemaVersion": 18,
+  "style": "dark",
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "text": "jvm_gc_collection_seconds_sum",
+          "value": "jvm_gc_collection_seconds_sum"
+        },
+        "datasource": "Prometheus",
+        "definition": "metrics(.*)",
+        "hide": 0,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "metric",
+        "options": [
+          {
+            "selected": false,
+            "text": "fasterpaxos_client_client_requests_sent_total",
+            "value": "fasterpaxos_client_client_requests_sent_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_client_replies_received_total",
+            "value": "fasterpaxos_client_replies_received_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_client_requests_latency_count",
+            "value": "fasterpaxos_client_requests_latency_count"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_client_requests_latency_sum",
+            "value": "fasterpaxos_client_requests_latency_sum"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_client_requests_total",
+            "value": "fasterpaxos_client_requests_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_client_resend_client_request_total",
+            "value": "fasterpaxos_client_resend_client_request_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_client_stale_client_replies_received_total",
+            "value": "fasterpaxos_client_stale_client_replies_received_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_chosen_in_phase1_total",
+            "value": "fasterpaxos_server_chosen_in_phase1_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_executed_duplicate_commands_total",
+            "value": "fasterpaxos_server_executed_duplicate_commands_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_executed_noops_total",
+            "value": "fasterpaxos_server_executed_noops_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_executed_unique_commands_total",
+            "value": "fasterpaxos_server_executed_unique_commands_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_future_client_request_round_total",
+            "value": "fasterpaxos_server_future_client_request_round_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_future_phase2as_total",
+            "value": "fasterpaxos_server_future_phase2as_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_ignored_recover_total",
+            "value": "fasterpaxos_server_ignored_recover_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_leader_changes_total",
+            "value": "fasterpaxos_server_leader_changes_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_pending_client_requests_total",
+            "value": "fasterpaxos_server_pending_client_requests_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_recovers_sent_total",
+            "value": "fasterpaxos_server_recovers_sent_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_requests_latency_count",
+            "value": "fasterpaxos_server_requests_latency_count"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_requests_latency_sum",
+            "value": "fasterpaxos_server_requests_latency_sum"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_requests_total",
+            "value": "fasterpaxos_server_requests_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_resend_phase1as_total",
+            "value": "fasterpaxos_server_resend_phase1as_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_resend_phase2a_anys_total",
+            "value": "fasterpaxos_server_resend_phase2a_anys_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_same_round_delegate_phase1as_total",
+            "value": "fasterpaxos_server_same_round_delegate_phase1as_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_stale_client_requests_total",
+            "value": "fasterpaxos_server_stale_client_requests_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_very_stale_client_requests_total",
+            "value": "fasterpaxos_server_very_stale_client_requests_total"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server_voted_command_got_noop_total",
+            "value": "fasterpaxos_server_voted_command_got_noop_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_buffer_pool_capacity_bytes",
+            "value": "jvm_buffer_pool_capacity_bytes"
+          },
+          {
+            "selected": false,
+            "text": "jvm_buffer_pool_used_buffers",
+            "value": "jvm_buffer_pool_used_buffers"
+          },
+          {
+            "selected": false,
+            "text": "jvm_buffer_pool_used_bytes",
+            "value": "jvm_buffer_pool_used_bytes"
+          },
+          {
+            "selected": false,
+            "text": "jvm_classes_loaded",
+            "value": "jvm_classes_loaded"
+          },
+          {
+            "selected": false,
+            "text": "jvm_classes_loaded_total",
+            "value": "jvm_classes_loaded_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_classes_unloaded_total",
+            "value": "jvm_classes_unloaded_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_gc_collection_seconds_count",
+            "value": "jvm_gc_collection_seconds_count"
+          },
+          {
+            "selected": true,
+            "text": "jvm_gc_collection_seconds_sum",
+            "value": "jvm_gc_collection_seconds_sum"
+          },
+          {
+            "selected": false,
+            "text": "jvm_info",
+            "value": "jvm_info"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_committed",
+            "value": "jvm_memory_bytes_committed"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_init",
+            "value": "jvm_memory_bytes_init"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_max",
+            "value": "jvm_memory_bytes_max"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_bytes_used",
+            "value": "jvm_memory_bytes_used"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_allocated_bytes_total",
+            "value": "jvm_memory_pool_allocated_bytes_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_committed",
+            "value": "jvm_memory_pool_bytes_committed"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_init",
+            "value": "jvm_memory_pool_bytes_init"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_max",
+            "value": "jvm_memory_pool_bytes_max"
+          },
+          {
+            "selected": false,
+            "text": "jvm_memory_pool_bytes_used",
+            "value": "jvm_memory_pool_bytes_used"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_current",
+            "value": "jvm_threads_current"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_daemon",
+            "value": "jvm_threads_daemon"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_deadlocked",
+            "value": "jvm_threads_deadlocked"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_deadlocked_monitor",
+            "value": "jvm_threads_deadlocked_monitor"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_peak",
+            "value": "jvm_threads_peak"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_started_total",
+            "value": "jvm_threads_started_total"
+          },
+          {
+            "selected": false,
+            "text": "jvm_threads_state",
+            "value": "jvm_threads_state"
+          },
+          {
+            "selected": false,
+            "text": "process_cpu_seconds_total",
+            "value": "process_cpu_seconds_total"
+          },
+          {
+            "selected": false,
+            "text": "process_max_fds",
+            "value": "process_max_fds"
+          },
+          {
+            "selected": false,
+            "text": "process_open_fds",
+            "value": "process_open_fds"
+          },
+          {
+            "selected": false,
+            "text": "process_resident_memory_bytes",
+            "value": "process_resident_memory_bytes"
+          },
+          {
+            "selected": false,
+            "text": "process_start_time_seconds",
+            "value": "process_start_time_seconds"
+          },
+          {
+            "selected": false,
+            "text": "process_virtual_memory_bytes",
+            "value": "process_virtual_memory_bytes"
+          },
+          {
+            "selected": false,
+            "text": "scrape_duration_seconds",
+            "value": "scrape_duration_seconds"
+          },
+          {
+            "selected": false,
+            "text": "scrape_samples_post_metric_relabeling",
+            "value": "scrape_samples_post_metric_relabeling"
+          },
+          {
+            "selected": false,
+            "text": "scrape_samples_scraped",
+            "value": "scrape_samples_scraped"
+          },
+          {
+            "selected": false,
+            "text": "up",
+            "value": "up"
+          }
+        ],
+        "query": "metrics(.*)",
+        "refresh": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "Prometheus",
+        "definition": "label_values(job)",
+        "hide": 0,
+        "includeAll": true,
+        "label": null,
+        "multi": true,
+        "name": "job",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_client",
+            "value": "fasterpaxos_client"
+          },
+          {
+            "selected": false,
+            "text": "fasterpaxos_server",
+            "value": "fasterpaxos_server"
+          }
+        ],
+        "query": "label_values(job)",
+        "refresh": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "text": "avg_over_time",
+          "value": "avg_over_time"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "function",
+        "options": [
+          {
+            "selected": false,
+            "text": "rate",
+            "value": "rate"
+          },
+          {
+            "selected": true,
+            "text": "avg_over_time",
+            "value": "avg_over_time"
+          }
+        ],
+        "query": "rate, avg_over_time",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "2020-06-09T17:40:35.227Z",
+    "to": "2020-06-09T17:41:19.328Z"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d"
+    ]
+  },
+  "timezone": "",
+  "title": "Faster Paxos",
+  "uid": "PgPqEomGk",
+  "version": 5
+}
