@@ -1106,6 +1106,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     choose(phase2b.slot, chosen)
 
     // Send Phase3as to the other servers.
+    //
+    // TODO(mwhittaker): I think if useF1Optimization is true and f == 1, then
+    // we don't have to send anything here. The other server already knows a
+    // value is chosen. Double check this.
     otherServers.foreach(
       _.send(
         ServerInbound().withPhase3A(
