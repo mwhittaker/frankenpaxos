@@ -1,0 +1,264 @@
+// A protocol cheatsheet, similar to [1].
+//
+// Normal case operation.
+//
+//   Client    Leader   Acceptor  Replica
+//     |         | ------> |         |     Phase1a
+//     |         | <------ |         |     Phase1b
+//     | ------> |         |         |     ClientRequest
+//     |         | ------> |         |     Phase2a
+//     |         | <------ |         |     Phase2b
+//     |         | --------^-------> |     Chosen
+//     |         | -----.  |         |     Chosen
+//     |         | <----'  |         |
+//     | <-------^---------^-------- |     ClientReply
+//
+// Reconfiguration
+//
+//   Client    Leader   Acceptor  Replica
+//     | ------> |         |         |     Reconfigure
+//
+// Abnormal case operation.
+//
+//   Client    Leader   Acceptor  Replica
+//     | <------ |         |         |     NotLeader
+//     | ------> |         |         |     LeaderInfoRequest
+//     | <------ |         |         |     LeaderInfoReply
+//     |         | <------ |         |     Nack
+//     |         | <-------^-------- |     Recover
+//     |         |         |    .--- |     Recover
+//     |         |         |    '--> |
+//
+// Driver.
+//
+//   Driver   Leader    Acceptor  Replica
+//     | ------> |         |         |     Die
+//     | --------^-------> |         |     Die
+//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+
+syntax = "proto2";
+
+package frankenpaxos.horizontal;
+
+import "scalapb/scalapb.proto";
+import "frankenpaxos/quorums/QuorumSystem.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.horizontal"
+  flat_package: true
+};
+
+// Helper messages. ////////////////////////////////////////////////////////////
+message Noop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message CommandId {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // A client's address, pseudonym, and id uniquely identify a command.
+  required bytes client_address = 1;
+  required int32 client_pseudonym = 2;
+  required int32 client_id = 3;
+}
+
+message Command {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes command = 2;
+}
+
+message Configuration {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required quorums.QuorumSystemProto quorum_system = 1;
+}
+
+message Value {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    Command command = 1;
+    Noop noop = 2;
+    Configuration configuration = 3;
+  }
+}
+
+message Phase1bSlotInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 vote_round = 2;
+  required Value vote_value = 3;
+}
+
+// Normal case operations. /////////////////////////////////////////////////////
+message Phase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+
+  // When a leader sends a Phase1a to an acceptor, there are two cases in which
+  // the leader does not want to receive a Phase1b for a particular slot s.
+  //
+  //   - Case 1. If the leader knows that a command has been chosen in slot s,
+  //     then it does not need a Phase1b.
+  //   - Case 2. If the leader is performing a reconfiguration and contacts an
+  //     acceptor in a new configuration that happens to also be an acceptor in
+  //     an old configuration, slot s may be owned by the old acceptor but not
+  //     the new. In this case, the leader doesn't want the Phase1b.
+  //
+  // All slots less than first_slot_watermark fall into one of these two cases.
+  // So, when an acceptor receives a Phase1a with a given first_slot_watermark,
+  // it does not return any Phase1bs for any slots less than
+  // first_slot_watermark.
+  required int32 first_slot_watermark = 2;
+}
+
+message Phase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  required int32 acceptor_index = 2;
+  repeated Phase1bSlotInfo info = 3;
+}
+
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Command command = 1;
+}
+
+message Phase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 round = 2;
+  required Value value = 3;
+}
+
+message Phase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 round = 2;
+  required int32 acceptor_index = 3;
+}
+
+message Chosen {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required Value value = 2;
+}
+
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes result = 2;
+}
+
+// Reconfiguration. ////////////////////////////////////////////////////////////
+message Reconfigure {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Configuration configuration = 1;
+}
+
+// Abnormal case operations. ///////////////////////////////////////////////////
+message NotLeader {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // The round of the leader (hopefully).
+  required int32 round = 1;
+}
+
+message Nack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message Recover {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // Replicas execute logs in prefix order. Thus, if the log permanently has a
+  // hole in it, the algorithm remains forever blocked. To solve this, if a
+  // replica notices a hole in its log for a certain amount of time, it sends a
+  // Recover message to the leader to get the hole plugged.
+  required int32 slot = 1;
+}
+
+// Driver. /////////////////////////////////////////////////////////////////////
+message Die {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  oneof request {
+    ClientReply client_reply = 1;
+    NotLeader not_leader = 2;
+    LeaderInfoReply leader_info_reply = 3;
+  }
+}
+
+message LeaderInbound {
+  oneof request {
+    Phase1b phase1b = 1;
+    ClientRequest client_request = 2;
+    Phase2b phase2b = 3;
+    Chosen chosen = 4;
+    Reconfigure reconfigure = 5;
+    LeaderInfoRequest leader_info_request = 6;
+    Nack nack = 7;
+    Recover recover = 8;
+    Die die = 9;
+  }
+}
+
+message AcceptorInbound {
+  oneof request {
+    Phase1a phase1a = 1;
+    Phase2a phase2a = 2;
+    Die die = 3;
+  }
+}
+
+message ReplicaInbound {
+  oneof request {
+    Chosen chosen = 1;
+    Recover recover = 2;
+  }
+}
