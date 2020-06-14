@@ -66,27 +66,6 @@ class AcceptorMetrics(collectors: Collectors) {
     .name("horizontal_acceptor_phase2_nacks_sent_total")
     .help("Total number of nacks sent in Phase 2.")
     .register()
-
-  val stalePersistedTotal: Counter = collectors.counter
-    .build()
-    .name("horizontal_acceptor_stale_persisted_total")
-    .help("Total number of stale Persisted messages received.")
-    .register()
-
-  val persistedWatermark: Gauge = collectors.gauge
-    .build()
-    .name("horizontal_acceptor_persisted_watermark")
-    .help("The persisted watermark.")
-    .register()
-
-  val phase2aPersistedTotal: Counter = collectors.counter
-    .build()
-    .name("horizontal_acceptor_phase2a_persisted_total")
-    .help(
-      "Total number of Phase2a messages that an acceptor received for a " +
-        "persisted slot."
-    )
-    .register()
 }
 
 @JSExportAll
@@ -106,19 +85,17 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   override val serializer = AcceptorInboundSerializer
 
   type Slot = Int
+  type Round = Int
 
   @JSExportAll
   case class State(
-      voteRound: Int,
-      voteValue: CommandOrNoop
+      // The first slot of the chunk that owns this slot.
+      firstSlot: Slot,
+      voteRound: Round,
+      voteValue: Value
   )
 
   // Fields ////////////////////////////////////////////////////////////////////
-  // Leader channels.
-  private val leaders: Seq[Chan[Leader[Transport]]] =
-    for (a <- config.leaderAddresses)
-      yield chan[Leader[Transport]](a, Leader.serializer)
-
   private val index = config.acceptorAddresses.indexOf(address)
 
   // For simplicity, we use a round robin round system for the leaders.
@@ -126,14 +103,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExport
   protected var round: Int = -1
-
-  // This acceptor knows that all log entries less than persistedWatermark have
-  // been persisted on at least f+1 replicas. The acceptor is free to garbage
-  // collect all log entries less than persistedWatermark. If a leader contacts
-  // the acceptor about one of these log entries, the acceptor will inform the
-  // leader that the value was already chosen.
-  @JSExport
-  protected var persistedWatermark: Int = 0
 
   @JSExport
   protected var states = mutable.SortedMap[Slot, State]()
@@ -159,10 +128,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Phase1A(_)   => "Phase1a"
-        case Request.Phase2A(_)   => "Phase2a"
-        case Request.Persisted(_) => "Persisted"
-        case Request.Die(_)       => "Die"
+        case Request.Phase1A(_) => "Phase1a"
+        case Request.Phase2A(_) => "Phase2a"
+        case Request.Die(_)     => "Die"
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -170,10 +138,9 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
 
     timed(label) {
       inbound.request match {
-        case Request.Phase1A(r)   => handlePhase1a(src, r)
-        case Request.Phase2A(r)   => handlePhase2a(src, r)
-        case Request.Persisted(r) => handlePersisted(src, r)
-        case Request.Die(r)       => handleDie(src, r)
+        case Request.Phase1A(r) => handlePhase1a(src, r)
+        case Request.Phase2A(r) => handlePhase2a(src, r)
+        case Request.Die(r)     => handleDie(src, r)
         case Request.Empty =>
           logger.fatal("Empty AcceptorInbound encountered.")
       }
@@ -192,7 +159,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         s"An acceptor received a Phase1a message in round ${phase1a.round} " +
           s"but is in round $round."
       )
-      leader.send(LeaderInbound().withAcceptorNack(AcceptorNack(round = round)))
+      leader.send(LeaderInbound().withNack(Nack(round = round)))
       metrics.phase1NacksSentTotal.inc()
       return
     }
@@ -202,29 +169,16 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     round = phase1a.round
     val phase1b = Phase1b(
       round = round,
+      firstSlot = phase1a.firstSlot,
       acceptorIndex = index,
-      persistedWatermark = persistedWatermark,
       info = states
-        .iteratorFrom(Math.max(persistedWatermark, phase1a.chosenWatermark))
-        .flatMap({
+        .iteratorFrom(Math.max(phase1a.firstSlot, phase1a.chosenWatermark))
+        .takeWhile({ case (_, state) => state.firstSlot == phase1a.firstSlot })
+        .map({
           case (slot, state) =>
-            // This reason for this `if` is very subtle. During an i/i+1
-            // reconfiguration, a leader may send Phase2as in round i+1 while
-            // performing Phase 1 in round i+1. If an acceptor receives a
-            // Phase2a before the Phase1a, then it will return Phase1bs for
-            // values in round i+1. We don't want this. So, if the vote round
-            // of an entry is `round`, we don't send it back. The leader has
-            // already determined a safe value to propose in the slot and
-            // proposed it.
-            if (state.voteRound < round) {
-              Some(
-                Phase1bSlotInfo(slot = slot,
-                                voteRound = state.voteRound,
-                                voteValue = state.voteValue)
-              )
-            } else {
-              None
-            }
+            Phase1bSlotInfo(slot = slot,
+                            voteRound = state.voteRound,
+                            voteValue = state.voteValue)
         })
         .toSeq
     )
@@ -237,29 +191,13 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     val leader = chan[Leader[Transport]](src, Leader.serializer)
 
-    // If we receive a Phase2a for a slot that we know has been persisted, we
-    // do not vote for it. Instead, we notify the leader that the value has
-    // already been persisted.
-    if (phase2a.slot < persistedWatermark) {
-      leader.send(
-        LeaderInbound().withPhase2B(
-          Phase2b(slot = phase2a.slot,
-                  round = phase2a.round,
-                  acceptorIndex = index,
-                  persisted = true)
-        )
-      )
-      metrics.phase2aPersistedTotal.inc()
-      return
-    }
-
     // If we receive an out of date round, we send back a nack to the leader.
     if (phase2a.round < round) {
       logger.debug(
         s"An acceptor received a Phase2a message in round ${phase2a.round} " +
           s"but is in round $round."
       )
-      leader.send(LeaderInbound().withAcceptorNack(AcceptorNack(round = round)))
+      leader.send(LeaderInbound().withNack(Nack(round = round)))
       metrics.phase2NacksSentTotal.inc()
       return
     }
@@ -268,36 +206,13 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     // leader.
     round = phase2a.round
     states(phase2a.slot) = State(
+      firstSlot = phase2a.firstSlot,
       voteRound = round,
       voteValue = phase2a.value
     )
     leader.send(
       LeaderInbound().withPhase2B(
-        Phase2b(slot = phase2a.slot,
-                round = round,
-                acceptorIndex = index,
-                persisted = false)
-      )
-    )
-  }
-
-  private def handlePersisted(
-      src: Transport#Address,
-      persisted: Persisted
-  ): Unit = {
-    // Send back an ack. Note that we don't ignore stale persisted requests. If
-    // we did this, then it's possible a leader with a stale persistedWatermark
-    // would be completely ignored by the acceptors, which is not what we want.
-    persistedWatermark =
-      Math.max(persistedWatermark, persisted.persistedWatermark)
-    metrics.persistedWatermark.set(persistedWatermark)
-    val leader = chan[Leader[Transport]](src, Leader.serializer)
-    leader.send(
-      LeaderInbound().withPersistedAck(
-        PersistedAck(
-          acceptorIndex = index,
-          persistedWatermark = persistedWatermark
-        )
+        Phase2b(slot = phase2a.slot, round = round, acceptorIndex = index)
       )
     )
   }

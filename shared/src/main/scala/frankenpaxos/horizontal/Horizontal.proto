@@ -107,21 +107,12 @@ message Phase1a {
 
   required int32 round = 1;
 
-  // When a leader sends a Phase1a to an acceptor, there are two cases in which
-  // the leader does not want to receive a Phase1b for a particular slot s.
-  //
-  //   - Case 1. If the leader knows that a command has been chosen in slot s,
-  //     then it does not need a Phase1b.
-  //   - Case 2. If the leader is performing a reconfiguration and contacts an
-  //     acceptor in a new configuration that happens to also be an acceptor in
-  //     an old configuration, slot s may be owned by the old acceptor but not
-  //     the new. In this case, the leader doesn't want the Phase1b.
-  //
-  // All slots less than first_slot_watermark fall into one of these two cases.
-  // So, when an acceptor receives a Phase1a with a given first_slot_watermark,
-  // it does not return any Phase1bs for any slots less than
-  // first_slot_watermark.
-  required int32 first_slot_watermark = 2;
+  // The first slot of this chunk.
+  required int32 first_slot = 2;
+
+  // The leader knows that all slots smaller than chosen_watermark have been
+  // chosen.
+  required int32 chosen_watermark = 3;
 }
 
 message Phase1b {
@@ -129,8 +120,9 @@ message Phase1b {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
-  required int32 acceptor_index = 2;
-  repeated Phase1bSlotInfo info = 3;
+  required int32 first_slot = 2;
+  required int32 acceptor_index = 3;
+  repeated Phase1bSlotInfo info = 4;
 }
 
 message ClientRequest {
@@ -146,7 +138,8 @@ message Phase2a {
 
   required int32 slot = 1;
   required int32 round = 2;
-  required Value value = 3;
+  required int32 first_slot = 3;
+  required Value value = 4;
 }
 
 message Phase2b {
