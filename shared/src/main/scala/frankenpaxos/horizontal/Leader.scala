@@ -728,7 +728,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 val values = mutable.Map[Slot, Value]()
                 val phase2bs =
                   mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]]()
-                for (slot <- chosenWatermark to maxSlot) {
+                for (slot <- Math.max(phase1b.firstSlot, chosenWatermark) to
+                       maxSlot) {
                   val value = safeValue(phase1.phase1bs.values, slot)
                   val phase2a = Phase2a(firstSlot = chunk.firstSlot,
                                         slot = slot,
@@ -744,11 +745,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                   phase2bs(slot) = mutable.Map()
                 }
 
-                val s = if (maxSlot != -1) {
-                  maxSlot
-                } else {
-                  Math.max(phase1b.firstSlot, chosenWatermark)
-                }
+                val s = Seq(phase1b.firstSlot, chosenWatermark, maxSlot + 1).max
                 val nextSlot = chunk.lastSlot match {
                   case None =>
                     Some(s)
@@ -860,8 +857,32 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 val configurations = choose(phase2b.slot, value)
                 for ((slot, configuration) <- configurations) {
                   // Update the previous chunk's last slot.
+                  val lastSlot = slot + options.alpha - 1
                   active.chunks(active.chunks.size - 1) = active.chunks.last
-                    .copy(lastSlot = Some(slot + options.alpha - 1))
+                    .copy(lastSlot = Some(lastSlot))
+
+                  // If the previous chunk is in Phase 2, it is possible that
+                  // its nextSlot is now equal to one past its last slot. If
+                  // this is the case, we have to change its nextSlot to None.
+                  active.chunks.last.phase match {
+                    case _: Phase1 =>
+                      // Nothing to do.
+                      {}
+
+                    case phase2: Phase2 =>
+                      phase2.nextSlot match {
+                        case None =>
+                          logger.fatal(
+                            "A chunk with no lastSlot has a None nextSlot. " +
+                              "This should be impossible. There must be a bug."
+                          )
+
+                        case Some(nextSlot) =>
+                          if (nextSlot > lastSlot) {
+                            phase2.nextSlot = None
+                          }
+                      }
+                  }
 
                   // Add the new chunk.
                   active.chunks.append(
