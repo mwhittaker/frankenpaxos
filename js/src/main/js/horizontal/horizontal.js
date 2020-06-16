@@ -1,7 +1,82 @@
 // Helper components ///////////////////////////////////////////////////////////
+const phase1b_slot_info = {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <fp-object>
+      <fp-field :name="'slot'">
+        {{value.slot}}
+      </fp-field>
+      <fp-field :name="'voteRound'">
+        {{value.voteRound}}
+      </fp-field>
+      <fp-field :name="'voteValue'">
+        {{value.voteValue}}
+      </fp-field>
+    </fp-object>
+  `,
+}
+
+const phase1b = {
+  props: {
+    value: Object,
+  },
+
+  components: {
+    'phase1b-slot-info': phase1b_slot_info,
+  },
+
+  template: `
+    <fp-object>
+      <fp-field :name="'round'">
+        {{value.round}}
+      </fp-field>
+      <fp-field :name="'firstSlot'">
+        {{value.firstSlot}}
+      </fp-field>
+      <fp-field :name="'acceptorIndex'">
+        {{value.acceptorIndex}}
+      </fp-field>
+      <fp-field :name="'info'">
+        <frankenpaxos-seq :seq="value.info">
+          <phase1b-slot-info :value="value.info">
+          </phase1b-slot-info>
+        </frankenpaxos-seq>
+      </fp-field>
+    </fp-object>
+  `,
+}
+
+const phase2b = {
+  props: {
+    value: Object,
+  },
+
+  template: `
+    <fp-object>
+      <fp-field :name="'slot'">
+        {{value.slot}}
+      </fp-field>
+      <fp-field :name="'round'">
+        {{value.round}}
+      </fp-field>
+      <fp-field :name="'acceptorIndex'">
+        {{value.acceptorIndex}}
+      </fp-field>
+    </fp-object>
+  `,
+}
+
 const phase = {
   props: {
     value: Object,
+  },
+
+  components: {
+    'phase1b': phase1b,
+    'phase2b': phase2b,
   },
 
   template: `
@@ -10,7 +85,9 @@ const phase = {
         Phase 1
         <fp-object>
           <fp-field :name="'phase1bs'">
-            {{value.phase1bs}}
+            <frankenpaxos-map :map="value.phase1bs" v-slot="{value: p1b}">
+              <phase1b :value="p1b"></phase1b>
+            </frankenpaxos-map>
           </fp-field>
           <fp-field :name="'resendPhase1as'">
             {{value.resendPhase1as}}
@@ -26,10 +103,15 @@ const phase = {
             {{value.nextSlot}}
           </fp-field>
           <fp-field :name="'values'">
-            {{value.values}}
+            <frankenpaxos-map :map="value.values">
+            </frankenpaxos-map>
           </fp-field>
           <fp-field :name="'phase2bs'">
-            {{value.phase2bs}}
+            <frankenpaxos-map :map="value.phase2bs" v-slot="{value: perSlot}">
+              <frankenpaxos-map :map="perSlot" v-slot="{value: p2b}">
+                <phase2b :value="p2b"></phase2b>
+              </frankenpaxos-map>
+            </frankenpaxos-map>
           </fp-field>
         </fp-object>
       </div>
@@ -62,91 +144,6 @@ const chunk = {
       </fp-field>
     </fp-object>
   `,
-}
-
-const phase1b_slot_info = {
-  props: {
-    value: Object,
-  },
-
-  template: `
-    <fp-object>
-      <fp-field :name="'slot'">
-        {{value.slot}}
-      </fp-field>
-      <fp-field :name="'voteRound'">
-        {{value.voteRound}}
-      </fp-field>
-      <fp-field :name="'voteValue'">
-        {{value.voteValue}}
-      </fp-field>
-    </fp-object>
-  `,
-}
-
-const phase1b_component = {
-  props: {
-    value: Object,
-  },
-
-  components: {
-    'phase1b-slot-info': phase1b_slot_info,
-  },
-
-  template: `
-    <fp-object>
-      <fp-field :name="'groupIndex'">
-        {{value.groupIndex}}
-      </fp-field>
-      <fp-field :name="'acceptorIndex'">
-        {{value.acceptorIndex}}
-      </fp-field>
-      <fp-field :name="'round'">
-        {{value.round}}
-      </fp-field>
-      <fp-field :name="'round'">
-        <frankenpaxos-seq :seq="value.info">
-          <phase1b-slot-info :value="value.info">
-          </phase1b-slot-info>
-        </frankenpaxos-seq>
-      </fp-field>
-    </fp-object>
-  `,
-}
-
-const phase1_component = {
-  props: {
-    value: Object,
-  },
-
-  template: `
-    <fp-object :value="value" v-slot="{let: state}">
-      <fp-field :name="'round'">{{state.round}}</fp-field>
-      <fp-field :name="'quorumSystem'">{{state.quorumSystem}}</fp-field>
-      <fp-field :name="'previousQuorumSystems'">
-        <frankenpaxos-map :map="state.previousQuorumSystems">
-        </frankenpaxos-map>
-      </fp-field>
-      <fp-field :name="'acceptorToRounds'">
-        <frankenpaxos-map :map="state.acceptorToRounds">
-        </frankenpaxos-map>
-      </fp-field>
-      <fp-field :name="'pendingRounds'">
-        {{state.pendingRounds}}
-      </fp-field>
-      <fp-field :name="'phase1bs'">
-        <frankenpaxos-map :map="state.phase1bs">
-        </frankenpaxos-map>
-      </fp-field>
-      <fp-field :name="'pendingClientRequests'">
-        <frankenpaxos-horizontal-seq :seq="state.pendingClientRequests">
-        </frankenpaxos-horizontal-seq>
-      </fp-field>
-      <fp-field :name="'resendPhase1as'">
-        {{state.resendPhase1as}}
-      </fp-field>
-    </fp-object>
-  `
 }
 
 // Node components /////////////////////////////////////////////////////////////
