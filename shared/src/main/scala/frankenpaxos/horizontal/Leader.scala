@@ -267,9 +267,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var chosenWatermark: Slot = 0
 
-  // youngestActiveChunk stores the firstSlot of the youngest active chunk.
+  // activeFirstSlots stores the firstSlots of all active chunks. This is
+  // maintained by both active and inactive leaders. It is a little redundant
+  // with the chunks stored by the active leader.
   @JSExport
-  protected var youngestActiveChunk: Slot = 0
+  protected var activeFirstSlots = mutable.Buffer[Slot](0)
 
   // Leader election address. This field exists for the javascript
   // visualizations.
@@ -313,13 +315,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Timers ////////////////////////////////////////////////////////////////////
-  private def makeResendPhase1asTimer(phase1a: Phase1a): Transport#Timer = {
+  private def makeResendPhase1asTimer(
+      quorumSystem: QuorumSystem[AcceptorIndex],
+      phase1a: Phase1a
+  ): Transport#Timer = {
     lazy val t: Transport#Timer = timer(
       s"resendPhase1as",
       options.resendPhase1asPeriod,
       () => {
         metrics.resendPhase1asTotal.inc()
-        acceptors.foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
+        for (i <- quorumSystem.nodes()) {
+          acceptors(i).send(AcceptorInbound().withPhase1A(phase1a))
+        }
         t.start()
       }
     )
@@ -357,7 +364,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   ): Option[(Int, Chunk)] = {
     logger.check(!chunks.isEmpty)
 
-    for ((chunk, i) <- chunks.reverseIterator.zipWithIndex) {
+    for ((chunk, i) <- chunks.zipWithIndex.reverseIterator) {
       if (slot >= chunk.firstSlot) {
         return Some((i, chunk))
       }
@@ -407,10 +414,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               {}
 
             case Value.Value.Configuration(configuration) =>
+              activeFirstSlots += slot + options.alpha
               configurations.append((slot, configuration))
 
             case Value.Value.Empty =>
               logger.fatal("Empty Value encountered.")
+          }
+
+          // If we execute the first slot of the second chunk, then the first
+          // chunk is now defunct.
+          if (activeFirstSlots.size >= 2 && slot == activeFirstSlots(1)) {
+            activeFirstSlots.remove(0)
           }
 
         case None =>
@@ -435,7 +449,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       firstSlot = firstSlot,
       chosenWatermark = chosenWatermark
     )
-    acceptors.foreach(_.send(AcceptorInbound().withPhase1A(phase1a)))
+    for (i <- quorumSystem.nodes()) {
+      acceptors(i).send(AcceptorInbound().withPhase1A(phase1a))
+    }
 
     Chunk(
       firstSlot = firstSlot,
@@ -443,7 +459,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       quorumSystem = quorumSystem,
       phase = Phase1(
         phase1bs = mutable.Map(),
-        resendPhase1as = makeResendPhase1asTimer(phase1a)
+        resendPhase1as = makeResendPhase1asTimer(quorumSystem, phase1a)
       )
     )
   }
@@ -476,7 +492,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     metrics.becomeLeaderTotal.inc()
 
     stopTimers(state)
-    if (youngestActiveChunk == 0) {
+    if (activeFirstSlots(0) == 0) {
       state = Active(
         round = newRound,
         chunks = mutable.Buffer(
@@ -489,12 +505,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         )
       )
     } else {
-      val quorumSystem = log.get(youngestActiveChunk - options.alpha) match {
+      val quorumSystem = log.get(activeFirstSlots(0) - options.alpha) match {
         case None =>
           logger.fatal(
-            s"youngestActiveChunk is $youngestActiveChunk, yet there is no " +
-              s"chunk in slot youngestActiveChunk - options.alpha " +
-              s"(${youngestActiveChunk - options.alpha}). This should be " +
+            s"activeFirstSlots(0) is $activeFirstSlots(0), yet there is no " +
+              s"chunk in slot activeFirstSlots(0) - options.alpha " +
+              s"(${activeFirstSlots(0) - options.alpha}). This should be " +
               s"impossible. It must be a bug."
           )
 
@@ -502,17 +518,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           value.value match {
             case Value.Value.Command(_) =>
               logger.fatal(
-                s"youngestActiveChunk is $youngestActiveChunk, yet the " +
-                  s"entry in slot youngestActiveChunk - options.alpha " +
-                  s"(${youngestActiveChunk - options.alpha}) is a command. " +
+                s"activeFirstSlots(0) is $activeFirstSlots(0), yet the " +
+                  s"entry in slot activeFirstSlots(0) - options.alpha " +
+                  s"(${activeFirstSlots(0) - options.alpha}) is a command. " +
                   s"This should be impossible. It must be a bug."
               )
 
             case Value.Value.Noop(_) =>
               logger.fatal(
-                s"youngestActiveChunk is $youngestActiveChunk, yet the " +
-                  s"entry in slot youngestActiveChunk - options.alpha " +
-                  s"(${youngestActiveChunk - options.alpha}) is a noop. " +
+                s"activeFirstSlots(0) is $activeFirstSlots(0), yet the " +
+                  s"entry in slot activeFirstSlots(0) - options.alpha " +
+                  s"(${activeFirstSlots(0) - options.alpha}) is a noop. " +
                   s"This should be impossible. It must be a bug."
               )
 
@@ -529,7 +545,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         chunks = mutable.Buffer(
           makeChunk(
             newRound,
-            firstSlot = youngestActiveChunk,
+            firstSlot = activeFirstSlots(0),
             quorumSystem = quorumSystem
           )
         )
@@ -592,6 +608,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                     Some(nextSlot + 1)
                   }
               }
+              return
           }
       }
     }
@@ -672,7 +689,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           case Some((chunkIndex, chunk)) =>
             chunk.phase match {
               case phase2: Phase2 =>
-                logger.fatal(
+                logger.debug(
                   s"Leader received a Phase1b message but is in Phase2. The " +
                     s"Phase1b message is being ignored."
                 )
@@ -708,7 +725,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 // regular Phase 2. It would only do so if it did not overrun
                 // the alpha limit and therefore we can conclude that this slot
                 // is ownned by the chunk. Double check this though.
-                val values = mutable.SortedMap[Slot, Value]()
+                val values = mutable.Map[Slot, Value]()
                 val phase2bs =
                   mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]]()
                 for (slot <- chosenWatermark to maxSlot) {
@@ -727,7 +744,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                   phase2bs(slot) = mutable.Map()
                 }
 
-                val s = Math.max(maxSlot + 1, chosenWatermark)
+                val s = if (maxSlot != -1) {
+                  maxSlot
+                } else {
+                  Math.max(phase1b.firstSlot, chosenWatermark)
+                }
                 val nextSlot = chunk.lastSlot match {
                   case None =>
                     Some(s)
@@ -859,7 +880,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                   }
                 })
                 state = active.copy(chunks = chunks)
-                youngestActiveChunk = chunks.head.firstSlot
             }
         }
     }
@@ -958,7 +978,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         // our watermark so that the protocol gets the value chosen again. This
         // works for Matchmaker MultiPaxos, but not here since the
         // chosenWatermark is more important to track. For example, our
-        // youngestActiveChunk might be wrong if we lower the chosenWatermark.
+        // activeFirstSlots(0) might be wrong if we lower the chosenWatermark.
         // We might also violate alpha. Instead, we just ignore the Recover.
         // The replica might recover from another replica. Also, this recovery
         // is very rare anyway.
