@@ -1,0 +1,45 @@
+syntax = "proto2";
+
+package frankenpaxos.horizontal;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.horizontal"
+  flat_package: true
+};
+
+message DoNothingProto {}
+
+message RepeatedLeaderReconfigurationProto {
+    repeated int32 acceptor = 1;
+    required int32 delay_ms = 2;
+    required int32 period_ms = 3;
+}
+
+message LeaderReconfigurationProto {
+    required int32 reconfiguration_warmup_delay_ms = 1;
+    required int32 reconfiguration_warmup_period_ms = 2;
+    required int32 reconfiguration_warmup_num = 3;
+    required int32 reconfiguration_delay_ms = 4;
+    required int32 reconfiguration_period_ms = 5;
+    required int32 reconfiguration_num = 6;
+    required int32 failure_delay_ms = 7;
+    required int32 recover_delay_ms = 8;
+}
+
+message LeaderFailureProto {
+    required int32 leader_change_warmup_delay_ms = 1;
+    required int32 leader_change_warmup_period_ms = 2;
+    required int32 leader_change_warmup_num = 3;
+    required int32 failure_delay_ms = 4;
+}
+
+message DriverWorkloadProto {
+  oneof value {
+    DoNothingProto do_nothing = 1;
+    RepeatedLeaderReconfigurationProto repeated_leader_reconfiguration = 2;
+    LeaderReconfigurationProto leader_reconfiguration = 3;
+    LeaderFailureProto leader_failure = 5;
+  }
+}
