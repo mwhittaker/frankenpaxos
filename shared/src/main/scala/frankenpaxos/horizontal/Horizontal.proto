@@ -37,6 +37,29 @@
 //
 // [1]: https://ndpsoftware.com/git-cheatsheet.html
 
+// TODO(mwhittaker): Think about implementing noop flushing to force a
+// reconfiguration more quickly. It reduces the time to reconfiguration, but
+// noop flushing greatly complicates the implementation:
+//
+//   - An acceptor now has to store a range of noops. Imagine it has a range of
+//     noops and then receives a phase2a somewhere in the range. It has to
+//     split up the range. So, we'd have to maintain a series of disjoint
+//     ranges.
+//   - When a leader receives Phase1bs, the responses may include noop ranges.
+//     To find a safe value for a given slot, we have to figure out which of
+//     the ranges include the slot.
+//   - If the leader sends a phase2a for a noop range, an acceptor might have
+//     already voted for some values in the range but not others. We'd have to
+//     split this range up as well.
+//   - If alpha is really big, then replicas have big chunks of noops in their
+//     clogs. We instead need some disjoint long with noops plugged into it.
+//   - A leader cannot immediately propose a noop chunk or else we may run into
+//     alpha overflows. We have to wait a certain amount of time before
+//     proposing.
+//   - When a leader chooses a chunk of noops, it complicates the computation
+//     of things like activeChunks because we're not iterating over slot by
+//     slot.
+
 syntax = "proto2";
 
 package frankenpaxos.horizontal;
