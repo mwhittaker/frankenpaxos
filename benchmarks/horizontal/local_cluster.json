@@ -1,0 +1,16 @@
+{
+  "1": {
+    "clients": ["localhost"],
+    "leaders": ["localhost"],
+    "acceptors": ["localhost"],
+    "replicas": ["localhost"],
+    "driver": ["localhost"]
+  },
+  "2": {
+    "clients": ["localhost"],
+    "leaders": ["localhost"],
+    "acceptors": ["localhost"],
+    "replicas": ["localhost"],
+    "driver": ["localhost"]
+  }
+}

@@ -31,13 +31,15 @@ object Client {
 
 @JSExportAll
 case class ClientOptions(
-    resendClientRequestPeriod: java.time.Duration
+    resendClientRequestPeriod: java.time.Duration,
+    measureLatencies: Boolean
 )
 
 @JSExportAll
 object ClientOptions {
   val default = ClientOptions(
-    resendClientRequestPeriod = java.time.Duration.ofSeconds(10)
+    resendClientRequestPeriod = java.time.Duration.ofSeconds(10),
+    measureLatencies = true
   )
 }
 
@@ -184,6 +186,20 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Helpers ///////////////////////////////////////////////////////////////////
+  private def timed[T](label: String)(e: => T): T = {
+    if (options.measureLatencies) {
+      val startNanos = System.nanoTime
+      val x = e
+      val stopNanos = System.nanoTime
+      metrics.requestsLatency
+        .labels(label)
+        .observe((stopNanos - startNanos).toDouble / 1000000)
+      x
+    } else {
+      e
+    }
+  }
+
   def toClientRequest(pendingCommand: PendingCommand): ClientRequest = {
     ClientRequest(
       command = Command(
@@ -221,7 +237,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         val clientRequest = toClientRequest(pendingCommand)
         val leader = leaders(roundSystem.leader(round))
         leader.send(LeaderInbound().withClientRequest(clientRequest))
-        metrics.requestsTotal.inc()
+        metrics.clientRequestsSentTotal.inc()
 
         // Update our metadata.
         pendingCommands(pseudonym) = pendingCommand
@@ -235,12 +251,25 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
-    inbound.request match {
-      case Request.ClientReply(r)     => handleClientReply(src, r)
-      case Request.NotLeader(r)       => handleNotLeader(src, r)
-      case Request.LeaderInfoReply(r) => handleLeaderInfoReply(src, r)
-      case Request.Empty =>
-        logger.fatal("Empty ClientInbound encountered.")
+
+    val label =
+      inbound.request match {
+        case Request.ClientReply(_)     => "ClientReply"
+        case Request.NotLeader(_)       => "NotLeader"
+        case Request.LeaderInfoReply(_) => "LeaderInfoReply"
+        case Request.Empty =>
+          logger.fatal("Empty ClientInbound encountered.")
+      }
+    metrics.requestsTotal.labels(label).inc()
+
+    timed(label) {
+      inbound.request match {
+        case Request.ClientReply(r)     => handleClientReply(src, r)
+        case Request.NotLeader(r)       => handleNotLeader(src, r)
+        case Request.LeaderInfoReply(r) => handleLeaderInfoReply(src, r)
+        case Request.Empty =>
+          logger.fatal("Empty ClientInbound encountered.")
+      }
     }
   }
 
