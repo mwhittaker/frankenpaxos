@@ -115,8 +115,8 @@ class LeaderMetrics(collectors: Collectors) {
 
   val staleNackTotal: Counter = collectors.counter
     .build()
-    .name("horizontal_leader_stale_acceptor_nack_total")
-    .help("Total number of stale AcceptorNacks received.")
+    .name("horizontal_leader_stale_nack_total")
+    .help("Total number of stale Nacks received.")
     .register()
 
   val ignoredRecoverTotal: Counter = collectors.counter

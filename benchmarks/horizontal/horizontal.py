@@ -472,7 +472,7 @@ class HorizontalSuite(benchmark.Suite[Input, Output]):
             bench,
             client_csvs,
             drop_prefix=datetime.timedelta(seconds=0),
-            save_data=False)
+            save_data=True)
         return labeled_data['write']
 
 
