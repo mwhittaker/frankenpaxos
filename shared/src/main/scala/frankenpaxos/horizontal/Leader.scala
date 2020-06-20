@@ -9,6 +9,7 @@ import frankenpaxos.election.basic.ElectionOptions
 import frankenpaxos.election.basic.Participant
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.Gauge
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.quorums.QuorumSystem
@@ -79,6 +80,12 @@ class LeaderMetrics(collectors: Collectors) {
     .build()
     .name("horizontal_leader_stale_phase1bs_total")
     .help("Total number of stale Phase1bs received.")
+    .register()
+
+  val pendingValues: Gauge = collectors.gauge
+    .build()
+    .name("horizontal_leader_pending_values")
+    .help("The total number of pending (proposed but not chosen) values.")
     .register()
 
   val alphaOverflowTotal: Counter = collectors.counter
@@ -608,6 +615,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                     Some(nextSlot + 1)
                   }
               }
+              metrics.pendingValues.set(phase2.values.size)
               return
           }
       }
@@ -765,6 +773,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                     phase2bs = phase2bs
                   )
                 )
+                metrics.pendingValues.set(0)
             }
         }
     }
@@ -852,6 +861,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 // Update our metadata.
                 phase2.values.remove(phase2b.slot)
                 phase2.phase2bs.remove(phase2b.slot)
+                metrics.pendingValues.set(phase2.values.size)
 
                 // Add any new chunks.
                 val configurations = choose(phase2b.slot, value)

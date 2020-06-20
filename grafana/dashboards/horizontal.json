@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1592541054102,
+  "iteration": 1592687805046,
   "links": [],
   "panels": [
     {
@@ -883,6 +883,13 @@
           "intervalFactor": 1,
           "legendFormat": "No chunks found ({{instance}})",
           "refId": "B"
+        },
+        {
+          "expr": "horizontal_leader_pending_values",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Pending values ({{instance}})",
+          "refId": "C"
         }
       ],
       "thresholds": [],
@@ -1732,8 +1739,8 @@
     ]
   },
   "time": {
-    "from": "2020-06-18T23:25:31.236Z",
-    "to": "2020-06-18T23:26:36.785Z"
+    "from": "2020-06-20T21:17:07.937Z",
+    "to": "2020-06-20T21:18:09.235Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1763,5 +1770,5 @@
   "timezone": "",
   "title": "Horizontal",
   "uid": "6Du2BIWMz",
-  "version": 3
+  "version": 4
 }

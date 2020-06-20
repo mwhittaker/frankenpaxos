@@ -154,7 +154,6 @@ class BenchmarkDirectory(object):
         if self.exited:
             return
 
-        print(f'BenchmarkDirectory {self.path} exiting.')
         self.process_stack.__exit__(cls, exn, trace)
         self.exited = True
         self.write_dict(

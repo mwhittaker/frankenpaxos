@@ -69,16 +69,34 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                     driver_log_level = args.log_level,
                 )
-                for alpha in [1, 10, 50, 100, 250]
+                for alpha in [100 * 1000]
+                # for alpha in [1, 10, 50, 100, 250]
                 for (num_client_procs, num_clients_per_proc) in [
                     (1, 1),
+                    (1, 2),
+                    (1, 3),
+                    (1, 4),
+                    (1, 5),
                     (1, 10),
-                    (1, 25),
+                    (1, 20),
+                    (1, 30),
+                    (1, 40),
                     (1, 50),
                     (1, 100),
                     (2, 100),
+                    (3, 100),
+                    (4, 100),
+                    (5, 100),
                 ]
-            ] * 2)[:]
+                # for (num_client_procs, num_clients_per_proc) in [
+                #     (1, 1),
+                #     (1, 10),
+                #     (1, 25),
+                #     (1, 50),
+                #     (1, 100),
+                #     (2, 100),
+                # ]
+            ] * 1)[:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
