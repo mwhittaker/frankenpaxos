@@ -71,6 +71,8 @@ object LeaderMain extends App {
       .optionAction((x, o) => o.copy(alpha = x))
     opt[java.time.Duration]("options.resendPhase1asPeriod")
       .optionAction((x, o) => o.copy(resendPhase1asPeriod = x))
+    opt[java.time.Duration]("options.resendPhase2asPeriod")
+      .optionAction((x, o) => o.copy(resendPhase2asPeriod = x))
     opt[java.time.Duration]("options.election.pingPeriod")
       .electionOptionAction((x, o) => o.copy(pingPeriod = x))
     opt[java.time.Duration]("options.election.noPingTimeoutMin")

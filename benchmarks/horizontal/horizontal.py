@@ -42,6 +42,7 @@ class LeaderOptions(NamedTuple):
     log_grow_size: int = 1000
     alpha: int = 1000
     resend_phase1as_period: datetime.timedelta = datetime.timedelta(seconds=1)
+    resend_phase2as_period: datetime.timedelta = datetime.timedelta(seconds=1)
     election_options: ElectionOptions = ElectionOptions()
 
 
@@ -313,6 +314,9 @@ class HorizontalSuite(benchmark.Suite[Input, Output]):
                     str(input.leader_options.alpha),
                     '--options.resendPhase1asPeriod',
                     '{}s'.format(input.leader_options.resend_phase1as_period.
+                                 total_seconds()),
+                    '--options.resendPhase2asPeriod',
+                    '{}s'.format(input.leader_options.resend_phase2as_period.
                                  total_seconds()),
                     '--options.election.pingPeriod',
                     '{}s'.format(input.leader_options.election_options.

@@ -41,6 +41,8 @@ def main(args) -> None:
                         alpha = 1000,
                         resend_phase1as_period = \
                             datetime.timedelta(seconds=60),
+                        resend_phase2as_period = \
+                            datetime.timedelta(seconds=60),
                         election_options = ElectionOptions(
                             ping_period = datetime.timedelta(seconds=60),
                             no_ping_timeout_min = \

@@ -45,6 +45,7 @@ case class LeaderOptions(
     // Leaders use timeouts to re-send requests and ensure liveness. This
     // duration determines how long a leader waits before re-sending Phase1as.
     resendPhase1asPeriod: java.time.Duration,
+    resendPhase2asPeriod: java.time.Duration,
     electionOptions: ElectionOptions,
     measureLatencies: Boolean
 )
@@ -55,6 +56,7 @@ object LeaderOptions {
     logGrowSize = 1000,
     alpha = 1000,
     resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
+    resendPhase2asPeriod = java.time.Duration.ofSeconds(5),
     electionOptions = ElectionOptions.default,
     measureLatencies = true
   )
@@ -155,6 +157,12 @@ class LeaderMetrics(collectors: Collectors) {
     .name("horizontal_leader_resend_phase1as_total")
     .help("Total number of times the leader resent Phase1a messages.")
     .register()
+
+  val resendPhase2asTotal: Counter = collectors.counter
+    .build()
+    .name("horizontal_leader_resend_phase2as_total")
+    .help("Total number of times the leader resent Phase2a messages.")
+    .register()
 }
 
 @JSExportAll
@@ -195,7 +203,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       // The values that the leader is trying to get chosen.
       values: mutable.Map[Slot, Value],
       // The Phase2b responses received from the acceptors.
-      phase2bs: mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]]
+      phase2bs: mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]],
+      // Technically, we don't have to resend Phase2as for liveness. If
+      // something is not chosen, a replica will eventually send a Recover and
+      // we'll recover the slot. However, a Recover is expensive, and in some
+      // experiments where we crash an acceptor, it's too slow to send a
+      // recover. So, we resend Phase2as if they have been pending too long.
+      var resendPhase2as: Transport#Timer
   ) extends Phase
 
   @JSExportAll
@@ -323,17 +337,56 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   // Timers ////////////////////////////////////////////////////////////////////
   private def makeResendPhase1asTimer(
+      firstSlot: Slot,
       quorumSystem: QuorumSystem[AcceptorIndex],
       phase1a: Phase1a
   ): Transport#Timer = {
     lazy val t: Transport#Timer = timer(
-      s"resendPhase1as",
+      s"resendPhase1as $firstSlot",
       options.resendPhase1asPeriod,
       () => {
         metrics.resendPhase1asTotal.inc()
         for (i <- quorumSystem.nodes()) {
           acceptors(i).send(AcceptorInbound().withPhase1A(phase1a))
         }
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
+
+  private def makeResendPhase2asTimer(
+      firstSlot: Slot,
+      quorumSystem: QuorumSystem[AcceptorIndex],
+      values: mutable.Map[Slot, Value]
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"resendPhase2as $firstSlot",
+      options.resendPhase2asPeriod,
+      () => {
+        metrics.resendPhase2asTotal.inc()
+
+        // TODO(mwhittaker): Pass this value in as a parameter.
+        for (slot <- chosenWatermark until chosenWatermark + 10) {
+          values.get(slot) match {
+            case Some(value) =>
+              val phase2a = Phase2a(slot = slot,
+                                    round = getRound(state),
+                                    firstSlot = firstSlot,
+                                    value = value)
+              for (index <- quorumSystem.nodes) {
+                acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
+              }
+
+            case None =>
+              logger.debug(
+                s"The resendPhase2as timer was triggered but there is no " +
+                  s"pending value for slot $slot."
+              )
+          }
+        }
+
         t.start()
       }
     )
@@ -388,7 +441,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private def stopPhaseTimers(phase: Phase): Unit = {
     phase match {
       case phase1: Phase1 => phase1.resendPhase1as.stop()
-      case phase2: Phase2 =>
+      case phase2: Phase2 => phase2.resendPhase2as.stop()
     }
   }
 
@@ -466,7 +519,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       quorumSystem = quorumSystem,
       phase = Phase1(
         phase1bs = mutable.Map(),
-        resendPhase1as = makeResendPhase1asTimer(quorumSystem, phase1a)
+        resendPhase1as =
+          makeResendPhase1asTimer(firstSlot, quorumSystem, phase1a)
       )
     )
   }
@@ -770,7 +824,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                   phase = Phase2(
                     nextSlot = nextSlot,
                     values = values,
-                    phase2bs = phase2bs
+                    phase2bs = phase2bs,
+                    resendPhase2as = makeResendPhase2asTimer(
+                      firstSlot = chunk.firstSlot,
+                      quorumSystem = chunk.quorumSystem,
+                      values = values
+                    )
                   )
                 )
                 metrics.pendingValues.set(0)
@@ -863,8 +922,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 phase2.phase2bs.remove(phase2b.slot)
                 metrics.pendingValues.set(phase2.values.size)
 
-                // Add any new chunks.
+                // Update our timer.
+                val oldChosenWatermark = chosenWatermark
                 val configurations = choose(phase2b.slot, value)
+                if (oldChosenWatermark != chosenWatermark) {
+                  phase2.resendPhase2as.reset()
+                }
+
+                // Add any new chunks.
                 for ((slot, configuration) <- configurations) {
                   // Update the previous chunk's last slot.
                   val lastSlot = slot + options.alpha - 1
@@ -903,11 +968,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                   )
                 }
 
-                // Remove any defunct chunks.
+                // Remove any defunct chunks. Don't forget to stop their
+                // timers too.
                 val chunks = active.chunks.dropWhile(chunk => {
                   chunk.lastSlot match {
-                    case None           => false
-                    case Some(lastSlot) => lastSlot < chosenWatermark
+                    case None => false
+                    case Some(lastSlot) =>
+                      if (lastSlot < chosenWatermark) {
+                        stopPhaseTimers(chunk.phase)
+                        true
+                      } else {
+                        false
+                      }
                   }
                 })
                 state = active.copy(chunks = chunks)
