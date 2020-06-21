@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1592687805046,
+  "iteration": 1592700093857,
   "links": [],
   "panels": [
     {
@@ -1076,6 +1076,13 @@
           "refId": "A"
         },
         {
+          "expr": "rate(horizontal_leader_resend_phase2as_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Resend Phase2as ({{instance}})",
+          "refId": "C"
+        },
+        {
           "expr": "rate(horizontal_client_resend_client_request_total[1s])",
           "format": "time_series",
           "intervalFactor": 1,
@@ -1739,8 +1746,8 @@
     ]
   },
   "time": {
-    "from": "2020-06-20T21:17:07.937Z",
-    "to": "2020-06-20T21:18:09.235Z"
+    "from": "2020-06-21T00:37:10.889Z",
+    "to": "2020-06-21T00:39:04.559Z"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1770,5 +1777,5 @@
   "timezone": "",
   "title": "Horizontal",
   "uid": "6Du2BIWMz",
-  "version": 4
+  "version": 5
 }

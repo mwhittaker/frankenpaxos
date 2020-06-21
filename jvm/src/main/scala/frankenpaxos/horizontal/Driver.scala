@@ -259,6 +259,8 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
           logger.info(
             "LeaderFailure leader change warmup triggered!"
           )
+          // I found that we need to let the second leader get some warmup in,
+          // so we actually just change to it again and again.
           becomeLeader(1)
         },
         onLast = () => {

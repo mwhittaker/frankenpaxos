@@ -3,7 +3,7 @@ from . import driver_workload
 
 
 def main(args) -> None:
-    class LeaderReconfigurationSuite(HorizontalSuite):
+    class LeaderFailureSuite(HorizontalSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -26,21 +26,17 @@ def main(args) -> None:
                     warmup_duration = datetime.timedelta(seconds=10),
                     warmup_timeout = datetime.timedelta(seconds=15),
                     warmup_sleep = datetime.timedelta(seconds=0),
-                    duration = datetime.timedelta(seconds=55),
-                    timeout = datetime.timedelta(seconds=60),
+                    duration = datetime.timedelta(seconds=35),
+                    timeout = datetime.timedelta(seconds=40),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'Noop',
                     workload = workload.StringWorkload(size_mean=1, size_std=0),
                     driver_workload = \
-                        driver_workload.LeaderReconfiguration(
-                            reconfiguration_warmup_delay_ms = 10 * 1000,
-                            reconfiguration_warmup_period_ms = 100,
-                            reconfiguration_warmup_num = 100,
-                            reconfiguration_delay_ms = 30 * 1000,
-                            reconfiguration_period_ms = 1000,
-                            reconfiguration_num = 10,
-                            failure_delay_ms = 45 * 1000,
-                            recover_delay_ms = 50 * 1000,
+                        driver_workload.LeaderFailure(
+                            leader_change_warmup_delay_ms = 0 * 1000,
+                            leader_change_warmup_period_ms = 2 * 1000,
+                            leader_change_warmup_num = 10,
+                            failure_delay_ms = 30 * 1000,
                         ),
                     profiled = args.profile,
                     monitored = args.monitor,
@@ -52,13 +48,13 @@ def main(args) -> None:
                         resend_phase1as_period = \
                             datetime.timedelta(seconds=60),
                         resend_phase2as_period = \
-                            datetime.timedelta(milliseconds=1),
+                            datetime.timedelta(seconds=60),
                         election_options = ElectionOptions(
-                            ping_period = datetime.timedelta(seconds=60),
+                            ping_period = datetime.timedelta(seconds=1),
                             no_ping_timeout_min = \
-                                datetime.timedelta(seconds=120),
+                                datetime.timedelta(seconds=5),
                             no_ping_timeout_max = \
-                                datetime.timedelta(seconds=240),
+                                datetime.timedelta(seconds=5),
                         ),
                     ),
                     leader_log_level = args.log_level,
@@ -76,7 +72,7 @@ def main(args) -> None:
                     replica_log_level = args.log_level,
                     client_options = ClientOptions(
                         resend_client_request_period = \
-                            datetime.timedelta(milliseconds=100),
+                            datetime.timedelta(milliseconds=10),
                     ),
                     client_log_level = args.log_level,
                     driver_log_level = args.log_level,
@@ -98,7 +94,7 @@ def main(args) -> None:
                 'throughput': f'{output.start_throughput_1s.p90:.6}',
             })
 
-    suite = LeaderReconfigurationSuite()
+    suite = LeaderFailureSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
                                   'horizontal_leader_reconfiguration') as dir:
         suite.run_suite(dir)
