@@ -107,11 +107,13 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                     driver_log_level = args.log_level,
                 )
-                for f in [1, 2]
+                # for f in [1, 2]
+                for f in [1]
                 for n in [2*f+1]
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1), (4, 1), (4, 2)]
-            ])[2:]
+                    # [(1, 1), (4, 1), (4, 2)]
+                    [(1, 100)]
+            ] * 5)[:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
