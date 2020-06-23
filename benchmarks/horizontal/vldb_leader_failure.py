@@ -83,7 +83,7 @@ def main(args) -> None:
                     (4, 1),
                     (4, 2),
                 ]
-            ] * 1)[:]
+            ] * 10)[:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
