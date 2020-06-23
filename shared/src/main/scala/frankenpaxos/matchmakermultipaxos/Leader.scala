@@ -1643,14 +1643,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             // depending on whether or not the old Phase 2 has finished
             // choosing all of its values.
             if (chosenWatermark >= phase212.oldPhase2.nextSlot) {
-              // Kick off GC by sending ExecutedWatermarkRequests to the
-              // replicas.
-              replicas.foreach(
-                _.send(
-                  ReplicaInbound()
-                    .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
+              if (!options.disableGc) {
+                // Kick off GC by sending ExecutedWatermarkRequests to the
+                // replicas.
+                replicas.foreach(
+                  _.send(
+                    ReplicaInbound()
+                      .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
+                  )
                 )
-              )
+              }
 
               // Stop timers.
               stopTimers(phase212.oldPhase2)
@@ -1663,15 +1665,20 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 )
 
               // Update our state.
-              val newPhase2 = phase212.newPhase2.copy(
-                gc = QueryingReplicas(
-                  chosenWatermark = chosenWatermark,
-                  maxSlot = maxSlot,
-                  executedWatermarkReplies = mutable.Set(),
-                  resendExecutedWatermarkRequests =
-                    makeResendExecutedWatermarkRequestsTimer()
+              val newPhase2 = if (options.disableGc) {
+                // Note that phase212.newPhase2.gc is Cancelled.
+                phase212.newPhase2
+              } else {
+                phase212.newPhase2.copy(
+                  gc = QueryingReplicas(
+                    chosenWatermark = chosenWatermark,
+                    maxSlot = maxSlot,
+                    executedWatermarkReplies = mutable.Set(),
+                    resendExecutedWatermarkRequests =
+                      makeResendExecutedWatermarkRequestsTimer()
+                  )
                 )
-              )
+              }
               state = newPhase2
 
               // Process any pending client requests.
@@ -1804,13 +1811,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         if (chosenWatermark >= phase22.oldPhase2.nextSlot) {
-          // Kick off GC by sending ExecutedWatermarkRequests to the replicas.
-          replicas.foreach(
-            _.send(
-              ReplicaInbound()
-                .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
+          if (!options.disableGc) {
+            // Kick off GC by sending ExecutedWatermarkRequests to the replicas.
+            replicas.foreach(
+              _.send(
+                ReplicaInbound()
+                  .withExecutedWatermarkRequest(ExecutedWatermarkRequest())
+              )
             )
-          )
+          }
 
           // Update metrics.
           metrics.reconfigurationLatency
@@ -1820,18 +1829,22 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             )
 
           stopTimers(phase22.oldPhase2)
-          state = phase22.newPhase2.copy(
-            gc = QueryingReplicas(
-              // The numbers here are not perfect. chosenWatermark and maxSlot
-              // might actually be a little lower. But, having them be larger
-              // is not wrong.
-              chosenWatermark = phase22.oldPhase2.nextSlot,
-              maxSlot = phase22.oldPhase2.nextSlot,
-              executedWatermarkReplies = mutable.Set(),
-              resendExecutedWatermarkRequests =
-                makeResendExecutedWatermarkRequestsTimer()
+          state = if (options.disableGc) {
+            phase22.newPhase2
+          } else {
+            phase22.newPhase2.copy(
+              gc = QueryingReplicas(
+                // The numbers here are not perfect. chosenWatermark and maxSlot
+                // might actually be a little lower. But, having them be larger
+                // is not wrong.
+                chosenWatermark = phase22.oldPhase2.nextSlot,
+                maxSlot = phase22.oldPhase2.nextSlot,
+                executedWatermarkReplies = mutable.Set(),
+                resendExecutedWatermarkRequests =
+                  makeResendExecutedWatermarkRequestsTimer()
+              )
             )
-          )
+          }
         }
     }
   }
