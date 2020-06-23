@@ -68,6 +68,8 @@ object LeaderOptions {
     stutter = 1000,
     electionOptions = ElectionOptions.default,
     measureLatencies = true
+
+    // TODO(mwhittaker): Add a flag to skip all garbage collection.
   )
 }
 
@@ -425,7 +427,13 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       gc: GarbageCollection
   ) extends State
 
-  // TODO(mwhittaker): Document.
+  // When a leader performs a reconfiguration in round i, it operates in both
+  // rounds i and i+1 at the same time. It is in Phase 2 in round i, but
+  // proceeds through the Matchmaking phase, Phase 1, and Phase 2 in round i+1.
+  // Phase2Matchmaking, Phase212, and Phase22 encompass this transition period.
+  //
+  // With Phase2Matchmaking, the leader is in Phase 2 in round i and in the
+  // Matchmaking phase in round i + 1.
   @JSExportAll
   case class Phase2Matchmaking(
       phase2: Phase2,
@@ -436,7 +444,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       startNanos: Long
   ) extends State
 
-  // TODO(mwhittaker): Document.
+  // With Phase212, the Leader is in Phase 2 in round i and in both Phase 1 and
+  // Phase 2 in round i+1. See section 4.4 of our paper for an explanation of
+  // how we're in both Phase 1 and 2 at the same time.
   @JSExportAll
   case class Phase212(
       oldPhase2: Phase2,
@@ -445,7 +455,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       startNanos: Long
   ) extends State
 
-  // TODO(mwhittaker): Document.
+  // Here, we're in Phase 2 in both rounds i and i+1. We want to wait for all
+  // of the pending values chosen in round i to be chosen before we move to a
+  // Phase2 in round i+1.
   @JSExportAll
   case class Phase22(
       oldPhase2: Phase2,
@@ -1541,6 +1553,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             } else {
               values.lastKey
             }
+            // TODO(mwhittaker): Is this always true?
             logger.checkLt(maxSlot, phase212.oldPhase2.nextSlot)
 
             // Propose values to the acceptors in entries [chosenWatermark,
@@ -1661,9 +1674,15 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         processClientRequest(phase2, clientRequest)
 
       case phase2Matchmaking: Phase2Matchmaking =>
+        // TODO(mwhittaker): (Ablation) Add a flag here to store client
+        // requests in the Matchmaking's pending client requests instead of
+        // processing them in Phase2.
         processClientRequest(phase2Matchmaking.phase2, clientRequest)
 
       case phase212: Phase212 =>
+        // TODO(mwhittaker): (Ablation) Add a flag here to store client
+        // requests in the Phase1's pending client requests instead of
+        // processing them in Phase2.
         processClientRequest(phase212.newPhase2, clientRequest)
 
       case phase22: Phase22 =>
