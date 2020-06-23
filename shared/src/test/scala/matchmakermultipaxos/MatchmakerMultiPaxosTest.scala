@@ -10,8 +10,22 @@ class MatchmakerMultiPaxosTest extends FlatSpec {
     val numRuns = 100
     info(s"runLength = $runLength, numRuns = $numRuns")
 
-    for (f <- 1 to 2) {
-      val sim = new SimulatedMatchmakerMultiPaxos(f = f)
+    for {
+      (f, stallDuringMatchmaking, stallDuringPhase1, disableGc) <- Seq(
+        (1, false, false, false),
+        (1, true, false, false),
+        (1, false, true, false),
+        (1, true, true, false),
+        (1, true, true, true),
+        (2, false, false, false)
+      )
+    } {
+      val sim = new SimulatedMatchmakerMultiPaxos(
+        f = f,
+        stallDuringMatchmaking = stallDuringMatchmaking,
+        stallDuringPhase1 = stallDuringPhase1,
+        disableGc = disableGc
+      )
 
       Simulator
         .simulate(sim, runLength = runLength, numRuns = numRuns)
@@ -28,10 +42,12 @@ class MatchmakerMultiPaxosTest extends FlatSpec {
         case None => {}
       }
 
+      val suffix = s"(f=$f, stallDuringMatchmaking=$stallDuringMatchmaking, " +
+        s"stallDuringPhase1=$stallDuringPhase1, disableGc=$disableGc)"
       if (sim.valueChosen) {
-        info(s"Value chosen (f=$f)")
+        info(s"Value chosen $suffix")
       } else {
-        info(s"No value chosen (f=$f)")
+        info(s"No value chosen $suffix")
       }
     }
   }

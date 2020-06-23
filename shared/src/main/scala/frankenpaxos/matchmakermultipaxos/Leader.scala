@@ -1417,11 +1417,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       case phase2Matchmaking: Phase2Matchmaking =>
         val matchmaking = phase2Matchmaking.matchmaking
 
-        // We shouldn't have any pending client requests, since any pending
-        // requests can be served by the Phase 2 in round i. This is important
-        // to note because if we did have pending client requests, then we
-        // would have to process them when transitioning to a new Phase 2.
-        logger.checkEq(matchmaking.pendingClientRequests.size, 0)
+        if (!options.stallDuringMatchmaking) {
+          // We shouldn't have any pending client requests, since any pending
+          // requests can be served by the Phase 2 in round i. This is
+          // important to note because if we did have pending client requests,
+          // then we would have to process them when transitioning to a new
+          // Phase 2.
+          logger.checkEq(matchmaking.pendingClientRequests.size, 0)
+        }
 
         processMatchReply(matchmaking, matchReply) match {
           case None =>
@@ -1444,23 +1447,49 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 (startNanos - phase2Matchmaking.startNanos).toDouble / 1000000
               )
 
+            // Handle the Matchmaking's pending commands. We either
+            //
+            //   - don't have any pending commands (if stallDuringMatchmaking
+            //     is false),
+            //   - wait until Phase2 to process the pending commands (if
+            //     stallDuringMatchmaking and stallDuringPhase1 are both true),
+            //     or
+            //   - process the pending commands now (if stallDuringMatchmaking
+            //     is true but stallDuringPhase1 is not).
+            val newPhase1 = if (options.stallDuringPhase1) {
+              // phase1.pendingClientRequests is copied over from matchmaking.
+              // If we stall during Phase 1, then we should keep these pending
+              // client requets for later. Otherwise, we clear them here and
+              // process them below.
+              phase1
+            } else {
+              phase1.copy(pendingClientRequests = mutable.Buffer())
+            }
+
+            val newPhase2 = Phase2(
+              round = matchmaking.round,
+              nextSlot = phase2Matchmaking.phase2.nextSlot,
+              quorumSystem = matchmaking.quorumSystem,
+              values = mutable.Map(),
+              phase2bs = mutable.Map(),
+              chosen = mutable.Set(),
+              numChosenSinceLastWatermarkSend = 0,
+              makeResendPhase2asTimer(),
+              // We wait until we enter a stable Phase 2 to perform garbage
+              // collection.
+              gc = Cancelled
+            )
+            if (!options.stallDuringPhase1) {
+              for (clientRequest <- matchmaking.pendingClientRequests) {
+                processClientRequest(newPhase2, clientRequest)
+              }
+            }
+
             // Next, we transition to Phase 1 and Phase 2.
             state = Phase212(
               oldPhase2 = phase2Matchmaking.phase2.copy(gc = Cancelled),
-              newPhase1 = phase1,
-              newPhase2 = Phase2(
-                round = matchmaking.round,
-                nextSlot = phase2Matchmaking.phase2.nextSlot,
-                quorumSystem = matchmaking.quorumSystem,
-                values = mutable.Map(),
-                phase2bs = mutable.Map(),
-                chosen = mutable.Set(),
-                numChosenSinceLastWatermarkSend = 0,
-                makeResendPhase2asTimer(),
-                // We wait until we enter a stable Phase 2 to perform garbage
-                // collection.
-                gc = Cancelled
-              ),
+              newPhase1 = newPhase1,
+              newPhase2 = newPhase2,
               startNanos = startNanos
             )
 
@@ -1552,8 +1581,10 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
       case phase212: Phase212 =>
-        // Note that there can't be any pending requests to process.
-        logger.checkEq(phase212.newPhase1.pendingClientRequests.size, 0)
+        if (!options.stallDuringPhase1) {
+          // Note that there can't be any pending requests to process.
+          logger.checkEq(phase212.newPhase1.pendingClientRequests.size, 0)
+        }
 
         processPhase1b(phase212.newPhase1, phase1b) match {
           case None =>
@@ -1632,7 +1663,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 )
 
               // Update our state.
-              state = phase212.newPhase2.copy(
+              val newPhase2 = phase212.newPhase2.copy(
                 gc = QueryingReplicas(
                   chosenWatermark = chosenWatermark,
                   maxSlot = maxSlot,
@@ -1641,6 +1672,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                     makeResendExecutedWatermarkRequestsTimer()
                 )
               )
+              state = newPhase2
+
+              // Process any pending client requests.
+              for (clientRequest <- phase212.newPhase1.pendingClientRequests) {
+                processClientRequest(newPhase2, clientRequest)
+              }
             } else {
               val startNanos = System.nanoTime
               metrics.reconfigurationLatency
@@ -1654,6 +1691,11 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
                 newPhase2 = phase212.newPhase2,
                 startNanos = startNanos
               )
+
+              // Process any pending client requests.
+              for (clientRequest <- phase212.newPhase1.pendingClientRequests) {
+                processClientRequest(phase212.newPhase2, clientRequest)
+              }
             }
         }
     }
@@ -1687,16 +1729,18 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         processClientRequest(phase2, clientRequest)
 
       case phase2Matchmaking: Phase2Matchmaking =>
-        // TODO(mwhittaker): (Ablation) Add a flag here to store client
-        // requests in the Matchmaking's pending client requests instead of
-        // processing them in Phase2.
-        processClientRequest(phase2Matchmaking.phase2, clientRequest)
+        if (options.stallDuringMatchmaking) {
+          phase2Matchmaking.matchmaking.pendingClientRequests += clientRequest
+        } else {
+          processClientRequest(phase2Matchmaking.phase2, clientRequest)
+        }
 
       case phase212: Phase212 =>
-        // TODO(mwhittaker): (Ablation) Add a flag here to store client
-        // requests in the Phase1's pending client requests instead of
-        // processing them in Phase2.
-        processClientRequest(phase212.newPhase2, clientRequest)
+        if (options.stallDuringPhase1) {
+          phase212.newPhase1.pendingClientRequests += clientRequest
+        } else {
+          processClientRequest(phase212.newPhase2, clientRequest)
+        }
 
       case phase22: Phase22 =>
         processClientRequest(phase22.newPhase2, clientRequest)

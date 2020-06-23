@@ -14,7 +14,13 @@ import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
 
-class MatchmakerMultiPaxos(val f: Int, seed: Long) {
+class MatchmakerMultiPaxos(
+    val f: Int,
+    seed: Long,
+    stallDuringMatchmaking: Boolean,
+    stallDuringPhase1: Boolean,
+    disableGc: Boolean
+) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = 2
@@ -61,7 +67,10 @@ class MatchmakerMultiPaxos(val f: Int, seed: Long) {
       logger = new FakeLogger(),
       config = config,
       options = LeaderOptions.default.copy(
-        sendChosenWatermarkEveryN = 10
+        sendChosenWatermarkEveryN = 10,
+        stallDuringMatchmaking = stallDuringMatchmaking,
+        stallDuringPhase1 = stallDuringPhase1,
+        disableGc = disableGc
       ),
       metrics = new LeaderMetrics(FakeCollectors),
       seed = seed
@@ -133,7 +142,12 @@ object SimulatedMatchmakerMultiPaxos {
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
-class SimulatedMatchmakerMultiPaxos(val f: Int) extends SimulatedSystem {
+class SimulatedMatchmakerMultiPaxos(
+    val f: Int,
+    stallDuringMatchmaking: Boolean,
+    stallDuringPhase1: Boolean,
+    disableGc: Boolean
+) extends SimulatedSystem {
   import SimulatedMatchmakerMultiPaxos._
 
   override type System = MatchmakerMultiPaxos
@@ -147,7 +161,12 @@ class SimulatedMatchmakerMultiPaxos(val f: Int) extends SimulatedSystem {
   var valueChosen: Boolean = false
 
   override def newSystem(seed: Long): System =
-    new MatchmakerMultiPaxos(f, seed)
+    new MatchmakerMultiPaxos(f,
+                             seed,
+                             stallDuringMatchmaking = stallDuringMatchmaking,
+                             stallDuringPhase1 = stallDuringPhase1,
+                             disableGc = disableGc
+    )
 
   override def getState(paxos: System): State = {
     val logs = mutable.Buffer[Seq[CommandOrNoop]]()

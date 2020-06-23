@@ -82,6 +82,9 @@ class MatchmakerMultiPaxos {
         resendPhase1asPeriod = java.time.Duration.ofSeconds(10),
         resendPhase2asPeriod = java.time.Duration.ofSeconds(10),
         sendChosenWatermarkEveryN = 2,
+        stallDuringMatchmaking = false,
+        stallDuringPhase1 = false,
+        disableGc = false,
         electionOptions = ElectionOptions.default.copy(
           pingPeriod = java.time.Duration.ofSeconds(60),
           noPingTimeoutMin = java.time.Duration.ofSeconds(120),
