@@ -58,6 +58,9 @@ class LeaderOptions(NamedTuple):
         datetime.timedelta(seconds=1)
     send_chosen_watermark_every_n: int = 100
     stutter: int = 1000
+    stall_during_matchmaking: bool = False
+    stall_during_phase1: bool = False
+    disable_gc: bool = False
     election_options: ElectionOptions = ElectionOptions()
 
 
@@ -457,6 +460,14 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
                         total_seconds()),
                     '--options.sendChosenWatermarkEveryN',
                     str(input.leader_options.send_chosen_watermark_every_n),
+                    '--options.stutter',
+                    str(input.leader_options.stutter),
+                    '--options.stallDuringMatchmaking',
+                    str(input.leader_options.stall_during_matchmaking),
+                    '--options.stallDuringPhase1',
+                    str(input.leader_options.stall_during_phase1),
+                    '--options.disableGc',
+                    str(input.leader_options.disable_gc),
                     '--options.election.pingPeriod',
                     '{}s'.format(input.leader_options.election_options.
                                  ping_period.total_seconds()),

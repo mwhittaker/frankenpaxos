@@ -50,6 +50,18 @@ case class LeaderOptions(
     sendChosenWatermarkEveryN: Int,
     // Leaders use a ClassicStutteredRound round system. This is the stutter.
     stutter: Int,
+    // These flags are part of the ablation study that measures the effects or
+    // our optimizations.
+    //
+    //   - If stallDuringMatchmaking is true, then a leader in
+    //     Phase2Matchmaking will not process commands.
+    //   - If stallDuringMatchmaking is true, then a leader in
+    //     Phase212 will not process commands.
+    //   - If disableGc is true, then no garbage collection is performed at
+    //     all.
+    stallDuringMatchmaking: Boolean,
+    stallDuringPhase1: Boolean,
+    disableGc: Boolean,
     electionOptions: ElectionOptions,
     measureLatencies: Boolean
 )
@@ -66,10 +78,11 @@ object LeaderOptions {
     resendGarbageCollectsPeriod = java.time.Duration.ofSeconds(5),
     sendChosenWatermarkEveryN = 100,
     stutter = 1000,
+    stallDuringMatchmaking = false,
+    stallDuringPhase1 = false,
+    disableGc = false,
     electionOptions = ElectionOptions.default,
     measureLatencies = true
-
-    // TODO(mwhittaker): Add a flag to skip all garbage collection.
   )
 }
 
