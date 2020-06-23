@@ -84,41 +84,41 @@ def plot(n1: pd.DataFrame,
 
     # Draw vertical reconfiguration lines. The times are hardcoded and taken
     # from the Driver's output files. I know that's super jank, but oh well.
-    # origin = datetime.datetime(1970, 1, 1, second=0)
-    # naive_start_time = start_time.to_pydatetime().replace(tzinfo=None)
-    # reconfigurations = [
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=1, microsecond=379000),
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=2, microsecond=381000),
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=3, microsecond=383000),
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=4, microsecond=385000),
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=5, microsecond=387000),
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=6, microsecond=388000),
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=7, microsecond=390000),
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=8, microsecond=392000),
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=9, microsecond=394000),
-    #     datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=10, microsecond=396000),
-    # ]
-    # failure = datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=15, microsecond=373000)
-    # recover = datetime.datetime(
-    #         2020, 2, 22, hour=22, minute=11, second=20, microsecond=374000)
-    #
-    # for axes in ax:
-    #     for t in reconfigurations:
-    #         axes.axvline(x=origin + (t - naive_start_time), color='black')
-    #     axes.axvline(x=origin + (failure - naive_start_time), color='red',
-    #                  ls='--')
-    #     axes.axvline(x=origin + (recover - naive_start_time), color='black')
+    origin = datetime.datetime(1970, 1, 1, second=0)
+    naive_start_time = start_time.to_pydatetime().replace(tzinfo=None)
+    reconfigurations = [
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=29, microsecond=680000),
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=30, microsecond=682000),
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=31, microsecond=684000),
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=32, microsecond=686000),
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=33, microsecond=688000),
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=34, microsecond=690000),
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=35, microsecond=691000),
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=36, microsecond=693000),
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=37, microsecond=695000),
+        datetime.datetime(
+            2020, 6, 23, hour=4, minute=52, second=38, microsecond=697000),
+    ]
+    failure = datetime.datetime(
+        2020, 6, 23, hour=4, minute=52, second=43, microsecond=675000)
+    recover = datetime.datetime(
+        2020, 6, 23, hour=4, minute=52, second=48, microsecond=675000)
+
+    for axes in ax:
+        for t in reconfigurations:
+            axes.axvline(x=origin + (t - naive_start_time), color='black')
+        axes.axvline(x=origin + (failure - naive_start_time), color='red',
+                     ls='--')
+        axes.axvline(x=origin + (recover - naive_start_time), color='black')
 
     # Write legend.
     handles, labels = ax[0].get_legend_handles_labels()
