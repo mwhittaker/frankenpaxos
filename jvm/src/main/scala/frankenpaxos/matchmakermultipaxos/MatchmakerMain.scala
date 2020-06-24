@@ -28,6 +28,13 @@ object MatchmakerMain extends App {
       options: MatchmakerOptions = MatchmakerOptions.default
   )
 
+  implicit class OptionsWrapper[A](o: scopt.OptionDef[A, Flags]) {
+    def optionAction(
+        f: (A, MatchmakerOptions) => MatchmakerOptions
+    ): scopt.OptionDef[A, Flags] =
+      o.action((x, flags) => flags.copy(options = f(x, flags.options)))
+  }
+
   val parser = new scopt.OptionParser[Flags]("") {
     help("help")
 
@@ -42,6 +49,10 @@ object MatchmakerMain extends App {
     opt[Int]("prometheus_port")
       .action((x, f) => f.copy(prometheusPort = x))
       .text(s"-1 to disable")
+
+    // Options.
+    opt[java.time.Duration]("options.matchRequestDelay")
+      .optionAction((x, o) => o.copy(matchRequestDelay = x))
   }
 
   // Parse flags.

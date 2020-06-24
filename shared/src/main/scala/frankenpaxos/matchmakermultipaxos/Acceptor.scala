@@ -29,12 +29,17 @@ object Acceptor {
 
 @JSExportAll
 case class AcceptorOptions(
+    // When an Acceptor receives a Phase1a, it delays sending back a Phase1b
+    // for this amount of time. This simulates a WAN deployment without
+    // actually having to deploy on a WAN.
+    phase1aDelay: java.time.Duration,
     measureLatencies: Boolean
 )
 
 @JSExportAll
 object AcceptorOptions {
   val default = AcceptorOptions(
+    phase1aDelay = java.time.Duration.ofSeconds(0),
     measureLatencies = true
   )
 }
@@ -135,6 +140,10 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var persistedWatermark: Int = 0
 
+  // A nonce used to make phase1aDelay timer names unique.
+  @JSExport
+  protected var nonce: Int = 0
+
   @JSExport
   protected var states = mutable.SortedMap[Slot, State]()
 
@@ -228,7 +237,17 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
         })
         .toSeq
     )
-    leader.send(LeaderInbound().withPhase1B(phase1b))
+
+    if (options.phase1aDelay == java.time.Duration.ofSeconds(0)) {
+      leader.send(LeaderInbound().withPhase1B(phase1b))
+    } else {
+      val x = nonce
+      nonce += 1
+      val t = timer(s"phase1aDelay $x", options.phase1aDelay, () => {
+        leader.send(LeaderInbound().withPhase1B(phase1b))
+      })
+      t.start()
+    }
   }
 
   private def handlePhase2a(

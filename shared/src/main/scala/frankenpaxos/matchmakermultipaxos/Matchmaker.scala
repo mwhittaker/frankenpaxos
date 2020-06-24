@@ -31,12 +31,17 @@ object Matchmaker {
 
 @JSExportAll
 case class MatchmakerOptions(
+    // When a Matchmaker receives a MatchRequest, it delays sending back a
+    // MatchReply for this amount of time. This simulates a WAN deployment
+    // without actually having to deploy on a WAN.
+    matchRequestDelay: java.time.Duration,
     measureLatencies: Boolean
 )
 
 @JSExportAll
 object MatchmakerOptions {
   val default = MatchmakerOptions(
+    matchRequestDelay = java.time.Duration.ofSeconds(0),
     measureLatencies = true
   )
 }
@@ -164,6 +169,10 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExport
   protected var acceptorStates = mutable.SortedMap[Epoch, AcceptorState]()
+
+  // A nonce used to make matchRequestDelay timer names unique.
+  @JSExport
+  protected var nonce: Int = 0
 
   // For simplicity, we assume the first 2f+1 matchmakers are in the first
   // epoch.
@@ -363,19 +372,25 @@ class Matchmaker[Transport <: frankenpaxos.Transport[Transport]](
 
     // Send back all previous configurations and store the (potentially new)
     // acceptor group.
-    leader.send(
-      LeaderInbound().withMatchReply(
-        MatchReply(
-          epoch = epoch,
-          round = matchRequest.configuration.round,
-          matchmakerIndex = index,
-          gcWatermark = normal.gcWatermark,
-          configuration = normal.configurations.values
-            .takeWhile(_.round < matchRequest.configuration.round)
-            .toSeq
-        )
-      )
+    val matchReply = MatchReply(
+      epoch = epoch,
+      round = matchRequest.configuration.round,
+      matchmakerIndex = index,
+      gcWatermark = normal.gcWatermark,
+      configuration = normal.configurations.values
+        .takeWhile(_.round < matchRequest.configuration.round)
+        .toSeq
     )
+    if (options.matchRequestDelay == java.time.Duration.ofSeconds(0)) {
+      leader.send(LeaderInbound().withMatchReply(matchReply))
+    } else {
+      val x = nonce
+      nonce += 1
+      val t = timer(s"matchRequestDelay $x", options.matchRequestDelay, () => {
+        leader.send(LeaderInbound().withMatchReply(matchReply))
+      })
+      t.start()
+    }
 
     normal.configurations(matchRequest.configuration.round) =
       matchRequest.configuration

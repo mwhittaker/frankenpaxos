@@ -120,7 +120,9 @@ class MatchmakerMultiPaxos {
         transport = transport,
         logger = new JsLogger(),
         config = config,
-        options = MatchmakerOptions.default,
+        options = MatchmakerOptions.default.copy(
+          matchRequestDelay = java.time.Duration.ofSeconds(0)
+        ),
         metrics = new MatchmakerMetrics(FakeCollectors)
       )
     }
@@ -139,7 +141,9 @@ class MatchmakerMultiPaxos {
         transport = transport,
         logger = new JsLogger(),
         config = config,
-        options = AcceptorOptions.default,
+        options = AcceptorOptions.default.copy(
+          phase1aDelay = java.time.Duration.ofSeconds(0)
+        ),
         metrics = new AcceptorMetrics(FakeCollectors)
       )
     }

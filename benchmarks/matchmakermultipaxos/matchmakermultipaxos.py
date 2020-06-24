@@ -65,7 +65,7 @@ class LeaderOptions(NamedTuple):
 
 
 class MatchmakerOptions(NamedTuple):
-    pass
+    match_request_delay: datetime.timedelta = datetime.timedelta(seconds=0)
 
 
 class ReconfigurerOptions(NamedTuple):
@@ -80,7 +80,7 @@ class ReconfigurerOptions(NamedTuple):
 
 
 class AcceptorOptions(NamedTuple):
-    pass
+    phase1a_delay: datetime.timedelta = datetime.timedelta(seconds=0)
 
 
 class ReplicaOptions(NamedTuple):
@@ -297,6 +297,9 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     acceptor.host.ip(),
                     '--prometheus_port',
                     str(acceptor.port + 1) if input.monitored else '-1',
+                    '--options.phase1aDelay',
+                    '{}s'.format(input.acceptor_options
+                                      .phase1a_delay.total_seconds()),
                 ],
             )
             if input.profiled:
@@ -325,6 +328,9 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     matchmaker.host.ip(),
                     '--prometheus_port',
                     str(matchmaker.port + 1) if input.monitored else '-1',
+                    '--options.matchRequestDelay',
+                    '{}s'.format(input.matchmaker_options
+                                      .match_request_delay.total_seconds()),
                 ],
             )
             if input.profiled:
