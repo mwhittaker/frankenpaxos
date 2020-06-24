@@ -16,7 +16,7 @@ def main(args) -> None:
                     num_leaders = 2,
                     num_matchmakers = 3,
                     num_reconfigurers = 2,
-                    num_acceptors = 15,
+                    num_acceptors = 12,
                     num_replicas = 3,
                     client_jvm_heap_size = '15g',
                     leader_jvm_heap_size = '15g',
@@ -39,8 +39,8 @@ def main(args) -> None:
                             reconfiguration_warmup_period_ms = 100,
                             reconfiguration_warmup_num = 100,
                             reconfiguration_delay_ms = 30 * 1000,
-                            reconfiguration_period_ms = 1000,
-                            reconfiguration_num = 30,
+                            reconfiguration_period_ms = 2000,
+                            reconfiguration_num = 15,
                             failure_delay_ms = 1000 * 1000,
                             recover_delay_ms = 1000 * 1000,
                         ),
@@ -65,6 +65,9 @@ def main(args) -> None:
                             datetime.timedelta(seconds=60),
                         send_chosen_watermark_every_n = 100,
                         stutter = 1000,
+                        stall_during_matchmaking = stall_during_matchmaking,
+                        stall_during_phase1 = stall_during_phase1,
+                        disable_gc = disable_gc,
                         election_options = ElectionOptions(
                             ping_period = datetime.timedelta(seconds=60),
                             no_ping_timeout_min = \
@@ -108,16 +111,27 @@ def main(args) -> None:
                     driver_log_level = args.log_level,
                 )
                 for (num_client_procs, num_clients_per_proc) in
-                    [(1, 1), (4, 1), (4, 2)]
+                    # [(1, 1), (4, 1), (4, 2)]
+                    [(4, 2)]
+                for (stall_during_matchmaking,
+                     stall_during_phase1,
+                     disable_gc) in [
+                    (True, True, True),
+                    (True, True, False),
+                    (True, False, False),
+                    (False, False, False),
+                ]
             ] * 1)[:]
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
-                'f': input.f,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
-                'latency.median_ms': f'{output.latency.median_ms:.6}',
-                'start_throughput_1s.p90': f'{output.start_throughput_1s.p90:.6}',
+                'stall matchmaking': input.leader_options.stall_during_matchmaking,
+                'stall phase1': input.leader_options.stall_during_phase1,
+                'disable gc': input.leader_options.disable_gc,
+                'median latency': f'{output.latency.median_ms:.6}',
+                'throughput': f'{output.start_throughput_1s.p90:.6}',
             })
 
     suite = AblationSuite()
