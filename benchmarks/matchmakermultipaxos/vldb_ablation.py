@@ -16,7 +16,7 @@ def main(args) -> None:
                     num_leaders = 2,
                     num_matchmakers = 3,
                     num_reconfigurers = 2,
-                    num_acceptors = 12,
+                    num_acceptors = 6,
                     num_replicas = 3,
                     client_jvm_heap_size = '15g',
                     leader_jvm_heap_size = '15g',
@@ -27,7 +27,7 @@ def main(args) -> None:
                     driver_jvm_heap_size = '15g',
                     warmup_duration = datetime.timedelta(seconds=10),
                     warmup_timeout = datetime.timedelta(seconds=15),
-                    warmup_sleep = datetime.timedelta(seconds=0),
+                    warmup_sleep = datetime.timedelta(seconds=5),
                     duration = datetime.timedelta(seconds=55),
                     timeout = datetime.timedelta(seconds=60),
                     client_lag = datetime.timedelta(seconds=5),
@@ -35,12 +35,12 @@ def main(args) -> None:
                     workload = workload.StringWorkload(size_mean=1, size_std=0),
                     driver_workload = \
                         driver_workload.LeaderReconfiguration(
-                            reconfiguration_warmup_delay_ms = 10 * 1000,
-                            reconfiguration_warmup_period_ms = 100,
-                            reconfiguration_warmup_num = 100,
-                            reconfiguration_delay_ms = 30 * 1000,
-                            reconfiguration_period_ms = 2000,
-                            reconfiguration_num = 15,
+                            reconfiguration_warmup_delay_ms = 15 * 1000,
+                            reconfiguration_warmup_period_ms = 1000,
+                            reconfiguration_warmup_num = 10,
+                            reconfiguration_delay_ms = 35 * 1000,
+                            reconfiguration_period_ms = 3000,
+                            reconfiguration_num = 5,
                             failure_delay_ms = 1000 * 1000,
                             recover_delay_ms = 1000 * 1000,
                         ),
@@ -77,7 +77,10 @@ def main(args) -> None:
                         ),
                     ),
                     leader_log_level = args.log_level,
-                    matchmaker_options = MatchmakerOptions(),
+                    matchmaker_options = MatchmakerOptions(
+                        match_request_delay = \
+                            datetime.timedelta(milliseconds=match_delay_ms),
+                    ),
                     matchmaker_log_level = args.log_level,
                     reconfigurer_options = ReconfigurerOptions(
                         resend_stops_period = \
@@ -90,7 +93,10 @@ def main(args) -> None:
                             datetime.timedelta(seconds=60),
                     ),
                     reconfigurer_log_level = args.log_level,
-                    acceptor_options = AcceptorOptions(),
+                    acceptor_options = AcceptorOptions(
+                        phase1a_delay = \
+                            datetime.timedelta(milliseconds=phase1a_delay_ms),
+                    ),
                     acceptor_log_level = args.log_level,
                     replica_options = ReplicaOptions(
                         log_grow_size = 5000,
@@ -110,6 +116,8 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                     driver_log_level = args.log_level,
                 )
+                for match_delay_ms in [250]
+                for phase1a_delay_ms in [250]
                 for (num_client_procs, num_clients_per_proc) in
                     # [(1, 1), (4, 1), (4, 2)]
                     [(4, 2)]

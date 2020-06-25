@@ -8,11 +8,15 @@ from ... import pd_util
 from typing import Any, List, Tuple
 import argparse
 import datetime
+import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
 import re
+
+
+MARKERS = itertools.cycle(['o', '*', '^', 's'])
 
 
 def read_data(file,
@@ -36,22 +40,28 @@ def read_data(file,
     return (df, new_start_time)
 
 
-def plot_throughput(ax: plt.Axes, label: str,
+def plot_throughput(ax: plt.Axes, label: str, marker: str,
                     s: pd.Series, sample_every: int) -> None:
-    tput = pd_util.throughput(s, 1000, trim=True)[::sample_every]
-    ax.plot_date(tput.index, tput, fmt='-', label=label)
+    tput = pd_util.throughput(s, 500, trim=True)[::sample_every]
+    ax.plot_date(tput.index, tput,
+                 fmt='-', marker=marker, markevery=0.4, label='_nolegend_')
 
 
-def plot_latency(ax: plt.Axes, label: str,
+def plot_latency(ax: plt.Axes, label: str, marker: str,
                  s: pd.Series, sample_every: int) -> None:
-    median = s.rolling('1000ms').median()
-    p95 = s.rolling('1000ms').quantile(0.95)
-    line = ax.plot_date(s.index[::sample_every],
-                        median[::sample_every],
-                        label=label,
-                        fmt='-')[0]
-    ax.fill_between(s.index[::sample_every], median[::sample_every],
-                    p95[::sample_every], color=line.get_color(), alpha=0.25)
+    median = s.rolling('500ms').median()
+    # p95 = s.rolling('500ms').quantile(0.95)
+    max_latency = s.rolling('500ms').max()
+
+    ax.set_yscale('log')
+    line = ax.plot_date(s.index[::sample_every], median[::sample_every],
+                        fmt='-', marker=marker, markevery=0.2, label=label)[0]
+    ax.plot_date(s.index[::sample_every], max_latency[::sample_every],
+                 fmt='--', marker=marker, markevery=0.5, color=line.get_color(),
+                 label='_nolegend_')
+    # ax.fill_between(s.index[::sample_every], median[::sample_every],
+    #                 max_latency[::sample_every], color=line.get_color(),
+    #                 alpha=0.5)
 
 
 def plot(baseline: pd.DataFrame,
@@ -67,14 +77,22 @@ def plot(baseline: pd.DataFrame,
                            sharex=True)
 
     # Plot data.
-    plot_latency(ax[0], 'no opts', baseline['latency_nanos'] / 1e6, sample_every)
-    plot_latency(ax[0], '+gc', gc['latency_nanos'] / 1e6, sample_every)
-    plot_latency(ax[0], '+phase1', phase1['latency_nanos'] / 1e6, sample_every)
-    plot_latency(ax[0], '+matchmaking', matchmaking['latency_nanos'] / 1e6, sample_every)
-    plot_throughput(ax[1], 'no opts', baseline['delta'], sample_every)
-    plot_throughput(ax[1], '+gc', gc['delta'], sample_every)
-    plot_throughput(ax[1], '+phase1', phase1['delta'], sample_every)
-    plot_throughput(ax[1], '+matchmaking', matchmaking['delta'], sample_every)
+    plot_latency(ax[0], 'No Opts', next(MARKERS),
+                 baseline['latency_nanos'] / 1e6, sample_every)
+    plot_latency(ax[0], 'Opt 3', next(MARKERS),
+                 gc['latency_nanos'] / 1e6, sample_every)
+    plot_latency(ax[0], 'Opt 2,3', next(MARKERS),
+                 phase1['latency_nanos'] / 1e6, sample_every)
+    plot_latency(ax[0], 'Opt 1,2,3', next(MARKERS),
+                 matchmaking['latency_nanos'] / 1e6, sample_every)
+    plot_throughput(ax[1], 'No Opts', next(MARKERS),
+                    baseline['delta'], sample_every)
+    plot_throughput(ax[1], 'Opt 3', next(MARKERS),
+                    gc['delta'], sample_every)
+    plot_throughput(ax[1], 'Opt 2,3', next(MARKERS),
+                    phase1['delta'], sample_every)
+    plot_throughput(ax[1], 'Opt 1,2,3', next(MARKERS),
+                    matchmaking['delta'], sample_every)
 
     # Format x ticks nicely.
     for axes in ax:
@@ -90,21 +108,11 @@ def plot(baseline: pd.DataFrame,
     origin = datetime.datetime(1970, 1, 1, second=0)
     naive_start_time = start_time.to_pydatetime().replace(tzinfo=None)
     reconfigurations = [
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=12, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=14, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=16, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=18, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=20, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=22, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=24, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=26, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=28, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=30, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=32, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=34, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=36, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=38, microsecond=000000),
-        datetime.datetime(2020, 6, 24, hour=18, minute=8, second=40, microsecond=000000),
+        datetime.datetime(2020, 6, 25, hour=16, minute=33, second=56, microsecond=113000),
+        datetime.datetime(2020, 6, 25, hour=16, minute=33, second=59, microsecond=117000),
+        datetime.datetime(2020, 6, 25, hour=16, minute=34, second=2, microsecond=121000),
+        datetime.datetime(2020, 6, 25, hour=16, minute=34, second=5, microsecond=125000),
+        datetime.datetime(2020, 6, 25, hour=16, minute=34, second=8, microsecond=130000),
     ]
 
     for axes in ax:
@@ -128,12 +136,13 @@ def plot(baseline: pd.DataFrame,
 
 def main(args) -> None:
     # Read the data.
-    (baseline, start_time) = read_data(args.baseline, args.drop_head, args.drop_tail)
+    (baseline, start_time) = read_data(args.baseline, args.drop_head,
+                                       args.drop_tail + 5)
     (gc, _) = read_data(args.gc, args.drop_head, args.drop_tail)
     (phase1, _) = read_data(args.phase1, args.drop_head, args.drop_tail)
-    (matchmaking, _) = read_data(args.matchmaking, args.drop_head, args.drop_tail)
+    (matchmaking, _) = read_data(args.matchmaking, args.drop_head,
+                                 args.drop_tail)
 
-    # Plot the data.
     plot(
         baseline=baseline,
         gc=gc,
