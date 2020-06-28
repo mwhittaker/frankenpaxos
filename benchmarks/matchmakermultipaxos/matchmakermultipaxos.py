@@ -42,6 +42,7 @@ class ElectionOptions(NamedTuple):
 
 
 class LeaderOptions(NamedTuple):
+    thrifty: bool = True
     resend_match_requests_period: datetime.timedelta = \
         datetime.timedelta(seconds=1)
     resend_reconfigure_period: datetime.timedelta = \
@@ -441,6 +442,8 @@ class MatchmakerMultiPaxosSuite(benchmark.Suite[Input, Output]):
                     leader.host.ip(),
                     '--prometheus_port',
                     str(leader.port + 1) if input.monitored else '-1',
+                    '--options.thrifty',
+                    str(input.leader_options.thrifty),
                     '--options.resendMatchRequestsPeriod',
                     '{}s'.format(input.leader_options.
                                  resend_match_requests_period.total_seconds()),

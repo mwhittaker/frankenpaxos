@@ -65,6 +65,8 @@ object LeaderMain extends App {
       .text(s"-1 to disable")
 
     // Options.
+    opt[Boolean]("options.thrifty")
+      .optionAction((x, o) => o.copy(thrifty = x))
     opt[java.time.Duration]("options.resendMatchRequestsPeriod")
       .optionAction((x, o) => o.copy(resendMatchRequestsPeriod = x))
     opt[java.time.Duration]("options.resendReconfigurePeriod")

@@ -34,6 +34,8 @@ object Leader {
 
 @JSExportAll
 case class LeaderOptions(
+    // If true, Phase2as are thrifty.
+    thrifty: Boolean,
     // Leaders use timeouts to re-send requests and ensure liveness. These
     // durations determine how long a leader waits before re-sending a request.
     resendMatchRequestsPeriod: java.time.Duration,
@@ -69,6 +71,7 @@ case class LeaderOptions(
 @JSExportAll
 object LeaderOptions {
   val default = LeaderOptions(
+    thrifty = true,
     resendMatchRequestsPeriod = java.time.Duration.ofSeconds(5),
     resendReconfigurePeriod = java.time.Duration.ofSeconds(5),
     resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
@@ -816,6 +819,16 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
+  private def getPhase2aQuorum(
+      qs: QuorumSystem[AcceptorIndex]
+  ): Set[AcceptorIndex] = {
+    if (options.thrifty) {
+      qs.randomWriteQuorum()
+    } else {
+      qs.nodes()
+    }
+  }
+
   private def pendingClientRequests(
       state: State
   ): mutable.Buffer[ClientRequest] = {
@@ -930,7 +943,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     phase2.nextSlot += 1
     val value = CommandOrNoop().withCommand(clientRequest.command)
     val phase2a = Phase2a(slot = slot, round = phase2.round, value = value)
-    for (index <- phase2.quorumSystem.randomWriteQuorum()) {
+    for (index <- getPhase2aQuorum(phase2.quorumSystem)) {
       acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
     }
 
@@ -1522,14 +1535,14 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
             {}
 
           case Some(values) =>
-            // Proposer the values.
+            // Propose the values.
             val phase2bs =
               mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]]()
             for ((slot, value) <- values) {
               phase2bs(slot) = mutable.Map()
               val phase2a =
                 Phase2a(slot = slot, round = phase1.round, value = value)
-              for (index <- phase1.quorumSystem.randomWriteQuorum()) {
+              for (index <- getPhase2aQuorum(phase1.quorumSystem)) {
                 acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
               }
             }
@@ -1609,8 +1622,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               val phase2a = Phase2a(slot = slot,
                                     round = phase212.newPhase2.round,
                                     value = value)
-              for (index <- phase212.newPhase2.quorumSystem
-                     .randomWriteQuorum()) {
+              for (index <- getPhase2aQuorum(phase212.newPhase2.quorumSystem)) {
                 acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
               }
             }
@@ -1627,8 +1639,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
               val phase2a = Phase2a(slot = slot,
                                     round = phase212.newPhase2.round,
                                     value = CommandOrNoop().withNoop(Noop()))
-              for (index <- phase212.newPhase2.quorumSystem
-                     .randomWriteQuorum()) {
+              for (index <- getPhase2aQuorum(phase212.newPhase2.quorumSystem)) {
                 acceptors(index).send(AcceptorInbound().withPhase2A(phase2a))
               }
             }
