@@ -39,6 +39,7 @@ def main(args) -> None:
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     leader_options = LeaderOptions(
+                        thrifty = thrifty,
                         resend_match_requests_period = \
                             datetime.timedelta(seconds=60),
                         resend_reconfigure_period = \
@@ -97,6 +98,7 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                     driver_log_level = args.log_level,
                 )
+                for thrifty in [False]
                 for (num_client_procs, num_clients_per_proc) in [
                     (1, 1),
                     (1, 2),
@@ -118,6 +120,7 @@ def main(args) -> None:
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f': input.f,
+                'thrifty': input.leader_options.thrifty,
                 'num_client_procs': input.num_client_procs,
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'latency.median_ms': f'{output.latency.median_ms:.6}',
