@@ -47,6 +47,23 @@ message LeaderFailureProto {
     required int32 failure_delay_ms = 4;
 }
 
+message ChaosProto {
+    required int32 leader_change_warmup_delay_ms = 1;
+    required int32 leader_change_warmup_period_ms = 2;
+    required int32 leader_change_warmup_num = 3;
+    required int32 reconfiguration_warmup_delay_ms = 4;
+    required int32 reconfiguration_warmup_period_ms = 5;
+    required int32 reconfiguration_warmup_num = 6;
+    required int32 matchmaker_reconfiguration_warmup_delay_ms = 7;
+    required int32 matchmaker_reconfiguration_warmup_period_ms = 8;
+    required int32 matchmaker_reconfiguration_warmup_num = 9;
+    required int32 leader_failure_delay_ms = 10;
+    required int32 acceptor_failure_delay_ms = 11;
+    required int32 matchmaker_failure_delay_ms = 12;
+    required int32 acceptor_recover_delay_ms = 13;
+    required int32 matchmaker_recover_delay_ms = 14;
+}
+
 message DriverWorkloadProto {
   oneof value {
     DoNothingProto do_nothing = 1;
@@ -54,5 +71,6 @@ message DriverWorkloadProto {
     LeaderReconfigurationProto leader_reconfiguration = 3;
     MatchmakerReconfigurationProto matchmaker_reconfiguration = 4;
     LeaderFailureProto leader_failure = 5;
+    ChaosProto chaos = 6;
   }
 }

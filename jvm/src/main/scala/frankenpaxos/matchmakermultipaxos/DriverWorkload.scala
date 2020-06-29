@@ -64,6 +64,25 @@ case class LeaderFailure(
     failureDelay: java.time.Duration
 ) extends DriverWorkload
 
+// This workload involves failing a leader, an accpetor, and a matchmaker all
+// at the same time. This workload was requested by a reviewer.
+case class Chaos(
+    leaderChangeWarmupDelay: java.time.Duration,
+    leaderChangeWarmupPeriod: java.time.Duration,
+    leaderChangeWarmupNum: Int,
+    reconfigurationWarmupDelay: java.time.Duration,
+    reconfigurationWarmupPeriod: java.time.Duration,
+    reconfigurationWarmupNum: Int,
+    matchmakerReconfigurationWarmupDelay: java.time.Duration,
+    matchmakerReconfigurationWarmupPeriod: java.time.Duration,
+    matchmakerReconfigurationWarmupNum: Int,
+    leaderFailureDelay: java.time.Duration,
+    acceptorFailureDelay: java.time.Duration,
+    matchmakerFailureDelay: java.time.Duration,
+    acceptorRecoverDelay: java.time.Duration,
+    matchmakerRecoverDelay: java.time.Duration
+) extends DriverWorkload
+
 object DriverWorkload {
   def fromProto(proto: DriverWorkloadProto): DriverWorkload = {
     import DriverWorkloadProto.Value
@@ -119,6 +138,36 @@ object DriverWorkload {
             java.time.Duration.ofMillis(w.leaderChangeWarmupPeriodMs),
           leaderChangeWarmupNum = w.leaderChangeWarmupNum,
           failureDelay = java.time.Duration.ofMillis(w.failureDelayMs)
+        )
+
+      case Value.Chaos(w) =>
+        Chaos(
+          leaderChangeWarmupDelay =
+            java.time.Duration.ofMillis(w.leaderChangeWarmupDelayMs),
+          leaderChangeWarmupPeriod =
+            java.time.Duration.ofMillis(w.leaderChangeWarmupPeriodMs),
+          leaderChangeWarmupNum = w.leaderChangeWarmupNum,
+          reconfigurationWarmupDelay =
+            java.time.Duration.ofMillis(w.reconfigurationWarmupDelayMs),
+          reconfigurationWarmupPeriod =
+            java.time.Duration.ofMillis(w.reconfigurationWarmupPeriodMs),
+          reconfigurationWarmupNum = w.reconfigurationWarmupNum,
+          matchmakerReconfigurationWarmupDelay = java.time.Duration
+            .ofMillis(w.matchmakerReconfigurationWarmupDelayMs),
+          matchmakerReconfigurationWarmupPeriod = java.time.Duration
+            .ofMillis(w.matchmakerReconfigurationWarmupPeriodMs),
+          matchmakerReconfigurationWarmupNum =
+            w.matchmakerReconfigurationWarmupNum,
+          leaderFailureDelay =
+            java.time.Duration.ofMillis(w.leaderFailureDelayMs),
+          acceptorFailureDelay =
+            java.time.Duration.ofMillis(w.acceptorFailureDelayMs),
+          matchmakerFailureDelay =
+            java.time.Duration.ofMillis(w.matchmakerFailureDelayMs),
+          acceptorRecoverDelay =
+            java.time.Duration.ofMillis(w.acceptorRecoverDelayMs),
+          matchmakerRecoverDelay =
+            java.time.Duration.ofMillis(w.matchmakerRecoverDelayMs)
         )
 
       case Value.Empty =>

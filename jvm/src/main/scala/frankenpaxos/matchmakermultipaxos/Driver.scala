@@ -72,6 +72,20 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
       failureTimer: Transport#Timer
   ) extends State
 
+  case class ChaosState(
+      leaderChangeWarmupDelayTimer: Transport#Timer,
+      leaderChangeWarmupTimer: Transport#Timer,
+      reconfigurationWarmupDelayTimer: Transport#Timer,
+      reconfigurationWarmupTimer: Transport#Timer,
+      matchmakerReconfigurationWarmupDelayTimer: Transport#Timer,
+      matchmakerReconfigurationWarmupTimer: Transport#Timer,
+      leaderFailureTimer: Transport#Timer,
+      acceptorFailureTimer: Transport#Timer,
+      matchmakerFailureTimer: Transport#Timer,
+      acceptorRecoverTimer: Transport#Timer,
+      matchmakerRecoverTimer: Transport#Timer
+  ) extends State
+
   // Fields ////////////////////////////////////////////////////////////////////
   // Leader channels.
   private val leaders: Seq[Chan[Leader[Transport]]] =
@@ -389,6 +403,137 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
         leaderChangeWarmupDelayTimer = leaderChangeWarmupDelayTimer,
         leaderChangeWarmupTimer = leaderChangeWarmupTimer,
         failureTimer = failureTimer
+      )
+
+    case workload: Chaos =>
+      val (leaderChangeWarmupDelayTimer, leaderChangeWarmupTimer) =
+        delayedTimer(
+          name = "leader change warmup",
+          delay = workload.leaderChangeWarmupDelay,
+          period = workload.leaderChangeWarmupPeriod,
+          n = workload.leaderChangeWarmupNum,
+          f = () => {
+            logger.info(
+              "Leader change warmup triggered!"
+            )
+            becomeLeader(1)
+          },
+          onLast = () => {
+            logger.info(
+              "Leader change warmup triggered!"
+            )
+            becomeLeader(0)
+          }
+        )
+
+      val (reconfigurationWarmupDelayTimer, reconfigurationWarmupTimer) =
+        delayedTimer(
+          name = "reconfiguration warmup",
+          delay = workload.reconfigurationWarmupDelay,
+          period = workload.reconfigurationWarmupPeriod,
+          n = workload.reconfigurationWarmupNum,
+          f = () => {
+            logger.info(
+              "Reconfiguration warmup triggered!"
+            )
+            reconfigure(0, randomSubset(acceptors.size, 2 * config.f + 1))
+          },
+          onLast = () => {
+            logger.info(
+              "Reconfiguration warmup triggered!"
+            )
+            reconfigure(0, Set() ++ (0 until 2 * config.f + 1))
+          }
+        )
+
+      val (matchmakerReconfigurationWarmupDelayTimer,
+           matchmakerReconfigurationWarmupTimer) =
+        delayedTimer(
+          name = "matchmakerReconfiguration warmup",
+          delay = workload.matchmakerReconfigurationWarmupDelay,
+          period = workload.matchmakerReconfigurationWarmupPeriod,
+          n = workload.matchmakerReconfigurationWarmupNum,
+          f = () => {
+            logger.info(
+              "Matchmaker reconfiguration warmup triggered!"
+            )
+            matchmakerReconfigure(
+              0,
+              randomSubset(matchmakers.size, 2 * config.f + 1)
+            )
+          },
+          onLast = () => {
+            logger.info(
+              "Matchmaker reconfiguration warmup triggered!"
+            )
+            matchmakerReconfigure(0, Set() ++ (0 until 2 * config.f + 1))
+          }
+        )
+
+      val leaderFailureTimer = timer(
+        "leader failure",
+        workload.leaderFailureDelay,
+        () => {
+          logger.info("Leader failure triggered!")
+          leaders(0).send(LeaderInbound().withDie(Die()))
+        }
+      )
+      leaderFailureTimer.start()
+
+      val acceptorFailureTimer = timer(
+        "acceptor failure",
+        workload.acceptorFailureDelay,
+        () => {
+          logger.info("Acceptor failure triggered!")
+          acceptors(0).send(AcceptorInbound().withDie(Die()))
+        }
+      )
+      acceptorFailureTimer.start()
+
+      val matchmakerFailureTimer = timer(
+        "matchmaker failure",
+        workload.matchmakerFailureDelay,
+        () => {
+          logger.info("Matchmaker failure triggered!")
+          matchmakers(0).send(MatchmakerInbound().withDie(Die()))
+        }
+      )
+      matchmakerFailureTimer.start()
+
+      val acceptorRecoverTimer = timer(
+        "acceptor recover",
+        workload.acceptorRecoverDelay,
+        () => {
+          logger.info("acceptor recover triggered!")
+          reconfigure(0, Set() ++ (1 to 2 * config.f + 1))
+        }
+      )
+      acceptorRecoverTimer.start()
+
+      val matchmakerRecoverTimer = timer(
+        "matchmaker recover",
+        workload.matchmakerRecoverDelay,
+        () => {
+          logger.info("matchmaker recover triggered!")
+          matchmakerReconfigure(0, Set() ++ (1 to 2 * config.f + 1))
+        }
+      )
+      matchmakerRecoverTimer.start()
+
+      ChaosState(
+        leaderChangeWarmupDelayTimer = leaderChangeWarmupDelayTimer,
+        leaderChangeWarmupTimer = leaderChangeWarmupTimer,
+        reconfigurationWarmupDelayTimer = reconfigurationWarmupDelayTimer,
+        reconfigurationWarmupTimer = reconfigurationWarmupTimer,
+        matchmakerReconfigurationWarmupDelayTimer =
+          matchmakerReconfigurationWarmupDelayTimer,
+        matchmakerReconfigurationWarmupTimer =
+          matchmakerReconfigurationWarmupTimer,
+        leaderFailureTimer = leaderFailureTimer,
+        acceptorFailureTimer = acceptorFailureTimer,
+        matchmakerFailureTimer = matchmakerFailureTimer,
+        acceptorRecoverTimer = acceptorRecoverTimer,
+        matchmakerRecoverTimer = matchmakerRecoverTimer
       )
   }
 

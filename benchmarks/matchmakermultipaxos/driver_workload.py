@@ -106,7 +106,6 @@ class LeaderFailure(NamedTuple):
     name: str = 'LeaderFailure'
 
     def to_proto(self) -> proto_util.Message:
-
         return {
             'leader_failure': {
                 'leader_change_warmup_delay_ms':
@@ -121,6 +120,59 @@ class LeaderFailure(NamedTuple):
         }
 
 
+class Chaos(NamedTuple):
+    leader_change_warmup_delay_ms: int
+    leader_change_warmup_period_ms: int
+    leader_change_warmup_num: int
+    reconfiguration_warmup_delay_ms: int
+    reconfiguration_warmup_period_ms: int
+    reconfiguration_warmup_num: int
+    matchmaker_reconfiguration_warmup_delay_ms: int
+    matchmaker_reconfiguration_warmup_period_ms: int
+    matchmaker_reconfiguration_warmup_num: int
+    leader_failure_delay_ms: int
+    acceptor_failure_delay_ms: int
+    matchmaker_failure_delay_ms: int
+    acceptor_recover_delay_ms: int
+    matchmaker_recover_delay_ms: int
+    # We put the name here so that it appears in benchmark outputs.
+    name: str = 'Chaos'
+
+    def to_proto(self) -> proto_util.Message:
+        return {
+            'leader_failure': {
+                'leader_change_warmup_delay_ms':
+                    self.leader_change_warmup_delay_ms,
+                'leader_change_warmup_period_ms':
+                    self.leader_change_warmup_period_ms,
+                'leader_change_warmup_num':
+                    self.leader_change_warmup_num,
+                'reconfiguration_warmup_delay_ms':
+                    self.reconfiguration_warmup_delay_ms,
+                'reconfiguration_warmup_period_ms':
+                    self.reconfiguration_warmup_period_ms,
+                'reconfiguration_warmup_num':
+                    self.reconfiguration_warmup_num,
+                'matchmaker_reconfiguration_warmup_delay_ms':
+                    self.matchmaker_reconfiguration_warmup_delay_ms,
+                'matchmaker_reconfiguration_warmup_period_ms':
+                    self.matchmaker_reconfiguration_warmup_period_ms,
+                'matchmaker_reconfiguration_warmup_num':
+                    self.matchmaker_reconfiguration_warmup_num,
+                'leader_failure_delay_ms':
+                    self.leader_failure_delay_ms,
+                'acceptor_failure_delay_ms':
+                    self.acceptor_failure_delay_ms,
+                'matchmaker_failure_delay_ms':
+                    self.matchmaker_failure_delay_ms,
+                'acceptor_recover_delay_ms':
+                    self.acceptor_recover_delay_ms,
+                'matchmaker_recover_delay_ms':
+                    self.matchmaker_recover_delay_ms,
+            }
+        }
+
+
 DriverWorkload = Union[DoNothing, RepeatedLeaderReconfiguration,
                        LeaderReconfiguration, MatchmakerReconfiguration,
-                       LeaderFailure]
+                       LeaderFailure, Chaos]
