@@ -505,7 +505,7 @@ class Driver[Transport <: frankenpaxos.Transport[Transport]](
         workload.acceptorRecoverDelay,
         () => {
           logger.info("acceptor recover triggered!")
-          reconfigure(0, Set() ++ (1 to 2 * config.f + 1))
+          reconfigure(1, Set() ++ (1 to 2 * config.f + 1))
         }
       )
       acceptorRecoverTimer.start()

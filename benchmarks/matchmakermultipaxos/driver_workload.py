@@ -140,7 +140,7 @@ class Chaos(NamedTuple):
 
     def to_proto(self) -> proto_util.Message:
         return {
-            'leader_failure': {
+            'chaos': {
                 'leader_change_warmup_delay_ms':
                     self.leader_change_warmup_delay_ms,
                 'leader_change_warmup_period_ms':

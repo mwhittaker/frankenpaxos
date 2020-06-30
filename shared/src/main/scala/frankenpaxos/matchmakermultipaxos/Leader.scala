@@ -967,7 +967,9 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     metrics.becomeLeaderTotal.inc()
 
     stopTimers(state)
-    val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
+    // val (qs, qsp) = getRandomQuorumSystem(config.numAcceptors)
+    val qs = new SimpleMajority((0 until (2 * config.f + 1)).toSet, seed)
+    val qsp = QuorumSystem.toProto(qs)
     state = startMatchmaking(newRound, pendingClientRequests(state), qs, qsp)
   }
 
