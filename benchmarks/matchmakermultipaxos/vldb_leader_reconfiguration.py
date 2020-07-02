@@ -111,7 +111,7 @@ def main(args) -> None:
                 # for f in [1, 2]
                 for f in [1]
                 for n in [2*f+1]
-                for thrifty in [False]
+                for thrifty in [True]
                 for (num_client_procs, num_clients_per_proc) in
                     [(1, 1), (4, 1), (4, 2)]
                     # [(1, 100)]
