@@ -331,21 +331,21 @@ def get_parser() -> argparse.ArgumentParser:
 
     parser.add_argument('--output_f1',
                         type=str,
-                        default='vldb_leader_reconfiguration_f=1.pdf',
+                        default='leader_reconfiguration_f1.pdf',
                         help='f=1 output filename')
     parser.add_argument('--output_f2',
                         type=str,
-                        default='vldb_leader_reconfiguration_f=2.pdf',
+                        default='leader_reconfiguration_f2.pdf',
                         help='f=2 output filename')
     parser.add_argument(
         '--output_violin_throughput',
         type=str,
-        default='vldb_leader_reconfiguration_violin_throughput.pdf',
+        default='leader_reconfiguration_violin_throughput.pdf',
         help='f=1 violin throughput output filename')
     parser.add_argument(
         '--output_violin_latency',
         type=str,
-        default='vldb_leader_reconfiguration_violin_latency.pdf',
+        default='leader_reconfiguration_violin_latency.pdf',
         help='f=1 violin latency output filename')
 
     return parser

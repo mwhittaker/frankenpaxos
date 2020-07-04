@@ -88,7 +88,6 @@ def plot(n1: pd.DataFrame,
          n4: pd.DataFrame,
          n8: pd.DataFrame,
          output_filename: str,
-         f: int,
          start_time,
          sample_every: int):
     # Create figure.
@@ -159,20 +158,19 @@ def main(args) -> None:
     # Read the data. To align the benchmarks, we manually nudge. Ideally, we
     # would do some ultra fancy code to synchronize all the stuff, but it's not
     # worth it.
-    (f1n1, start_time) = read_data(args.f1n1, args.drop_head, args.drop_tail,
-                                   nudge=datetime.timedelta(seconds=0))
-    (f1n4, _) = read_data(args.f1n4, args.drop_head, args.drop_tail,
-                          nudge=datetime.timedelta(milliseconds=350))
-    (f1n8, _) = read_data(args.f1n8, args.drop_head, args.drop_tail,
-                          nudge=datetime.timedelta(milliseconds=450))
+    (n1, start_time) = read_data(args.n1, args.drop_head, args.drop_tail,
+                                 nudge=datetime.timedelta(seconds=0))
+    (n4, _) = read_data(args.n4, args.drop_head, args.drop_tail,
+                        nudge=datetime.timedelta(milliseconds=350))
+    (n8, _) = read_data(args.n8, args.drop_head, args.drop_tail,
+                        nudge=datetime.timedelta(milliseconds=450))
 
     # Plot the data.
     plot(
-        n1=f1n1,
-        n4=f1n4,
-        n8=f1n8,
-        output_filename=args.output_f1,
-        f=1,
+        n1=n1,
+        n4=n4,
+        n8=n8,
+        output_filename=args.output,
         start_time=start_time,
         sample_every=args.sample_every,
     )
@@ -197,20 +195,20 @@ def get_parser() -> argparse.ArgumentParser:
         default=1,
         help='Sample every n.')
 
-    parser.add_argument('--f1n1',
+    parser.add_argument('--n1',
                         type=argparse.FileType('r'),
-                        help='f=1, n=1 data.csv file')
-    parser.add_argument('--f1n4',
+                        help='n=1 data.csv file')
+    parser.add_argument('--n4',
                         type=argparse.FileType('r'),
-                        help='f=1, n=4 data.csv file')
-    parser.add_argument('--f1n8',
+                        help='n=4 data.csv file')
+    parser.add_argument('--n8',
                         type=argparse.FileType('r'),
-                        help='f=1, n=8 data.csv file')
+                        help='n=8 data.csv file')
 
-    parser.add_argument('--output_f1',
+    parser.add_argument('--output',
                         type=str,
-                        default='vldb_matchmaker_reconfiguration_f=1.pdf',
-                        help='f=1 output filename')
+                        default='leader_failure.pdf',
+                        help='Output filename')
 
     return parser
 

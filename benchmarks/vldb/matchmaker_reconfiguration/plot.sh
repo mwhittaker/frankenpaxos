@@ -8,14 +8,14 @@ main() {
         --sample_every "100" \
         --drop_head "10" \
         --drop_tail "15" \
-        --f1n1 <(gunzip -c "$d/f=1_n=1.csv.gz") \
-        --f1n4 <(gunzip -c "$d/f=1_n=4.csv.gz") \
-        --f1n8 <(gunzip -c "$d/f=1_n=8.csv.gz") \
-        --f2n1 <(gunzip -c "$d/f=2_n=1.csv.gz") \
-        --f2n4 <(gunzip -c "$d/f=2_n=4.csv.gz") \
-        --f2n8 <(gunzip -c "$d/f=2_n=8.csv.gz") \
-        --output_f1 "$d/../output/matchmaker_reconfiguration_f=1.pdf" \
-        --output_f2 "$d/../output/matchmaker_reconfiguration_f=2.pdf"
+        --f1n1 <(gunzip -c "$d/f1n1.csv.gz") \
+        --f1n4 <(gunzip -c "$d/f1n4.csv.gz") \
+        --f1n8 <(gunzip -c "$d/f1n8.csv.gz") \
+        --f2n1 <(gunzip -c "$d/f2n1.csv.gz") \
+        --f2n4 <(gunzip -c "$d/f2n4.csv.gz") \
+        --f2n8 <(gunzip -c "$d/f2n8.csv.gz") \
+        --output_f1 "$d/../output/matchmaker_reconfiguration_f1.pdf" \
+        --output_f2 "$d/../output/matchmaker_reconfiguration_f2.pdf"
 }
 
 main "$@"

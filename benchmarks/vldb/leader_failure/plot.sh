@@ -8,10 +8,10 @@ main() {
         --sample_every "100" \
         --drop_head "12" \
         --drop_tail "3" \
-        --f1n1 <(gunzip -c "$d/f=1_n=1.csv.gz") \
-        --f1n4 <(gunzip -c "$d/f=1_n=4.csv.gz") \
-        --f1n8 <(gunzip -c "$d/f=1_n=8.csv.gz") \
-        --output_f1 "$d/../output/leader_failure_f=1.pdf"
+        --n1 <(gunzip -c "$d/n1.csv.gz") \
+        --n4 <(gunzip -c "$d/n4.csv.gz") \
+        --n8 <(gunzip -c "$d/n8.csv.gz") \
+        --output "$d/../output/leader_failure.pdf"
 }
 
 main "$@"
