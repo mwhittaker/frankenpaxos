@@ -4,7 +4,7 @@ set -euo pipefail
 
 main() {
     local -r d="$(dirname $0)"
-    python -m benchmarks.vldb.chaos.plot \
+    python -m benchmarks.vldb20_matchmaker.chaos.plot \
         --sample_every "100" \
         --drop_head "10" \
         --drop_tail "10" \

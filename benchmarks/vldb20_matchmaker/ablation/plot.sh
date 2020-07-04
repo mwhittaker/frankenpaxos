@@ -4,7 +4,7 @@ set -euo pipefail
 
 main() {
     local -r d="$(dirname $0)"
-    python -m benchmarks.vldb.ablation.plot \
+    python -m benchmarks.vldb20_matchmaker.ablation.plot \
         --sample_every "100" \
         --drop_head "19" \
         --drop_tail "17" \

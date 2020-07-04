@@ -4,7 +4,7 @@ set -euo pipefail
 
 main() {
     local -r d="$(dirname $0)"
-    python -m benchmarks.vldb.horizontal_leader_failure.plot \
+    python -m benchmarks.vldb20_matchmaker.horizontal_leader_failure.plot \
         --sample_every "100" \
         --drop_head "12" \
         --drop_tail "3" \

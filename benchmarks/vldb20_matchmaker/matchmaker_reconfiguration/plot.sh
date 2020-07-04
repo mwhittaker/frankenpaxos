@@ -4,7 +4,7 @@ set -euo pipefail
 
 main() {
     local -r d="$(dirname $0)"
-    python -m benchmarks.vldb.matchmaker_reconfiguration.plot \
+    python -m benchmarks.vldb20_matchmaker.matchmaker_reconfiguration.plot \
         --sample_every "100" \
         --drop_head "10" \
         --drop_tail "15" \
