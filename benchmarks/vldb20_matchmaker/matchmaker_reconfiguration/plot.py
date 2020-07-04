@@ -122,23 +122,23 @@ def plot(n1: pd.DataFrame,
     origin = datetime.datetime(1970, 1, 1, second=0)
     naive_start_time = start_time.to_pydatetime().replace(tzinfo=None)
     matchmaker_reconfigurations = [
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=37, microsecond=863000),
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=38, microsecond=876000),
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=39, microsecond=878000),
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=40, microsecond=880000),
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=41, microsecond=881000),
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=42, microsecond=883000),
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=43, microsecond=885000),
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=44, microsecond=887000),
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=45, microsecond=889000),
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=46, microsecond=891000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=21, microsecond=46000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=22, microsecond=58000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=23, microsecond=60000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=24, microsecond=62000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=25, microsecond=64000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=26, microsecond=65000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=27, microsecond=67000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=28, microsecond=69000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=29, microsecond=71000),
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=30, microsecond=73000),
     ]
     failure = \
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=51, microsecond=857000)
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=35, microsecond=40000)
     recover = \
-        datetime.datetime(2020, 2, 22, hour=17, minute=52, second=56, microsecond=857000)
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=40, microsecond=41000)
     reconfigure = \
-        datetime.datetime(2020, 2, 22, hour=17, minute=53, second=1, microsecond=857000)
+        datetime.datetime(2020, 7, 2, hour=19, minute=30, second=45, microsecond=41000)
 
     for axes in ax:
         for t in matchmaker_reconfigurations:
@@ -243,11 +243,11 @@ def get_parser() -> argparse.ArgumentParser:
 
     parser.add_argument('--output_f1',
                         type=str,
-                        default='vldb_matchmaker_reconfiguration_f=1.pdf',
+                        default='matchmaker_reconfiguration_f1.pdf',
                         help='f=1 output filename')
     parser.add_argument('--output_f2',
                         type=str,
-                        default='vldb_matchmaker_reconfiguration_f=2.pdf',
+                        default='matchmaker_reconfiguration_f2.pdf',
                         help='f=2 output filename')
 
     return parser

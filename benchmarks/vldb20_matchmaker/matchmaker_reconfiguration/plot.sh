@@ -6,7 +6,7 @@ main() {
     local -r d="$(dirname $0)"
     python -m benchmarks.vldb20_matchmaker.matchmaker_reconfiguration.plot \
         --sample_every "100" \
-        --drop_head "10" \
+        --drop_head "15" \
         --drop_tail "15" \
         --f1n1 <(gunzip -c "$d/f1n1.csv.gz") \
         --f1n4 <(gunzip -c "$d/f1n4.csv.gz") \
