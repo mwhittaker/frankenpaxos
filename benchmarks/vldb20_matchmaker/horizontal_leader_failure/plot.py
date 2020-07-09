@@ -8,11 +8,15 @@ from ... import pd_util
 from typing import Any, List, Tuple
 import argparse
 import datetime
+import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
 import re
+
+
+MARKERS = itertools.cycle(['v', 's', 'P'])
 
 
 def read_data(file,
@@ -49,22 +53,25 @@ def split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def plot_throughput(ax: plt.Axes, n: int, before: pd.Series, after: pd.Series,
-                    sample_every: int) -> None:
+                    sample_every: int, marker: str) -> None:
     tput_before = pd_util.throughput(before, 1000, trim=True)[::sample_every]
-    line = ax.plot_date(tput_before.index, tput_before, fmt='-') [0]
+    line = ax.plot_date(tput_before.index, tput_before, fmt='-',
+                        marker=marker, markevery=0.1) [0]
     tput_after = pd_util.throughput(after, 1000, trim=False)[::sample_every]
-    line = ax.plot_date(tput_after.index, tput_after, fmt='-',
-                        color=line.get_color())
+    line = ax.plot_date(tput_after.index, tput_after, fmt='-', marker=marker,
+                        markevery=0.1, color=line.get_color())
 
 
 def plot_latency(ax: plt.Axes, n: int, before: pd.Series, after: pd.Series,
-                 sample_every: int) -> None:
+                 sample_every: int, marker: str) -> None:
     median_before = before.rolling('1000ms').median()
     p95_before = before.rolling('1000ms').quantile(0.95)
     line = ax.plot_date(before.index[::sample_every],
                         median_before[::sample_every],
                         label='_nolegend_',
-                        fmt='-')[0]
+                        fmt='-',
+                        marker=marker,
+                        markevery=0.1)[0]
     ax.fill_between(before.index[::sample_every],
                     median_before[::sample_every],
                     p95_before[::sample_every],
@@ -77,7 +84,9 @@ def plot_latency(ax: plt.Axes, n: int, before: pd.Series, after: pd.Series,
                  median_after[::sample_every],
                  label=label,
                  color = line.get_color(),
-                 fmt='-')
+                 fmt='-',
+                 marker=marker,
+                 markevery=0.1)
     ax.fill_between(after.index[::sample_every],
                     median_after[::sample_every],
                     p95_after[::sample_every],
@@ -105,16 +114,19 @@ def plot(n1: pd.DataFrame,
 
     # Plot data.
     plot_latency(ax[0], 1, n1_before['latency_nanos'] / 1e6,
-                 n1_after['latency_nanos'] / 1e6, sample_every)
+                 n1_after['latency_nanos'] / 1e6, sample_every, next(MARKERS))
     plot_latency(ax[0], 4, n4_before['latency_nanos'] / 1e6,
-                 n4_after['latency_nanos'] / 1e6, sample_every)
+                 n4_after['latency_nanos'] / 1e6, sample_every, next(MARKERS))
     plot_latency(ax[0], 8, n8_before['latency_nanos'] / 1e6,
-                 n8_after['latency_nanos'] / 1e6, sample_every)
+                 n8_after['latency_nanos'] / 1e6, sample_every, next(MARKERS))
     ax[0].set_ylim([0, 2.0])
 
-    plot_throughput(ax[1], 1, n1_before['delta'], n1_after['delta'], sample_every)
-    plot_throughput(ax[1], 4, n4_before['delta'], n4_after['delta'], sample_every)
-    plot_throughput(ax[1], 8, n8_before['delta'], n8_after['delta'], sample_every)
+    plot_throughput(ax[1], 1, n1_before['delta'], n1_after['delta'],
+                    sample_every, next(MARKERS))
+    plot_throughput(ax[1], 4, n4_before['delta'], n4_after['delta'],
+                    sample_every, next(MARKERS))
+    plot_throughput(ax[1], 8, n8_before['delta'], n8_after['delta'],
+                    sample_every, next(MARKERS))
 
     # Format x ticks nicely.
     for axes in ax:

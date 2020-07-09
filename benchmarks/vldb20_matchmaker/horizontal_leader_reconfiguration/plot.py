@@ -8,11 +8,15 @@ from ... import pd_util
 from typing import Any, List, Tuple
 import argparse
 import datetime
+import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
 import re
+
+
+MARKERS = itertools.cycle(['v', 's', 'P'])
 
 
 def read_data(file,
@@ -36,19 +40,24 @@ def read_data(file,
     return (df, new_start_time)
 
 
-def plot_throughput(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> None:
+def plot_throughput(ax: plt.Axes, n: int, s: pd.Series, sample_every: int,
+                    marker: str) -> None:
     tput = pd_util.throughput(s, 1000, trim=True)[::sample_every]
-    ax.plot_date(tput.index, tput, fmt='-', label=f'{n} clients')
+    ax.plot_date(tput.index, tput, fmt='-', marker=marker, markevery=0.1,
+                 label=f'{n} clients')
 
 
-def plot_latency(ax: plt.Axes, n: int, s: pd.Series, sample_every: int) -> None:
+def plot_latency(ax: plt.Axes, n: int, s: pd.Series, sample_every: int,
+                 marker: str) -> None:
     median = s.rolling('1000ms').median()
     p95 = s.rolling('1000ms').quantile(0.95)
     label = '1 client' if n == 1 else f'{n} clients'
     line = ax.plot_date(s.index[::sample_every],
                         median[::sample_every],
                         label=label,
-                        fmt='-')[0]
+                        fmt='-',
+                        marker=marker,
+                        markevery=0.1)[0]
     ax.fill_between(s.index[::sample_every], median[::sample_every],
                     p95[::sample_every], color=line.get_color(), alpha=0.25)
 
@@ -66,12 +75,12 @@ def plot(n1: pd.DataFrame,
                            sharex=True)
 
     # Plot data.
-    plot_latency(ax[0], 1, n1['latency_nanos'] / 1e6, sample_every)
-    plot_latency(ax[0], 4, n4['latency_nanos'] / 1e6, sample_every)
-    plot_latency(ax[0], 8, n8['latency_nanos'] / 1e6, sample_every)
-    plot_throughput(ax[1], 1, n1['delta'], sample_every)
-    plot_throughput(ax[1], 4, n4['delta'], sample_every)
-    plot_throughput(ax[1], 8, n8['delta'], sample_every)
+    plot_latency(ax[0], 1, n1['latency_nanos'] / 1e6, sample_every, next(MARKERS))
+    plot_latency(ax[0], 4, n4['latency_nanos'] / 1e6, sample_every, next(MARKERS))
+    plot_latency(ax[0], 8, n8['latency_nanos'] / 1e6, sample_every, next(MARKERS))
+    plot_throughput(ax[1], 1, n1['delta'], sample_every, next(MARKERS))
+    plot_throughput(ax[1], 4, n4['delta'], sample_every, next(MARKERS))
+    plot_throughput(ax[1], 8, n8['delta'], sample_every, next(MARKERS))
 
     # Format x ticks nicely.
     for axes in ax:
