@@ -4,8 +4,8 @@ set -euo pipefail
 
 main() {
     local -r d="$(dirname $0)"
-    python -m benchmarks.vldb21_evelyn.e0_theory.plot \
-        --output_dir "$d/.." \
+    python -m benchmarks.vldb21_evelyn.theory.plot \
+        --output_dir "$d/../output/" \
         --alpha 100000
 }
 

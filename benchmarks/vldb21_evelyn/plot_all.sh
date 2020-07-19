@@ -2,14 +2,21 @@
 
 set -euo pipefail
 
+run_script() {
+    echo "$1"
+    echo "$1" | sed -e 's/./=/g'
+    bash "$1"
+    echo ""
+}
+
 main() {
     local -r d="$(dirname $0)"
-    bash "$d/e0_theory/plot.sh"
-    bash "$d/e1_lt_surprise/plot.sh"
-    bash "$d/e2_no_scale_replica/plot.sh"
-    bash "$d/e3_no_scale_fraction/plot.sh"
-    bash "$d/e4_scale_replica/plot.sh"
-    bash "$d/e5_scale_load/plot.sh"
+    run_script "$d/lt_surprise/plot.sh"
+    run_script "$d/no_scale_fraction/plot.sh"
+    run_script "$d/no_scale_replica/plot.sh"
+    run_script "$d/scale_load/plot.sh"
+    run_script "$d/scale_replica/plot.sh"
+    run_script "$d/theory/plot.sh"
 }
 
 main "$@"

@@ -29,7 +29,7 @@ def plot_throughput_vs_num_replicas(args) -> None:
     ax[1].set_ylabel('Peak write throughput')
     ax[2].set_ylabel('Peak read throughput')
     ax[0].legend(loc='best')
-    output_filename = os.path.join(args.output_dir, 'e0_tput_vs_replicas.pdf')
+    output_filename = os.path.join(args.output_dir, 'theory_tput_vs_replicas.pdf')
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
 
@@ -63,7 +63,7 @@ def plot_throughput_vs_write_ratio(args) -> None:
     ax[1].set_ylabel('Peak write throughput')
     ax[2].set_ylabel('Peak read throughput')
     ax[0].legend(loc='best')
-    output_filename = os.path.join(args.output_dir, 'e0_tput_vs_fraction.pdf')
+    output_filename = os.path.join(args.output_dir, 'theory_tput_vs_fraction.pdf')
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
 
@@ -89,7 +89,7 @@ def plot_nice_throughput_vs_num_replicas(args) -> None:
     ax[1].set_ylabel('Read fraction')
     ax[0].legend(loc='best')
     output_filename = os.path.join(args.output_dir,
-                                   'e0_nice_tput_vs_replicas.pdf')
+                                   'theory_nice_tput_vs_replicas.pdf')
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
 
@@ -108,7 +108,7 @@ def plot_nice_throughput_vs_writes(args) -> None:
     ax.set_ylabel('Peak throughput')
     ax.legend(loc='best')
     output_filename = os.path.join(args.output_dir,
-                                   'e0_nice_tput_vs_writes.pdf')
+                                   'theory_nice_tput_vs_writes.pdf')
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
 
