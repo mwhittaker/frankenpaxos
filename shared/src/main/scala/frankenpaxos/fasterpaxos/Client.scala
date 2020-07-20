@@ -173,7 +173,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var states = mutable.Map[Pseudonym, State]()
 
-  // Helpers ///////////////////////////////////////////////////////////////////
+  // Timers ////////////////////////////////////////////////////////////////////
   private def makeResendClientRequestTimer(
       command: Command
   ): Transport#Timer = {
