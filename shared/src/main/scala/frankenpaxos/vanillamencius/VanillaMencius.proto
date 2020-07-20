@@ -1,0 +1,203 @@
+// A protocol cheatsheet, similar to [1].
+//
+// We implement Mencius as described in the Mencius paper [2] with the
+// following exceptions:
+//
+//   - We do not assume FIFO channels and do not perform FIFO optimzations. We
+//     use TCP, but our implementation does not guarantee FIFO ordering since
+//     there might be to TCP channels between any pair of nodes. I think that
+//     the FIFO optimzations are minor anyway and probably don't have much of
+//     an impact on the performance of the protocol.
+//   - We name some messages differently than in the paper (e.g., what they
+//     call Suggest, we call Phase2a). This is just becaue I'm more used to the
+//     Paxos naming conventions.
+//   - We do not implement any form of slot recovery or resending of Phase2as.
+//     In a real implementation, we would need these features to ensure that we
+//     don't have any holes in our log, but since this implementation is just a
+//     comparison for Faster Paxos and since this situation pretty much never
+//     happens, we don't implement it.
+//
+// ## Normal Operation
+//
+//   Client        Coordinator        Server
+//      | ------------> |               |    ClientRequest
+//      |               | ------------> |    Phase2a
+//      |               | ------------> |    Skip
+//      |               | <------------ |    Phase2b
+//      |               | <------------ |    Skip
+//      | <------------ |               |    ClientReply
+//      |               | ------------> |    Chosen
+//
+// ## Failure Handling
+//
+//   Client           Server          Server
+//      |               | ------------> |    Phase1a
+//      |               | <------------ |    Phase1b
+//      |               | ------------> |    Phase2a
+//      |               | ------------> |    Skip
+//      |               | <------------ |    Phase2b
+//      |               | <------------ |    Skip
+//
+// ## Uncommon Events
+//
+//   Client           Server          Server
+//      |               | <------------ |    Nack
+//
+// [1]: https://ndpsoftware.com/git-cheatsheet.html
+// [2]: https://static.usenix.org/event/osdi08/tech/full_papers/mao/mao.pdf
+
+syntax = "proto2";
+
+package frankenpaxos.vanillamencius;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.vanillamencius"
+  flat_package: true
+};
+
+// Helper messages. ////////////////////////////////////////////////////////////
+message Noop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message CommandId {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // A client's address, pseudonym, and id uniquely identify a command.
+  required bytes client_address = 1;
+  required int32 client_pseudonym = 2;
+  required int32 client_id = 3;
+}
+
+message Command {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes command = 2;
+}
+
+message CommandOrNoop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    Command command = 1;
+    Noop noop = 2;
+  }
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Command command = 1;
+}
+
+message Phase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+  // This Phase1a is for all slots in the range [start_slot_inclusive,
+  // stop_slot_exclusive).
+  required int32 start_slot_inclusive = 2;
+  required int32 stop_slot_exclusive = 3;
+}
+
+message Phase1bSlotInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 vote_round = 2;
+  required CommandOrNoop vote_value = 3;
+}
+
+message Phase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 acceptor_index = 1;
+  required int32 round = 2;
+  repeated Phase1bSlotInfo info = 3;
+}
+
+message Phase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 round = 2;
+  required CommandOrNoop command_or_noop = 3;
+}
+
+message Skip {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 start_slot_inclusive = 1;
+  required int32 stop_slot_exclusive = 2;
+}
+
+message Phase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 acceptor_index = 1;
+  required int32 slot = 2;
+  required int32 round = 3;
+}
+
+message Chosen {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required CommandOrNoop command_or_noop = 2;
+}
+
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes result = 2;
+}
+
+message Nack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientReply client_reply = 1;
+  }
+}
+
+message ServerInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientRequest client_request = 1;
+    Phase1a phase1a = 2;
+    Phase1b phase1b = 3;
+    Phase2a phase2a = 4;
+    Phase2b phase2b = 5;
+    Skip skip = 6;
+    Chosen chosen = 7;
+  }
+}
