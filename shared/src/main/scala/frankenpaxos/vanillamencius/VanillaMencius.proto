@@ -105,9 +105,28 @@ message Phase1a {
 
   required int32 round = 1;
   // This Phase1a is for all slots in the range [start_slot_inclusive,
-  // stop_slot_exclusive).
-  required int32 start_slot_inclusive = 2;
-  required int32 stop_slot_exclusive = 3;
+  // stop_slot_exclusive) that are owned by the server with index
+  // `server_index`. Note that the server sending this Phase1a might not be the
+  // server with index `server_index`, since one server is probably recovering
+  // another.
+  required int32 server_index = 2;
+  required int32 start_slot_inclusive = 3;
+  required int32 stop_slot_exclusive = 4;
+}
+
+message PendingSlotInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 vote_round = 1;
+  required CommandOrNoop vote_value = 2;
+}
+
+message ChosenSlotInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandOrNoop value = 1;
 }
 
 message Phase1bSlotInfo {
@@ -115,15 +134,17 @@ message Phase1bSlotInfo {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 slot = 1;
-  required int32 vote_round = 2;
-  required CommandOrNoop vote_value = 3;
+  oneof info {
+    PendingSlotInfo pending_slot_info = 2;
+    ChosenSlotInfo chosen_slot_info = 3;
+  }
 }
 
 message Phase1b {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 acceptor_index = 1;
+  required int32 server_index = 1;
   required int32 round = 2;
   repeated Phase1bSlotInfo info = 3;
 }
@@ -141,15 +162,16 @@ message Skip {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 start_slot_inclusive = 1;
-  required int32 stop_slot_exclusive = 2;
+  required int32 server_index = 1;
+  required int32 start_slot_inclusive = 2;
+  required int32 stop_slot_exclusive = 3;
 }
 
 message Phase2b {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 acceptor_index = 1;
+  required int32 server_index = 1;
   required int32 slot = 2;
   required int32 round = 3;
 }
@@ -199,5 +221,6 @@ message ServerInbound {
     Phase2b phase2b = 5;
     Skip skip = 6;
     Chosen chosen = 7;
+    Nack nack = 8;
   }
 }
