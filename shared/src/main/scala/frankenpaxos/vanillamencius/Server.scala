@@ -151,20 +151,20 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   type Slot = Int
 
   @JSExportAll
-  sealed trait State
-
-  @JSExportAll
   case class Phase1(
+      startSlotInclusive: Slot,
+      stopSlotExclusive: Slot,
       round: Round,
       phase1bs: mutable.Map[ServerIndex, Phase1b],
       resendPhase1as: Transport#Timer
-  ) extends State
+  )
 
   @JSExportAll
   case class Phase2(
       round: Round,
+      value: CommandOrNoop,
       phase2bs: mutable.Map[ServerIndex, Phase2b]
-  ) extends State
+  )
 
   @JSExportAll
   sealed trait LogEntry
@@ -187,29 +187,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   ) extends LogEntry
 
   // Fields ////////////////////////////////////////////////////////////////////
-  // log, probably like what FasterPaxos has, but with a round number in some
-  // of the log entries for when we hit a phase1a. maybe a state per log entry
-  // since we can kinda be in different states in different spots in the log
-  //
-  // we're always in round 0 of our log, except that we're sometimes in larger
-  // rounds during recovery.
-  //
-  // get client request:
-  //   update log
-  //   send phase2as
-  //   send skips too if needed
-  //
-  // get phase2a:
-  //   vote and send back
-  //   update index + skips
-  //
-  // on timer:
-  //   send skips if needed to everyone
-  //
-  // on failure:
-  //   somehow pick a dude to recover
-  //   send phase1as
-
   // A random number generator instantiated from `seed`. This allows us to
   // perform deterministic randomized tests.
   private val rand = new Random(seed)
@@ -227,36 +204,31 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     for (a <- config.serverAddresses if a != address)
       yield chan[Server[Transport]](a, Server.serializer)
 
-  // The round system.
-  // private val roundSystem =
-  //   new RoundSystem.ClassicRoundRobin(config.serverAddresses.size)
+  // Mencius rounds are a little complicated. Really, a server should own round
+  // 0 for all of the slots that it owns, so every slot would have a different
+  // round system. But for simplicity, we want to share a single recovery round
+  // across the entire log. So, we use a single round robin round system, and
+  // we make sure that all recover rounds start at n (for n servers). And then
+  // we can just pretend that rounds 0 to n - 1 are all owned by the owner of
+  // the slot. This is a little janky, but it's simple.
+  private val roundSystem =
+    new RoundSystem.ClassicRoundRobin(config.serverAddresses.size)
 
-  // A round system used to figure out which server groups are in charge of
-  // which slots. For example, if we have 5 server groups and we're server
-  // group 1 and we'd like to know which slot to use after slot 20, we can call
+  // A round system used to figure out which server is in charge of which
+  // slots. For example, if we have 5 servers and we're server
+  // 1 and we'd like to know which slot to use after slot 20, we can call
   // slotSystem.nextClassicRound(1, 20).
   private val slotSystem =
     new RoundSystem.ClassicRoundRobin(config.serverAddresses.size)
+
+  @JSExport
+  val log = new frankenpaxos.util.BufferMap[LogEntry](options.logGrowSize)
 
   // The next available slot in the log. Note that nextSlot is incremented by
   // `config.serverAddresses.size` every command, not incremented by 1. Log
   // entries are partitioned round robin across all server groups.
   @JSExport
   protected var nextSlot: Slot = slotSystem.nextClassicRound(index, -1)
-
-  // // The largest nextSlot of any server. Servers periodically send their
-  // // nextSlot values to one another to update their highWatermarks.
-  // @JSExport
-  // protected var highWatermark: Slot = nextSlot
-  // metrics.highWatermark.set(highWatermark)
-
-  // // Every slot less than chosenWatermark has been chosen. Replicas
-  // // periodically send their chosenWatermarks to the servers.
-  // @JSExport
-  // protected var chosenWatermark: Slot = 0
-  // metrics.chosenWatermark.set(chosenWatermark)
-
-  // TODO(mwhittaker): Add heartbeat.
 
   // Consider a Mencius deployment with two servers. Server A is responsible
   // for slots 0, 2, 4, 6, and so on while server B is responsible for slots 1,
@@ -274,12 +246,34 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var skipSlots: Option[(Slot, Slot)] = None
 
-  // The server's state.
+  // When a server revokes slots from some other server, it uses this
+  // monotonically increasing round to do so. See the comment above roundSystem
+  // for why we start the recoverRound off so high.
   @JSExport
-  protected val states = mutable.Map[Slot, State]()
+  protected var recoverRound: Round =
+    roundSystem.nextClassicRound(index, config.serverAddresses.size - 1)
+
+  // If a server thinks that some other server has failed, it attempts to
+  // revoke some of its log entries. To do so, it first has to run Phase 1. To
+  // keep things simple, we maintain the invariant that a server can only
+  // perform one revocation for a given failed server at a time. We can revoke
+  // two different failed servers at the same time, but not two revocations for
+  // the _same_ failed server at the same time.
+  @JSExport
+  protected val phase1s = mutable.Map[ServerIndex, Phase1b]()
 
   @JSExport
-  val log = new frankenpaxos.util.BufferMap[LogEntry](options.logGrowSize)
+  protected val phase2s = mutable.Map[Slot, Phase2]()
+
+  // For every server, we keep track of the largest chosen slot owned by that
+  // server. In the event that a server fails, we use revoke its slots starting
+  // at its largest chosen slot.
+  @JSExport
+  protected val largestChosenSlots: mutable.Buffer[Int] =
+    mutable.Buffer.fill(config.serverAddresses.size)(-1)
+
+  // TODO(mwhittaker): Add heartbeat.
+  // TODO(mwhittaker): Add revocation timers.
 
   // Timers ////////////////////////////////////////////////////////////////////
   private def makeResendPhase1asTimer(
@@ -665,6 +659,13 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1b: Phase1b
   ): Unit = {
+
+    // check to see if we're in phase 1 for it
+    // check for stale rounds
+    // wait for quorum
+    // for every log entry, choose a safe value and propose something
+    // update next slot???
+
     state match {
       case Inactive | Phase2 =>
         logger.debug(
@@ -745,6 +746,20 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       phase2a: Phase2a
   ): Unit = {
     // TODO(mwhittaker): Implement.
+    val coordinator = chan[Server[Transport]](src, Server.serializer)
+    log.get(phase2a.slot) match {
+      case None                          =>
+      case Some(voteless: VotelessEntry) =>
+      case Some(pending: PendingEntry)   =>
+      case Some(chosen: ChosenEntry)     =>
+    }
+    //
+    // check log
+    // nack if needed
+    // vote for it
+    // update skip slots very carefully
+    // send back skips
+    //
   }
 
   private def handlePhase2b(

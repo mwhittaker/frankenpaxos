@@ -162,6 +162,7 @@ message Skip {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
+  // Note that we don't have a round because a Skip is always in round 0.
   required int32 server_index = 1;
   required int32 start_slot_inclusive = 2;
   required int32 stop_slot_exclusive = 3;
