@@ -194,11 +194,21 @@ message ClientReply {
   required bytes result = 2;
 }
 
-message Nack {
+message Phase1Nack {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 round = 1;
+  required int32 start_slot_inclusive = 1;
+  required int32 stop_slot_exclusive = 2;
+  required int32 round = 3;
+}
+
+message Phase2Nack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 round = 2;
 }
 
 // Inbound messages. ///////////////////////////////////////////////////////////
@@ -223,6 +233,7 @@ message ServerInbound {
     Phase2b phase2b = 5;
     Skip skip = 6;
     Chosen chosen = 7;
-    Nack nack = 8;
+    Phase1Nack phase1_nack = 8;
+    Phase2Nack phase2_nack = 9;
   }
 }

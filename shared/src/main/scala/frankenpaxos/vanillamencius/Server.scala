@@ -243,15 +243,15 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       value: CommandOrNoop
   ) extends LogEntry
 
-  // Fields ////////////////////////////////////////////////////////////////////
-  // A random number generator instantiated from `seed`. This allows us to
-  // perform deterministic randomized tests.
+// Fields ////////////////////////////////////////////////////////////////////
+// A random number generator instantiated from `seed`. This allows us to
+// perform deterministic randomized tests.
   private val rand = new Random(seed)
 
   @JSExport
   protected val index = config.serverAddresses.indexOf(address)
 
-  // Server channels.
+// Server channels.
   private val servers: Seq[Chan[Server[Transport]]] =
     for (a <- config.serverAddresses)
       yield chan[Server[Transport]](a, Server.serializer)
@@ -655,7 +655,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Phase2B(_)       => "Phase2b"
         case Request.Skip(_)          => "Skip"
         case Request.Chosen(_)        => "Chosen"
-        case Request.Nack(_)          => "Nack"
+        case Request.Phase1Nack(_)    => "Phase1Nack"
+        case Request.Phase2Nack(_)    => "Phase2Nack"
         case Request.Empty =>
           logger.fatal("Empty ServerInbound encountered.")
       }
@@ -670,7 +671,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Phase2B(r)       => handlePhase2b(src, r)
         case Request.Skip(r)          => handleSkip(src, r)
         case Request.Chosen(r)        => handleChosen(src, r)
-        case Request.Nack(r)          => handleNack(src, r)
+        case Request.Phase1Nack(r)    => handlePhase1Nack(src, r)
+        case Request.Phase2Nack(r)    => handlePhase2Nack(src, r)
         case Request.Empty =>
           logger.fatal("Empty ServerInbound encountered.")
       }
@@ -1011,20 +1013,49 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       skip: Skip
   ): Unit = {
-    // TODO(mwhittaker): Implement.
+    // Because we're implementing simple consensus, if we receive a skip, we
+    // can always consider the value chosen. Why? Well, the leader is the only
+    // person who can propose any value other than a noop, so if the leader has
+    // committed to a noop, then we have no hope for any other value to ever be
+    // chosen ever. Note that it is possible for a revoking server to propose a
+    // non-noop value if it noticed that the leader had proposed a non-noop,
+    // but because the leader has proposed a noop, that is impossible.
+    var slot = skip.startSlotInclusive
+    val coordinator = slotSystem.leader(skip.startSlotInclusive)
+    while (slot < skip.stopSlotExclusive) {
+      choose(slot, CommandOrNoop().withNoop(Noop()))
+      slot = slotSystem.nextClassicRound(coordinator, slot)
+    }
+    executeLog((slot) => slotSystem.leader(slot) == index)
   }
 
   private def handleChosen(
       src: Transport#Address,
       chosen: Chosen
   ): Unit = {
-    // TODO(mwhittaker): Implement.
+    choose(chosen.slot, chosen.commandOrNoop)
+    executeLog((slot) => slotSystem.leader(slot) == index)
   }
 
-  private def handleNack(
+  private def handlePhase1Nack(
       src: Transport#Address,
-      nack: Nack
+      phase1Nack: Phase1Nack
   ): Unit = {
     // TODO(mwhittaker): Implement.
+    // we can get nacked on a phase 2 normal
+    // we can get nacked on a skip
+    // we can get nacked on a phase 1
+    // i think in all three cases, we'll just yolo and let it go, maybe clear our state
+  }
+
+  private def handlePhase2Nack(
+      src: Transport#Address,
+      phase2Nack: Phase2Nack
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    // we can get nacked on a phase 2 normal
+    // we can get nacked on a skip
+    // we can get nacked on a phase 1
+    // i think in all three cases, we'll just yolo and let it go, maybe clear our state
   }
 }
