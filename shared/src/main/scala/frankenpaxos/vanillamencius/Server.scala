@@ -35,7 +35,8 @@ object Server {
 @JSExportAll
 case class ServerOptions(
     // Optimization 3 of the Mencius paper describes how a server revokes a
-    // failed server's log entries. It is parameterized by beta.
+    // failed server's log entries. It is parameterized by beta. See the
+    // Mencius paper for more information.
     beta: Int,
     // Servers resend their Phase1a messages for liveness every so often. This
     // option determines the period with which they resend.
@@ -46,7 +47,10 @@ case class ServerOptions(
     // If a server thinks another server is dead, it revokes some of its log
     // entries. This revocation happens perioidically, and the time between
     // revocations is chosen uniformly at random from the range defined by
-    // these two options.
+    // these two options. We use a random revocation period to try and avoid
+    // dueling revokers. This approach is pretty janky. In reality, we'd have a
+    // separate leader election protocol or something similar, but it's a
+    // little overkil for our purposes.
     revokeMinPeriod: java.time.Duration,
     revokeMaxPeriod: java.time.Duration,
     // A Server implements its log as a BufferMap. `logGrowSize` is the
@@ -133,6 +137,12 @@ class ServerMetrics(collectors: Collectors) {
     )
     .register()
 
+  val executedNoopsTotal: Counter = collectors.counter
+    .build()
+    .name("vanilla_mencius_server_executed_noops_total")
+    .help("The total number of noops \"executed\".")
+    .register()
+
   val revokeTimerTriggeredTotal: Counter = collectors.counter
     .build()
     .name("vanilla_mencius_revoke_timer_triggered_total")
@@ -145,51 +155,9 @@ class ServerMetrics(collectors: Collectors) {
     .help("Total number of times a flush skipSlots timer was triggered.")
     .register()
 
-  val executedNoopsTotal: Counter = collectors.counter
+  val resendPhase1asTimerTriggeredTotal: Counter = collectors.counter
     .build()
-    .name("vanilla_mencius_server_executed_noops_total")
-    .help("The total number of noops \"executed\".")
-    .register()
-
-  val nextSlot: Gauge = collectors.gauge
-    .build()
-    .name("vanilla_mencius_server_next_slot")
-    .help("The server's nextSlot.")
-    .register()
-
-  val highWatermark: Gauge = collectors.gauge
-    .build()
-    .name("vanilla_mencius_server_high_watermark")
-    .help("The server's highWatermark.")
-    .register()
-
-  val chosenWatermark: Gauge = collectors.gauge
-    .build()
-    .name("vanilla_mencius_server_chosen_watermark")
-    .help("The server's chosenWatermark.")
-    .register()
-
-  val highWatermarksSentTotal: Counter = collectors.counter
-    .build()
-    .name("vanilla_mencius_server_high_watermarks_sent_total")
-    .help("Total number of high watermarks sent.")
-    .register()
-
-  val noopRangesSentTotal: Counter = collectors.counter
-    .build()
-    .name("vanilla_mencius_server_noop_ranges_sent_total")
-    .help("Total number of noop ranges sent as a result of lagging nextSlot.")
-    .register()
-
-  val serverChangesTotal: Counter = collectors.counter
-    .build()
-    .name("vanilla_mencius_server_server_changes_total")
-    .help("Total number of server changes.")
-    .register()
-
-  val resendPhase1asTotal: Counter = collectors.counter
-    .build()
-    .name("vanilla_mencius_server_resend_phase1as_total")
+    .name("vanilla_mencius_server_resend_phase1as_timer_triggered_total")
     .help("Total number of times the server resent phase 1a messages.")
     .register()
 }
