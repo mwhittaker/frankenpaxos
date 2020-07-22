@@ -260,16 +260,16 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   // two different failed servers at the same time, but not two revocations for
   // the _same_ failed server at the same time.
   @JSExport
-  protected val phase1s = mutable.Map[ServerIndex, Phase1b]()
+  protected val phase1s = mutable.Map[ServerIndex, Phase1]()
 
   @JSExport
   protected val phase2s = mutable.Map[Slot, Phase2]()
 
-  // For every server, we keep track of the largest chosen slot owned by that
-  // server. In the event that a server fails, we use revoke its slots starting
-  // at its largest chosen slot.
+  // For every server p, we keep track of the largest slot s such that s and
+  // all previous slots owned by p are chosen. In the event that a server m
+  // fails, we use revoke its slots starting after largestChosenPrefixSlots(m).
   @JSExport
-  protected val largestChosenSlots: mutable.Buffer[Int] =
+  protected val largestChosenPrefixSlots: mutable.Buffer[Int] =
     mutable.Buffer.fill(config.serverAddresses.size)(-1)
 
   // TODO(mwhittaker): Add heartbeat.
@@ -306,6 +306,121 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       x
     } else {
       e
+    }
+  }
+
+  def isChosen(slot: Slot): Boolean = {
+    log.get(slot) match {
+      case None | Some(_: VotelessEntry) | Some(_: PendingEntry) => false
+      case Some(_: ChosenEntry)                                  => true
+    }
+  }
+
+  // Propose a value (in Phase2a) in a given round and slot as part of a
+  // revocation. Note that propose should not be used for a normal case
+  // handling of a client request.
+  def propose(round: Round, slot: Slot, value: CommandOrNoop): Unit = {
+    // propose should only be used for revocation, and we shouldn't be revoking
+    // ourselves.
+    logger.checkNe(index, slotSystem.leader(slot))
+
+    phase2s.get(slot) match {
+      case Some(_: Phase2) =>
+        // If we're already trying to recover this slot, then don't start the
+        // recover process over. Let the existing Phase 2 run.
+        ()
+
+      case None =>
+        // Vote for the value ourselves.
+        log.get(slot) match {
+          case Some(_: ChosenEntry) =>
+            // A value has already been chosen in the log, so we don't have to
+            // propose anythig.
+            return
+
+          case None =>
+            log.put(
+              slot,
+              PendingEntry(round = round, voteRound = round, voteValue = value)
+            )
+
+          case Some(voteless: VotelessEntry) =>
+            // Abort if our round is stale.
+            if (round < voteless.round) {
+              logger.debug(
+                s"A server is trying to propose a value in slot $slot in " +
+                  s"round $round, but this slot already has a vote in round " +
+                  s"${voteless.round}. We are not proposing anything."
+              )
+              return
+            }
+
+            log.put(
+              slot,
+              PendingEntry(round = round, voteRound = round, voteValue = value)
+            )
+
+          case Some(pending: PendingEntry) =>
+            // Abort if our round is stale.
+            if (round < pending.round) {
+              logger.debug(
+                s"A server is trying to propose a value in slot $slot in " +
+                  s"round $round, but this slot already has a vote in round " +
+                  s"${pending.round}. We are not proposing anything."
+              )
+              return
+            }
+
+            log.put(
+              slot,
+              PendingEntry(round = round, voteRound = round, voteValue = value)
+            )
+        }
+
+        // Send Phase2as to the other servers.
+        for (server <- otherServers) {
+          server.send(
+            ServerInbound().withPhase2A(
+              Phase2a(slot = slot, round = round, commandOrNoop = value)
+            )
+          )
+        }
+
+        // Update our state.
+        phase2s(nextSlot) = Phase2(
+          round = round,
+          value = value,
+          phase2bs = mutable.Map(
+            index -> Phase2b(serverIndex = index, slot = slot, round = round)
+          )
+        )
+    }
+  }
+
+  def choose(slot: Slot, value: CommandOrNoop): Unit = {
+    // Update state.
+    log.put(slot, ChosenEntry(value))
+    phase2s.remove(slot)
+
+    // Update our latest chosen prefix slot, if possible.
+    val owningServer = slotSystem.leader(slot)
+    if (owningServer != index) {
+      var frontierSlot = slotSystem.nextClassicRound(
+        owningServer,
+        largestChosenPrefixSlots(owningServer)
+      )
+      while (isChosen(frontierSlot)) {
+        largestChosenPrefixSlots(owningServer) = frontierSlot
+        frontierSlot = slotSystem.nextClassicRound(owningServer, frontierSlot)
+      }
+    }
+
+    // If this slot is owned by us and our nextSlot is smaller than it, then we
+    // need to increase our nextSlot to be larger than it. This means that
+    // there might temporarily be holes in the log, but those holes should be
+    // filled in by the same machine that proposed the value in this slot.
+    if (owningServer == index && nextSlot <= slot) {
+      nextSlot = slotSystem.nextClassicRound(index, slot)
     }
   }
 
@@ -532,12 +647,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     // nextSlot should always point to a vacant slot in the log. If this is not
     // the case, something has gone wrong.
-    logger.check(!states.contains(nextSlot))
+    logger.check(!phase2s.contains(nextSlot))
     logger.check(!log.contains(nextSlot))
 
     // Vote for the command ourselves.
     val value = CommandOrNoop().withCommand(clientRequest.command)
-    log.put(nextSlot, PendingEntry(voteRound = 0, voteValue = value))
+    log.put(nextSlot, PendingEntry(round = 0, voteRound = 0, voteValue = value))
 
     // If we have any pending slots to skip, send them to all the other servers
     // now. We'll flush them along with the Phase2a's in just a moment. This is
@@ -553,38 +668,31 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         for (server <- otherServers) {
           server.sendNoFlush(
             ServerInbound().withSkip(
-              Skip(
-                serverIndex = index,
-                startSlotInclusive = start,
-                stopSlotExclusive = stop
-              )
+              Skip(serverIndex = index,
+                   startSlotInclusive = start,
+                   stopSlotExclusive = stop)
             )
           )
         }
+
+        skipSlots = None
     }
 
     // Send Phase2a's to all the other servers.
     for (server <- otherServers) {
       server.send(
         ServerInbound().withPhase2A(
-          Phase2a(
-            slot = nextSlot,
-            round = 0,
-            commandOrNoop = value
-          )
+          Phase2a(slot = nextSlot, round = 0, commandOrNoop = value)
         )
       )
     }
 
     // Update our state.
-    states(nextSlot) = Phase2(
+    phase2s(nextSlot) = Phase2(
       round = 0,
+      value = value,
       phase2bs = mutable.Map(
-        index -> Phase2b(
-          serverIndex = index,
-          slot = nextSlot,
-          round = 0
-        )
+        index -> Phase2b(serverIndex = index, slot = nextSlot, round = 0)
       )
     )
 
@@ -611,6 +719,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // hopefully be rare in practice, so the inefficiency shouldn't be a big
     // deal.
     var slot = phase1a.startSlotInclusive
+    val revokedServerIndex = slotSystem.leader(phase1a.startSlotInclusive)
     while (slot < phase1a.stopSlotExclusive) {
       log.get(slot) match {
         case None =>
@@ -643,13 +752,15 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
             ChosenSlotInfo(value = chosen.value)
           )
       }
-      slot = slotSystem.nextClassicRound(phase1a.serverIndex, slot)
+      slot = slotSystem.nextClassicRound(revokedServerIndex, slot)
     }
 
     coordinator.send(
       ServerInbound().withPhase1B(
         Phase1b(serverIndex = index,
                 round = phase1a.round,
+                startSlotInclusive = phase1a.startSlotInclusive,
+                stopSlotExclusive = phase1a.stopSlotExclusive,
                 info = slotInfos.toSeq)
       )
     )
@@ -659,86 +770,79 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1b: Phase1b
   ): Unit = {
-
-    // check to see if we're in phase 1 for it
-    // check for stale rounds
-    // wait for quorum
-    // for every log entry, choose a safe value and propose something
-    // update next slot???
-
-    state match {
-      case Inactive | Phase2 =>
+    // Get our Phase1, or abort if there is none.
+    val revokedServerIndex = slotSystem.leader(phase1b.startSlotInclusive)
+    val phase1 = phase1s.get(revokedServerIndex) match {
+      case None =>
         logger.debug(
-          s"A server received a Phase1b message but is not in Phase1. Its " +
-            s"state is $state. The Phase1b message is being ignored."
+          s"A server received a Phase1b for revoked server " +
+            s"$revokedServerIndex, but doesn't have a corresponding " +
+            s"Phase1. The Phase1b must be stale; it is being ignored."
         )
+        return
 
-      case phase1: Phase1 =>
-        // Ignore messages from stale rounds.
-        if (phase1b.round != round) {
-          logger.debug(
-            s"A server received a Phase1b message in round ${phase1b.round} " +
-              s"but is in round $round. The Phase1b is being ignored."
-          )
-          // If phase1b.round were larger than round, then we would have
-          // received a nack instead of a Phase1b.
-          logger.checkLt(phase1b.round, round)
-          return
-        }
-
-        // Wait until we have a quorum of responses from _every_ acceptor group.
-        phase1.phase1bs(phase1b.groupIndex)(phase1b.acceptorIndex) = phase1b
-        if (phase1.phase1bs.exists(_.size < config.quorumSize)) {
-          return
-        }
-
-        // Find the largest slot with a vote. The `maxSlot` is either this
-        // value or `phase1.recoverSlot` if that's larger. The max slot should
-        // be owned by this server group (or -1).
-        val maxSlot =
-          scala.math.max(
-            phase1.phase1bs
-              .map(
-                groupPhase1bs => groupPhase1bs.values.map(maxPhase1bSlot).max
-              )
-              .max,
-            phase1.recoverSlot
-          )
-        logger.check(maxSlot == -1 || slotSystem.server(maxSlot) == groupIndex)
-
-        // In MultiPaxos, we iterate from chosenWatermark to maxSlot proposing
-        // safe values to fill in the log. In Mencius, we do the same, but we
-        // only handle values that this server group owns.
-        for (slot <- roundSystem.nextClassicRound(
-               serverIndex = groupIndex,
-               round = chosenWatermark - 1
-             ) to maxSlot by config.numServerGroups) {
-          val group = phase1.phase1bs(acceptorGroupIndexBySlot(slot))
-          getProxyServer().send(
-            ProxyServerInbound().withPhase2A(
-              Phase2a(
-                slot = slot,
-                round = round,
-                commandBatchOrNoop = safeValue(group.values, slot)
-              )
-            )
-          )
-        }
-
-        // We've filled in every slot until and including maxSlot, so the next
-        // slot is the first available slot after `maxSlot`.
-        nextSlot = slotSystem.nextClassicRound(groupIndex, maxSlot)
-        metrics.nextSlot.set(nextSlot)
-
-        // Update our state.
-        phase1.resendPhase1as.stop()
-        state = Phase2
-
-        // Process any pending client requests.
-        for (clientRequestBatch <- phase1.pendingClientRequestBatches) {
-          processClientRequestBatch(clientRequestBatch)
-        }
+      case Some(phase1: Phase1) =>
+        phase1
     }
+
+    // Ignore messages from stale rounds.
+    if (phase1b.round != phase1.round) {
+      logger.debug(
+        s"A server received a Phase1b message in round ${phase1b.round} " +
+          s"but is in round ${phase1.round}. The Phase1b is being ignored."
+      )
+      // If phase1b.round were larger than phase1.round, then we would have
+      // received a nack instead of a Phase1b.
+      logger.checkLt(phase1b.round, phase1.round)
+      return
+    }
+
+    // Wait until we have a quorum of responses.
+    phase1.phase1bs(phase1b.serverIndex) = phase1b
+    if (phase1.phase1bs.size < config.f + 1) {
+      return
+    }
+
+    // Fill in all the slots in the range (startSlotInclusive,
+    // stopSlotExclusive].
+    var slot = phase1.startSlotInclusive
+    while (slot < phase1.stopSlotExclusive) {
+      val slotInfos = phase1.phase1bs.values
+        .flatMap(phase1b => phase1b.info.find(_.slot == slot))
+      val pendingSlotInfos = slotInfos.flatMap(_.info.pendingSlotInfo)
+      val chosenSlotInfos = slotInfos.flatMap(_.info.chosenSlotInfo)
+
+      chosenSlotInfos.headOption match {
+        case Some(info: ChosenSlotInfo) =>
+          // A value was already chosen in this slot. We don't have to
+          // propose anyting.
+          choose(slot, info.value)
+
+        case None =>
+          if (pendingSlotInfos.isEmpty) {
+            // No server has voted for any value in this slot, so we have to
+            // propose a noop (remember that this is simple consensus).
+            propose(round = phase1.round,
+                    slot = slot,
+                    value = CommandOrNoop().withNoop(Noop()))
+          } else {
+            // Some servers voted in this slot, so we propose the value v
+            // associated with the largest voted round k.
+            propose(round = phase1.round,
+                    slot = slot,
+                    value = pendingSlotInfos.maxBy(_.voteRound).voteValue)
+          }
+
+      }
+
+      slot = slotSystem.nextClassicRound(revokedServerIndex, slot)
+    }
+
+    // End Phase 1.
+    phase1.resendPhase1as.stop()
+    phase1s.remove(revokedServerIndex)
+    // TODO(mwhittaker): Start the revoke timer again.
+    ???
   }
 
   private def handlePhase2a(

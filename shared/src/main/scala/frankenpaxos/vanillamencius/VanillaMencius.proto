@@ -106,12 +106,11 @@ message Phase1a {
   required int32 round = 1;
   // This Phase1a is for all slots in the range [start_slot_inclusive,
   // stop_slot_exclusive) that are owned by the server with index
-  // `server_index`. Note that the server sending this Phase1a might not be the
-  // server with index `server_index`, since one server is probably recovering
-  // another.
-  required int32 server_index = 2;
-  required int32 start_slot_inclusive = 3;
-  required int32 stop_slot_exclusive = 4;
+  // `revoked_server_index`. Note that the server sending this Phase1a might
+  // not be the server with index `revoked_server_index`, since one server is
+  // probably recovering another.
+  required int32 start_slot_inclusive = 2;
+  required int32 stop_slot_exclusive = 3;
 }
 
 message PendingSlotInfo {
@@ -146,7 +145,9 @@ message Phase1b {
 
   required int32 server_index = 1;
   required int32 round = 2;
-  repeated Phase1bSlotInfo info = 3;
+  required int32 start_slot_inclusive = 3;
+  required int32 stop_slot_exclusive = 4;
+  repeated Phase1bSlotInfo info = 5;
 }
 
 message Phase2a {
