@@ -246,6 +246,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var skipSlots: Option[(Slot, Slot)] = None
 
+  // TODO(mwhittaker): We can maybe add a timer to send our skips to every
+  // other server, but as long as our workload is balanced, this really
+  // shouldn't be a big deal.
+
   // When a server revokes slots from some other server, it uses this
   // monotonically increasing round to do so. See the comment above roundSystem
   // for why we start the recoverRound off so high.
@@ -849,21 +853,65 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase2a: Phase2a
   ): Unit = {
-    // TODO(mwhittaker): Implement.
+    // Ignore stale rounds.
     val coordinator = chan[Server[Transport]](src, Server.serializer)
-    log.get(phase2a.slot) match {
-      case None                          =>
+    val round = log.get(phase2a.slot) match {
+      case Some(chosen: ChosenEntry) =>
+        coordinator.send(
+          ServerInbound().withChosen(
+            Chosen(slot = phase2a.slot, commandOrNoop = chosen.value)
+          )
+        )
+        return
+
+      case None =>
+        -1
       case Some(voteless: VotelessEntry) =>
-      case Some(pending: PendingEntry)   =>
-      case Some(chosen: ChosenEntry)     =>
+        voteless.round
+      case Some(pending: PendingEntry) =>
+        pending.round
     }
-    //
-    // check log
-    // nack if needed
-    // vote for it
-    // update skip slots very carefully
-    // send back skips
-    //
+
+    if (phase2a.round < round) {
+      coordinator.send(ServerInbound().withNack(Nack(round = round)))
+      return
+    }
+
+    // Update our state.
+    log.put(phase2a.slot,
+            PendingEntry(round = phase2a.round,
+                         voteRound = phase2a.round,
+                         voteValue = phase2a.commandOrNoop))
+
+    // Update our nextSlot and skipSlots. Note that we send and clear our
+    // skipSlots every time we process a client request. So, if our skipSlots
+    // is not empty, we're guaranteed to have not proposed any values since we
+    // set it. This means that we can extend the skipSlots range without
+    // worrying about sending skips for slots in which we have already proposed
+    // some other value.
+    if (phase2a.slot > nextSlot) {
+      val (start, stop) = skipSlots match {
+        case None                => (nextSlot, phase2a.slot)
+        case Some((start, stop)) => (start, phase2a.slot)
+      }
+      nextSlot = slotSystem.nextClassicRound(index, phase2a.slot)
+      skipSlots = Some((start, stop))
+
+      coordinator.sendNoFlush(
+        ServerInbound().withSkip(
+          Skip(serverIndex = index,
+               startSlotInclusive = start,
+               stopSlotExclusive = stop)
+        )
+      )
+    }
+
+    // Send the coordinator our vote.
+    coordinator.send(
+      ServerInbound().withPhase2B(
+        Phase2b(serverIndex = index, slot = phase2a.slot, round = phase2a.round)
+      )
+    )
   }
 
   private def handlePhase2b(
