@@ -8,6 +8,7 @@ import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
 import frankenpaxos.election.basic.ElectionOptions
 import frankenpaxos.election.basic.Participant
+import frankenpaxos.heartbeat.HeartbeatOptions
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.Gauge
@@ -33,42 +34,40 @@ object Server {
 
 @JSExportAll
 case class ServerOptions(
+    // Optimization 3 of the Mencius paper describes how a server revokes a
+    // failed server's log entries. It is parameterized by beta.
+    beta: Int,
+    // Servers resend their Phase1a messages for liveness every so often. This
+    // option determines the period with which they resend.
+    resendPhase1asPeriod: java.time.Duration,
+    // A server flushes Skips to the other servers every so often. This
+    // option determines the period with which they flush.
+    flushSkipSlotsPeriod: java.time.Duration,
+    // If a server thinks another server is dead, it revokes some of its log
+    // entries. This revocation happens perioidically, and the time between
+    // revocations is chosen uniformly at random from the range defined by
+    // these two options.
+    revokeMinPeriod: java.time.Duration,
+    revokeMaxPeriod: java.time.Duration,
     // A Server implements its log as a BufferMap. `logGrowSize` is the
     // `growSize` argument used to construct the BufferMap.
     logGrowSize: Int,
-    // Mencius round-robin partitions the log among a set of servers. If one
-    // server executes faster than the others, then there can be large gaps in
-    // the log. To prevent this, every once in a while, a server broadcasts its
-    // nextSlot to all other servers. If a server's nextSlot is significantly
-    // lagging the global maximum nextSlot, then we issue a range of noops. The
-    // maximum nextSlot among all server groups is called a high watermark.
-    //
-    // The server broadcasts its nextSlot (indirectly through the proxy
-    // servers) every `sendHighWatermarkEveryN` commands.
-    sendHighWatermarkEveryN: Int,
-    // Whenever a server updates its high watermark, if its nextSlot lags by
-    // `sendNoopRangeIfLaggingBy` or more, then it issues a range of noops to
-    // fill in the missing slots. If the server is lagging but not by much,
-    // then it doesn't send noops.
-    sendNoopRangeIfLaggingBy: Int,
-    resendPhase1asPeriod: java.time.Duration,
-    // A server flushes all of its channels to the proxy servers after every
-    // `flushPhase2asEveryN` Phase2a messages sent. For example, if
-    // `flushPhase2asEveryN` is 1, then the server flushes after every send.
-    flushPhase2asEveryN: Int,
-    electionOptions: ElectionOptions,
+    // Servers use heartbeats to monitor which other servers are dead. The
+    // heartbeat subprotocol uses these options.
+    heartbeatOptions: HeartbeatOptions,
     measureLatencies: Boolean
 )
 
 @JSExportAll
 object ServerOptions {
   val default = ServerOptions(
-    logGrowSize = 1000,
-    sendHighWatermarkEveryN = 10000,
-    sendNoopRangeIfLaggingBy = 10000,
+    beta = 1000,
     resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
-    flushPhase2asEveryN = 1,
-    electionOptions = ElectionOptions.default,
+    flushSkipSlotsPeriod = java.time.Duration.ofSeconds(1),
+    revokeMinPeriod = java.time.Duration.ofSeconds(1),
+    revokeMaxPeriod = java.time.Duration.ofSeconds(5),
+    logGrowSize = 1000,
+    heartbeatOptions = HeartbeatOptions.default,
     measureLatencies = true
   )
 }
@@ -132,6 +131,18 @@ class ServerMetrics(collectors: Collectors) {
         "be chosen more than once. Every time it is chosen, except the " +
         "first time, counts towards this total."
     )
+    .register()
+
+  val revokeTimerTriggeredTotal: Counter = collectors.counter
+    .build()
+    .name("vanilla_mencius_revoke_timer_triggered_total")
+    .help("Total number of times a revocation timer was triggered.")
+    .register()
+
+  val flushSkipSlotsTimerTriggeredTotal: Counter = collectors.counter
+    .build()
+    .name("vanilla_mencius_flush_skip_slots_timer_triggered_total")
+    .help("Total number of times a flush skipSlots timer was triggered.")
     .register()
 
   val executedNoopsTotal: Counter = collectors.counter
@@ -243,15 +254,15 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       value: CommandOrNoop
   ) extends LogEntry
 
-// Fields ////////////////////////////////////////////////////////////////////
-// A random number generator instantiated from `seed`. This allows us to
-// perform deterministic randomized tests.
+  // Fields ////////////////////////////////////////////////////////////////////
+  // A random number generator instantiated from `seed`. This allows us to
+  // perform deterministic randomized tests.
   private val rand = new Random(seed)
 
   @JSExport
   protected val index = config.serverAddresses.indexOf(address)
 
-// Server channels.
+  // Server channels.
   private val servers: Seq[Chan[Server[Transport]]] =
     for (a <- config.serverAddresses)
       yield chan[Server[Transport]](a, Server.serializer)
@@ -319,9 +330,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var skipSlots: Option[(Slot, Slot)] = None
 
-  // TODO(mwhittaker): We can maybe add a timer to send our skips to every
-  // other server, but as long as our workload is balanced, this really
-  // shouldn't be a big deal.
+  // A server has to flush its skipSlots every once in a while to ensure
+  // liveness. With a lot of clients, this isn't a problem, but if we only have
+  // one client, for example, the protocol can stall.
+  @JSExport
+  protected val flushSkipSlotsTimer = makeFlushSkipSlotsTimer()
 
   // When a server revokes slots from some other server, it uses this
   // monotonically increasing round to do so. See the comment above roundSystem
@@ -349,10 +362,113 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   protected val largestChosenPrefixSlots: mutable.Buffer[Int] =
     mutable.Buffer.fill(config.serverAddresses.size)(-1)
 
-  // TODO(mwhittaker): Add heartbeat.
-  // TODO(mwhittaker): Add revocation timers.
+  // Servers monitor other servers to make sure they are still alive.
+  @JSExport
+  protected val heartbeatAddress: Transport#Address =
+    config.heartbeatAddresses(index)
+
+  @JSExport
+  protected val heartbeat: frankenpaxos.heartbeat.Participant[Transport] =
+    new frankenpaxos.heartbeat.Participant[Transport](
+      address = heartbeatAddress,
+      transport = transport,
+      logger = logger,
+      addresses = config.heartbeatAddresses.filter(_ != heartbeatAddress),
+      options = options.heartbeatOptions
+    )
+
+  @JSExport
+  protected val revocationTimers = mutable.Map[ServerIndex, Transport#Timer]()
+  for (i <- 0 until config.serverAddresses.size if i != index) {
+    revocationTimers(i) = makeRevocationTimer(i)
+  }
 
   // Timers ////////////////////////////////////////////////////////////////////
+  private def makeFlushSkipSlotsTimer(): Transport#Timer = {
+    timer(
+      s"flushSkipSlotsTimer",
+      options.flushSkipSlotsPeriod,
+      () => {
+        metrics.flushSkipSlotsTimerTriggeredTotal.inc()
+        skipSlots match {
+          case None =>
+            logger.fatal(
+              "A server's flushSkipSlotsTimer was triggered, but it doesn't " +
+                "have any skipSlots to flush. This shouldn't be possible. " +
+                "There must be a bug."
+            )
+
+          case Some((start, stop)) =>
+            for (server <- otherServers) {
+              server.send(
+                ServerInbound().withSkip(
+                  Skip(
+                    serverIndex = index,
+                    startSlotInclusive = start,
+                    stopSlotExclusive = stop
+                  )
+                )
+              )
+            }
+            skipSlots = None
+        }
+      }
+    )
+  }
+
+  private def makeRevocationTimer(
+      revokedServer: ServerIndex
+  ): Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"revocationTimer $revokedServer",
+      frankenpaxos.Util.randomDuration(options.revokeMinPeriod,
+                                       options.revokeMaxPeriod),
+      () => {
+        metrics.revokeTimerTriggeredTotal.inc()
+
+        if (heartbeat
+              .unsafeAlive()
+              .contains(config.heartbeatAddresses(revokedServer))) {
+          // The server is alive. There's no need to revoke anything.
+          t.start()
+        } else if (largestChosenPrefixSlots(revokedServer) >=
+                     nextSlot + options.beta) {
+          // The server is dead but not lagging by enough for us to revoke its
+          // log entries. See Optimization 3 in the Mencius paper for more
+          // information on this.
+          t.start()
+        } else {
+          // The server is dead and lagging. We need to revoke some of its log
+          // entries. We send Phase1as to all of the servers, including
+          // ourselves. Ideally, we would only send to the other servers and
+          // process a Phase1a locally, but this is simpler and revocation is
+          // rare, so performance is not paramount.
+          val startSlotInclusive = largestChosenPrefixSlots(revokedServer)
+          val stopSlotExclusive = nextSlot + (2 * options.beta)
+          val phase1a = Phase1a(round = recoverRound,
+                                startSlotInclusive = startSlotInclusive,
+                                stopSlotExclusive = stopSlotExclusive)
+          for (server <- servers) {
+            server.send(ServerInbound().withPhase1A(phase1a))
+          }
+
+          // Update our state. Also note that we don't start the timer t
+          // because we don't want to revoke during a revocation.
+          phase1s(revokedServer) = Phase1(
+            startSlotInclusive = startSlotInclusive,
+            stopSlotExclusive = stopSlotExclusive,
+            round = recoverRound,
+            phase1bs = mutable.Map[ServerIndex, Phase1b](),
+            resendPhase1as = makeResendPhase1asTimer(phase1a)
+          )
+          recoverRound = roundSystem.nextClassicRound(index, recoverRound)
+        }
+      }
+    )
+    t.start()
+    t
+  }
+
   private def makeResendPhase1asTimer(
       phase1a: Phase1a
   ): Transport#Timer = {
@@ -361,8 +477,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       options.resendPhase1asPeriod,
       () => {
         metrics.resendPhase1asTotal.inc()
-        for (group <- acceptors; acceptor <- group) {
-          acceptor.send(AcceptorInbound().withPhase1A(phase1a))
+        for (server <- servers) {
+          server.send(ServerInbound().withPhase1A(phase1a))
         }
         t.start()
       }
@@ -589,59 +705,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     )
   }
 
-  private def startPhase1(
-      round: Round,
-      chosenWatermark: Slot,
-      recoverSlot: Slot
-  ): Phase1 = {
-    val phase1a = Phase1a(round = round, chosenWatermark = chosenWatermark)
-    for (group <- acceptors) {
-      thriftyQuorum(group).foreach(
-        _.send(AcceptorInbound().withPhase1A(phase1a))
-      )
-    }
-    Phase1(
-      phase1bs = mutable.Buffer
-        .fill(config.acceptorAddresses(groupIndex).size)(mutable.Map()),
-      pendingClientRequestBatches = mutable.Buffer(),
-      recoverSlot = recoverSlot,
-      resendPhase1as = makeResendPhase1asTimer(phase1a)
-    )
-  }
-
-  private def serverChange(isNewServer: Boolean, recoverSlot: Slot): Unit = {
-    metrics.serverChangesTotal.inc()
-
-    (state, isNewServer) match {
-      case (Inactive, false) =>
-      // Do nothing.
-      case (phase1: Phase1, false) =>
-        phase1.resendPhase1as.stop()
-        state = Inactive
-      case (Phase2, false) =>
-        state = Inactive
-      case (Inactive, true) =>
-        round = roundSystem
-          .nextClassicRound(serverIndex = index, round = round)
-        state = startPhase1(round = round,
-                            chosenWatermark = chosenWatermark,
-                            recoverSlot = recoverSlot)
-      case (phase1: Phase1, true) =>
-        phase1.resendPhase1as.stop()
-        round = roundSystem
-          .nextClassicRound(serverIndex = index, round = round)
-        state = startPhase1(round = round,
-                            chosenWatermark = chosenWatermark,
-                            recoverSlot = recoverSlot)
-      case (Phase2, true) =>
-        round = roundSystem
-          .nextClassicRound(serverIndex = index, round = round)
-        state = startPhase1(round = round,
-                            chosenWatermark = chosenWatermark,
-                            recoverSlot = recoverSlot)
-    }
-  }
-
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ServerInbound.Request
@@ -714,6 +777,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         skipSlots = None
+        flushSkipSlotsTimer.stop()
     }
 
     // Send Phase2a's to all the other servers.
@@ -766,7 +830,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         case Some(voteless: VotelessEntry) =>
           if (phase1a.round < voteless.round) {
             coordinator.send(
-              ServerInbound().withNack(Nack(round = voteless.round))
+              ServerInbound().withPhase1Nack(
+                Phase1Nack(startSlotInclusive = phase1a.startSlotInclusive,
+                           stopSlotExclusive = phase1a.stopSlotExclusive,
+                           round = voteless.round)
+              )
             )
             return
           }
@@ -775,7 +843,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         case Some(pending: PendingEntry) =>
           if (phase1a.round < pending.round) {
             coordinator.send(
-              ServerInbound().withNack(Nack(round = pending.round))
+              ServerInbound().withPhase1Nack(
+                Phase1Nack(startSlotInclusive = phase1a.startSlotInclusive,
+                           stopSlotExclusive = phase1a.stopSlotExclusive,
+                           round = pending.round)
+              )
             )
             return
           }
@@ -884,8 +956,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // End Phase 1.
     phase1.resendPhase1as.stop()
     phase1s.remove(revokedServerIndex)
-    // TODO(mwhittaker): Start the revoke timer again.
-    ???
+    revocationTimers(revokedServerIndex).start()
   }
 
   private def handlePhase2a(
@@ -912,7 +983,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     }
 
     if (phase2a.round < round) {
-      coordinator.send(ServerInbound().withNack(Nack(round = round)))
+      coordinator.send(
+        ServerInbound().withPhase2Nack(
+          Phase2Nack(slot = phase2a.slot, round = round)
+        )
+      )
       return
     }
 
@@ -930,8 +1005,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // some other value.
     if (phase2a.slot > nextSlot) {
       val (start, stop) = skipSlots match {
-        case None                => (nextSlot, phase2a.slot)
-        case Some((start, stop)) => (start, phase2a.slot)
+        case None =>
+          flushSkipSlotsTimer.start()
+          (nextSlot, phase2a.slot)
+
+        case Some((start, stop)) =>
+          (start, phase2a.slot)
       }
       nextSlot = slotSystem.nextClassicRound(index, phase2a.slot)
       skipSlots = Some((start, stop))
@@ -1041,21 +1120,23 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1Nack: Phase1Nack
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    // we can get nacked on a phase 2 normal
-    // we can get nacked on a skip
-    // we can get nacked on a phase 1
-    // i think in all three cases, we'll just yolo and let it go, maybe clear our state
+    // If we get Nacked, we should wait a little bit and try again. We should
+    // also have some sort of leader election. Here, for simplicity, we just
+    // ignore the nack.
+    //
+    // TODO(mwhittaker): Handle nacks more robustly if needed.
+    return
   }
 
   private def handlePhase2Nack(
       src: Transport#Address,
       phase2Nack: Phase2Nack
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    // we can get nacked on a phase 2 normal
-    // we can get nacked on a skip
-    // we can get nacked on a phase 1
-    // i think in all three cases, we'll just yolo and let it go, maybe clear our state
+    // If we get Nacked, we should wait a little bit and try again. We should
+    // also have some sort of leader election. Here, for simplicity, we just
+    // ignore the nack.
+    //
+    // TODO(mwhittaker): Handle nacks more robustly if needed.
+    return
   }
 }
