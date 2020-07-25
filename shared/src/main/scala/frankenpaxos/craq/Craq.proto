@@ -1,0 +1,534 @@
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      |      |      | -----^----> |        |      |   Phase1a
+//      |      |      | <----^----- |        |      |   Phase1b
+//      | -----^----> |      |      |        |      |   ClientRequest
+//      | ---> |      |      |      |        |      |   ClientRequest
+//      |      | ---> |      |      |        |      |   ClientRequestBatch
+//      |      |      | ---> |      |        |      |   Phase2a
+//      |      |      |      | ---> |        |      |   Phase2a
+//      |      |      |      | <--- |        |      |   Phase2b
+//      |      |      |      | -----^------> |      |   Chosen
+//      |      |      |      |      |        | ---> |   ClientReplyBatch
+//      | <----^------^------^------^--------^----- |   ClientReply
+//
+// ## Linearizable Reads
+//
+// We implement scalable linearizable reads using a modification of the
+// technique described in [2]. First, a client contacts a quorum of some
+// acceptor group. Each replica responds with the largest log entry in which
+// its voted. The client computes the maximum such log entry, call it i, and
+// then issues a read to any replica at log entry i + n - 1 where n is the
+// number of acceptor groups.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      | -----^------^------^----> |        |      |   MaxSlotRequest
+//      | <----^------^------^----- |        |      |   MaxSlotReply
+//      | -----^------^------^------^------> |      |   ReadRequest
+//      | <----^------^------^------^------- |      |   ReadReply
+//
+// We can also batch reads by introducing a set of ReadBatchers. Clients send
+// their reads to a randomly chosen ReadBatcher. After the batch reaches a
+// certain size (or a timeout is fired), the ReadBatcher contacts an acceptor
+// group to compute a max slot. It uses this max slot for every read in the
+// batch, and sends the batch to the replicas for execution.
+//
+//           Read          Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      | ---> |      |      |      |        |      |   ReadRequest
+//      |      | -----^------^----> |        |      |   BatchMaxSlotRequest
+//      |      | <----^------^----- |        |      |   BatchMaxSlotReply
+//      |      | -----^------^------^------> |      |   ReadRequestBatch
+//      |      |      |      |      |        | ---> |   ReadReplyBatch
+//      | <----^------^------^------^--------^----- |   ReadReply
+//
+// ## Sequentially Consistent Reads
+//
+// To implement sequentially consistent reads, we have to ensure that
+// every client's read is at a log entry larger than any previous read or
+// write. To ensure this, writes and reads all return the log entry in which
+// they occur. Future reads wait to occur after the largest such log entry.
+// Note that sequentially consistent reads do not have to contact the
+// acceptors.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      | -----^------^------^------^------> |      |   SequentialReadRequest
+//      | <----^------^------^------^------- |      |   ReadReply
+//
+// We can batch sequentially consistent reads in the same way we batch
+// linearizable reads. Every sequentially consistent read request is annotated
+// with a slot. A replica executes the read only after it's executed the
+// corresponding slot. A major decision to make for batched sequentially
+// consistent reads is to assign the entire batch the maximum appearing slot
+// or let each indiviual read have its own slot. Here, we assign the entire
+// batch the max slot.
+//
+//           Read          Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      | ---> |      |      |      |        |      |   SequentialReadRequest
+//      |      | -----^------^------^------> |      |   SequentialReadRequestBatch
+//      |      |      |      |      |        | ---> |   ReadReplyBatch
+//      | <----^------^------^------^--------^----- |   ReadReply
+//
+// ## Eventually Consistent Reads
+//
+// We call an "eventually consistent read" any read that takes place on some
+// prefix of the committed log entries. To implement an eventually consistent
+// read, a client sends a read to any replica, and the replica executes the
+// read immediately. Simple as that.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      | -----^------^------^------^------> |      |   EventualReadRequest
+//      | <----^------^------^------^------- |      |   ReadReply
+//
+// Again, we can batch.
+//
+//           Read          Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      | ---> |      |      |      |        |      |   EventualReadRequest
+//      |      | -----^------^------^------> |      |   EventualReadRequestBatch
+//      |      |      |      |      |        | ---> |   ReadReplyBatch
+//      | <----^------^------^------^--------^----- |   ReadReply
+//
+// ## Learning Who The Leader Is
+//
+// If the leader changes, how do clients know who to send messages to? Well, if
+// a client (or batcher) sends a message to a node that isn't the leader, the
+// node lets the client know using a NotLeader message. Upon receiving a
+// NotLeader message, the client broadcasts a LeaderInfoRequest message to all
+// the nodes. The leader responds to it informing the client of its leadership.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      | <----^----- |      |      |        |      |   NotLeaderClient
+//      | -----^----> |      |      |        |      |   LeaderInfoRequestClient
+//      | <----^----- |      |      |        |      |   LeaderInfoReplyClient
+//      |      | <--- |      |      |        |      |   NotLeaderBatcher
+//      |      | ---> |      |      |        |      |   LeaderInfoRequestBatcher
+//      |      | <--- |      |      |        |      |   LeaderInfoReplyBatcher
+//
+// ## Recovering Holes
+//
+// If a replica has a hole in its log for too long, it informs a proxy replica
+// and the proxy replica broadcasts a recover message to all the leaders. When
+// the current leader receives this message, it makes sure a value in that log
+// entry has been chosen and informs the replicas.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      |      |      |      |      |        | ---> |   Recover
+//      |      |      | <----^------^--------^----- |   Recover
+//
+// ## Learning Chosen Entries
+//
+// When a new leader is elected, it runs Phase 1. To run Phase 1 efficiently, a
+// leader will not run Phase 1 for the prefix of committed commands in the log.
+// To learn of this prefix, replicas periodically send a chosen watermark to
+// all leaders.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      |      |      |      |      |        | ---> |   ChosenWatermark
+//      |      |      | <----^------^--------^----- |   ChosenWatermark
+//
+// ## Nacks
+//
+// As with MultiPaxos, acceptors nack messages in stale rounds. Note that the
+// acceptor directly nacks the leader rather than the proxy leader.
+//
+//                         Leader                Replica
+//   Client Batcher Leader Proxy Acceptor Replica Proxy
+//      |      |      | <----^----- |        |      |   Nack
+//
+// [1]: https://mwhittaker.github.io/publications/compartmentalized_consensus.pdf
+// [2]: https://www.usenix.org/system/files/hotstorage19-paper-charapko.pdf
+// [3]: https://ndpsoftware.com/git-cheatsheet.html
+
+syntax = "proto2";
+
+package frankenpaxos.craq;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.craq"
+  flat_package: true
+};
+
+// Helper messages. ////////////////////////////////////////////////////////////
+message Noop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message CommandId {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // A client's address, pseudonym, and id uniquely identify a command.
+  required bytes client_address = 1;
+  required int32 client_pseudonym = 2;
+  required int32 client_id = 3;
+}
+
+message SetKeyValuePair {
+  required string key = 1;
+  required string value = 2;
+}
+
+message GetKeyValuePair {
+  required string key = 1;
+  optional string value = 2;
+}
+
+message Command {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required bytes command = 2;
+  optional SetKeyValuePair set_key_value_pair = 3;
+}
+
+message Write {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required string key = 2;
+  required string value = 3;
+}
+
+message WriteBatch {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+  repeated Write write = 1;
+}
+
+message Read {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required string key = 2;
+  optional string value = 3;
+}
+
+message ReadBatch {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+  repeated Read read = 1;
+}
+
+message CommandBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated Command command = 1;
+}
+
+message Ack {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  required WriteBatch write_batch = 1;
+}
+
+message TailRead {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  required ReadBatch read_batch = 1;
+}
+
+message CommandBatchOrNoop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    CommandBatch command_batch = 1;
+    Noop noop = 2;
+  }
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Command command = 1;
+}
+
+message ClientRequestBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandBatch batch = 1;
+}
+
+message Phase1a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+
+  // The leader knows that all entries in slots less than `chosenWatermark`
+  // have been chosen. Acceptors do not have to include slots below
+  // `chosenWatermark` in their phase1b response.
+  //
+  // The leader may know that some entries larger than `chosenWatermark` have
+  // also been chosen, but that's okay. It's not unsafe for acceptors to return
+  // too much information.
+  required int32 chosen_watermark = 2;
+}
+
+message Phase1bSlotInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 vote_round = 2;
+  required CommandBatchOrNoop vote_value = 3;
+}
+
+message Phase1b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 group_index = 1;
+  required int32 acceptor_index = 2;
+  required int32 round = 3;
+  repeated Phase1bSlotInfo info = 4;
+}
+
+message Phase2a {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required int32 round = 2;
+  required CommandBatchOrNoop command_batch_or_noop = 3;
+}
+
+message Phase2b {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 acceptor_index = 1;
+  required int32 slot = 2;
+  required int32 round = 3;
+}
+
+message Chosen {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required CommandBatchOrNoop command_batch_or_noop = 2;
+}
+
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required int32 slot = 2;
+  required bytes result = 3;
+}
+
+message ClientReplyBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated ClientReply batch = 1;
+}
+
+message MaxSlotRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+}
+
+message MaxSlotReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required int32 acceptor_index = 2;
+  required int32 slot = 3;
+}
+
+message BatchMaxSlotRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 read_batcher_index = 1;
+  required int32 read_batcher_id = 2;
+}
+
+message BatchMaxSlotReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 read_batcher_index = 1;
+  required int32 read_batcher_id = 2;
+  required int32 acceptor_index = 3;
+  required int32 slot = 4;
+}
+
+message ReadRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // If a client sends a ReadRequest to a ReadBatcher, the slot is set to -1.
+  required int32 slot = 1;
+  required Command command = 2;
+}
+
+message ReadRequestBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  repeated Command command = 2;
+}
+
+message SequentialReadRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required Command command = 2;
+}
+
+message SequentialReadRequestBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  repeated Command command = 2;
+}
+
+message EventualReadRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Command command = 1;
+}
+
+message EventualReadRequestBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated Command command = 1;
+}
+
+message ReadReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required int32 slot = 2;
+  required bytes result = 3;
+}
+
+message ReadReplyBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated ReadReply batch = 1;
+}
+
+// If a client or batcher sends a request to a leader, but the leader is
+// inactive, then the leader sends back a NotLeader{Client,Batcher} message.
+// The client or batcher then sends a LeaderInfoRequest{Client,Batcher} request
+// to all leaders, and the active leader replies with a
+// LeaderInfoReply{Client,Batcher} request with its current round.
+message NotLeaderClient {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoRequestClient {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoReplyClient {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message NotLeaderBatcher {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required ClientRequestBatch client_request_batch = 1;
+}
+
+message LeaderInfoRequestBatcher {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+}
+
+message LeaderInfoReplyBatcher {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message Nack {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 round = 1;
+}
+
+message CraqProto {
+  repeated SetKeyValuePair kv = 1;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientReply client_reply = 1;
+    ReadReply read_reply = 5;
+  }
+}
+
+message ReadBatcherInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ReadRequest read_request = 1;
+    SequentialReadRequest sequential_read_request = 2;
+    EventualReadRequest eventual_read_request = 3;
+    BatchMaxSlotReply batch_max_slot_reply = 4;
+  }
+}
+
+message ChainNodeInbound {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Write write = 3;
+    Read read = 4;
+    WriteBatch write_batch = 5;
+    ReadBatch read_batch = 6;
+    Ack ack = 7;
+    TailRead tail_read = 8;
+  }
+}
+
