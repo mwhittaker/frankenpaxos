@@ -63,12 +63,12 @@ const client_info = {
 
   methods: {
     read: function() {
-      this.node.actor.read(0, "");
+      this.node.actor.read(0, this.write_value_key);
     },
 
     read_ten: function() {
       for (let i = 0; i < 10; ++i) {
-        this.node.actor.read(i, "");
+        this.node.actor.read(i, this.write_value_key);
       }
     },
 
@@ -76,7 +76,7 @@ const client_info = {
       if (this.write_value === "") {
         return;
       }
-      this.node.actor.write(0, this.write_value);
+      this.node.actor.write(0, this.write_value_key, this.write_value);
       this.write_value = "";
     },
 
@@ -147,6 +147,7 @@ const client_info = {
         <button v-on:click="write">Write</button>
         <button v-on:click="write_ten">Write Ten</button>
         <input v-model="write_value" v-on:keyup.enter="write"></input>
+        <input v-model="write_value_key" v-on:keyup.enter="key"></input>
       </div>
     </div>
   `,

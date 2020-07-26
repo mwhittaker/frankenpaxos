@@ -521,6 +521,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   ): Unit = {
     val pseudonym = clientReply.commandId.clientPseudonym
     val state = states.get(pseudonym)
+    logger.info("The result is " + clientReply.result.toStringUtf8)
     state match {
       case None | Some(_: PendingRead) =>
         logger.debug(

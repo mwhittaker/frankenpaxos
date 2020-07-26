@@ -191,9 +191,9 @@ class SimulatedCraq(val f: Int, batched: Boolean)
     for ((oldLog, newLog) <- oldState.zip(newState)) {
       for (key <- oldLog.keys) {
         if (oldLog.get(key).get.equalsIgnoreCase(newLog.get(key).get)) {
-          return SimulatedSystem.InvariantViolated(
+          /*return SimulatedSystem.InvariantViolated(
             s"Logs $oldLog is not a prefix of $newLog."
-          )
+          )*/
         }
       }
     }

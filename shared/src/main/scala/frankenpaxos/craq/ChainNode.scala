@@ -177,7 +177,7 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
   protected var state: State = if (index == 0) {
     Active
   } else {
-    Inactive
+    Active
   }
 
   // Timers ////////////////////////////////////////////////////////////////////
@@ -216,7 +216,8 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
       )
     } else {
       for (command <- writeBatch.write) {
-        val reply = stateMachine.put(command.key, command.value)
+        stateMachine.put(command.key, command.value)
+        val reply = stateMachine.get(command.key)
         val clientAddress = transport.addressSerializer
           .fromBytes(
             command.commandId.clientAddress.toByteArray()
@@ -224,9 +225,10 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
         val client =
           chan[Client[Transport]](clientAddress, Client.serializer)
         client.send(
-          ClientInbound().withClientReply(ClientReply(command.commandId, -1, ByteString.copyFromUtf8(reply.getOrElse(""))))
+          ClientInbound().withClientReply(ClientReply(command.commandId, -1, ByteString.copyFromUtf8(reply.getOrElse("default"))))
         )
       }
+      pendingWrites.remove(pendingWrites.indexOf(writeBatch))
       if (!isHead) {
         chainNodes(prevIndex).send(ChainNodeInbound().withAck(Ack(writeBatch)))
       }
@@ -253,9 +255,11 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
         for (read <- readBatch.read) {
           if (keys.contains(read.key)) {
             // Key is dirty ask the tail
+
             dirtyReads += read
           } else {
             // Key is clean serve latest value
+            logger.info("Read is clean")
             val reply = stateMachine.get(read.key)
             val clientAddress = transport.addressSerializer
               .fromBytes(
@@ -409,6 +413,9 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
         pendingWrites.remove(pendingWrites.indexOf(ack.writeBatch))
         for (write <- ack.writeBatch.write) {
           stateMachine.put(write.key, write.value)
+        }
+        if (!isHead) {
+          chainNodes(prevIndex).send(ChainNodeInbound().withAck(ack))
         }
     }
   }
