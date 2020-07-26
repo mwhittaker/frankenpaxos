@@ -425,6 +425,7 @@ function make_nodes(Craq, snap, batched) {
     {client: Craq.client3, y: 300},
     {client: Craq.client4, y: 400},
   ]
+  console.log(Craq.client1)
   for (const [index, {client, y}] of clients.entries()) {
     const color = flat_red;
     nodes[client.address] = {
@@ -444,10 +445,10 @@ function make_nodes(Craq, snap, batched) {
     {chainNode: Craq.chainNode2, y: 300},
     {chainNode: Craq.chainNode3, y: 400},
   ]
-  for (const [index, {replica, y}] of chainNodes.entries()) {
+  for (const [index, {chainNode, y}] of chainNodes.entries()) {
     const color = flat_dark_blue;
-    nodes[replica.address] = {
-      actor: replica,
+    nodes[chainNode.address] = {
+      actor: chainNode,
       color: color,
       component: replica_info,
       svgs: [

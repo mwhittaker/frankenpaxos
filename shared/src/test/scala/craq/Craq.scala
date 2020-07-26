@@ -83,12 +83,14 @@ object SimulatedCraq {
   case class Write(
       clientIndex: Int,
       clientPseudonym: Int,
+      key: String,
       value: String
   ) extends Command
 
   case class Read(
       clientIndex: Int,
-      clientPseudonym: Int
+      clientPseudonym: Int,
+      key: String
   ) extends Command
 
   case class TransportCommand(command: FakeTransport.Command) extends Command
@@ -124,15 +126,17 @@ class SimulatedCraq(val f: Int, batched: Boolean)
       paxos.numClients * 3 -> {
         for {
           clientId <- Gen.choose(0, paxos.numClients - 1)
-          request <- Gen.alphaLowerStr.filter(_.size > 0)
-        } yield Write(clientId, clientPseudonym = 0, request)
+          key <- Gen.alphaLowerStr.filter(_.size > 0)
+          value <- Gen.alphaLowerStr.filter(_.size > 0)
+        } yield Write(clientId, clientPseudonym = 0, key, value)
 
       },
       // Read.
       paxos.numClients -> {
         for {
           clientId <- Gen.choose(0, paxos.numClients - 1)
-        } yield Read(clientId, clientPseudonym = 0)
+          key <- Gen.alphaLowerStr.filter(_.size > 0)
+        } yield Read(clientId, clientPseudonym = 0, key)
       },
     )
     FakeTransport
@@ -148,10 +152,10 @@ class SimulatedCraq(val f: Int, batched: Boolean)
 
   override def runCommand(paxos: System, command: Command): System = {
     command match {
-      case Write(clientId, clientPseudonym, request) =>
-        paxos.clients(clientId).write(clientPseudonym, request)
-      case Read(clientId, clientPseudonym) =>
-        paxos.clients(clientId).read(clientPseudonym, "")
+      case Write(clientId, clientPseudonym, key, value) =>
+        paxos.clients(clientId).write(clientPseudonym, key, value)
+      case Read(clientId, clientPseudonym, key) =>
+        paxos.clients(clientId).read(clientPseudonym, key)
       case TransportCommand(command) =>
         FakeTransport.runCommand(paxos.transport, command)
     }
@@ -199,13 +203,13 @@ class SimulatedCraq(val f: Int, batched: Boolean)
   def commandToString(command: Command): String = {
     val paxos = newSystem(System.currentTimeMillis())
     command match {
-      case Write(clientIndex, clientPseudonym, value) =>
+      case Write(clientIndex, clientPseudonym, key, value) =>
         val clientAddress = paxos.clients(clientIndex).address
-        s"Write($clientAddress, $clientPseudonym, $value)"
+        s"Write($clientAddress, $clientPseudonym, $key, $value)"
 
-      case Read(clientIndex, clientPseudonym) =>
+      case Read(clientIndex, clientPseudonym, key) =>
         val clientAddress = paxos.clients(clientIndex).address
-        s"Read($clientAddress, $clientPseudonym)"
+        s"Read($clientAddress, $clientPseudonym, $key)"
 
       case TransportCommand(FakeTransport.DeliverMessage(msg)) =>
         val dstActor = paxos.transport.actors(msg.dst)

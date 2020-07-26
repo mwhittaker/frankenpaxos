@@ -388,9 +388,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def writeImpl(
-      pseudonym: Pseudonym,
-      command: Array[Byte],
-      promise: Promise[Array[Byte]]
+                         pseudonym: Pseudonym,
+                         key: Array[Byte],
+                         value: Array[Byte],
+                         promise: Promise[Array[Byte]]
   ): Unit = {
     states.get(pseudonym) match {
       case Some(_) =>
@@ -406,17 +407,16 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       case None =>
         // Send the command.
         val id = ids.getOrElse(pseudonym, 0)
-        val commandString = CraqProto.parseFrom(command).kv.head//ByteString.copyFrom(command).toStringUtf8.split(" ")
-        val key = commandString.key
-        val value = commandString.value
-
+        //val commandString = CraqProto.parseFrom(key).kv.head//ByteString.copyFrom(command).toStringUtf8.split(" ")
+        val keyString = ByteString.copyFrom(key).toStringUtf8
+        val valueString = ByteString.copyFrom(value).toStringUtf8
         val clientRequest = Write(
 
           commandId = CommandId(clientAddress = addressAsBytes,
                                   clientPseudonym = pseudonym,
                                   clientId = id),
-          key = key,
-          value = value
+          key = keyString,
+          value = valueString
         )
 
         sendClientRequest(clientRequest, forceFlush = false)
@@ -424,7 +424,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         // Update our state.
         states(pseudonym) = PendingWrite(
           id = id,
-          command = command,
+          command = key,
           result = promise,
           resendClientRequest = makeResendClientRequestTimer(clientRequest)
         )
@@ -434,9 +434,9 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def readImpl(
-      pseudonym: Pseudonym,
-      command: Array[Byte],
-      promise: Promise[Array[Byte]]
+                        pseudonym: Pseudonym,
+                        key: Array[Byte],
+                        promise: Promise[Array[Byte]]
   ): Unit = {
     states.get(pseudonym) match {
       case Some(_) =>
@@ -454,14 +454,14 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         // the acceptors ourselves. Otherwise, we send the message to a batcher
         // and let it do it for us.
         val id = ids.getOrElse(pseudonym, 0)
-        val commandString = ByteString.copyFrom(command).toStringUtf8.split(" ")
-        val key = commandString(1)
+        //val commandString = ByteString.copyFrom(key).toStringUtf8.split(" ")
+        val keyString = ByteString.copyFrom(key).toStringUtf8
 
         val readRequest = Read(
           commandId = CommandId(clientAddress = addressAsBytes,
             clientPseudonym = pseudonym,
             clientId = id),
-          key
+          key = keyString
         )
 
         if (config.numBatchers == 0) {
@@ -480,7 +480,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           // Update our state.
           states(pseudonym) = PendingRead(
             id = id,
-            command = command,
+            command = key,
             result = promise,
             resendReadRequest =
               makeResendReadRequestTimer(pseudonym, id, readRequest)
@@ -589,36 +589,36 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
 
   // Interface /////////////////////////////////////////////////////////////////
-  def write(pseudonym: Pseudonym, command: Array[Byte]): Future[Array[Byte]] = {
+  def write(pseudonym: Pseudonym, key: Array[Byte], value: Array[Byte]): Future[Array[Byte]] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => writeImpl(pseudonym, command, promise)
+      () => writeImpl(pseudonym, key, value, promise)
     )
     promise.future
   }
 
-  def write(pseudonym: Pseudonym, command: String): Future[String] = {
+  def write(pseudonym: Pseudonym, key: String, value: String): Future[String] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => writeImpl(pseudonym, command.getBytes(), promise)
+      () => writeImpl(pseudonym, key.getBytes(), value.getBytes(), promise)
     )
     promise.future.map(new String(_))(
       concurrent.ExecutionContext.Implicits.global
     )
   }
 
-  def read(pseudonym: Pseudonym, command: Array[Byte]): Future[Array[Byte]] = {
+  def read(pseudonym: Pseudonym, key: Array[Byte]): Future[Array[Byte]] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => readImpl(pseudonym, command, promise)
+      () => readImpl(pseudonym, key, promise)
     )
     promise.future
   }
 
-  def read(pseudonym: Pseudonym, command: String): Future[String] = {
+  def read(pseudonym: Pseudonym, key: String): Future[String] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
-      () => readImpl(pseudonym, command.getBytes(), promise)
+      () => readImpl(pseudonym, key.getBytes(), promise)
     )
     promise.future.map(new String(_))(
       concurrent.ExecutionContext.Implicits.global

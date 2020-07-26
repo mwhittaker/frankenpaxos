@@ -117,13 +117,11 @@ object Foo {
 @JSExportAll
 @JSExportTopLevel("frankenpaxos.craq.Craq")
 object Craq {
-  //val Craq = new Craq(batch = false);
-  val Craq = 1
+  val Craq = new Craq(batch = false);
 }
 
 @JSExportAll
 @JSExportTopLevel("frankenpaxos.craq.BatchedCraq")
 object BatchedCraq {
-  //val Craq = new Craq(batch = true);
-  val Craq = 1
+  val Craq = new Craq(batch = true);
 }
