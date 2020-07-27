@@ -220,7 +220,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
   @JSExportAll
   case class ChosenEntry(
-      value: CommandOrNoop
+      value: CommandOrNoop,
+      isRevocation: Boolean
   ) extends LogEntry
 
   // Fields ////////////////////////////////////////////////////////////////////
@@ -549,10 +550,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         for (server <- otherServers) {
           server.send(
             ServerInbound().withPhase2A(
-              Phase2a(slot = slot,
+              Phase2a(sendingServer = index,
+                      slot = slot,
                       round = round,
-                      commandOrNoop = value,
-                      isRevocation = true)
+                      commandOrNoop = value)
             )
           )
         }
@@ -606,18 +607,21 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
     // Next, we update the log with a bunch of noops. This is safe because we,
     // as the leader, have not proposed any values in slots starting from
-    // nextSlot. This means that we can unilaterally decide a skip in them.
+    // nextSlot.
     while (nextSlot < newStop) {
       logger.check(!log.contains(nextSlot))
       logger.check(!phase2s.contains(nextSlot))
-      log.put(nextSlot, ChosenEntry(CommandOrNoop().withNoop(Noop())))
+      log.put(
+        nextSlot,
+        ChosenEntry(CommandOrNoop().withNoop(Noop()), isRevocation = false)
+      )
       nextSlot = slotSystem.nextClassicRound(index, nextSlot)
     }
   }
 
-  def choose(slot: Slot, value: CommandOrNoop): Unit = {
+  def choose(slot: Slot, value: CommandOrNoop, isRevocation: Boolean): Unit = {
     // Update our state.
-    log.put(slot, ChosenEntry(value))
+    log.put(slot, ChosenEntry(value, isRevocation))
     phase2s.remove(slot)
 
     // Update our largest chosen prefix slot, if possible. Remember that we
@@ -633,11 +637,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         frontierSlot = slotSystem.nextClassicRound(owningServer, frontierSlot)
       }
     }
-
-    // Advance with skips, if needed.
-    // if (slot >= nextSlot) {
-    //   advanceWithSkips(slot)
-    // }
   }
 
   // `executeCommand(slot, command, replyIf)` attempts to execute the
@@ -708,7 +707,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           // mean, there's a hole in the log, so we can't execute anything.
           return
 
-        case Some(ChosenEntry(value)) =>
+        case Some(ChosenEntry(value, _)) =>
           val slot = executedWatermark
           executedWatermark += 1
 
@@ -807,10 +806,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     for (server <- otherServers) {
       server.send(
         ServerInbound().withPhase2A(
-          Phase2a(slot = nextSlot,
+          Phase2a(sendingServer = index,
+                  slot = nextSlot,
                   round = 0,
-                  commandOrNoop = value,
-                  isRevocation = false)
+                  commandOrNoop = value)
         )
       )
     }
@@ -833,8 +832,14 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       phase1a: Phase1a
   ): Unit = {
-    val coordinator = chan[Server[Transport]](src, Server.serializer)
-    val slotInfos = mutable.Buffer[Phase1bSlotInfo]()
+    // If we are the server being revoked, then some server erroneously thought
+    // that we're dead when we're not. We advance our slot, so that every log
+    // entry being revoked has some pending or chosen value in it.
+    val revokedServerIndex = slotSystem.leader(phase1a.startSlotInclusive)
+    if (revokedServerIndex == index) {
+      advanceWithSkips(phase1a.stopSlotExclusive - 1)
+      executeLog((slot) => slotSystem.leader(slot) == index)
+    }
 
     // Handling Phase1a's is a little bit awkward in Mencius. With MultiPaxos,
     // we have a single round for the entire log. That makes checking for stale
@@ -847,8 +852,9 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // Nack. Otherwise, we send back the appropriate Phase2b's. Nacking should
     // hopefully be rare in practice, so the inefficiency shouldn't be a big
     // deal.
+    val coordinator = chan[Server[Transport]](src, Server.serializer)
+    val slotInfos = mutable.Buffer[Phase1bSlotInfo]()
     var slot = phase1a.startSlotInclusive
-    val revokedServerIndex = slotSystem.leader(phase1a.startSlotInclusive)
     while (slot < phase1a.stopSlotExclusive) {
       log.get(slot) match {
         case None =>
@@ -886,7 +892,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
         case Some(chosen: ChosenEntry) =>
           slotInfos += Phase1bSlotInfo(slot = slot).withChosenSlotInfo(
-            ChosenSlotInfo(value = chosen.value)
+            ChosenSlotInfo(value = chosen.value,
+                           isRevocation = chosen.isRevocation)
           )
       }
       slot = slotSystem.nextClassicRound(revokedServerIndex, slot)
@@ -952,8 +959,13 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       chosenSlotInfos.headOption match {
         case Some(info: ChosenSlotInfo) =>
           // A value was already chosen in this slot. We don't have to
-          // propose anyting.
-          choose(slot, info.value)
+          // propose anything. If the chosen value wasn't part of a revocation,
+          // then we have to advance our nextSlot as well, since we're lagging
+          // behind.
+          choose(slot, info.value, info.isRevocation)
+          if (!info.isRevocation) {
+            advanceWithSkips(slot)
+          }
 
         case None =>
           if (pendingSlotInfos.isEmpty) {
@@ -986,26 +998,28 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     revocationTimers(revokedServerIndex).start()
   }
 
-  // Note that it's possible that we're receiving a 2a for a slot that we own,
-  // if the other server is trying to revoke us. This code should all still
-  // work, but keep the subtelty in mind.
   private def handlePhase2a(
       src: Transport#Address,
       phase2a: Phase2a
   ): Unit = {
+    // If we are the server being revoked, then some server erroneously thought
+    // that we're dead when we're not. We advance our slot, so that every log
+    // entry being revoked has some pending or chosen value in it.
+    val revokedServerIndex = slotSystem.leader(phase2a.slot)
+    if (revokedServerIndex == index) {
+      advanceWithSkips(phase2a.slot)
+      executeLog((slot) => slotSystem.leader(slot) == index)
+    }
+
     // Ignore stale rounds.
     val coordinator = chan[Server[Transport]](src, Server.serializer)
     val round = log.get(phase2a.slot) match {
       case Some(chosen: ChosenEntry) =>
         coordinator.send(
           ServerInbound().withChosen(
-            Chosen(
-              slot = phase2a.slot,
-              commandOrNoop = chosen.value,
-              // TODO(mwhittaker): Double check this. I'm not sure what
-              // value of isRevocation to use.
-              isRevocation = false
-            )
+            Chosen(slot = phase2a.slot,
+                   commandOrNoop = chosen.value,
+                   isRevocation = chosen.isRevocation)
           )
         )
         return
@@ -1033,8 +1047,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
                          voteRound = phase2a.round,
                          voteValue = phase2a.commandOrNoop))
 
-    // Update our nextSlot and skipSlots.
-    if (slotSystem.leader(phase2a.slot) == index || !phase2a.isRevocation) {
+    // If we're being revoked, then we updated our nextSlot up above.
+    // Otherwise, we only want to advance our nextSlot if this Phase2a is not
+    // part of a revocation. This is the case when the sending server owns the
+    // slot of the Phase2a.
+    if (revokedServerIndex != index &&
+        slotSystem.leader(phase2a.slot) == phase2a.sendingServer) {
       advanceWithSkips(phase2a.slot)
       executeLog((slot) => slotSystem.leader(slot) == index)
     }
@@ -1119,7 +1137,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           )
       )
     }
-    choose(phase2b.slot, phase2.value)
+    choose(phase2b.slot, phase2.value, phase2.isRevocation)
     executeLog((slot) => slotSystem.leader(slot) == index)
   }
 
@@ -1138,7 +1156,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     var slot = skip.startSlotInclusive
     val coordinator = slotSystem.leader(skip.startSlotInclusive)
     while (slot < skip.stopSlotExclusive) {
-      choose(slot, CommandOrNoop().withNoop(Noop()))
+      choose(slot, CommandOrNoop().withNoop(Noop()), isRevocation = false)
       slot = slotSystem.nextClassicRound(coordinator, slot)
     }
 
@@ -1153,36 +1171,29 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       chosen: Chosen
   ): Unit = {
-    if (slotSystem.leader(chosen.slot) != index) {
-      choose(chosen.slot, chosen.commandOrNoop)
-
-      // If this slot was chosen as part of a revocation, then we don't want to
-      // advance our nextSlot with skips. A revocation revokes a large batch of
-      // a failed server's slots. This allows the other servers to continue
-      // choosing commands without stalling on holes from the failed server. If
-      // we advance our slot for revoked instances, that defeats the whole
-      // purpose of the revocation in the first place.
-      //
-      // If the slot is not part of a revocation, then we do advance our
-      // nextSlot with skips because we don't want to be the laggy server that
-      // keeps every other server behind.
-      if (!chosen.isRevocation) {
-        advanceWithSkips(chosen.slot)
-      }
-
-      // choose and advanceWithSkips can both fill in the log, so we might be
-      // able to execute a bit more of the log now.
-      executeLog((slot) => slotSystem.leader(slot) == index)
-    } else {
-      // If we are the owner of this slot, then some other server must have
-      // thought that we failed and started revoking us. Now, we expect the
-      // chosen slot to be a revocation, but we advance our nextSlot regardless
-      // to catch up.
-      logger.check(chosen.isRevocation)
-      choose(chosen.slot, chosen.commandOrNoop)
+    // If this slot was chosen as part of a revocation, then we don't want to
+    // advance our nextSlot with skips. A revocation revokes a large batch of
+    // a failed server's slots. This allows the other servers to continue
+    // choosing commands without stalling on holes from the failed server. If
+    // we advance our slot for revoked instances, that defeats the whole
+    // purpose of the revocation in the first place.
+    //
+    // If the slot is not part of a revocation, then we do advance our
+    // nextSlot with skips because we don't want to be the laggy server that
+    // keeps every other server behind.
+    //
+    // If we own this slot, then we do advance our rounds whether or not it's a
+    // revocation. Note that we do this before we choose, so that our nextSlot
+    // always points to a vacant log entry.
+    if (slotSystem.leader(chosen.slot) == index || !chosen.isRevocation) {
       advanceWithSkips(chosen.slot)
-      executeLog((slot) => slotSystem.leader(slot) == index)
     }
+
+    choose(chosen.slot, chosen.commandOrNoop, chosen.isRevocation)
+
+    // choose and advanceWithSkips can both fill in the log, so we might be
+    // able to execute a bit more of the log now.
+    executeLog((slot) => slotSystem.leader(slot) == index)
   }
 
   private def handlePhase1Nack(

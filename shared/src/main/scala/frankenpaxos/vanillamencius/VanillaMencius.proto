@@ -126,6 +126,7 @@ message ChosenSlotInfo {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required CommandOrNoop value = 1;
+  required bool is_revocation = 2;
 }
 
 message Phase1bSlotInfo {
@@ -154,10 +155,10 @@ message Phase2a {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 slot = 1;
-  required int32 round = 2;
-  required CommandOrNoop command_or_noop = 3;
-  required bool is_revocation = 4;
+  required int32 sending_server = 1;
+  required int32 slot = 2;
+  required int32 round = 3;
+  required CommandOrNoop command_or_noop = 4;
 }
 
 message Skip {
@@ -185,7 +186,7 @@ message Chosen {
 
   required int32 slot = 1;
   required CommandOrNoop command_or_noop = 2;
-  required bool is_revocation = 3;
+  required bool isRevocation = 3;
 }
 
 message ClientReply {
