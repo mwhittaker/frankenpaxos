@@ -349,8 +349,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def batchWrite(
-                                   clientRequest: Write
-                                 ): Unit = {
+      clientRequest: Write
+  ): Unit = {
     growingBatch += clientRequest
     if (growingBatch.size >= options.batchSize) {
       headNode.send(
@@ -363,8 +363,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def batchRead(
-                          readRequest: Read
-                        ): Unit = {
+      readRequest: Read
+  ): Unit = {
     growingReadBatch += readRequest
     if (growingReadBatch.size >= options.batchSize) {
       val randNode = chainNodes(rand.nextInt(chainNodes.size))
@@ -378,10 +378,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def writeImpl(
-                         pseudonym: Pseudonym,
-                         key: Array[Byte],
-                         value: Array[Byte],
-                         promise: Promise[Array[Byte]]
+      pseudonym: Pseudonym,
+      key: Array[Byte],
+      value: Array[Byte],
+      promise: Promise[Array[Byte]]
   ): Unit = {
     states.get(pseudonym) match {
       case Some(_) =>
@@ -401,10 +401,9 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         val keyString = ByteString.copyFrom(key).toStringUtf8
         val valueString = ByteString.copyFrom(value).toStringUtf8
         val clientRequest = Write(
-
           commandId = CommandId(clientAddress = addressAsBytes,
-                                  clientPseudonym = pseudonym,
-                                  clientId = id),
+                                clientPseudonym = pseudonym,
+                                clientId = id),
           key = keyString,
           value = valueString
         )
@@ -424,9 +423,9 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def readImpl(
-                        pseudonym: Pseudonym,
-                        key: Array[Byte],
-                        promise: Promise[Array[Byte]]
+      pseudonym: Pseudonym,
+      key: Array[Byte],
+      promise: Promise[Array[Byte]]
   ): Unit = {
     states.get(pseudonym) match {
       case Some(_) =>
@@ -449,8 +448,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         val readRequest = Read(
           commandId = CommandId(clientAddress = addressAsBytes,
-            clientPseudonym = pseudonym,
-            clientId = id),
+                                clientPseudonym = pseudonym,
+                                clientId = id),
           key = keyString
         )
 
@@ -466,28 +465,27 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           }
         } else {
           batchRead(readRequest)
-
-          // Update our state.
-          states(pseudonym) = PendingRead(
-            id = id,
-            command = key,
-            result = promise,
-            resendReadRequest =
-              makeResendReadRequestTimer(pseudonym, id, readRequest)
-          )
         }
+        // Update our state.
+        states(pseudonym) = PendingRead(
+          id = id,
+          command = key,
+          result = promise,
+          resendReadRequest =
+            makeResendReadRequestTimer(pseudonym, id, readRequest)
+        )
+        metrics.clientRequestsSentTotal.inc()
         ids(pseudonym) = id + 1
     }
   }
-
 
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ClientInbound.Request
 
     val label = inbound.request match {
-      case Request.ClientReply(_)           => "ClientReply"
-      case Request.ReadReply(_)             => "ReadReply"
+      case Request.ClientReply(_) => "ClientReply"
+      case Request.ReadReply(_)   => "ReadReply"
       case Request.Empty =>
         logger.fatal("Empty ClientInbound encountered.")
     }
@@ -543,7 +541,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-
   private def handleReadReply(
       src: Transport#Address,
       readReply: ReadReply
@@ -578,9 +575,10 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-
   // Interface /////////////////////////////////////////////////////////////////
-  def write(pseudonym: Pseudonym, key: Array[Byte], value: Array[Byte]): Future[Array[Byte]] = {
+  def write(pseudonym: Pseudonym,
+            key: Array[Byte],
+            value: Array[Byte]): Future[Array[Byte]] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
       () => writeImpl(pseudonym, key, value, promise)
@@ -588,7 +586,9 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     promise.future
   }
 
-  def write(pseudonym: Pseudonym, key: String, value: String): Future[String] = {
+  def write(pseudonym: Pseudonym,
+            key: String,
+            value: String): Future[String] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
       () => writeImpl(pseudonym, key.getBytes(), value.getBytes(), promise)

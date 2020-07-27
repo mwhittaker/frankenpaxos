@@ -1,8 +1,22 @@
 package craq
 
-import frankenpaxos.craq.{ChainNode, ChainNodeMetrics, ChainNodeOptions, Client, ClientMetrics, ClientOptions, Config, Hash}
+import frankenpaxos.craq.{
+  ChainNode,
+  ChainNodeMetrics,
+  ChainNodeOptions,
+  Client,
+  ClientMetrics,
+  ClientOptions,
+  Config,
+  Hash
+}
 import frankenpaxos.monitoring.FakeCollectors
-import frankenpaxos.simulator.{FakeLogger, FakeTransport, FakeTransportAddress, SimulatedSystem}
+import frankenpaxos.simulator.{
+  FakeLogger,
+  FakeTransport,
+  FakeTransportAddress,
+  SimulatedSystem
+}
 import frankenpaxos.statemachine.ReadableAppendLog
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
@@ -22,7 +36,8 @@ class Craq(val f: Int, batched: Boolean, seed: Long) {
 
   val config = Config[FakeTransport](
     f,
-    chainNodeAddresses = (1 to numChainNodes).map(i => FakeTransportAddress(s"ChainNode $i")),
+    chainNodeAddresses =
+      (1 to numChainNodes).map(i => FakeTransportAddress(s"ChainNode $i")),
     distributionScheme = Hash,
     numBatchers
   )
@@ -73,8 +88,7 @@ object SimulatedCraq {
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
-class SimulatedCraq(val f: Int, batched: Boolean)
-    extends SimulatedSystem {
+class SimulatedCraq(val f: Int, batched: Boolean) extends SimulatedSystem {
   import SimulatedCraq._
 
   override type System = Craq
@@ -151,7 +165,8 @@ class SimulatedCraq(val f: Int, batched: Boolean)
 
       for (key <- lhs.keys) {
         if (!lhs.get(key).get.equalsIgnoreCase(rhs.get(key).get)) {
-          return SimulatedSystem.InvariantViolated(s"Logs $lhs and $rhs are not compatible.")
+          return SimulatedSystem.InvariantViolated(
+            s"Logs $lhs and $rhs are not compatible.")
         }
       }
     }
@@ -165,7 +180,8 @@ class SimulatedCraq(val f: Int, batched: Boolean)
   ): SimulatedSystem.InvariantResult = {
     for ((oldLog, newLog) <- oldState.zip(newState)) {
       if (oldLog.size < newLog.size) {
-        return SimulatedSystem.InvariantViolated(s"Old kvs $oldLog is not a prefix of new kvs $newLog")
+        return SimulatedSystem.InvariantViolated(
+          s"Old kvs $oldLog is not a prefix of new kvs $newLog")
       }
     }
     SimulatedSystem.InvariantHolds

@@ -6,7 +6,12 @@ import collection.mutable
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.monitoring.{Collectors, Counter, PrometheusCollectors, Summary}
+import frankenpaxos.monitoring.{
+  Collectors,
+  Counter,
+  PrometheusCollectors,
+  Summary
+}
 import frankenpaxos.roundsystem.RoundSystem
 
 import scala.scalajs.js.annotation._
@@ -27,8 +32,8 @@ object ChainNode {
 
 @JSExportAll
 case class ChainNodeOptions(
-                          measureLatencies: Boolean
-                        )
+    measureLatencies: Boolean
+)
 
 @JSExportAll
 object ChainNodeOptions {
@@ -56,14 +61,14 @@ class ChainNodeMetrics(collectors: Collectors) {
 
 @JSExportAll
 class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
-                                                              address: Transport#Address,
-                                                              transport: Transport,
-                                                              logger: Logger,
-                                                              config: Config[Transport],
-                                                              options: ChainNodeOptions = ChainNodeOptions.default,
-                                                              metrics: ChainNodeMetrics = new ChainNodeMetrics(PrometheusCollectors),
-                                                              seed: Long = System.currentTimeMillis()
-                                                            ) extends Actor(address, transport, logger) {
+    address: Transport#Address,
+    transport: Transport,
+    logger: Logger,
+    config: Config[Transport],
+    options: ChainNodeOptions = ChainNodeOptions.default,
+    metrics: ChainNodeMetrics = new ChainNodeMetrics(PrometheusCollectors),
+    seed: Long = System.currentTimeMillis()
+) extends Actor(address, transport, logger) {
   config.checkValid()
 
   // Types /////////////////////////////////////////////////////////////////////
@@ -95,7 +100,7 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
   // class. A simple map suffices.
   @JSExport
   protected var clientTable =
-  mutable.Map[(ByteString, ClientPseudonym), (ClientId, ByteString)]()
+    mutable.Map[(ByteString, ClientPseudonym), (ClientId, ByteString)]()
 
   private val index = config.chainNodeAddresses.indexOf(address)
   private val nextIndex = index + 1
@@ -151,7 +156,10 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
         val client =
           chan[Client[Transport]](clientAddress, Client.serializer)
         client.send(
-          ClientInbound().withClientReply(ClientReply(command.commandId, -1, ByteString.copyFromUtf8(reply.getOrElse("default"))))
+          ClientInbound().withClientReply(
+            ClientReply(command.commandId,
+                        -1,
+                        ByteString.copyFromUtf8(reply.getOrElse("default"))))
         )
         versions += 1
       }
@@ -163,38 +171,42 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def processReadBatch(readBatch: ReadBatch): Unit = {
-        val keys: mutable.Set[String] = mutable.Set[String]()
-        for (pw <- pendingWrites) {
-          for (w <- pw.write) {
-            keys.add(w.key)
-          }
-        }
+    val keys: mutable.Set[String] = mutable.Set[String]()
+    for (pw <- pendingWrites) {
+      for (w <- pw.write) {
+        keys.add(w.key)
+      }
+    }
 
-        val dirtyReads: mutable.Buffer[Read] = mutable.Buffer[Read]()
-        for (read <- readBatch.read) {
-          if (keys.contains(read.key)) {
-            // Key is dirty ask the tail
-            dirtyReads += read
-          } else {
-            // Key is clean serve latest value
-            logger.info("Read is clean")
-            val reply = stateMachine.get(read.key)
-            val clientAddress = transport.addressSerializer
-              .fromBytes(
-                read.commandId.clientAddress.toByteArray()
-              )
-            val client =
-              chan[Client[Transport]](clientAddress, Client.serializer)
-            client.send(
-              ClientInbound().withClientReply(ClientReply(read.commandId, -1, ByteString.copyFromUtf8(reply.getOrElse("default"))))
-            )
-            versions += 1
-          }
-        }
-        // Send dirty reads to tail
-        if (dirtyReads.nonEmpty) {
-          chainNodes.last.send(ChainNodeInbound().withTailRead(TailRead(ReadBatch(dirtyReads.toSeq))))
-        }
+    val dirtyReads: mutable.Buffer[Read] = mutable.Buffer[Read]()
+    for (read <- readBatch.read) {
+      if (keys.contains(read.key)) {
+        // Key is dirty ask the tail
+        dirtyReads += read
+      } else {
+        // Key is clean serve latest value
+        logger.info("Read is clean")
+        val reply = stateMachine.get(read.key)
+        val clientAddress = transport.addressSerializer
+          .fromBytes(
+            read.commandId.clientAddress.toByteArray()
+          )
+        val client =
+          chan[Client[Transport]](clientAddress, Client.serializer)
+        client.send(
+          ClientInbound().withReadReply(
+            ReadReply(read.commandId,
+                      -1,
+                      ByteString.copyFromUtf8(reply.getOrElse("default"))))
+        )
+        versions += 1
+      }
+    }
+    // Send dirty reads to tail
+    if (dirtyReads.nonEmpty) {
+      chainNodes.last.send(
+        ChainNodeInbound().withTailRead(TailRead(ReadBatch(dirtyReads.toSeq))))
+    }
   }
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -203,12 +215,12 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
 
     val label =
       inbound.request match {
-        case Request.Write(_)            => "Write"
-        case Request.WriteBatch(_)            => "WriteBatch"
-        case Request.Read(_)            => "Read"
-        case Request.ReadBatch(_)            => "ReadBatch"
-        case Request.Ack(_)            => "Ack"
-        case Request.TailRead(_)        => "TailRead"
+        case Request.Write(_)      => "Write"
+        case Request.WriteBatch(_) => "WriteBatch"
+        case Request.Read(_)       => "Read"
+        case Request.ReadBatch(_)  => "ReadBatch"
+        case Request.Ack(_)        => "Ack"
+        case Request.TailRead(_)   => "TailRead"
         case Request.Empty =>
           logger.fatal("Empty ChainNodeInbound encountered.")
       }
@@ -235,71 +247,72 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def handleWrite(
-                                   src: Transport#Address,
-                                   write: Write
-                                 ): Unit = {
-        processWriteBatch(
-          WriteBatch(
-            Seq(write))
-          )
+      src: Transport#Address,
+      write: Write
+  ): Unit = {
+    processWriteBatch(
+      WriteBatch(Seq(write))
+    )
   }
 
   private def handleWriteBatch(
-                                        src: Transport#Address,
-                                        writeBatch: WriteBatch
-                                      ): Unit = {
-        processWriteBatch(writeBatch)
+      src: Transport#Address,
+      writeBatch: WriteBatch
+  ): Unit = {
+    processWriteBatch(writeBatch)
   }
 
-    private def handleRead(
-                             src: Transport#Address,
-                             read: Read
-                           ): Unit = {
-          processReadBatch(
-            ReadBatch(
-              Seq(read))
-          )
-    }
+  private def handleRead(
+      src: Transport#Address,
+      read: Read
+  ): Unit = {
+    processReadBatch(
+      ReadBatch(Seq(read))
+    )
+  }
 
-    private def handleReadBatch(
-                                  src: Transport#Address,
-                                  readBatch: ReadBatch
-                                ): Unit = {
+  private def handleReadBatch(
+      src: Transport#Address,
+      readBatch: ReadBatch
+  ): Unit = {
 
-          processReadBatch(readBatch)
-    }
+    processReadBatch(readBatch)
+  }
 
   private def handleTailRead(
-                               src: Transport#Address,
-                               tailRead: TailRead
-                             ): Unit = {
-        for (command <- tailRead.readBatch.read) {
-          val reply = stateMachine.get(command.key)
-          val clientAddress = transport.addressSerializer
-            .fromBytes(
-              command.commandId.clientAddress.toByteArray()
-            )
-          val client =
-            chan[Client[Transport]](clientAddress, Client.serializer)
-          client.send(
-            ClientInbound().withClientReply(ClientReply(command.commandId, -1, ByteString.copyFromUtf8(reply.getOrElse("default"))))
-          )
-          versions += 1
-          //replyBuffer += Write(command.commandId, command.key, reply.get)
-        }
+      src: Transport#Address,
+      tailRead: TailRead
+  ): Unit = {
+    for (command <- tailRead.readBatch.read) {
+      val reply = stateMachine.get(command.key)
+      val clientAddress = transport.addressSerializer
+        .fromBytes(
+          command.commandId.clientAddress.toByteArray()
+        )
+      val client =
+        chan[Client[Transport]](clientAddress, Client.serializer)
+      client.send(
+        ClientInbound().withReadReply(
+          ReadReply(command.commandId,
+                    -1,
+                    ByteString.copyFromUtf8(reply.getOrElse("default"))))
+      )
+      versions += 1
+      //replyBuffer += Write(command.commandId, command.key, reply.get)
+    }
 
   }
 
   private def handleAck(
-                         src: Transport#Address,
-                         ack: Ack
-                       ): Unit = {
-        pendingWrites.remove(pendingWrites.indexOf(ack.writeBatch))
-        for (write <- ack.writeBatch.write) {
-          stateMachine.put(write.key, write.value)
-        }
-        if (!isHead) {
-          chainNodes(prevIndex).send(ChainNodeInbound().withAck(ack))
-        }
+      src: Transport#Address,
+      ack: Ack
+  ): Unit = {
+    pendingWrites.remove(pendingWrites.indexOf(ack.writeBatch))
+    for (write <- ack.writeBatch.write) {
+      stateMachine.put(write.key, write.value)
+    }
+    if (!isHead) {
+      chainNodes(prevIndex).send(ChainNodeInbound().withAck(ack))
+    }
   }
 }
