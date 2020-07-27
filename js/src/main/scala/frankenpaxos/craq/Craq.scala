@@ -18,60 +18,14 @@ class Craq(batch: Boolean) {
   // Configuration.
   val config = Config[JsTransport](
     f = 1,
-    batcherAddresses = if (batch) {
-      Seq(
-        JsTransportAddress("Batcher 1"),
-        JsTransportAddress("Batcher 2")
-      )
-    } else {
-      Seq()
-    },
-    readBatcherAddresses = if (batch) {
-      Seq(
-        JsTransportAddress("ReadBatcher 1"),
-        JsTransportAddress("ReadBatcher 2")
-      )
-    } else {
-      Seq()
-    },
-    leaderAddresses = Seq(
-      JsTransportAddress("Leader 1"),
-      JsTransportAddress("Leader 2")
-    ),
-    leaderElectionAddresses = Seq(
-      JsTransportAddress("LeaderElection 1"),
-      JsTransportAddress("LeaderElection 2")
-    ),
-    proxyLeaderAddresses = Seq(
-      JsTransportAddress("ProxyLeader 1"),
-      JsTransportAddress("ProxyLeader 2")
-    ),
-    acceptorAddresses = Seq(
-      Seq(
-        JsTransportAddress("Acceptor A1"),
-        JsTransportAddress("Acceptor A2"),
-        JsTransportAddress("Acceptor A3")
-      ),
-      Seq(
-        JsTransportAddress("Acceptor B1"),
-        JsTransportAddress("Acceptor B2"),
-        JsTransportAddress("Acceptor B3")
-      )
-    ),
-    replicaAddresses = Seq(
-      JsTransportAddress("Replica 1"),
-      JsTransportAddress("Replica 2")
-    ),
-    proxyReplicaAddresses = Seq(
-      JsTransportAddress("ProxyReplica 1"),
-      JsTransportAddress("ProxyReplica 2")
-    ),
     chainNodeAddresses = Seq(
       JsTransportAddress("ChainNode 1"),
       JsTransportAddress("ChainNode 2"),
       JsTransportAddress("ChainNode 3")
     ),
-    distributionScheme = Hash
+    distributionScheme = Hash,
+    // Num Batchers acts as a boolean of whether to batch or not
+    numBatchers = if (batch) 1 else 0
   )
 
   // Clients.
@@ -107,12 +61,6 @@ class Craq(batch: Boolean) {
   val chainNode2 = chainNodes(1)
   val chainNode3 = chainNodes(2)
 }
-
-/*@JSExportAll
-@JSExportTopLevel("foobar")
-object Foo {
-  val bar = 1
-}*/
 
 @JSExportAll
 @JSExportTopLevel("frankenpaxos.craq.Craq")

@@ -1,6 +1,6 @@
 package craq
 
-import frankenpaxos.craq.{ChainNode, ChainNodeMetrics, ChainNodeOptions, Client, ClientMetrics, ClientOptions, CommandBatchOrNoop, Config, Hash}
+import frankenpaxos.craq.{ChainNode, ChainNodeMetrics, ChainNodeOptions, Client, ClientMetrics, ClientOptions, Config, Hash}
 import frankenpaxos.monitoring.FakeCollectors
 import frankenpaxos.simulator.{FakeLogger, FakeTransport, FakeTransportAddress, SimulatedSystem}
 import frankenpaxos.statemachine.ReadableAppendLog
@@ -18,36 +18,13 @@ class Craq(val f: Int, batched: Boolean, seed: Long) {
   } else {
     0
   }
-  val numLeaders = f + 1
-  val numProxyLeaders = f + 1
-  val numAcceptorGroups = 2
-  val numAcceptors = 2 * f + 1
-  val numReplicas = f + 1
-  val numProxyReplicas = f + 1
   val numChainNodes = 2 * f + 1
 
   val config = Config[FakeTransport](
     f,
-    batcherAddresses =
-      (1 to numBatchers).map(i => FakeTransportAddress(s"Batcher $i")),
-    readBatcherAddresses =
-      (1 to numBatchers).map(i => FakeTransportAddress(s"ReadBatcher $i")),
-    leaderAddresses =
-      (1 to numLeaders).map(i => FakeTransportAddress(s"Leader $i")),
-    leaderElectionAddresses =
-      (1 to numLeaders).map(i => FakeTransportAddress(s"LeaderElection $i")),
-    proxyLeaderAddresses =
-      (1 to numProxyLeaders).map(i => FakeTransportAddress(s"ProxyLeader $i")),
-    acceptorAddresses = for (g <- 0 to numAcceptorGroups)
-      yield {
-        (1 to numAcceptors).map(i => FakeTransportAddress(s"Acceptor $g.$i")),
-      },
-    replicaAddresses =
-      (1 to numReplicas).map(i => FakeTransportAddress(s"Replica $i")),
-    proxyReplicaAddresses = (1 to numProxyReplicas)
-      .map(i => FakeTransportAddress(s"ProxyReplica $i")),
     chainNodeAddresses = (1 to numChainNodes).map(i => FakeTransportAddress(s"ChainNode $i")),
-    distributionScheme = Hash
+    distributionScheme = Hash,
+    numBatchers
   )
 
   // Clients.
@@ -114,33 +91,36 @@ class SimulatedCraq(val f: Int, batched: Boolean)
 
   override def getState(craq: System): State = {
     val logs = mutable.Buffer[mutable.Map[String, String]]()
-    for (replica <- craq.chainNodes) {
-      logs += (replica.stateMachine)
+    for (chainNode <- craq.chainNodes) {
+      if (chainNode.versions > 0) {
+        valueChosen = true
+      }
+      logs += (chainNode.stateMachine)
     }
     logs
   }
 
-  override def generateCommand(paxos: System): Option[Command] = {
+  override def generateCommand(craq: System): Option[Command] = {
     val subgens = mutable.Buffer[(Int, Gen[Command])](
       // Write.
-      paxos.numClients * 3 -> {
+      craq.numClients * 3 -> {
         for {
-          clientId <- Gen.choose(0, paxos.numClients - 1)
+          clientId <- Gen.choose(0, craq.numClients - 1)
           key <- Gen.alphaLowerStr.filter(_.size > 0)
           value <- Gen.alphaLowerStr.filter(_.size > 0)
         } yield Write(clientId, clientPseudonym = 0, key, value)
 
       },
       // Read.
-      paxos.numClients -> {
+      /*craq.numClients -> {
         for {
-          clientId <- Gen.choose(0, paxos.numClients - 1)
+          clientId <- Gen.choose(0, craq.numClients - 1)
           key <- Gen.alphaLowerStr.filter(_.size > 0)
         } yield Read(clientId, clientPseudonym = 0, key)
-      },
+      },*/
     )
     FakeTransport
-      .generateCommandWithFrequency(paxos.transport)
+      .generateCommandWithFrequency(craq.transport)
       .foreach({
         case (frequency, gen) =>
           subgens += frequency -> gen.map(TransportCommand(_))
@@ -150,22 +130,16 @@ class SimulatedCraq(val f: Int, batched: Boolean)
     gen.apply(Gen.Parameters.default, Seed.random())
   }
 
-  override def runCommand(paxos: System, command: Command): System = {
+  override def runCommand(craq: System, command: Command): System = {
     command match {
       case Write(clientId, clientPseudonym, key, value) =>
-        paxos.clients(clientId).write(clientPseudonym, key, value)
+        craq.clients(clientId).write(clientPseudonym, key, value)
       case Read(clientId, clientPseudonym, key) =>
-        paxos.clients(clientId).read(clientPseudonym, key)
+        craq.clients(clientId).read(clientPseudonym, key)
       case TransportCommand(command) =>
-        FakeTransport.runCommand(paxos.transport, command)
+        FakeTransport.runCommand(craq.transport, command)
     }
-    paxos
-  }
-
-  private def isPrefix[A](lhs: Seq[A], rhs: Seq[A]): Boolean = {
-    lhs.zipWithIndex.forall({
-      case (x, i) => rhs.lift(i) == Some(x)
-    })
+    craq
   }
 
   override def stateInvariantHolds(
@@ -174,6 +148,7 @@ class SimulatedCraq(val f: Int, batched: Boolean)
     for (logs <- state.combinations(2)) {
       val lhs = logs(0)
       val rhs = logs(1)
+
       for (key <- lhs.keys) {
         if (!lhs.get(key).get.equalsIgnoreCase(rhs.get(key).get)) {
           return SimulatedSystem.InvariantViolated(s"Logs $lhs and $rhs are not compatible.")
@@ -189,30 +164,26 @@ class SimulatedCraq(val f: Int, batched: Boolean)
       newState: State
   ): SimulatedSystem.InvariantResult = {
     for ((oldLog, newLog) <- oldState.zip(newState)) {
-      for (key <- oldLog.keys) {
-        if (oldLog.get(key).get.equalsIgnoreCase(newLog.get(key).get)) {
-          /*return SimulatedSystem.InvariantViolated(
-            s"Logs $oldLog is not a prefix of $newLog."
-          )*/
-        }
+      if (oldLog.size < newLog.size) {
+        return SimulatedSystem.InvariantViolated(s"Old kvs $oldLog is not a prefix of new kvs $newLog")
       }
     }
     SimulatedSystem.InvariantHolds
   }
 
   def commandToString(command: Command): String = {
-    val paxos = newSystem(System.currentTimeMillis())
+    val craq = newSystem(System.currentTimeMillis())
     command match {
       case Write(clientIndex, clientPseudonym, key, value) =>
-        val clientAddress = paxos.clients(clientIndex).address
+        val clientAddress = craq.clients(clientIndex).address
         s"Write($clientAddress, $clientPseudonym, $key, $value)"
 
       case Read(clientIndex, clientPseudonym, key) =>
-        val clientAddress = paxos.clients(clientIndex).address
+        val clientAddress = craq.clients(clientIndex).address
         s"Read($clientAddress, $clientPseudonym, $key)"
 
       case TransportCommand(FakeTransport.DeliverMessage(msg)) =>
-        val dstActor = paxos.transport.actors(msg.dst)
+        val dstActor = craq.transport.actors(msg.dst)
         val s = dstActor.serializer.toPrettyString(
           dstActor.serializer.fromBytes(msg.bytes.to[Array])
         )

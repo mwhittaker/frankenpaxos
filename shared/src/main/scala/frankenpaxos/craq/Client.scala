@@ -230,16 +230,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var growingReadBatch = mutable.Buffer[Read]()
 
-  private val roundSystem = new RoundSystem.ClassicRoundRobin(config.numLeaders)
-
-  // The round that this client thinks the leader is in. This value is not
-  // always accurate. It's just the client's best guess. The leader associated
-  // with this round can be computed using `roundSystem`. The clients need to
-  // know who the leader is because they need to know where to send their
-  // commands.
-  @JSExport
-  protected var round: Int = 0
-
   // Every request that a client sends is annotated with a monotonically
   // increasing client id. Here, we assume that if a client fails, it does not
   // recover, so we are safe to intialize the id to 0. If clients can recover
