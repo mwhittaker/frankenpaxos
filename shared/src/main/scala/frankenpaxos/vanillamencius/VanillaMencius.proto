@@ -157,6 +157,7 @@ message Phase2a {
   required int32 slot = 1;
   required int32 round = 2;
   required CommandOrNoop command_or_noop = 3;
+  required bool is_revocation = 4;
 }
 
 message Skip {
@@ -184,6 +185,7 @@ message Chosen {
 
   required int32 slot = 1;
   required CommandOrNoop command_or_noop = 2;
+  required bool is_revocation = 3;
 }
 
 message ClientReply {
