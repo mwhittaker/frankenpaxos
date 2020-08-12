@@ -34,10 +34,12 @@ def plot_latency_throughput(df: pd.DataFrame, ax: plt.Axes, label: str) -> None:
 
 def main(args) -> None:
     df = add_num_clients(pd.read_csv(args.results))
+    vanilla_df = add_num_clients(pd.read_csv(args.vanilla_results))
 
     # Shorten column names.
-    df['throughput'] = df['output.start_throughput_1s.p90']
-    df['latency'] = df['output.latency.median_ms']
+    for d in [df, vanilla_df]:
+        d['throughput'] = d['output.start_throughput_1s.p90']
+        d['latency'] = d['output.latency.median_ms']
     ack = df['server_options.ack_noops_with_commands']
     f1 = df['server_options.use_f1_optimization']
 
@@ -46,6 +48,7 @@ def main(args) -> None:
     plot_latency_throughput(df[(ack == False) & (f1 == False)], ax, 'no opts')
     plot_latency_throughput(df[f1 == True], ax, 'f = 1 opt')
     plot_latency_throughput(df[ack == True], ax, 'ack noops opt')
+    plot_latency_throughput(vanilla_df, ax, 'mencius')
 
     ax.set_title('')
     ax.set_xlabel('Throughput')
@@ -61,6 +64,9 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument('--results',
                         type=argparse.FileType('r'),
                         help='results.csv file')
+    parser.add_argument('--vanilla_results',
+                        type=argparse.FileType('r'),
+                        help='Vanilla Mencius results.csv file')
     parser.add_argument('--output',
                         type=str,
                         default='fasterpaxos_lt.pdf',
