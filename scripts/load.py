@@ -1,4 +1,4 @@
-from typing import Dict, Iterator, List, NamedTuple, Set, Tuple
+from typing import Any, Dict, Iterator, List, NamedTuple, Set, Tuple
 import itertools
 import math
 import pulp
@@ -51,6 +51,9 @@ class Node(QuorumSystem):
     def __init__(self, name: str) -> None:
         self._name = name
 
+    def __repr__(self) -> str:
+        return f'Node({self._name})'
+
     def __str__(self) -> str:
         return self._name
 
@@ -80,7 +83,7 @@ class Simple(QuorumSystem):
 
     def __str__(self) -> str:
         xs_str = '[' + ', '.join(str(x) for x in self._xs) + ']'
-        return f'Simple(r={self._r}, w={self._w}, {xs_str})'
+        return f'S(r={self._r}, {xs_str})'
 
     def read_quorums(self) -> Iterator[Set[str]]:
         for systems in itertools.combinations(self._xs, self._r):
@@ -156,8 +159,8 @@ class Simple(QuorumSystem):
 
         # print(problem)
         problem.solve(pulp.apis.PULP_CBC_CMD(msg=False))
-        for v in read_weights + write_weights:
-            print(f'{v.name} = {v.varValue}')
+        # for v in read_weights + write_weights:
+        #     print(f'{v.name} = {v.varValue}')
         return l.varValue
 
     def min_read_failure(self) -> int:
@@ -166,6 +169,43 @@ class Simple(QuorumSystem):
     def min_write_failure(self) -> int:
         return sum(sorted([x.min_write_failure() for x in self._xs])[:self._r])
 
+
+def partition(xs: List[Any]) -> Iterator[List[List[Any]]]:
+    if xs == []:
+        return
+
+    for p in _partition_helper(xs, len(xs)):
+        yield p
+
+
+def _partition_helper(xs: List[Any], max_size: int) -> Iterator[List[List[Any]]]:
+    if xs == []:
+        yield []
+        return
+
+    for left_size in range(min(len(xs), max_size), 0, -1):
+        for p in _partition_helper(xs[left_size:], max_size = left_size):
+            yield [xs[:left_size]] + p
+
+def systems(xs: List['str']) -> Iterator[QuorumSystem]:
+    for x in _systems_helper([Node(x) for x in xs]):
+        yield x
+
+def _systems_helper(xs: List[Node]) -> Iterator[QuorumSystem]:
+    if len(xs) == 0:
+        return
+
+    if len(xs) == 1:
+        yield xs[0]
+        return
+
+    for p in partition(xs):
+        if len(p) == 1:
+            pass
+        else:
+            for ys in itertools.product(*[_systems_helper(x) for x in p]):
+                for r in range(1, len(p) + 1):
+                    yield Simple(r, list(ys))
 
 #
 #
@@ -269,7 +309,7 @@ def main():
     read_only = Workload(fr = 1)
     write_only = Workload(fw = 1)
     half = Workload(fr = 0.5)
-    mixed = Workload(fr = 0.25)
+    mixed = Workload(fr = 0.215)
 
     # grid = Simple(r = 1, xs = [
     #     Simple(r = 3, xs = [a, b, c]),
@@ -298,18 +338,18 @@ def main():
     # print(grid.load(half, balanced=True))
     # print(grid.resilience())
     #
-    grid = Simple(r = 2, xs = [
-        Simple(r = 1, xs = [
-            Simple(r = 2, xs = [a, b]),
-            Simple(r = 2, xs = [c, d]),
-        ]),
-        Simple(r = 1, xs = [
-            Simple(r = 2, xs = [e, f]),
-            Simple(r = 2, xs = [g, h]),
-        ]),
-    ])
-    print(grid.load(mixed, balanced=True))
-    print(grid.resilience())
+    # grid = Simple(r = 2, xs = [
+    #     Simple(r = 1, xs = [
+    #         Simple(r = 2, xs = [a, b]),
+    #         Simple(r = 2, xs = [c, d]),
+    #     ]),
+    #     Simple(r = 1, xs = [
+    #         Simple(r = 2, xs = [e, f]),
+    #         Simple(r = 2, xs = [g, h]),
+    #     ]),
+    # ])
+    # print(grid.load(mixed, balanced=True))
+    # print(grid.resilience())
     #
     # A = Simple([a, b], r=2)
     # B = Simple([c, d], r=2)
@@ -332,6 +372,9 @@ def main():
     #         print(qs.to_ascii())
     #     print()
 
+    for p in systems(['a', 'b', 'c', 'd', 'e', 'f', 'g']):
+        if p.resilience() > 0:
+            print(p.load(half), p.resilience(), p)
 
 if __name__ == '__main__':
     main()
