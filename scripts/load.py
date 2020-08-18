@@ -1,8 +1,23 @@
+import matplotlib
+matplotlib.use('pdf')
+font = {'size': 14}
+matplotlib.rc('font', **font)
+
 from typing import Any, Dict, Iterator, List, NamedTuple, Set, Tuple
 import itertools
 import math
+import matplotlib.pyplot as plt
+import numpy as np
 import pulp
 
+
+# TODO(mwhittaker): Implement some other metrics of fault tolerance and of
+# simplicity. Right now, there's a lot of optimal quorum systems. We'd like to
+# select the ones that are most live. If there's a tie on that too, then we can
+# prefer ones that aren't nested as deep for example.
+
+# TODO(mwhittaker): Think about how to compute load when we average over a
+# number of different quorum systems.
 
 class Workload:
     def __init__(self, fr: float = None, fw: float = None) -> None:
@@ -207,6 +222,20 @@ def _systems_helper(xs: List[Node]) -> Iterator[QuorumSystem]:
                 for r in range(1, len(p) + 1):
                     yield Simple(r, list(ys))
 
+
+def min_load(f: int, workload: Workload, n: int) -> float:
+    return min(
+        p.load(workload)
+        for p in systems([str(i) for i in range(n)])
+        if p.resilience() >= f
+    )
+
+
+def sharded_load(f: int, workload: Workload, n: int) -> float:
+    fr = workload.fr
+    fw = workload.fw
+    return ((f + 1) / n) * (fr**2 + (n-1)*fr*fw + fw**2)
+
 #
 #
 # class QuorumSystem(NamedTuple):
@@ -372,9 +401,41 @@ def main():
     #         print(qs.to_ascii())
     #     print()
 
-    for p in systems(['a', 'b', 'c', 'd', 'e', 'f', 'g']):
-        if p.resilience() > 0:
-            print(p.load(half), p.resilience(), p)
+    # for p in systems(['a', 'b', 'c', 'd', 'e', 'f', 'g']):
+    #     if p.resilience() > 0:
+    #         for fr in [0, 0.1, 0.2, 0.5, 0.75, 1.0]:
+    #             print(p.load(Workload(fr=fr)), fr, p.resilience(), p)
+
+
+    fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
+
+    # Plot sharded load.
+    ns = [3, 4, 5, 6, 7, 8]
+    colors = []
+    for n in ns:
+        fw = np.arange(0, 1, 1/1000)
+        fr = 1 - fw
+        l = [sharded_load(f=1, workload=Workload(fr=x), n=n) for x in fr]
+        colors.append(ax.plot(fw, l, label=f'sharded n={n}')[0].get_color())
+
+    # Plot load.
+    for (n, color) in zip(ns, colors):
+        fw = np.array([0, 0.1, 0.2, 0.3, 0.4, 0.5])
+        fr = 1 - fw
+        l = [min_load(f=1, workload=Workload(fr=x), n=n) for x in fr]
+        fw = np.concatenate([fw, fw + 0.5])
+        l = (np.concatenate([l, np.flip(l)]))
+        ax.plot(fw, l, 'o--', color=color, label=f'n={n}')
+
+    ax.set_title('f = 1')
+    ax.set_xlabel('Write fraction')
+    ax.set_ylabel('Load')
+    ax.grid()
+    # ax.legend(loc='best')
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    output_filename = 'load.pdf'
+    fig.savefig(output_filename, bbox_inches='tight')
+    print(f'Wrote plot to {output_filename}.')
 
 if __name__ == '__main__':
     main()
