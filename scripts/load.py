@@ -71,7 +71,7 @@ class Node(QuorumSystem):
 
 
 class Simple(QuorumSystem):
-    def __init__(self, xs: List[QuorumSystem], r: int) -> None:
+    def __init__(self, r: int, xs: List[QuorumSystem]) -> None:
         self._xs = xs
         self._n = len(xs)
         self._r = r
@@ -93,53 +93,49 @@ class Simple(QuorumSystem):
                 yield {n for q in qs for n in q}
 
     def load(self, workload: Workload) -> float:
+        def canonicalize(nodes: Set[str]) -> str:
+            return ','.join(sorted(list(nodes)))
+
         # For every node, record which read quorums it belongs to.
-        read_quorums: Dict[str, List[int]] = dict()
-        quorum_number = 0
+        read_quorums: Dict[str, List[pulp.LpVariable]] = dict()
+        read_weights: List[pulp.LpVariable] = []
         for rq in self.read_quorums():
+            v = pulp.LpVariable(f'r({canonicalize(rq)})', 0, 1)
+            read_weights.append(v)
+
             for n in rq:
                 if n not in read_quorums:
                     read_quorums[n] = []
-                read_quorums[n] += [quorum_number]
-            quorum_number += 1
-        num_read_quorums = quorum_number
+                read_quorums[n] += [v]
 
         # For every node, record which write quorums it belongs to.
-        write_quorums: Dict[str, List[int]] = dict()
-        quorum_number = 0
-        for rq in self.write_quorums():
-            for n in rq:
+        write_quorums: Dict[str, List[pulp.LpVariable]] = dict()
+        write_weights: List[pulp.LpVariable] = []
+        for wq in self.write_quorums():
+            v = pulp.LpVariable(f'w({canonicalize(wq)})', 0, 1)
+            write_weights.append(v)
+
+            for n in wq:
                 if n not in write_quorums:
                     write_quorums[n] = []
-                write_quorums[n] += [quorum_number]
-            quorum_number += 1
-        num_write_quorums = quorum_number
+                write_quorums[n] += [v]
 
         # Form the linear program to find the load.
-        #
-        #   - l is the load
-        #   - ri is the probability of read quorum i getting selected
-        #   - wi is the probability of write quorum i getting selected
-        l = pulp.LpVariable('l', 0, 1)
-        read_weights = [pulp.LpVariable(f'r{i}', 0, 1)
-                        for i in range(num_read_quorums)]
-        write_weights = [pulp.LpVariable(f'w{i}', 0, 1)
-                         for i in range(num_write_quorums)]
-
         problem = pulp.LpProblem("load", pulp.LpMinimize)
-        problem += l
+        l = pulp.LpVariable('l', 0, 1)
+        problem += 100 * l
         problem += (sum(read_weights) == 1, 'valid read strategy')
         problem += (sum(write_weights) == 1, 'valid write strategy')
         for node in read_quorums.keys() | write_quorums.keys():
             node_load: pulp.LpAffineExpression = 0
             if node in read_quorums:
-                node_load += workload.fr * sum(read_weights[i]
-                                               for i in read_quorums[node])
+                node_load += workload.fr * sum(read_quorums[node])
             if node in write_quorums:
-                node_load += workload.fw * sum(write_weights[i]
-                                               for i in write_quorums[node])
+                node_load += workload.fw * sum(write_quorums[node])
             problem += (node_load <= l, node)
         problem.solve(pulp.apis.PULP_CBC_CMD(msg=False))
+        # for v in problem.variables():
+        #     print(f'{v.name} = {v.varValue}')
         return l.varValue
 
     def min_read_failure(self) -> int:
@@ -245,20 +241,54 @@ def main():
     e = Node('e')
     f = Node('f')
     g = Node('g')
-
+    h = Node('h')
+    i = Node('i')
 
     read_only = Workload(fr = 1)
     write_only = Workload(fw = 1)
     half = Workload(fr = 0.5)
+    mixed = Workload(fr = 0.25)
 
-    A = Simple([a, b], r=2)
-    B = Simple([c, d], r=2)
-    C = Simple([e, f, g], r=2)
-    Q = Simple([A, B, C], r=1)
+    grid = Simple(r = 2, xs = [a, b, c, d, e, f, g, h])
+    print(grid.load(mixed))
+    print(grid.resilience())
 
-    print(A.load(read_only), A.load(write_only), A.load(half))
-    print(C.load(read_only), C.load(write_only), C.load(half))
-    print(Q.load(read_only), Q.load(write_only), Q.load(half))
+    grid = Simple(r = 1, xs = [
+        Simple(r = 4, xs = [a, b, c, d]),
+        Simple(r = 4, xs = [e, f, g, h]),
+    ])
+    print(grid.load(mixed))
+    print(grid.resilience())
+
+    grid = Simple(r = 2, xs = [
+        Simple(r = 1, xs = [a, b]),
+        Simple(r = 1, xs = [c, d, e]),
+        Simple(r = 3, xs = [f, g, h]),
+    ])
+    print(grid.load(mixed))
+    print(grid.resilience())
+
+    grid = Simple(r = 2, xs = [
+        Simple(r = 1, xs = [
+            Simple(r = 2, xs = [a, b]),
+            Simple(r = 2, xs = [c, d]),
+        ]),
+        Simple(r = 1, xs = [
+            Simple(r = 2, xs = [e, f]),
+            Simple(r = 2, xs = [g, h]),
+        ]),
+    ])
+    print(grid.load(mixed))
+    print(grid.resilience())
+
+    # A = Simple([a, b], r=2)
+    # B = Simple([c, d], r=2)
+    # C = Simple([e, f, g], r=2)
+    # Q = Simple([A, B, C], r=1)
+    #
+    # print(A.load(read_only), A.load(write_only), A.load(half))
+    # print(C.load(read_only), C.load(write_only), C.load(half))
+    # print(Q.load(read_only), Q.load(write_only), Q.load(half))
 
 
     # for fw in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
