@@ -28,7 +28,7 @@ class QuorumSystem:
     def write_quorums(self) -> Iterator[Set[str]]:
         raise NotImplementedError()
 
-    def load(self, workload: Workload) -> float:
+    def load(self, workload: Workload, balanced: bool = False) -> float:
         raise NotImplementedError()
 
     def read_resilience(self) -> int:
@@ -60,7 +60,7 @@ class Node(QuorumSystem):
     def write_quorums(self) -> Iterator[Set[str]]:
         yield {self._name}
 
-    def load(self, workload: Workload) -> float:
+    def load(self, workload: Workload, balanced: bool = False) -> float:
         return 1
 
     def min_read_failure(self) -> int:
@@ -92,7 +92,7 @@ class Simple(QuorumSystem):
             for qs in itertools.product(*[s.write_quorums() for s in systems]):
                 yield {n for q in qs for n in q}
 
-    def load(self, workload: Workload) -> float:
+    def load(self, workload: Workload, balanced: bool = False) -> float:
         def canonicalize(nodes: Set[str]) -> str:
             return ','.join(sorted(list(nodes)))
 
@@ -122,8 +122,28 @@ class Simple(QuorumSystem):
 
         # Form the linear program to find the load.
         problem = pulp.LpProblem("load", pulp.LpMinimize)
+
+        # If we're trying to balance the strategy, then we want to minimize the
+        # pairwise absolute differences between the read probabilities and the
+        # write probabilities.
         l = pulp.LpVariable('l', 0, 1)
-        problem += 100 * l
+        if not balanced:
+            problem += l
+        else:
+            scale = 1000 * len(read_weights) ** 2 + len(write_weights) ** 2
+            objective = scale * l
+
+            for (rw, weights) in [('r', read_weights), ('w', write_weights)]:
+                for i in range(len(weights)):
+                    for j in range(i + 1, len(weights)):
+                        vi = weights[i]
+                        vj = weights[j]
+                        v = pulp.LpVariable(f'{vi.name},{vj.name}', 0, 1)
+                        problem += (vi - vj <= v, f'{vi.name}, {vj.name} upper')
+                        problem += (-v <= vi - vj, f'{vi.name}, {vj.name} lower')
+                        objective += v
+            problem += objective
+
         problem += (sum(read_weights) == 1, 'valid read strategy')
         problem += (sum(write_weights) == 1, 'valid write strategy')
         for node in read_quorums.keys() | write_quorums.keys():
@@ -133,9 +153,11 @@ class Simple(QuorumSystem):
             if node in write_quorums:
                 node_load += workload.fw * sum(write_quorums[node])
             problem += (node_load <= l, node)
+
+        # print(problem)
         problem.solve(pulp.apis.PULP_CBC_CMD(msg=False))
-        # for v in problem.variables():
-        #     print(f'{v.name} = {v.varValue}')
+        for v in read_weights + write_weights:
+            print(f'{v.name} = {v.varValue}')
         return l.varValue
 
     def min_read_failure(self) -> int:
@@ -249,25 +271,33 @@ def main():
     half = Workload(fr = 0.5)
     mixed = Workload(fr = 0.25)
 
-    grid = Simple(r = 2, xs = [a, b, c, d, e, f, g, h])
-    print(grid.load(mixed))
-    print(grid.resilience())
+    # grid = Simple(r = 1, xs = [
+    #     Simple(r = 3, xs = [a, b, c]),
+    #     Simple(r = 3, xs = [d, e, f]),
+    #     Simple(r = 3, xs = [g, h, i]),
+    # ])
+    # print(grid.load(half, balanced = True))
+    # print(grid.resilience())
 
-    grid = Simple(r = 1, xs = [
-        Simple(r = 4, xs = [a, b, c, d]),
-        Simple(r = 4, xs = [e, f, g, h]),
-    ])
-    print(grid.load(mixed))
-    print(grid.resilience())
-
-    grid = Simple(r = 2, xs = [
-        Simple(r = 1, xs = [a, b]),
-        Simple(r = 1, xs = [c, d, e]),
-        Simple(r = 3, xs = [f, g, h]),
-    ])
-    print(grid.load(mixed))
-    print(grid.resilience())
-
+    # grid = Simple(r = 2, xs = [a, b, c, d, e, f, g, h])
+    # print(grid.load(mixed))
+    # print(grid.resilience())
+    #
+    # grid = Simple(r = 1, xs = [
+    #     Simple(r = 4, xs = [a, b, c, d]),
+    #     Simple(r = 4, xs = [e, f, g, h]),
+    # ])
+    # print(grid.load(mixed))
+    # print(grid.resilience())
+    #
+    # grid = Simple(r = 1, xs = [
+    #     Simple(r = 2, xs = [a, b]),
+    #     Simple(r = 3, xs = [c, d, e]),
+    #     Simple(r = 3, xs = [f, g, h]),
+    # ])
+    # print(grid.load(half, balanced=True))
+    # print(grid.resilience())
+    #
     grid = Simple(r = 2, xs = [
         Simple(r = 1, xs = [
             Simple(r = 2, xs = [a, b]),
@@ -278,9 +308,9 @@ def main():
             Simple(r = 2, xs = [g, h]),
         ]),
     ])
-    print(grid.load(mixed))
+    print(grid.load(mixed, balanced=True))
     print(grid.resilience())
-
+    #
     # A = Simple([a, b], r=2)
     # B = Simple([c, d], r=2)
     # C = Simple([e, f, g], r=2)
