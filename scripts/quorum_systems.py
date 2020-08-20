@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterator, List, NamedTuple, Set, Tuple
 import itertools
 import math
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 import pulp
 
@@ -60,6 +61,22 @@ class QuorumSystem:
 
     def min_write_failure(self) -> int:
         raise NotImplementedError()
+
+    def to_graph(self) -> nx.Graph:
+        def canonicalize(nodes: Set[str]) -> str:
+            return ','.join(sorted(list(nodes)))
+
+        g = nx.Graph()
+
+        for rq in self.read_quorums():
+            for x in rq:
+                g.add_edge(f'r({canonicalize(rq)})', x)
+
+        for wq in self.write_quorums():
+            for x in wq:
+                g.add_edge(f'w({canonicalize(wq)})', x)
+
+        return g
 
 
 class Node(QuorumSystem):
@@ -183,6 +200,46 @@ class Simple(QuorumSystem):
 
     def min_write_failure(self) -> int:
         return sum(sorted([x.min_write_failure() for x in self._xs])[:self._r])
+
+
+class Paths1(QuorumSystem):
+    """
+       o     o
+       |     |
+    o--a--o--b--o
+       |  |  |
+       o--c--o
+       |  |  |
+    o--d--o--e--o
+       |     |
+       o     o
+    """
+    def __repr__(self) -> str:
+        return f'Paths(1)'
+
+    def __str__(self) -> str:
+        return f'Paths(1)'
+
+    def read_quorums(self) -> Iterator[Set[str]]:
+        yield {'a', 'b'}
+        yield {'a', 'c', 'e'}
+        yield {'d', 'e'}
+        yield {'d', 'c', 'b'}
+
+    def write_quorums(self) -> Iterator[Set[str]]:
+        yield {'a', 'd'}
+        yield {'a', 'c', 'e'}
+        yield {'b', 'e'}
+        yield {'b', 'c', 'd'}
+
+    def load(self, workload: Workload, balanced: bool = False) -> float:
+        raise NotImplementedError()
+
+    def min_read_failure(self) -> int:
+        return 2
+
+    def min_write_failure(self) -> int:
+        return 2
 
 
 def partition(xs: List[Any]) -> Iterator[List[List[Any]]]:
@@ -324,93 +381,11 @@ def sharded_load(f: int, workload: Workload, n: int) -> float:
 #     return [qs for qs in quorum_systems if load(workload, qs) == o]
 
 
-def main():
-    a = Node('a')
-    b = Node('b')
-    c = Node('c')
-    d = Node('d')
-    e = Node('e')
-    f = Node('f')
-    g = Node('g')
-    h = Node('h')
-    i = Node('i')
-
-    read_only = Workload(fr = 1)
-    write_only = Workload(fw = 1)
-    half = Workload(fr = 0.5)
-    mixed = Workload(fr = 0.215)
-
-    # grid = Simple(r = 1, xs = [
-    #     Simple(r = 3, xs = [a, b, c]),
-    #     Simple(r = 3, xs = [d, e, f]),
-    #     Simple(r = 3, xs = [g, h, i]),
-    # ])
-    # print(grid.load(half, balanced = True))
-    # print(grid.resilience())
-
-    # grid = Simple(r = 2, xs = [a, b, c, d, e, f, g, h])
-    # print(grid.load(mixed))
-    # print(grid.resilience())
-    #
-    # grid = Simple(r = 1, xs = [
-    #     Simple(r = 4, xs = [a, b, c, d]),
-    #     Simple(r = 4, xs = [e, f, g, h]),
-    # ])
-    # print(grid.load(mixed))
-    # print(grid.resilience())
-    #
-    # grid = Simple(r = 1, xs = [
-    #     Simple(r = 2, xs = [a, b]),
-    #     Simple(r = 3, xs = [c, d, e]),
-    #     Simple(r = 3, xs = [f, g, h]),
-    # ])
-    # print(grid.load(half, balanced=True))
-    # print(grid.resilience())
-    #
-    # grid = Simple(r = 2, xs = [
-    #     Simple(r = 1, xs = [
-    #         Simple(r = 2, xs = [a, b]),
-    #         Simple(r = 2, xs = [c, d]),
-    #     ]),
-    #     Simple(r = 1, xs = [
-    #         Simple(r = 2, xs = [e, f]),
-    #         Simple(r = 2, xs = [g, h]),
-    #     ]),
-    # ])
-    # print(grid.load(mixed, balanced=True))
-    # print(grid.resilience())
-    #
-    # A = Simple([a, b], r=2)
-    # B = Simple([c, d], r=2)
-    # C = Simple([e, f, g], r=2)
-    # Q = Simple([A, B, C], r=1)
-    #
-    # print(A.load(read_only), A.load(write_only), A.load(half))
-    # print(C.load(read_only), C.load(write_only), C.load(half))
-    # print(Q.load(read_only), Q.load(write_only), Q.load(half))
-
-
-    # for fw in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
-    #     workload = Workload(f = 1, fr = 1.0 - fw, fw = fw)
-    #     print(workload)
-    #     # for (qs, load) in ranked(workload, n=50):
-    #     #     print(qs, load)
-    #     #     print(qs.to_ascii())
-    #     for qs in optimal(workload, n=12):
-    #         print(qs, load(workload, qs))
-    #         print(qs.to_ascii())
-    #     print()
-
-    # for p in systems(['a', 'b', 'c', 'd', 'e', 'f', 'g']):
-    #     if p.resilience() > 0:
-    #         for fr in [0, 0.1, 0.2, 0.5, 0.75, 1.0]:
-    #             print(p.load(Workload(fr=fr)), fr, p.resilience(), p)
-
-
+def plot_load():
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
 
     # Plot sharded load.
-    ns = [3, 4, 5, 6, 7, 8]
+    ns = [3, 4, 5, 6, 7]
     colors = []
     for n in ns:
         fw = np.arange(0, 1, 1/1000)
@@ -431,11 +406,26 @@ def main():
     ax.set_xlabel('Write fraction')
     ax.set_ylabel('Load')
     ax.grid()
-    # ax.legend(loc='best')
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     output_filename = 'load.pdf'
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
+
+
+def find_isomorphism():
+    paths1 = Paths1().to_graph()
+    for system in systems(['a', 'b', 'c', 'd', 'e']):
+        g = system.to_graph()
+        matcher = nx.isomorphism.GraphMatcher(g, paths1)
+        if matcher.subgraph_is_isomorphic():
+            print(system)
+            return
+
+
+def main():
+    # print_load()
+    find_isomorphism()
+    pass
 
 if __name__ == '__main__':
     main()
