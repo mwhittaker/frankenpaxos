@@ -38,6 +38,9 @@ class Workload:
 
 
 class QuorumSystem:
+    def nodes(self) -> Set[str]:
+        raise NotImplementedError()
+
     def read_quorums(self) -> Iterator[Set[str]]:
         raise NotImplementedError()
 
@@ -89,6 +92,9 @@ class Node(QuorumSystem):
     def __str__(self) -> str:
         return self._name
 
+    def nodes(self) -> Set[str]:
+        return {self._name}
+
     def read_quorums(self) -> Iterator[Set[str]]:
         yield {self._name}
 
@@ -116,6 +122,9 @@ class Simple(QuorumSystem):
     def __str__(self) -> str:
         xs_str = '[' + ', '.join(str(x) for x in self._xs) + ']'
         return f'S(r={self._r}, {xs_str})'
+
+    def nodes(self) -> Set[str]:
+        return {x for qs in self._xs for x in qs.nodes()}
 
     def read_quorums(self) -> Iterator[Set[str]]:
         for systems in itertools.combinations(self._xs, self._r):
@@ -337,7 +346,7 @@ def find_isomorphism():
 
 def main():
     # print_load()
-    find_isomorphism()
+    # find_isomorphism()
     pass
 
 if __name__ == '__main__':
