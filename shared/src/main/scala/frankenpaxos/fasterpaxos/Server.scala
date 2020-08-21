@@ -1132,6 +1132,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Phase1B(_)       => "Phase1b"
         case Request.Phase2A(_)       => "Phase2a"
         case Request.Phase2B(_)       => "Phase2b"
+        case Request.Phase2ABatch(_)  => "Phase2aBatch"
+        case Request.Phase2BBatch(_)  => "Phase2bBatch"
         case Request.Phase2AAny(_)    => "Phase2aAny"
         case Request.Phase2AAnyAck(r) => "Phase2aAnyAck"
         case Request.Phase3A(_)       => "Phase3a"
@@ -1149,6 +1151,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         case Request.Phase1B(r)       => handlePhase1b(src, r)
         case Request.Phase2A(r)       => handlePhase2a(src, r)
         case Request.Phase2B(r)       => handlePhase2b(src, r)
+        case Request.Phase2ABatch(r)  => handlePhase2aBatch(src, r)
+        case Request.Phase2BBatch(r)  => handlePhase2bBatch(src, r)
         case Request.Phase2AAny(r)    => handlePhase2aAny(src, r)
         case Request.Phase2AAnyAck(r) => handlePhase2aAnyAck(src, r)
         case Request.Phase3A(r)       => handlePhase3a(src, r)
@@ -1519,6 +1523,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // the future round, but we don't know the anyWatermark, the other
     // delegates, and so on. This makes things complicated. Instead, we just
     // ignore it and wait for the Phase2aAny.
+    //
+    // TODO(mwhittaker): This is troublesome. We probably should be jumping up
+    // to a future round. Otherwise, Phase2as sent during a round change get
+    // dropped.
+    //
+    // ???
     if (phase2a.round > round) {
       logger.debug(
         s"Server recevied a Phase2a in round ${phase2a.round} but is only " +
@@ -1679,6 +1689,22 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
                        delegate.pendingValues,
                        delegate.phase2bs)
     }
+  }
+
+  private def handlePhase2aBatch(
+      src: Transport#Address,
+      phase2aBatch: Phase2aBatch
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
+  }
+
+  private def handlePhase2bBatch(
+      src: Transport#Address,
+      phase2bBatch: Phase2bBatch
+  ): Unit = {
+    // TODO(mwhittaker): Implement.
+    ???
   }
 
   private def handlePhase2aAny(

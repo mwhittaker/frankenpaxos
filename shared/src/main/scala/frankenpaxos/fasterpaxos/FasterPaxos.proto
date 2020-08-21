@@ -15,6 +15,7 @@
 //       |           | <---------^---------- |      Phase1b
 //       |           | ----------^---------> |      Phase2a
 //       |           | <---------^---------- |      Phase2b
+//       |           | <---------^---------- |      Phase2bBatch
 //       |           | ----------^---------> |      Phase3a
 //       |           | --------> |           |      Phase2aAny
 //       |           | <-------- |           |      Phase2aAnyAck
@@ -262,6 +263,20 @@ message Phase2b {
   optional Command command = 4;
 }
 
+message Phase2aBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated Phase2a phase2a = 1;
+}
+
+message Phase2bBatch {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  repeated Phase2b phase2b = 1;
+}
+
 message Phase2aAny {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -336,10 +351,12 @@ message ServerInbound {
     Phase1b phase1b = 3;
     Phase2a phase2a = 4;
     Phase2b phase2b = 5;
-    Phase2aAny phase2a_any = 6;
-    Phase2aAnyAck phase2a_any_ack = 7;
-    Phase3a phase3a = 8;
-    Recover recover = 10;
-    Nack nack = 11;
+    Phase2aBatch phase2aBatch = 6;
+    Phase2bBatch phase2bBatch = 7;
+    Phase2aAny phase2a_any = 8;
+    Phase2aAnyAck phase2a_any_ack = 9;
+    Phase3a phase3a = 10;
+    Recover recover = 12;
+    Nack nack = 13;
   }
 }
