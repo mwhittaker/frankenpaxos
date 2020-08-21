@@ -3,13 +3,38 @@ matplotlib.use('pdf')
 font = {'size': 14}
 matplotlib.rc('font', **font)
 
-from typing import Any, Dict, Iterator, List, NamedTuple, Set, Tuple
+from typing import Any, Callable, Dict, Iterator, List, NamedTuple, Set, Tuple
 import itertools
 import math
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pulp
+
+
+def _canonicalize(nodes: Set[str]) -> str:
+    return ','.join(sorted(list(nodes)))
+
+
+def _all_max(xs: Any, f: Callable[[Any], Any]) -> Tuple[Any, List[Any]]:
+    once_through = False
+    o = None
+    opts: List[Any] = []
+
+    for x in xs:
+        if not once_through:
+            once_through = True
+            o = f(x)
+            opts = [x]
+        else:
+            y = f(x)
+            if y < o:
+                o = y
+                opts = [x]
+            elif y == o:
+                opts.append(x)
+
+    return (o, opts)
 
 
 # TODO(mwhittaker): Implement some other metrics of fault tolerance and of
@@ -47,7 +72,9 @@ class QuorumSystem:
     def write_quorums(self) -> Iterator[Set[str]]:
         raise NotImplementedError()
 
-    def load(self, workload: Workload, balanced: bool = False) -> float:
+    def load(self, workload: Workload,
+             fail: Set[str] = set(),
+             balanced: bool = False) -> float:
         raise NotImplementedError()
 
     def read_resilience(self) -> int:
@@ -66,18 +93,15 @@ class QuorumSystem:
         raise NotImplementedError()
 
     def to_graph(self) -> nx.Graph:
-        def canonicalize(nodes: Set[str]) -> str:
-            return ','.join(sorted(list(nodes)))
-
         g = nx.Graph()
 
         for rq in self.read_quorums():
             for x in rq:
-                g.add_edge(f'r({canonicalize(rq)})', x)
+                g.add_edge(f'r({_canonicalize(rq)})', x)
 
         for wq in self.write_quorums():
             for x in wq:
-                g.add_edge(f'w({canonicalize(wq)})', x)
+                g.add_edge(f'w({_canonicalize(wq)})', x)
 
         return g
 
@@ -101,7 +125,10 @@ class Node(QuorumSystem):
     def write_quorums(self) -> Iterator[Set[str]]:
         yield {self._name}
 
-    def load(self, workload: Workload, balanced: bool = False) -> float:
+    def load(self, workload: Workload,
+             fail: Set[str] = set(),
+             balanced: bool = False) -> float:
+        assert len(fail) <= self.resilience()
         return 1
 
     def min_read_failure(self) -> int:
@@ -118,6 +145,10 @@ class Simple(QuorumSystem):
         self._r = r
         self._w = self._n - self._r + 1
         assert(1 <= self._r <= self._n)
+
+    def __repr__(self) -> str:
+        xs_str = '[' + ', '.join(str(x) for x in self._xs) + ']'
+        return f'Simple(r={self._r}, w={self._w}, xs={xs_str})'
 
     def __str__(self) -> str:
         xs_str = '[' + ', '.join(str(x) for x in self._xs) + ']'
@@ -136,15 +167,20 @@ class Simple(QuorumSystem):
             for qs in itertools.product(*[s.write_quorums() for s in systems]):
                 yield {n for q in qs for n in q}
 
-    def load(self, workload: Workload, balanced: bool = False) -> float:
-        def canonicalize(nodes: Set[str]) -> str:
-            return ','.join(sorted(list(nodes)))
+    def load(self, workload: Workload,
+             fail: Set[str] = set(),
+             balanced: bool = False) -> float:
+        assert fail <= self.nodes()
+        assert len(fail) <= self.resilience()
 
-        # For every node, record which read quorums it belongs to.
+        # For every non-failed node, record which read quorums it belongs to.
         read_quorums: Dict[str, List[pulp.LpVariable]] = dict()
         read_weights: List[pulp.LpVariable] = []
         for rq in self.read_quorums():
-            v = pulp.LpVariable(f'r({canonicalize(rq)})', 0, 1)
+            if len(fail & rq) > 0:
+                continue
+
+            v = pulp.LpVariable(f'r({_canonicalize(rq)})', 0, 1)
             read_weights.append(v)
 
             for n in rq:
@@ -152,11 +188,14 @@ class Simple(QuorumSystem):
                     read_quorums[n] = []
                 read_quorums[n] += [v]
 
-        # For every node, record which write quorums it belongs to.
+        # For every non-failed node, record which write quorums it belongs to.
         write_quorums: Dict[str, List[pulp.LpVariable]] = dict()
         write_weights: List[pulp.LpVariable] = []
         for wq in self.write_quorums():
-            v = pulp.LpVariable(f'w({canonicalize(wq)})', 0, 1)
+            if len(fail & wq) > 0:
+                continue
+
+            v = pulp.LpVariable(f'w({_canonicalize(wq)})', 0, 1)
             write_weights.append(v)
 
             for n in wq:
@@ -297,17 +336,52 @@ def min_load(f: int, workload: Workload, n: int) -> float:
     )
 
 
+def average_failure_load(system: QuorumSystem,
+                         workload: Workload,
+                         num_fail: int) -> float:
+    return np.average([system.load(workload, fail=set(fail))
+                       for fail
+                       in itertools.combinations(system.nodes(), num_fail)])
+
+
 def sharded_load(f: int, workload: Workload, n: int) -> float:
     fr = workload.fr
     fw = workload.fw
     return ((f + 1) / n) * (fr**2 + (n-1)*fr*fw + fw**2)
 
 
+def optimal_systems(f: int, workload: Workload, n: int) \
+                   -> Tuple[List[QuorumSystem], float, List[float]]:
+    """
+    Returns the quorum system with the optimal load, with ties broken based on
+    failure load, and depth of nesting.
+    """
+    # Find all quorum systems with optimal load.
+    qss = [qs for qs in systems([str(i) for i in range(n)])
+                  if qs.resilience() >= f]
+    (optimal_load, optimal_systems) = _all_max(qss, lambda s: s.load(workload))
+    # print(optimal_systems)
+
+    if f == 0:
+        # TODO(mwhittaker): Break ties based on depth.
+        return (optimal_systems, optimal_load, [])
+
+    # Of all the quorum systems with optimal load, find the ones with the best
+    # average failure load.
+    #
+    # TODO(mwhittaker): Keep computing failure load until there are no ties or
+    # until we hit f.
+    (optimal_failure_load, optimal_systems) = _all_max(
+        optimal_systems,
+        lambda s: average_failure_load(s, workload, num_fail=1))
+    return (optimal_systems, optimal_load, [optimal_failure_load])
+
+
 def plot_load():
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
 
     # Plot sharded load.
-    ns = [3, 4, 5, 6, 7]
+    ns = [3, 4, 5]
     colors = []
     for n in ns:
         fw = np.arange(0, 1, 1/1000)
@@ -340,13 +414,25 @@ def find_isomorphism():
         g = system.to_graph()
         matcher = nx.isomorphism.GraphMatcher(g, paths1)
         if matcher.subgraph_is_isomorphic():
-            print(system)
+            print(f'{system} subumes {paths1}')
             return
 
 
+def print_optimal_systems():
+    for n in range(3, 8):
+        (systems, load, failure_loads) = optimal_systems(
+            f=1, workload=Workload(fr=0.1), n=n)
+        print(f'n = {n}')
+        print(f'load = {load}')
+        print(f'failure_loads = {failure_loads}')
+        for system in systems:
+            print(system)
+        print()
+
 def main():
-    # print_load()
-    # find_isomorphism()
+    plot_load()
+    print_optimal_systems()
+    find_isomorphism()
     pass
 
 if __name__ == '__main__':
