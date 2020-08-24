@@ -16,8 +16,8 @@ abstract class Actor[Transport <: frankenpaxos.Transport[Transport]](
   def receive(src: Transport#Address, message: InboundMessage): Unit
 
   // Implementation.
-  logger.info(s"Actor $this registering on address $address.")
-  transport.register(address, this)
+  // logger.info(s"Actor $this registering on address $address.")
+  // transport.register(address, this)
 
   // Channels.
   type Chan[A <: frankenpaxos.Actor[Transport]] =

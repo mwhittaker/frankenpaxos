@@ -43,6 +43,8 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   logger.info(s"Echo client listening on $srcAddress.")
 
+  transport.register(address, this)
+
   override def receive(src: Transport#Address, reply: InboundMessage): Unit = {
     numMessagesReceived += 1
     logger.info(s"Received ${reply.msg} from $src.")

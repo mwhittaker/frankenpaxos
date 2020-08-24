@@ -55,7 +55,7 @@ trait Transport[Self <: Transport[Self]] {
   // with an address, any messages sent to that address will be delivered to
   // the actor. Two actors cannot be registered to the same address. The Actor
   // class calls this method, so you should not have to.
-  private[frankenpaxos] def register(
+  def register(
       address: Self#Address,
       actor: Actor[Self]
   ): Unit
