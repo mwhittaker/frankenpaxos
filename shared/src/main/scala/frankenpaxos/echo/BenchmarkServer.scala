@@ -45,10 +45,17 @@ class BenchmarkServer[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = BenchmarkServerInbound
   override def serializer = BenchmarkServer.serializer
 
+  while (true) {
+    ()
+  }
+
+  var x: Int = 42
+
   override def receive(
       src: Transport#Address,
       request: BenchmarkServerInbound
   ): Unit = {
+    println(x)
     val client =
       chan[BenchmarkClient[Transport]](src, BenchmarkClient.serializer)
     metrics.echoRequestsTotal.inc()
