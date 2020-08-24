@@ -348,7 +348,14 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       round: Round,
       delegates: Seq[ServerIndex],
       delegateIndex: DelegateIndex,
+      // All log entries anyWatermark and larger have not and will not be
+      // chosen in any round less than `round`. They may be chosen in larger
+      // rounds though.
       anyWatermark: Slot,
+      // Invariant: nextSlot always points to a non-chosen log entry. If a log
+      // entry has been chosen in nextSlot, then nextSlot is incremented.
+      // nextSlot may point to a log entry with a pending entry, but not a
+      // chosen entry.
       var nextSlot: Slot,
       pendingValues: mutable.Map[Slot, CommandOrNoop],
       phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]],
@@ -623,7 +630,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  // Return the smallest owned non-chosen slot larger than slot.
+  // Return the smallest owned slot larger than slot that is either empty or
+  // has a stale pending entry.
   private def getNextSlot(delegateIndex: DelegateIndex, slot: Slot): Slot = {
     var nextSlot = slotSystem.nextClassicRound(
       leaderIndex = delegateIndex.x,
@@ -632,8 +640,18 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
     while (true) {
       log.get(nextSlot) match {
-        case None | Some(_: PendingEntry) =>
+        case None =>
           return nextSlot
+
+        case Some(pending: PendingEntry) =>
+          val (round, _) = roundInfo(state)
+          if (pending.voteRound < round) {
+            return nextSlot
+          }
+          nextSlot = slotSystem.nextClassicRound(
+            leaderIndex = delegateIndex.x,
+            round = nextSlot
+          )
 
         case Some(_: ChosenEntry) =>
           nextSlot = slotSystem.nextClassicRound(
@@ -802,17 +820,16 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       commandOrNoop: CommandOrNoop,
       pendingValues: mutable.Map[Slot, CommandOrNoop],
       phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
-  ): Slot = {
+  ): Unit = {
     log.get(slot) match {
-      case Some(entry) =>
-        // TODO(mwhittaker): I think this is wrong. This should be an okay
-        // thing to do.
+      case Some(chosen: ChosenEntry) =>
         logger.fatal(
-          s"Server went to process a command in slot ${slot}, but the log " +
-            s"already contains an entry in this slot: $entry. This is a bug."
+          s"A server went to process a command in slot ${slot} in Phase 2, " +
+            s"but the log already contains an entry in this slot: $chosen. " +
+            s"This should be impossible. There must be a bug."
         )
 
-      case None =>
+      case Some(_: PendingEntry) | None =>
         // Send Phase2as to the other delegates.
         for (serverIndex <- delegates if serverIndex != index) {
           servers(serverIndex.x).send(
@@ -825,7 +842,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           )
         }
 
-        // Vote for the value ourselves.
+        // Vote for the value ourselves. We know that this log entry is either
+        // empty or pending with a vote round lower than our round, so it is
+        // safe to vote. This is also the first time we're proposing a value in
+        // this slot, so phase2bs must be empty.
         logger.check(!phase2bs.contains(slot))
         log.put(slot,
                 PendingEntry(voteRound = round, voteValue = commandOrNoop))
@@ -833,9 +853,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         phase2bs(slot) = mutable.Map(
           index -> Phase2b(serverIndex = index.x, slot = slot, round = round)
         )
-
-        // Return our next slot.
-        getNextSlot(delegateIndex, slot)
     }
   }
 
@@ -894,17 +911,39 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       commandOrNoop: CommandOrNoop,
       pendingValues: mutable.Map[Slot, CommandOrNoop],
       phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
-  ): Slot = {
+  ): Unit = {
     logger.checkGe(slot, anyWatermark)
 
     // Fill in the log entries before our log entry.
     for (previousSlot <- Math.max(anyWatermark, slot - delegates.size + 1)
            until slot) {
       log.get(previousSlot) match {
-        case Some(_) =>
-          // Do nothing. A command is already being chosen (or has been chosen)
-          // in this log entry.
+        case Some(_: ChosenEntry) =>
+          // Do nothing. A command is already chosen in this log entry.
           {}
+
+        case Some(pending: PendingEntry) =>
+          // If we vote for a value in a larger round, then we go to the larger
+          // round, but we're still in this round.
+          logger.checkLe(pending.voteRound, round)
+
+          // If a command is pending, but in a stale round, then we propose to
+          // fill it in with a noop.
+          if (pending.voteRound < round) {
+            proposeSingleCommandOrNoop(
+              delegates = delegates,
+              delegateIndex = delegateIndex,
+              slot = previousSlot,
+              round = round,
+              commandOrNoop = CommandOrNoop().withNoop(Noop()),
+              pendingValues = pendingValues,
+              phase2bs = phase2bs
+            )
+          } else {
+            // If it's pending in this round, then someone else is already
+            // getting it chosen, so there's no need for us to get involved.
+            // Moreover, we've already voted and can't change our vote.
+          }
 
         case None =>
           proposeSingleCommandOrNoop(
@@ -1091,7 +1130,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       case Some(_: ChosenEntry) =>
         return
     }
-    logger.checkLe(phase2b.round, pendingEntry.voteRound)
+    // We voted in voteRound, so voteRound has to be at least as big as round.
+    // But, if we voted in a future round, we wouldn't be in this round
+    // anymore. So, the two are actually equal.
+    logger.checkEq(phase2b.round, pendingEntry.voteRound)
 
     if (!options.ackNoopsWithCommands) {
       // If options.ackNoopsWithCommands isn't enabled, the situation is pretty
@@ -1116,22 +1158,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       //     not owned value | (c) ignore it | (d) count it   |
       //     noop            | (e) count it  | (f) start over |
       //                     +---------------+----------------+
-      //
-      // Previously, we sent a noop to the
-      // other delegates. A delegate received our noop but had already received
-      // a value. They sent us back a Phase2b not for the noop, but for the
-      // value. We want to ditch our noop then, and go with the value. Also
-      // note that this may be the first such valued Phase2b we received or a
-      // subsequent one.
-      //
-      // Every Phase2b is treated equally,
-      // and all we have to do is wait for a quorum of votes.
       import CommandOrNoop.Value
       (ownsSlot(state, phase2b.slot),
        pendingValues(phase2b.slot).value,
        phase2b.command) match {
         // Case (b).
-        case (true, Value.Command(existingCommand), Some(_)) =>
+        case (true, Value.Command(_), Some(_)) =>
           logger.fatal(
             s"Server received a nack for a slot it owns (${phase2b.slot}). " +
               s"This should be impossible."
@@ -1184,21 +1216,22 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // Update our metadata.
     val chosen = pendingValues(phase2b.slot)
     choose(phase2b.slot, chosen)
-
-    // Send Phase3as to the other servers.
-    //
-    // TODO(mwhittaker): I think if useF1Optimization is true and f == 1, then
-    // we don't have to send anything here. The other server already knows a
-    // value is chosen. Double check this.
-    otherServers.foreach(
-      _.send(
-        ServerInbound().withPhase3A(
-          Phase3a(slot = phase2b.slot, commandOrNoop = chosen)
-        )
-      )
-    )
-
     executeLog((slot) => ownsSlot(state, slot))
+
+    // Send Phase3as to the other servers. If we're using the f == 1
+    // optimization, then we don't have to send to the other delegate.
+    val phase3a = Phase3a(slot = phase2b.slot, commandOrNoop = chosen)
+    if (config.f == 1 && options.useF1Optimization) {
+      val (_, delegates) = roundInfo(state)
+      for {
+        serverIndex <- 0 until config.serverAddresses.size
+        if !delegates.contains(ServerIndex(serverIndex))
+      } {
+        servers(serverIndex).send(ServerInbound().withPhase3A(phase3a))
+      }
+    } else {
+      otherServers.foreach(_.send(ServerInbound().withPhase3A(phase3a)))
+    }
   }
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -1296,10 +1329,9 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       )
       val client = chan[Client[Transport]](src, Client.serializer)
       client.send(
-        ClientInbound()
-          .withRoundInfo(
-            RoundInfo(round = round, delegate = delegates.map(_.x))
-          )
+        ClientInbound().withRoundInfo(
+          RoundInfo(round = round, delegate = delegates.map(_.x))
+        )
       )
       metrics.staleRoundTotal.labels("ClientRequest").inc()
       return
@@ -1324,7 +1356,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         metrics.pendingClientRequestsTotal.inc()
 
       case phase2: Phase2 =>
-        phase2.nextSlot = proposeCommandOrNoop(
+        // It's possible that since we last set our next
+        proposeCommandOrNoop(
           delegates = phase2.delegates,
           delegateIndex = phase2.delegateIndex,
           anyWatermark = phase2.anyWatermark,
@@ -1334,9 +1367,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           pendingValues = phase2.pendingValues,
           phase2bs = phase2.phase2bs
         )
+        phase2.nextSlot = getNextSlot(phase2.delegateIndex, phase2.nextSlot)
 
       case delegate: Delegate =>
-        delegate.nextSlot = proposeCommandOrNoop(
+        proposeCommandOrNoop(
           delegates = delegate.delegates,
           delegateIndex = delegate.delegateIndex,
           anyWatermark = delegate.anyWatermark,
@@ -1346,6 +1380,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           pendingValues = delegate.pendingValues,
           phase2bs = delegate.phase2bs
         )
+        delegate.nextSlot =
+          getNextSlot(delegate.delegateIndex, delegate.nextSlot)
 
       case idle: Idle =>
         logger.debug(
@@ -1581,6 +1617,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // If we receive a Phase2a with a round from the future, then we're
     // operating in a stale round. We update ourselves to idle in the larger
     // round. It's possible that later we'll become a delegate in this round.
+    //
+    // Note that this establishes the following invariant. the largest
+    // voteRound in our log is always less than or equal to our round. It can
+    // never be larger. This assumption is used for correctness elsewhere in
+    // the code.
     val sender = chan[Server[Transport]](src, Server.serializer)
     if (phase2a.round > round) {
       stopTimers(state)
@@ -1614,8 +1655,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         if (config.f == 1 && options.useF1Optimization) {
           choose(phase2a.slot, phase2a.commandOrNoop)
           executeLog((slot) => ownsSlot(state, slot))
-          // We don't have to clear phase2bs or pendingValues because we
-          // know they're both empty if our log is empty.
         } else {
           log.put(
             phase2a.slot,
@@ -1639,8 +1678,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
           if (config.f == 1 && options.useF1Optimization) {
             choose(phase2a.slot, phase2a.commandOrNoop)
             executeLog((slot) => ownsSlot(state, slot))
-            // We don't have to clear phase2bs or pendingValues because we
-            // know they're both empty if our log is empty.
           } else {
             log.put(
               phase2a.slot,
@@ -1892,14 +1929,14 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // If we've already chosen this log entry, then we're good!
     log.get(recover.slot) match {
       case None | Some(_: PendingEntry) =>
+        // Do nothing.
+        ()
+
       case Some(chosen: ChosenEntry) =>
         val server = chan[Server[Transport]](src, Server.serializer)
         server.send(
           ServerInbound().withPhase3A(
-            Phase3a(
-              slot = recover.slot,
-              commandOrNoop = chosen.value
-            )
+            Phase3a(slot = recover.slot, commandOrNoop = chosen.value)
           )
         )
         return
@@ -1925,6 +1962,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
         // phase2.nextSlot is a hole in the log, and we recover in log order,
         // so the recovering log entry can't be bigger than next slot.
+        //
+        // TODO(mwhittaker): Double check this logic.
         logger.checkLe(recover.slot, phase2.nextSlot)
         reproposeSingleCommandOrNoop(
           delegates = phase2.delegates,
@@ -1946,6 +1985,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
         // delegate.nextSlot is a hole in the log, and we recover in log order,
         // so the recovering log entry can't be bigger than next slot.
+        //
+        // TODO(mwhittaker): Double check this logic.
         logger.checkLe(recover.slot, delegate.nextSlot)
         reproposeSingleCommandOrNoop(
           delegates = delegate.delegates,
