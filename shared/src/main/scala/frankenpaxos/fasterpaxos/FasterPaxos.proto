@@ -242,6 +242,7 @@ message Phase2a {
   required int32 slot = 1;
   required int32 round = 2;
   required CommandOrNoop command_or_noop = 3;
+  repeated int32 delegate = 4;
 }
 
 message Phase2b {

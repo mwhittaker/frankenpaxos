@@ -107,7 +107,9 @@ class SimulatedFasterPaxos(
         server.log.get(i) match {
           case None | Some(_: server.PendingEntry) =>
             throw new IllegalStateException(
-              "A server has a non-chosen log entry below its executedWatermark."
+              s"A server has a non-chosen log entry below its " +
+                s"executedWatermark (${server.executedWatermark}): " +
+                s"${server.log}"
             )
 
           case Some(chosen: server.ChosenEntry) =>

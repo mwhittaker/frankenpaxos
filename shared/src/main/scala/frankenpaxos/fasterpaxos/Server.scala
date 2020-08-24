@@ -586,7 +586,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def pick[A](xs: Seq[A], n: Int): Seq[A] =
-    scala.util.Random.shuffle(xs).take(n)
+    rand.shuffle(xs).take(n)
 
   private def roundInfo(state: State): (Round, Seq[ServerIndex]) = {
     state match {
@@ -608,26 +608,42 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
   private def pickDelegates(): Seq[ServerIndex] = {
     // We only pick delegates that we think are alive, and we always make sure
-    // that we're a delegate as well.
+    // that we're a delegate as well. If there aren't enough live delegates,
+    // then we pick randomly. There should always be enough delegates because
+    // no more than f servers should ever fail. But in the javascript
+    // visualizations and in the randomized tests, sometimes more than f fail.
+    // We'll still be safe in these situations, just not live.
     val alive = heartbeat.unsafeAlive()
-    logger.debug(s"alive = $alive.")
-    logger.checkGe(alive.size, config.f)
-    Seq(index) ++ pick(alive.toSeq, config.f)
-      .map(address => ServerIndex(config.heartbeatAddresses.indexOf(address)))
+    if (alive.size < config.f) {
+      Seq(index) ++ pick((0 until servers.size).filter(_ != index.x), config.f)
+        .map(ServerIndex(_))
+    } else {
+      Seq(index) ++ pick(alive.toSeq, config.f)
+        .map(address => ServerIndex(config.heartbeatAddresses.indexOf(address)))
+    }
   }
 
+  // Return the smallest owned non-chosen slot larger than slot.
   private def getNextSlot(delegateIndex: DelegateIndex, slot: Slot): Slot = {
     var nextSlot = slotSystem.nextClassicRound(
       leaderIndex = delegateIndex.x,
       round = slot
     )
-    while (log.get(nextSlot).isDefined) {
-      nextSlot = slotSystem.nextClassicRound(
-        leaderIndex = delegateIndex.x,
-        round = nextSlot
-      )
+
+    while (true) {
+      log.get(nextSlot) match {
+        case None | Some(_: PendingEntry) =>
+          return nextSlot
+
+        case Some(_: ChosenEntry) =>
+          nextSlot = slotSystem.nextClassicRound(
+            leaderIndex = delegateIndex.x,
+            round = nextSlot
+          )
+      }
     }
-    nextSlot
+
+    logger.fatal("Unreachable")
   }
 
   private def choose(slot: Slot, commandOrNoop: CommandOrNoop): Unit = {
@@ -725,6 +741,59 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     )
   }
 
+  private def phase1Propose(
+      phase1: Phase1,
+      slot: Slot,
+      value: CommandOrNoop,
+      pendingValues: mutable.Map[Slot, CommandOrNoop],
+      phase2bs: mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]
+  ): Unit = {
+    log.get(slot) match {
+      case Some(_: ChosenEntry) =>
+        // A value has already been chosen. We don't have to do anything.
+        return
+
+      case Some(pending: PendingEntry) =>
+        // We are in Phase 1 in round `phase1.round`. The only way to vote for
+        // a value in round `phase1.round` is to receive a Phase2a in the
+        // round. But, we are the only ones who can send such a Phase2a, and
+        // we're only in Phase 1. Thus, `pending.voteRound` cannot be equal to
+        // `phase1.round`.
+        //
+        // Moreover, if we received a Phase2a in a larger round, we would have
+        // changed to that higher round and no longer be in Phase 1. Thus, the
+        // `pending.voteRound` must be smaller than `phase1.round`.
+        logger.checkLt(pending.voteRound, phase1.round)
+
+      case None =>
+        // Nothing to do.
+        ()
+    }
+
+    // Send Phase2as to a thrifty quorum of servers.
+    for (server <- pick(otherServers, config.f)) {
+      server.send(
+        ServerInbound().withPhase2A(
+          Phase2a(slot = slot,
+                  round = phase1.round,
+                  commandOrNoop = value,
+                  delegate = phase1.delegates.map(_.x))
+        )
+      )
+    }
+
+    // We've already established that slot `slot` has not been chosen.
+    // Moreover, if it is pending, then the voteRound is smaller than our
+    // round. Thus, it is safe to vote for this value in our round.
+    log.put(slot, PendingEntry(voteRound = phase1.round, voteValue = value))
+
+    // Update our metadata.
+    pendingValues(slot) = value
+    phase2bs(slot) = mutable.Map(
+      index -> Phase2b(serverIndex = index.x, slot = slot, round = phase1.round)
+    )
+  }
+
   private def proposeSingleCommandOrNoop(
       delegates: Seq[ServerIndex],
       delegateIndex: DelegateIndex,
@@ -736,6 +805,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   ): Slot = {
     log.get(slot) match {
       case Some(entry) =>
+        // TODO(mwhittaker): I think this is wrong. This should be an okay
+        // thing to do.
         logger.fatal(
           s"Server went to process a command in slot ${slot}, but the log " +
             s"already contains an entry in this slot: $entry. This is a bug."
@@ -746,7 +817,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         for (serverIndex <- delegates if serverIndex != index) {
           servers(serverIndex.x).send(
             ServerInbound().withPhase2A(
-              Phase2a(slot = slot, round = round, commandOrNoop = commandOrNoop)
+              Phase2a(slot = slot,
+                      round = round,
+                      commandOrNoop = commandOrNoop,
+                      delegate = delegates.map(_.x))
             )
           )
         }
@@ -780,7 +854,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         for (serverIndex <- delegates if serverIndex != index) {
           servers(serverIndex.x).send(
             ServerInbound().withPhase2A(
-              Phase2a(slot = slot, round = round, commandOrNoop = noop)
+              Phase2a(slot = slot,
+                      round = round,
+                      commandOrNoop = noop,
+                      delegate = delegates.map(_.x))
             )
           )
         }
@@ -798,7 +875,10 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         for (serverIndex <- delegates if serverIndex != index) {
           servers(serverIndex.x).send(
             ServerInbound().withPhase2A(
-              Phase2a(slot = slot, round = round, commandOrNoop = value)
+              Phase2a(slot = slot,
+                      round = round,
+                      commandOrNoop = value,
+                      delegate = delegates.map(_.x))
             )
           )
         }
@@ -1268,11 +1348,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case idle: Idle =>
-        logger.fatal(
+        logger.debug(
           s"At this point, we've established that the client's round and our " +
-            s"round are the same (round ${idle.round}). Yet, the client " +
-            s"still sent to an idle server. This is a bug. Clients should " +
-            s"only send to delegates."
+            s"round are the same (round ${idle.round}). Thus, we must be a " +
+            s"delegate, but we haven't transitioned to being a delegate yet, " +
+            s"so we ignore the message."
         )
     }
   }
@@ -1359,12 +1439,14 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
+    // We can only receive a Phase1b if we sent a Phase1a. Thus, we cannot
+    // receive a Phase1b from the future.
+    logger.checkEq(phase1b.round, round)
+
     state match {
       case _: Phase2 | _: Delegate | _: Idle =>
-        // Note that unlike some other functions, we don't have to fuss with
-        // checking to see if phase1b.round is larger than our round. That is
-        // impossible. We can't receive Phase1bs in a round if we haven't send
-        // Phase1as.
+        // This can happen, for example, if we finish Phase 1 and proceed to
+        // Phase 2 and then receive a straggling Phase1b.
         logger.debug(
           s"Server received a Phase1b but is in state $state. The Phase1b " +
             s"is being ignored."
@@ -1372,10 +1454,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         return
 
       case phase1: Phase1 =>
-        // As noted above, we can't receive Phase1bs in a round in which we
-        // didn't send Phase1as.
-        logger.checkEq(phase1b.round, round)
-
         // Wait until we have a quorum of Phase1bs.
         phase1.phase1bs(ServerIndex(phase1b.serverIndex)) = phase1b
         if (phase1.phase1bs.size < config.f + 1) {
@@ -1383,48 +1461,42 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Stop timers.
-        phase1.resendPhase1as.stop()
+        stopTimers(state)
 
-        // Find the largest slot with a vote.
+        // Find the largest slot with a vote, or None if there are no votes.
         val slotInfos = phase1.phase1bs.values.flatMap(phase1b => phase1b.info)
         val maxSlot = if (slotInfos.size == 0) {
-          -1
+          None
         } else {
-          slotInfos.map(_.slot).max
+          Some(slotInfos.map(_.slot).max)
         }
 
         // Iterate from executedWatermark to maxSlot proposing safe values to
-        // fill in the log.
+        // fill in the log. All log entries less than executedWatermark have
+        // been chosen. All log entries between executedWatermark and maxSlot
+        // maybe have been chosen. And all larger log entries definitely have
+        // not been chosen.
         val infosBySlot = slotInfos.groupBy(_.slot)
         val pendingValues = mutable.Map[Slot, CommandOrNoop]()
         val phase2bs = mutable.Map[Slot, mutable.Map[ServerIndex, Phase2b]]()
-        for (slot <- executedWatermark to maxSlot) {
-          safeValue(infosBySlot.get(slot).map(_.toSeq).getOrElse(Seq())) match {
-            case AlreadyChosen(value) =>
-              choose(slot, value)
-              metrics.chosenInPhase1Total.inc()
+        maxSlot match {
+          case None =>
+            // There's nothing to do. We didn't receive any votes at all, so
+            // there's no holes to fill in.
+            ()
 
-            case Safe(value) =>
-              // Send Phase2as to a thrifty quorum of servers.
-              for (server <- pick(otherServers, config.f)) {
-                server.send(
-                  ServerInbound().withPhase2A(
-                    Phase2a(slot = slot, round = round, commandOrNoop = value)
-                  )
-                )
+          case Some(maxSlot) =>
+            for (slot <- executedWatermark to maxSlot) {
+              val infos = infosBySlot.get(slot).map(_.toSeq).getOrElse(Seq())
+              safeValue(infos) match {
+                case AlreadyChosen(value) =>
+                  choose(slot, value)
+                  metrics.chosenInPhase1Total.inc()
+
+                case Safe(value) =>
+                  phase1Propose(phase1, slot, value, pendingValues, phase2bs)
               }
-
-              // Cast our own vote for the value.
-              log.put(slot, PendingEntry(voteRound = round, voteValue = value))
-
-              // Update our metadata.
-              pendingValues(slot) = value
-              phase2bs(slot) = mutable.Map(
-                index -> Phase2b(serverIndex = index.x,
-                                 slot = slot,
-                                 round = round)
-              )
-          }
+            }
         }
 
         // We may have inserted some chosen commands into the log just now, so
@@ -1432,31 +1504,19 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         // to the clients since they probably already received a reply.
         executeLog((slot) => false)
 
-        for ((clientRequest, i) <- phase1.pendingClientRequests.zipWithIndex) {
-          val slot = maxSlot + i + 1
+        // Process pending client requests.
+        var anyWatermark = maxSlot match {
+          case Some(slot) => slot + 1
+          case None       => executedWatermark
+        }
+        for (clientRequest <- phase1.pendingClientRequests) {
+          val slot = anyWatermark
+          anyWatermark = anyWatermark + 1
           val value = CommandOrNoop().withCommand(clientRequest.command)
-
-          // Send Phase2as to a thrifty quorum of servers.
-          for (server <- pick(otherServers, config.f)) {
-            server.send(
-              ServerInbound().withPhase2A(
-                Phase2a(slot = slot, round = round, commandOrNoop = value)
-              )
-            )
-          }
-
-          // Cast our own vote for the value.
-          log.put(slot, PendingEntry(voteRound = round, voteValue = value))
-
-          // Update our metadata.
-          pendingValues(slot) = value
-          phase2bs(slot) = mutable.Map(
-            index -> Phase2b(serverIndex = index.x, slot = slot, round = round)
-          )
+          phase1Propose(phase1, slot, value, pendingValues, phase2bs)
         }
 
         // Send Phase2aAnys to delegates.
-        val anyWatermark = maxSlot + phase1.pendingClientRequests.size + 1
         val phase2aAny = Phase2aAny(round = round,
                                     delegate = phase1.delegates.map(_.x),
                                     anyWatermark = anyWatermark)
@@ -1472,7 +1532,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         // - A: The leader already knows these log entries have been chosen.
         // - B: The leader learned about these log entries during Phase 1 and
         //      gets them chosen with any quorum.
-        // - C: The leader proposes pending client requests in these log entries.
+        // - C: The leader proposes pending client requests in these log
+        //      entries.
         // - D: These log entries are empty. The delegates will get them full.
         //
         //     0   1   2   3   4   5   6   7   8   9
@@ -1517,63 +1578,103 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       return
     }
 
-    // Ignore rounds from the future. In regular Paxos, it's okay to receive a
-    // Phase2a from a round larger than your own. Here, however, it's a little
-    // more complicated. In theory, we could transition to being a delegate in
-    // the future round, but we don't know the anyWatermark, the other
-    // delegates, and so on. This makes things complicated. Instead, we just
-    // ignore it and wait for the Phase2aAny.
-    //
-    // TODO(mwhittaker): This is troublesome. We probably should be jumping up
-    // to a future round. Otherwise, Phase2as sent during a round change get
-    // dropped.
-    //
-    // ???
+    // If we receive a Phase2a with a round from the future, then we're
+    // operating in a stale round. We update ourselves to idle in the larger
+    // round. It's possible that later we'll become a delegate in this round.
+    val sender = chan[Server[Transport]](src, Server.serializer)
     if (phase2a.round > round) {
-      logger.debug(
-        s"Server recevied a Phase2a in round ${phase2a.round} but is only " +
-          s"in round $round. The Phase2a is being ignored."
-      )
-      metrics.futurePhase2asTotal.inc()
-      return
+      stopTimers(state)
+      state = Idle(round = phase2a.round,
+                   delegates = phase2a.delegate.map(ServerIndex(_)))
     }
 
-    state match {
-      case _: Phase1 | _: Idle =>
-        logger.fatal(
-          s"Server in state $state received a Phase2a in its round " +
-            s"(round $round), but this should be impossible."
+    //                same round      same round     stale vote round /
+    //                have noop       have cmd       have nothing
+    //               +---------------+--------------+----------------+
+    // received noop | (a) vote noop | (b) vote cmd | (c) vote noop  |
+    // received cmd  | (d) vote cmd  | (e) vote cmd | (f) vote cmd   |
+    //               +---------------+--------------+----------------+
+    val phase2b = Phase2b(serverIndex = index.x,
+                          slot = phase2a.slot,
+                          round = round,
+                          command = None)
+    log.get(phase2a.slot) match {
+      case Some(ChosenEntry(chosen)) =>
+        // If we already know of a chosen value, we can skip the entire
+        // protocol and just let the sender delegate know.
+        sender.send(
+          ServerInbound().withPhase3A(
+            Phase3a(slot = phase2a.slot, commandOrNoop = chosen)
+          )
         )
 
-      case _: Phase2 | _: Delegate =>
-        //                have noop       have cmd       have nothing
-        //               +---------------+--------------+----------------+
-        // received noop | (a) vote noop | (b) vote cmd | (c) vote noop  |
-        // received cmd  | (d) vote cmd  | (e) vote cmd | (f) vote cmd   |
-        //               +---------------+--------------+----------------+
-        val sender = chan[Server[Transport]](src, Server.serializer)
-        val phase2b = Phase2b(serverIndex = index.x,
-                              slot = phase2a.slot,
-                              round = round,
-                              command = None)
-        log.get(phase2a.slot) match {
-          case Some(ChosenEntry(chosen)) =>
-            // If we already know of a chosen value, we can skip the entire
-            // protocol and just let the sender delegate know.
-            sender.send(
-              ServerInbound().withPhase3A(
-                Phase3a(slot = phase2a.slot, commandOrNoop = chosen)
-              )
-            )
+      case None =>
+        // Cases (c) and (f). If we haven't voted for anything yet, then we
+        // vote for the value the sender delegate sent to us.
+        if (config.f == 1 && options.useF1Optimization) {
+          choose(phase2a.slot, phase2a.commandOrNoop)
+          executeLog((slot) => ownsSlot(state, slot))
+          // We don't have to clear phase2bs or pendingValues because we
+          // know they're both empty if our log is empty.
+        } else {
+          log.put(
+            phase2a.slot,
+            PendingEntry(voteRound = round, voteValue = phase2a.commandOrNoop)
+          )
+        }
+        sender.send(ServerInbound().withPhase2B(phase2b))
 
-          case None =>
-            // Cases (c) and (f). If we haven't voted for anything yet, then we
-            // vote for the value the sender delegate sent to us.
+        if (phase2a.commandOrNoop.value.isNoop) {
+          metrics.phase2aHadNothingGotNoopTotal.inc()
+        } else {
+          metrics.phase2aHadNothingGotCommandTotal.inc()
+        }
+
+      case Some(pendingEntry: PendingEntry) =>
+        // Cases (c) and (f). If we haven't voted for anything yet _in this
+        // round_, then we vote for the value the sender delegate sent to us.
+        // We may have voted for a value in a previous round, but that doesn't
+        // matter.
+        if (pendingEntry.voteRound < phase2a.round) {
+          if (config.f == 1 && options.useF1Optimization) {
+            choose(phase2a.slot, phase2a.commandOrNoop)
+            executeLog((slot) => ownsSlot(state, slot))
+            // We don't have to clear phase2bs or pendingValues because we
+            // know they're both empty if our log is empty.
+          } else {
+            log.put(
+              phase2a.slot,
+              PendingEntry(voteRound = round, voteValue = phase2a.commandOrNoop)
+            )
+          }
+          sender.send(ServerInbound().withPhase2B(phase2b))
+
+          if (phase2a.commandOrNoop.value.isNoop) {
+            metrics.phase2aHadNothingGotNoopTotal.inc()
+          } else {
+            metrics.phase2aHadNothingGotCommandTotal.inc()
+          }
+
+          return
+        }
+
+        // voteRound <= round and round <= phase2a.round, so voteRound <=
+        // phase2a.round. If voteRound is not less than phase2a.round, then
+        // they must be equal.
+        logger.checkEq(pendingEntry.voteRound, phase2a.round)
+
+        import CommandOrNoop.Value
+        (phase2a.commandOrNoop.value, pendingEntry.voteValue.value) match {
+          // Cases (a) and (d). If we've already voted for a noop and
+          // receive a noop, then we can safely re-send our Phase2a. This
+          // is just normal Paxos. If we've already voted for a noop and
+          // receive a command, it is surprisingly safe for us to re-vote
+          // for the command. This is special to Faster Paxos, but is in
+          // fact safe.
+          case (_, Value.Noop(Noop())) =>
             if (config.f == 1 && options.useF1Optimization) {
               choose(phase2a.slot, phase2a.commandOrNoop)
               executeLog((slot) => ownsSlot(state, slot))
-              // We don't have to clear phase2bs or pendingValues because we
-              // know they're both empty if our log is empty.
             } else {
               log.put(phase2a.slot,
                       PendingEntry(voteRound = round,
@@ -1582,59 +1683,32 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
             sender.send(ServerInbound().withPhase2B(phase2b))
 
             if (phase2a.commandOrNoop.value.isNoop) {
-              metrics.phase2aHadNothingGotNoopTotal.inc()
+              metrics.phase2aHadNoopGotNoopTotal.inc()
             } else {
-              metrics.phase2aHadNothingGotCommandTotal.inc()
+              metrics.phase2aHadNoopGotCommandTotal.inc()
             }
 
-          case Some(pendingEntry: PendingEntry) =>
-            import CommandOrNoop.Value
-            (phase2a.commandOrNoop.value, pendingEntry.voteValue.value) match {
-              // Cases (a) and (d). If we've already voted for a noop and
-              // receive a noop, then we can safely re-send our Phase2a. This
-              // is just normal Paxos. If we've already voted for a noop and
-              // receive a command, it is surprisingly safe for us to re-vote
-              // for the command. This is special to Faster Paxos, but is in
-              // fact safe.
-              case (_, Value.Noop(Noop())) =>
-                if (config.f == 1 && options.useF1Optimization) {
-                  choose(phase2a.slot, phase2a.commandOrNoop)
-                  executeLog((slot) => ownsSlot(state, slot))
-                } else {
-                  log.put(phase2a.slot,
-                          PendingEntry(voteRound = round,
-                                       voteValue = phase2a.commandOrNoop))
-                }
-                sender.send(ServerInbound().withPhase2B(phase2b))
+          // Case (e). If we've already voted for a command and received a
+          // command, well, they must be the same command!
+          case (Value.Command(proposed), Value.Command(voted)) =>
+            logger.checkEq(proposed, voted)
+            sender.send(ServerInbound().withPhase2B(phase2b))
+            metrics.phase2aHadCommandGotCommandTotal.inc()
 
-                if (phase2a.commandOrNoop.value.isNoop) {
-                  metrics.phase2aHadNoopGotNoopTotal.inc()
-                } else {
-                  metrics.phase2aHadNoopGotCommandTotal.inc()
-                }
-
-              // Case (e). If we've already voted for a command and received a
-              // command, well, they must be the same command!
-              case (Value.Command(proposed), Value.Command(voted)) =>
-                logger.checkEq(proposed, voted)
-                sender.send(ServerInbound().withPhase2B(phase2b))
-                metrics.phase2aHadCommandGotCommandTotal.inc()
-
-              // Case (b). See the documentation of ackNoopsWithCommands for
-              // information on this optimization.
-              case (Value.Noop(Noop()), Value.Command(command)) =>
-                if (options.ackNoopsWithCommands) {
-                  sender.send(
-                    ServerInbound().withPhase2B(phase2b.withCommand(command))
-                  )
-                } else {
-                  // Do nothing.
-                }
-                metrics.phase2aHadCommandGotNoopTotal.inc()
-
-              case (Value.Empty, _) | (_, Value.Empty) =>
-                logger.fatal("Empty CommandOrNoop encountered.")
+          // Case (b). See the documentation of ackNoopsWithCommands for
+          // information on this optimization.
+          case (Value.Noop(Noop()), Value.Command(command)) =>
+            if (options.ackNoopsWithCommands) {
+              sender.send(
+                ServerInbound().withPhase2B(phase2b.withCommand(command))
+              )
+            } else {
+              // Do nothing.
             }
+            metrics.phase2aHadCommandGotNoopTotal.inc()
+
+          case (Value.Empty, _) | (_, Value.Empty) =>
+            logger.fatal("Empty CommandOrNoop encountered.")
         }
     }
 
@@ -1900,12 +1974,6 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       )
       metrics.staleRoundTotal.labels("Nack").inc()
       return
-    }
-
-    state match {
-      case _: Idle =>
-        logger.fatal("Idle server received nack. This should be impossible.")
-      case _: Phase1 | _: Phase2 | _: Delegate =>
     }
 
     stopTimers(state)

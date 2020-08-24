@@ -75,32 +75,9 @@ object Simulator {
   ): Option[BadHistory[Sim]] = {
     var history = Seq[sim.Command]()
     val seed = System.currentTimeMillis()
-    var system = sim.newSystem(seed)
-    var states = Seq[sim.State](sim.getState(system))
-
-    checkInvariants[sim.type, sim.State](sim, states) match {
-      case SimulatedSystem.InvariantViolated(explanation) =>
-        return Some(
-          BadHistory(seed, history, new IllegalStateException(explanation))
-        )
-
-      case SimulatedSystem.InvariantHolds =>
-        // Nothing to do.
-        ()
-    }
-
-    for (_ <- 1 to runLength) {
-      val command = sim.generateCommand(system) match {
-        case Some(c) => c
-        case None    => return None
-      }
-      history = history :+ command
-      system = util.Try(sim.runCommand(system, command)) match {
-        case util.Success(system) => system
-        case util.Failure(throwable) =>
-          return Some(BadHistory(seed, history, throwable))
-      }
-      states = states :+ sim.getState(system)
+    try {
+      var system = sim.newSystem(seed)
+      var states = Seq[sim.State](sim.getState(system))
 
       checkInvariants[sim.type, sim.State](sim, states) match {
         case SimulatedSystem.InvariantViolated(explanation) =>
@@ -112,9 +89,39 @@ object Simulator {
           // Nothing to do.
           ()
       }
-    }
 
-    None
+      for (_ <- 1 to runLength) {
+        val command = sim.generateCommand(system) match {
+          case Some(c) => c
+          case None    => return None
+        }
+        history = history :+ command
+        system = util.Try(sim.runCommand(system, command)) match {
+          case util.Success(system) => system
+          case util.Failure(throwable) =>
+            return Some(BadHistory(seed, history, throwable))
+        }
+        states = states :+ sim.getState(system)
+
+        checkInvariants[sim.type, sim.State](sim, states) match {
+          case SimulatedSystem.InvariantViolated(explanation) =>
+            return Some(
+              BadHistory(seed, history, new IllegalStateException(explanation))
+            )
+
+          case SimulatedSystem.InvariantHolds =>
+            // Nothing to do.
+            ()
+        }
+      }
+
+      None
+    } catch {
+      // Sometimes, the execution of a system will lead to an invariant being
+      // violated and an exception being thrown. We want to consider these bad
+      // histories as well.
+      case e: IllegalStateException => Some(BadHistory(seed, history, e))
+    }
   }
 
   // Run a simulated system `sim` on a particular run `run`. If the run is
