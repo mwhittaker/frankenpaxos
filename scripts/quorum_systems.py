@@ -242,6 +242,42 @@ class Paths1(QuorumSystem):
         return 2
 
 
+class Square(QuorumSystem):
+    """
+    a-----b
+    |\   /|
+    | \ / |
+    |  X  |
+    | / \ |
+    |/   \|
+    d-----c
+    """
+    def __repr__(self) -> str:
+        return f'Square'
+
+    def __str__(self) -> str:
+        return f'Square'
+
+    def read_quorums(self) -> Iterator[Set[str]]:
+        yield {'a', 'b'}
+        yield {'b', 'c'}
+        yield {'c', 'd'}
+        yield {'d', 'a'}
+
+    def write_quorums(self) -> Iterator[Set[str]]:
+        yield {'a', 'c'}
+        yield {'b', 'd'}
+
+    def load(self, workload: Workload, balanced: bool = False) -> float:
+        raise NotImplementedError()
+
+    def min_read_failure(self) -> int:
+        return 2
+
+    def min_write_failure(self) -> int:
+        return 2
+
+
 def partition(xs: List[Any]) -> Iterator[List[List[Any]]]:
     if xs == []:
         return
@@ -325,11 +361,22 @@ def plot_load():
     print(f'Wrote plot to {output_filename}.')
 
 
+# TODO(mwhittaker): Right now, if this prints something, it _might_ subsume,
+# but it might not. If nothing is printed, then it definitely doesn't subsume.
+# Is there a way to check for a perfect subsumption?
 def find_isomorphism():
-    paths1 = Paths1().to_graph()
-    for system in systems(['a', 'b', 'c', 'd', 'e']):
+    # paths1 = Paths1().to_graph()
+    # for system in systems(['a', 'b', 'c', 'd', 'e']):
+    #     g = system.to_graph()
+    #     matcher = nx.isomorphism.GraphMatcher(g, paths1)
+    #     if matcher.subgraph_is_isomorphic():
+    #         print(system)
+    #         return
+
+    square = Square().to_graph()
+    for system in systems(['a', 'b', 'c', 'd']):
         g = system.to_graph()
-        matcher = nx.isomorphism.GraphMatcher(g, paths1)
+        matcher = nx.isomorphism.GraphMatcher(g, square)
         if matcher.subgraph_is_isomorphic():
             print(system)
             return
