@@ -11,6 +11,7 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
+import frankenpaxos.quorums.Grid
 import frankenpaxos.roundsystem.RoundSystem
 import scala.scalajs.js.annotation._
 import scala.util.Random
@@ -107,6 +108,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = LeaderInbound
   override val serializer = LeaderInboundSerializer
 
+  type GroupIndex = Int
   type AcceptorIndex = Int
   type Round = Int
   type Slot = Int
@@ -120,6 +122,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Phase1(
       phase1bs: mutable.Buffer[mutable.Map[AcceptorIndex, Phase1b]],
+      phase1bAcceptors: mutable.Set[(GroupIndex, AcceptorIndex)],
       pendingClientRequestBatches: mutable.Buffer[ClientRequestBatch],
       resendPhase1as: Transport#Timer
   ) extends State
@@ -142,6 +145,19 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
       for (address <- acceptorCluster)
         yield chan[Acceptor[Transport]](address, Acceptor.serializer)
     }
+
+  // If config.flexible is true, then we treat the acceptors as a grid quorum
+  // system. Every acceptor has a group index and an acceptor index within that
+  // group. This is equivalent to the row and column. We use this pair to
+  // identify the acceptors.
+  @JSExport
+  protected val grid: Grid[(GroupIndex, AcceptorIndex)] = new Grid(
+    for (row <- 0 until acceptors.size) yield {
+      for (col <- 0 until acceptors(row).size) yield {
+        (row, col)
+      }
+    }
+  )
 
   // ProxyLeader channels.
   private val proxyLeaders: Seq[Chan[ProxyLeader[Transport]]] =
@@ -284,11 +300,6 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
     }
   }
 
-  private def thriftyQuorum(
-      acceptors: Seq[Chan[Acceptor[Transport]]]
-  ): Seq[Chan[Acceptor[Transport]]] =
-    scala.util.Random.shuffle(acceptors).take(config.f + 1)
-
   // `maxPhase1bSlot(phase1b)` finds the largest slot present in `phase1b` or
   // -1 if no slots are present.
   private def maxPhase1bSlot(phase1b: Phase1b): Slot = {
@@ -396,13 +407,22 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
   private def startPhase1(round: Round, chosenWatermark: Slot): Phase1 = {
     val phase1a = Phase1a(round = round, chosenWatermark = chosenWatermark)
-    for (group <- acceptors) {
-      thriftyQuorum(group).foreach(
-        _.send(AcceptorInbound().withPhase1A(phase1a))
-      )
+    if (!config.flexible) {
+      for {
+        group <- acceptors;
+        acceptor <- scala.util.Random.shuffle(group).take(config.f + 1)
+      } {
+        acceptor.send(AcceptorInbound().withPhase1A(phase1a))
+      }
+    } else {
+      for ((row, col) <- grid.randomReadQuorum()) {
+        acceptors(row)(col).send(AcceptorInbound().withPhase1A(phase1a))
+      }
     }
+
     Phase1(
       phase1bs = mutable.Buffer.fill(config.numAcceptorGroups)(mutable.Map()),
+      phase1bAcceptors = mutable.Set(),
       pendingClientRequestBatches = mutable.Buffer(),
       resendPhase1as = makeResendPhase1asTimer(phase1a)
     )
@@ -504,10 +524,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
-        // Wait until we have a quorum of responses from _every_ acceptor group.
+        // Wait until we have a quorum of responses.
         phase1.phase1bs(phase1b.groupIndex)(phase1b.acceptorIndex) = phase1b
-        if (phase1.phase1bs.exists(_.size < config.f + 1)) {
+        if (!config.flexible && phase1.phase1bs.exists(_.size < config.f + 1)) {
           return
+        }
+        if (config.flexible) {
+          phase1.phase1bAcceptors +=
+            (phase1b.groupIndex -> phase1b.acceptorIndex)
+          if (!grid.isReadQuorum(phase1.phase1bAcceptors.toSet)) {
+            return
+          }
         }
 
         // Find the largest slot with a vote.

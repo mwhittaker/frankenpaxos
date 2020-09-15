@@ -110,6 +110,19 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         yield chan[Acceptor[Transport]](address, Acceptor.serializer)
     }
 
+  // If config.flexible is true, then we treat the acceptors as a grid quorum
+  // system. Every acceptor has a group index and an acceptor index within that
+  // group. This is equivalent to the row and column. We use this pair to
+  // identify the acceptors.
+  @JSExport
+  protected val grid: Grid[(GroupIndex, AcceptorIndex)] = new Grid(
+    for (row <- 0 until acceptors.size) yield {
+      for (col <- 0 until acceptors(row).size) yield {
+        (row, col)
+      }
+    }
+  )
+
   // Replica channels.
   private val replicas: Seq[Chan[Replica[Transport]]] =
     for (address <- config.replicaAddresses)
@@ -117,19 +130,6 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
 
   // The number of Phase2a messages since the last flush.
   private var numPhase2asSentSinceLastFlush: Int = 0
-
-  // If config.flexible is true, then we treat the acceptors as a grid quorum
-  // system. Every acceptor has a group index and an acceptor index within that
-  // group. This is equivalent to the row and column. We use this pair to
-  // identify the acceptors.
-  @JSExport
-  protected var grid: Grid[(GroupIndex, AcceptorIndex)] = new Grid(
-    for (row <- 0 until acceptors.size) yield {
-      for (col <- 0 until acceptors(row).size) yield {
-        (row, col)
-      }
-    }
-  )
 
   @JSExport
   protected var states = mutable.Map[SlotRound, State]()
