@@ -283,9 +283,10 @@ message Phase2b {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 acceptor_index = 1;
-  required int32 slot = 2;
-  required int32 round = 3;
+  required int32 group_index = 1;
+  required int32 acceptor_index = 2;
+  required int32 slot = 3;
+  required int32 round = 4;
 }
 
 message Chosen {

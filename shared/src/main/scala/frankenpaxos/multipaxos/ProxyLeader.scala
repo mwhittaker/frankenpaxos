@@ -5,6 +5,7 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
+import frankenpaxos.quorums.Grid
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
@@ -79,6 +80,7 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = ProxyLeaderInbound
   override val serializer = ProxyLeaderInboundSerializer
 
+  type GroupIndex = Int
   type AcceptorIndex = Int
 
   @JSExportAll
@@ -90,7 +92,7 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   case class Pending(
       phase2a: Phase2a,
-      phase2bs: mutable.Map[AcceptorIndex, Phase2b]
+      phase2bs: mutable.Map[(GroupIndex, AcceptorIndex), Phase2b]
   ) extends State
 
   @JSExportAll
@@ -115,6 +117,19 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
 
   // The number of Phase2a messages since the last flush.
   private var numPhase2asSentSinceLastFlush: Int = 0
+
+  // If config.flexible is true, then we treat the acceptors as a grid quorum
+  // system. Every acceptor has a group index and an acceptor index within that
+  // group. This is equivalent to the row and column. We use this pair to
+  // identify the acceptors.
+  @JSExport
+  protected var grid: Grid[(GroupIndex, AcceptorIndex)] = new Grid(
+    for (row <- 0 until acceptors.size) yield {
+      for (col <- 0 until acceptors(row).size) yield {
+        (row, col)
+      }
+    }
+  )
 
   @JSExport
   protected var states = mutable.Map[SlotRound, State]()
@@ -168,10 +183,19 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
         )
 
       case None =>
-        // Select the appropriate acceptor group, and then randomly select a
-        // thrifty quorum of it. Relay the Phase2a message to the quorum
-        val group = acceptors(phase2a.slot % config.numAcceptorGroups)
-        val quorum = scala.util.Random.shuffle(group).take(config.f + 1)
+        // Select the appropriate acceptors to talk to.
+        val quorum = if (!config.flexible) {
+          // Pick a the correct acceptor group (according to the slot), and
+          // then randomly select a thrifty quorum of it.
+          val group = acceptors(phase2a.slot % config.numAcceptorGroups)
+          scala.util.Random.shuffle(group).take(config.f + 1)
+        } else {
+          // Pick a random write quorum.
+          grid
+            .randomWriteQuorum()
+            .map({ case (row, col) => acceptors(row)(col) })
+        }
+
         if (options.flushPhase2asEveryN == 1) {
           quorum.foreach(_.send(AcceptorInbound().withPhase2A(phase2a)))
         } else {
@@ -210,8 +234,11 @@ class ProxyLeader[Transport <: frankenpaxos.Transport[Transport]](
       case Some(pending: Pending) =>
         // Wait until we receive a quorum of Phase2bs.
         val phase2bs = pending.phase2bs
-        phase2bs(phase2b.acceptorIndex) = phase2b
-        if (phase2bs.size < config.f + 1) {
+        phase2bs((phase2b.groupIndex, phase2b.acceptorIndex)) = phase2b
+        if (!config.flexible && phase2bs.size < config.f + 1) {
+          return
+        }
+        if (config.flexible && !grid.isWriteQuorum(phase2bs.keys.toSet)) {
           return
         }
 

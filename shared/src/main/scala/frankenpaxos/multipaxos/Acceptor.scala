@@ -211,7 +211,10 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
     val proxyLeader = chan[ProxyLeader[Transport]](src, ProxyLeader.serializer)
     proxyLeader.send(
       ProxyLeaderInbound().withPhase2B(
-        Phase2b(acceptorIndex = index, slot = phase2a.slot, round = round)
+        Phase2b(groupIndex = groupIndex,
+                acceptorIndex = index,
+                slot = phase2a.slot,
+                round = round)
       )
     )
   }
