@@ -10,6 +10,7 @@ import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
+import frankenpaxos.quorums.Grid
 import frankenpaxos.roundsystem.RoundSystem
 import scala.concurrent.Future
 import scala.concurrent.Promise
@@ -167,6 +168,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
   type Pseudonym = Int
   type Id = Int
+  type GroupIndex = Int
   type AcceptorIndex = Int
 
   @JSExportAll
@@ -185,7 +187,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       id: Id,
       command: Array[Byte],
       result: Promise[Array[Byte]],
-      maxSlotReplies: mutable.Map[AcceptorIndex, MaxSlotReply],
+      maxSlotReplies: mutable.Map[(GroupIndex, AcceptorIndex), MaxSlotReply],
       resendMaxSlotRequests: Transport#Timer
   ) extends State
 
@@ -260,6 +262,19 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       for (a <- group)
         yield chan[Acceptor[Transport]](a, Acceptor.serializer)
     }
+
+  // If config.flexible is true, then we treat the acceptors as a grid quorum
+  // system. Every acceptor has a group index and an acceptor index within that
+  // group. This is equivalent to the row and column. We use this pair to
+  // identify the acceptors.
+  @JSExport
+  protected val grid: Grid[(GroupIndex, AcceptorIndex)] = new Grid(
+    for (row <- 0 until acceptors.size) yield {
+      for (col <- 0 until acceptors(row).size) yield {
+        (row, col)
+      }
+    }
+  )
 
   // Replica channels.
   private val replicas: Seq[Chan[Replica[Transport]]] =
@@ -349,14 +364,14 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   private def makeResendMaxSlotRequestsTimer(
       pseudonym: Pseudonym,
       id: Id,
-      group: Seq[Chan[Acceptor[Transport]]],
+      resendTo: Seq[Chan[Acceptor[Transport]]],
       maxSlotRequest: MaxSlotRequest
   ): Transport#Timer = {
     lazy val t: Transport#Timer = timer(
       s"resendMaxSlotRequest [pseudonym=${pseudonym}; id=${id}]",
       options.resendMaxSlotRequestsPeriod,
       () => {
-        group.foreach(
+        resendTo.foreach(
           _.send(AcceptorInbound().withMaxSlotRequest(maxSlotRequest))
         )
         metrics.resendMaxSlotRequestsTotal.inc()
@@ -608,15 +623,23 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         // and let it do it for us.
         val id = ids.getOrElse(pseudonym, 0)
         if (readBatchers.size == 0) {
-          // Send the MaxSlotRequests to a random quorum of acceptors (thrifty
-          // by default).
+          // Send the MaxSlotRequests to a quorum of acceptors.
+          val (quorum, resendTo) = if (!config.flexible) {
+            val group = acceptors(rand.nextInt(acceptors.size))
+            val quorum = scala.util.Random.shuffle(group).take(config.f + 1)
+            (quorum, group)
+          } else {
+            val quorum = grid
+              .randomReadQuorum()
+              .map({ case (row, col) => acceptors(row)(col) })
+            (quorum, acceptors.flatten)
+          }
+
           val maxSlotRequest = MaxSlotRequest(
             commandId = CommandId(clientAddress = addressAsBytes,
                                   clientPseudonym = pseudonym,
                                   clientId = id)
           )
-          val group = acceptors(rand.nextInt(acceptors.size))
-          val quorum = scala.util.Random.shuffle(group).take(config.f + 1)
           val inbound = AcceptorInbound().withMaxSlotRequest(maxSlotRequest)
           if (options.flushReadsEveryN == 1) {
             quorum.foreach(_.send(inbound))
@@ -636,7 +659,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
             resendMaxSlotRequests =
               makeResendMaxSlotRequestsTimer(pseudonym,
                                              id,
-                                             group,
+                                             resendTo,
                                              maxSlotRequest)
           )
         } else {
@@ -850,9 +873,16 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           return
         }
 
-        // Wait until we have f+1 responses.
-        maxSlot.maxSlotReplies(maxSlotReply.acceptorIndex) = maxSlotReply
-        if (maxSlot.maxSlotReplies.size < config.f + 1) {
+        // Wait until we have a quorum of responses.
+        maxSlot.maxSlotReplies(
+          (maxSlotReply.groupIndex, maxSlotReply.acceptorIndex)
+        ) = maxSlotReply
+        if (!config.flexible && maxSlot.maxSlotReplies.size < config.f + 1) {
+          return
+        }
+        if (config.flexible && !grid.isReadQuorum(
+              maxSlot.maxSlotReplies.keys.toSet
+            )) {
           return
         }
 

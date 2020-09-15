@@ -210,6 +210,8 @@ class ReadBatcher[Transport <: frankenpaxos.Transport[Transport]](
         yield chan[Acceptor[Transport]](address, Acceptor.serializer)
     }
 
+  // TODO(mwhittaker): Add grid quorums.
+
   // Replica channels.
   private val replicas: Seq[Chan[Replica[Transport]]] =
     for (address <- config.replicaAddresses)

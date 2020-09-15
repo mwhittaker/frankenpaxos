@@ -228,6 +228,7 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       ClientInbound().withMaxSlotReply(
         MaxSlotReply(
           commandId = maxSlotRequest.commandId,
+          groupIndex = groupIndex,
           acceptorIndex = index,
           slot = maxVotedSlot
         )
