@@ -36,6 +36,12 @@ object QuorumSystem {
     )
   }
 
+  def toProto(quorumSystem: Grid[Int]): QuorumSystemProto = {
+    QuorumSystemProto().withGridProto(
+      GridProto(members = quorumSystem.grid.map(row => GridRow(row)))
+    )
+  }
+
   def fromProto(
       proto: QuorumSystemProto,
       seed: Long = System.currentTimeMillis
@@ -46,6 +52,8 @@ object QuorumSystem {
         new SimpleMajority(proto.members.toSet, seed)
       case Value.UnanimousWritesProto(proto) =>
         new UnanimousWrites(proto.members.toSet, seed)
+      case Value.GridProto(proto) =>
+        new Grid(proto.members.map(_.xs), seed)
       case Value.Empty =>
         throw new IllegalArgumentException("Empty QuorumSystemProto.")
     }

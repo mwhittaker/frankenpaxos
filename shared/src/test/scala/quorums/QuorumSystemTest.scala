@@ -20,6 +20,14 @@ class QuorumSystemTest extends FlatSpec {
       test(qs)
       info(s"UnanimousWrites $i passed.")
     }
+
+    for {
+      numRows <- 2 until 6
+      numColumns <- 2 until 6
+    } {
+      test(new Grid((0 until numRows * numColumns).grouped(numColumns).toSeq))
+      info(s"Grid $numRows x $numColumns passed.")
+    }
   }
 
   "A quorum system" should "have intersecting read and write quorums" in {

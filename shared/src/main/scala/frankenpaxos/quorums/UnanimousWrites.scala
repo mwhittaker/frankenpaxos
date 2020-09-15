@@ -20,7 +20,7 @@ class UnanimousWrites[T](
 ) extends QuorumSystem[T] {
   require(
     !members.isEmpty,
-    "You cannot construct a SimpleMajority quorum system without any members."
+    "You cannot construct a UnanimousWrites quorum system without any members."
   )
 
   private val rand = new scala.util.Random(seed)

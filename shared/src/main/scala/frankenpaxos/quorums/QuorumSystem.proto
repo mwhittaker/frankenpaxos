@@ -17,6 +17,14 @@ message UnanimousWritesProto {
   repeated int32 members = 1;
 }
 
+message GridRow {
+  repeated int32 xs = 1;
+}
+
+message GridProto {
+  repeated GridRow members = 1;
+}
+
 message QuorumSystemProto {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
@@ -24,5 +32,6 @@ message QuorumSystemProto {
   oneof value {
     SimpleMajorityProto simple_majority_proto = 1;
     UnanimousWritesProto unanimous_writes_proto = 2;
+    GridProto grid_proto = 3;
   }
 }
