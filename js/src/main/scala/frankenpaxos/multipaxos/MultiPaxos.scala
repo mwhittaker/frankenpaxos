@@ -66,6 +66,7 @@ class MultiPaxos(batch: Boolean) {
       JsTransportAddress("ProxyReplica 1"),
       JsTransportAddress("ProxyReplica 2")
     ),
+    flexible = false,
     distributionScheme = Hash
   )
 

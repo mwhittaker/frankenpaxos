@@ -50,6 +50,7 @@ class MultiPaxos(val f: Int, batched: Boolean, seed: Long) {
       (1 to numReplicas).map(i => FakeTransportAddress(s"Replica $i")),
     proxyReplicaAddresses = (1 to numProxyReplicas)
       .map(i => FakeTransportAddress(s"ProxyReplica $i")),
+    flexible = false,
     distributionScheme = Hash
   )
 

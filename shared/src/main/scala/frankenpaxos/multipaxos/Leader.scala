@@ -287,7 +287,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   private def thriftyQuorum(
       acceptors: Seq[Chan[Acceptor[Transport]]]
   ): Seq[Chan[Acceptor[Transport]]] =
-    scala.util.Random.shuffle(acceptors).take(config.quorumSize)
+    scala.util.Random.shuffle(acceptors).take(config.f + 1)
 
   // `maxPhase1bSlot(phase1b)` finds the largest slot present in `phase1b` or
   // -1 if no slots are present.
@@ -506,7 +506,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Wait until we have a quorum of responses from _every_ acceptor group.
         phase1.phase1bs(phase1b.groupIndex)(phase1b.acceptorIndex) = phase1b
-        if (phase1.phase1bs.exists(_.size < config.quorumSize)) {
+        if (phase1.phase1bs.exists(_.size < config.f + 1)) {
           return
         }
 
