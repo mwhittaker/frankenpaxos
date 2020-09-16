@@ -891,7 +891,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
         // TODO(mwhittaker): Double check that the `- 1` is safe.
         val slot = if (options.unsafeReadAtFirstSlot) {
           0
-        } else if (options.unsafeReadAtI) {
+        } else if (config.flexible || options.unsafeReadAtI) {
           maxSlot.maxSlotReplies.values.map(_.slot).max
         } else {
           maxSlot.maxSlotReplies.values.map(_.slot).max + acceptors.size - 1
