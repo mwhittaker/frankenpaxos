@@ -14,7 +14,7 @@ import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
 
-class MultiPaxos(val f: Int, batched: Boolean, seed: Long) {
+class MultiPaxos(val f: Int, batched: Boolean, flexible: Boolean, seed: Long) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = 2
@@ -26,7 +26,11 @@ class MultiPaxos(val f: Int, batched: Boolean, seed: Long) {
   val numLeaders = f + 1
   val numProxyLeaders = f + 1
   val numAcceptorGroups = 2
-  val numAcceptors = 2 * f + 1
+  val numAcceptors = if (!flexible) {
+    2 * f + 1
+  } else {
+    (f + 1) * (f + 1)
+  }
   val numReplicas = f + 1
   val numProxyReplicas = f + 1
 
@@ -50,7 +54,7 @@ class MultiPaxos(val f: Int, batched: Boolean, seed: Long) {
       (1 to numReplicas).map(i => FakeTransportAddress(s"Replica $i")),
     proxyReplicaAddresses = (1 to numProxyReplicas)
       .map(i => FakeTransportAddress(s"ProxyReplica $i")),
-    flexible = false,
+    flexible = flexible,
     distributionScheme = Hash
   )
 
@@ -193,7 +197,7 @@ object SimulatedMultiPaxos {
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
-class SimulatedMultiPaxos(val f: Int, batched: Boolean)
+class SimulatedMultiPaxos(val f: Int, batched: Boolean, flexible: Boolean)
     extends SimulatedSystem {
   import SimulatedMultiPaxos._
 
@@ -207,7 +211,8 @@ class SimulatedMultiPaxos(val f: Int, batched: Boolean)
   // liveness. If no value is every chosen, then clearly something is wrong.
   var valueChosen: Boolean = false
 
-  override def newSystem(seed: Long): System = new MultiPaxos(f, batched, seed)
+  override def newSystem(seed: Long): System =
+    new MultiPaxos(f, batched, flexible, seed)
 
   override def getState(paxos: System): State = {
     val logs = mutable.Buffer[Seq[CommandBatchOrNoop]]()

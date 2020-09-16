@@ -11,10 +11,11 @@ class MultiPaxosTest extends FlatSpec {
     info(s"runLength = $runLength, numRuns = $numRuns")
 
     for {
-      batched <- Seq(true, false)
+      (batched, flexible) <- Seq((false, false), (false, true), (true, false))
       f <- 1 to 2
     } {
-      val sim = new SimulatedMultiPaxos(f = f, batched = batched)
+      val sim =
+        new SimulatedMultiPaxos(f = f, batched = batched, flexible = flexible)
 
       Simulator
         .simulate(sim, runLength = runLength, numRuns = numRuns)
@@ -31,7 +32,7 @@ class MultiPaxosTest extends FlatSpec {
         case None => {}
       }
 
-      val suffix = s"f=$f, batched=$batched"
+      val suffix = s"f=$f, batched=$batched, flexible=$flexible"
       if (sim.valueChosen) {
         info(s"Value chosen ($suffix)")
       } else {
