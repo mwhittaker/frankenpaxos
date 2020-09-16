@@ -10,7 +10,7 @@ import frankenpaxos.statemachine.ReadableAppendLog
 import scala.scalajs.js.annotation._
 
 @JSExportAll
-class MultiPaxos(batch: Boolean) {
+class MultiPaxos(batch: Boolean, flexible: Boolean) {
   // Transport.
   val logger = new JsLogger()
   val transport = new JsTransport(logger)
@@ -66,7 +66,7 @@ class MultiPaxos(batch: Boolean) {
       JsTransportAddress("ProxyReplica 1"),
       JsTransportAddress("ProxyReplica 2")
     ),
-    flexible = false,
+    flexible = flexible,
     distributionScheme = Hash
   )
 
@@ -238,11 +238,17 @@ class MultiPaxos(batch: Boolean) {
 @JSExportAll
 @JSExportTopLevel("frankenpaxos.multipaxos.MultiPaxos")
 object MultiPaxos {
-  val MultiPaxos = new MultiPaxos(batch = false);
+  val MultiPaxos = new MultiPaxos(batch = false, flexible = false);
+}
+
+@JSExportAll
+@JSExportTopLevel("frankenpaxos.multipaxos.FlexibleMultiPaxos")
+object FlexibleMultiPaxos {
+  val MultiPaxos = new MultiPaxos(batch = false, flexible = true);
 }
 
 @JSExportAll
 @JSExportTopLevel("frankenpaxos.multipaxos.BatchedMultiPaxos")
 object BatchedMultiPaxos {
-  val MultiPaxos = new MultiPaxos(batch = true);
+  val MultiPaxos = new MultiPaxos(batch = true, flexible = false);
 }

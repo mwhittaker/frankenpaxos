@@ -761,14 +761,13 @@ function unbatched() {
   }
 }
 
-function batched() {
-  const MultiPaxos = frankenpaxos.multipaxos.BatchedMultiPaxos.MultiPaxos;
-  const snap = Snap('#batched_animation');
-  const nodes = make_nodes(MultiPaxos, snap, batch=true);
+function make_app(MultiPaxos, snap_id, app_id, batched) {
+  const snap = Snap(snap_id);
+  const nodes = make_nodes(MultiPaxos, snap, batch=batched);
 
   // Create the vue app.
   let vue_app = new Vue({
-    el: '#batched_app',
+    el: app_id,
 
     data: {
       nodes: nodes,
@@ -823,8 +822,12 @@ function batched() {
 }
 
 function main() {
-  unbatched();
-  batched();
+  make_app(frankenpaxos.multipaxos.MultiPaxos.MultiPaxos,
+           '#animation', '#app', false);
+  make_app(frankenpaxos.multipaxos.FlexibleMultiPaxos.MultiPaxos,
+           '#flexible_animation', '#flexible_app', false);
+  make_app(frankenpaxos.multipaxos.BatchedMultiPaxos.MultiPaxos,
+           '#batched_animation', '#batched_app', true);
 }
 
 window.onload = main
