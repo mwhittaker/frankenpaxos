@@ -538,9 +538,12 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Find the largest slot with a vote.
-        val maxSlot = phase1.phase1bs
-          .map(groupPhase1bs => groupPhase1bs.values.map(maxPhase1bSlot).max)
-          .max
+        val maxSlot = {
+          for {
+            groupPhase1bs <- phase1.phase1bs
+            phase1b <- groupPhase1bs.values
+          } yield maxPhase1bSlot(phase1b)
+        }.max
 
         // Now, we iterate from chosenWatermark to maxSlot proposing safe
         // values to fill in the log.
