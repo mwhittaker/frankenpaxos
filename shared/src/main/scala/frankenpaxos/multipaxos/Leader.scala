@@ -238,7 +238,8 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   private def makeNoopFlushTimer(): Option[Transport#Timer] = {
-    if (options.noopFlushPeriod == java.time.Duration.ofSeconds(0)) {
+    if (config.flexible ||
+        options.noopFlushPeriod == java.time.Duration.ofSeconds(0)) {
       return None
     }
 
