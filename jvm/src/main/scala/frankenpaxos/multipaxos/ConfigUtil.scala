@@ -20,6 +20,7 @@ object ConfigUtil {
         proto.acceptorAddress.map(group => group.acceptorAddress.map(addr)),
       replicaAddresses = proto.replicaAddress.map(addr),
       proxyReplicaAddresses = proto.proxyReplicaAddress.map(addr),
+      flexible = proto.flexible,
       distributionScheme = proto.distributionScheme match {
         case DistributionSchemeProto.HASH      => Hash
         case DistributionSchemeProto.COLOCATED => Colocated

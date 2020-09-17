@@ -106,8 +106,10 @@ class Input(NamedTuple):
     num_leaders: int
     num_proxy_leaders: int
     num_acceptor_groups: int
+    num_acceptors_per_group: int
     num_replicas: int
     num_proxy_replicas: int
+    flexible: bool
     distribution_scheme: DistributionScheme
     client_jvm_heap_size: str
     batcher_jvm_heap_size: str
@@ -232,9 +234,10 @@ class MultiPaxosNet:
                 cycle_take_n(self._input.num_proxy_leaders,
                              self._cluster['proxy_leaders'])),
             acceptors=chunks(
-                portify(
-                    cycle_take_n(self._input.num_acceptor_groups * n,
-                                 self._cluster['acceptors'])), n),
+                portify(cycle_take_n(self._input.num_acceptor_groups *
+                                     self._input.num_acceptors_per_group,
+                                     self._cluster['acceptors'])),
+                self._input.num_acceptors_per_group),
             replicas=portify(
                 cycle_take_n(self._input.num_replicas,
                              self._cluster['replicas'])),
@@ -280,6 +283,7 @@ class MultiPaxosNet:
                 'host': e.host.ip(),
                 'port': e.port
             } for e in self.placement().proxy_replicas],
+            'flexible': self._input.flexible,
             'distribution_scheme': self._input.distribution_scheme,
         }
 

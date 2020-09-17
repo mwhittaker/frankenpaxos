@@ -18,8 +18,10 @@ def main(args) -> None:
                     num_leaders = 2,
                     num_proxy_leaders = 2,
                     num_acceptor_groups = 2,
+                    num_acceptors_per_group = 3,
                     num_replicas = 2,
                     num_proxy_replicas = 2,
+                    flexible = False,
                     distribution_scheme = DistributionScheme.HASH,
                     client_jvm_heap_size = '100m',
                     batcher_jvm_heap_size = '100m',
@@ -38,6 +40,7 @@ def main(args) -> None:
                     client_lag = datetime.timedelta(seconds=3),
                     state_machine = 'KeyValueStore',
                     predetermined_read_fraction = -1,
+                    workload_label = 'smoke',
                     workload = read_write_workload.UniformReadWriteWorkload(
                         num_keys=1, read_fraction=0.5, write_size_mean=1,
                         write_size_std=0),

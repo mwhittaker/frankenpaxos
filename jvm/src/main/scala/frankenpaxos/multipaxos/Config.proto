@@ -33,5 +33,6 @@ message NettyConfigProto {
   repeated AcceptorGroup acceptor_address = 7;
   repeated HostPortProto replica_address = 8;
   repeated HostPortProto proxy_replica_address = 9;
-  required DistributionSchemeProto distribution_scheme = 10;
+  required bool flexible = 10;
+  required DistributionSchemeProto distribution_scheme = 11;
 }
