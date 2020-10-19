@@ -21,7 +21,7 @@ def main(args) -> None:
                     num_acceptors_per_group = num_acceptors_per_group,
                     num_replicas = num_replicas,
                     num_proxy_replicas = num_proxy_replicas,
-                    flexible = True,
+                    flexible = flexible,
                     distribution_scheme = DistributionScheme.HASH,
                     client_jvm_heap_size = '8g',
                     batcher_jvm_heap_size = '12g',
@@ -127,77 +127,31 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                 )
 
-                for (num_client_procs, num_clients_per_proc) in [(7, 100)]
                 for num_batchers in [0]
                 for batch_size in [0]
                 for num_proxy_replicas in [0]
-                for proxy_leader_flush_every_n in [0]
-                for proxy_replica_flush_every_n in [0]
+                for proxy_leader_flush_every_n in [1]
+                for proxy_replica_flush_every_n in [1]
 
-                for num_acceptor_groups in [2]
-                for num_acceptors_per_group in [5]
-                for leader_flush_every_n in [10]
-                for num_replicas in [6, 7, 8, 9, 10]
-                for num_proxy_leaders in [8, 9, 10, 11, 12, 13, 14, 15]
-
-
-                ## for (
-                ##     num_client_procs,           # 1
-                ##     num_clients_per_proc,       # 2
-                ##     num_batchers,               # 3
-                ##     num_proxy_leaders,          # 4
-                ##     num_acceptor_groups,        # 5
-                ##     num_acceptors_per_group,    # 6
-                ##     num_replicas,               # 7
-                ##     num_proxy_replicas,         # 8
-                ##     batch_size,                 # 9
-                ##     leader_flush_every_n,       # 10
-                ##     proxy_leader_flush_every_n, # 11
-                ##     proxy_replica_flush_every_n # 12
-                ## ) in [
-                ##     # 1    2   3   4   5   6   7   8   9  10  11  12
-                ##     ( 7, 100,  0,  5,  2,  2,  2,  0,  0, 20,  1,  1),
-                ##     ( 7, 100,  0,  5,  2,  2,  2,  2,  0, 20,  1,  1),
-##
-                ##     # more acceptors
-                ##     # ( 7, 100,  0,  5,  2,  3,  2,  0,  0, 20,  1,  1),
-                ##     # ( 7, 100,  0,  5,  2,  4,  2,  0,  0, 20,  1,  1),
-                ##     # ( 7, 100,  0,  6,  2,  3,  2,  0,  0, 20,  1,  1),
-                ##     # ( 7, 100,  0,  6,  2,  4,  2,  0,  0, 20,  1,  1),
-                ##     # more replicas
-                ##     # ( 7, 100,  0,  5,  2,  3,  3,  0,  0, 20,  1,  1),
-                ##     # ( 7, 100,  0,  5,  2,  4,  3,  0,  0, 20,  1,  1),
-                ##     # ( 7, 100,  0,  6,  2,  3,  3,  0,  0, 20,  1,  1),
-                ##     # ( 7, 100,  0,  6,  2,  4,  3,  0,  0, 20,  1,  1),
-##
-##
-                ##     # ( 1,  10, 0, 30, 2, 5, 5, 10, 0, 1, 1, 1),
-                ##     # ( 5,  10, 0, 30, 2, 5, 5, 10, 0, 5, 5, 1),
-                ##     # ( 5,  20, 0, 30, 2, 5, 5, 10, 0, 10, 10, 1),
-                ##     # ( 6,  50, 0, 30, 2, 5, 5, 10, 0, 10, 10, 1),
-                ##     # ( 6, 100, 0, 30, 2, 5, 5, 10, 0, 10, 10, 1),
-                ##     # (10, 100, 0, 30, 2, 5, 5, 10, 0, 10, 10, 1),
-                ##     # (20, 100, 0, 30, 2, 5, 5, 10, 0, 10, 10, 1),
-##
-                ##     # ( 1,   1, 0, 30, 3, 5, 10, 0, 1, 1, 1),
-                ##     # ( 1,  10, 0, 30, 3, 5, 10, 0, 1, 1, 1),
-                ##     # ( 5,  10, 0, 30, 3, 5, 10, 0, 5, 5, 1),
-                ##     # ( 5,  20, 0, 30, 3, 5, 10, 0, 10, 10, 1),
-                ##     # ( 6,  50, 0, 30, 3, 5, 10, 0, 10, 10, 1),
-                ##     # ( 6, 100, 0, 30, 3, 5, 10, 0, 10, 10, 1),
-                ##     # (10, 100, 0, 30, 3, 5, 10, 0, 10, 10, 1),
-                ##     # (20, 100, 0, 30, 3, 5, 10, 0, 10, 10, 1),
-##
-                ##     # ( 1,   1, 2, 23, 3, 5, 10, 1, 1, 1, 1),
-                ##     # ( 1,  10, 2, 23, 3, 5, 10, 1, 1, 1, 1),
-                ##     # ( 5,  10, 2, 23, 3, 5, 10, 10, 1, 1, 1),
-                ##     # ( 5,  20, 2, 23, 3, 5, 10, 10, 1, 1, 1),
-                ##     # ( 6,  50, 2, 23, 3, 5, 10, 10, 1, 1, 1),
-                ##     # ( 6, 100, 2, 23, 3, 5, 10, 10, 1, 1, 1),
-                ##     # (10, 100, 4, 23, 3, 5, 10, 10, 1, 1, 1),
-                ##     # (20, 100, 4, 23, 3, 5, 10, 20, 1, 1, 1),
-                ##     # (20, 200, 8, 23, 3, 5, 10, 40, 1, 1, 1),
-                ## ]
+                for num_replicas in [4]
+                for num_proxy_leaders in [10]
+                for (flexible, num_acceptor_groups, num_acceptors_per_group) in [
+                    (True, 2, 2),
+                ]
+                for (num_client_procs, num_clients_per_proc, leader_flush_every_n) in [
+                    (1, 1, 1),
+                    # (1, 50, 10),
+                    # (1, 100, 10),
+                    # (2, 100, 10),
+                    # (3, 100, 10),
+                    # (4, 100, 10),
+                    # (5, 100, 10),
+                    # (6, 100, 10),
+                    # (7, 100, 10),
+                    # (8, 100, 10),
+                    # (9, 100, 10),
+                    # (10, 100, 10),
+                ]
             ] * 3
 
         def summary(self, input: Input, output: Output) -> str:

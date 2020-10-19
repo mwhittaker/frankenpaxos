@@ -13,6 +13,7 @@ def main(args) -> None:
                     num_warmup_clients_per_proc=1,
                     num_clients_per_proc=1,
                     jvm_heap_size='100m',
+                    measurement_group_size=1,
                     warmup_duration=datetime.timedelta(seconds=2),
                     warmup_timeout=datetime.timedelta(seconds=3),
                     warmup_sleep=datetime.timedelta(seconds=0),

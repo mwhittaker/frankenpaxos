@@ -11,7 +11,7 @@ run_script() {
 
 main() {
     local -r d="$(dirname $0)"
-    # run_script "$d/lt_surprise/plot.sh"
+    run_script "$d/compartmentalized_lt/plot.sh"
 }
 
 main "$@"

@@ -16,7 +16,7 @@ import re
 
 
 ALPHA = 1
-MARKERS = itertools.cycle(['o', '*', '^', 's', 'P'])
+MARKERS = itertools.cycle(['o', '*', '^', 's', 'P', 'x', '1'])
 
 
 def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
@@ -74,7 +74,7 @@ def main(args) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
     plot_throughput(df, ax)
 
-    ax.set_title('')
+    ax.set_title('(leader flush every, num replicas)')
     ax.set_xlabel('Number of proxy leaders')
     ax.set_ylabel('Throughput\n(100,000 commands per second)')
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
