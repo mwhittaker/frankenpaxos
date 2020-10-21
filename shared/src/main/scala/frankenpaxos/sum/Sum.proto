@@ -1,0 +1,18 @@
+syntax = "proto2";
+
+package frankenpaxos.sum;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.sum"
+  flat_package: true
+};
+
+message ServerInbound {
+  required int32 x = 1;
+}
+
+message ClientInbound {
+  required int32 sum = 1;
+}
