@@ -56,6 +56,7 @@ class Input(NamedTuple):
     proxy_server_jvm_heap_size: str
 
     # Benchmark parameters. ####################################################
+    measurement_group_size: int
     warmup_duration: datetime.timedelta
     warmup_timeout: datetime.timedelta
     warmup_sleep: datetime.timedelta
@@ -90,23 +91,9 @@ Output = benchmark.RecorderOutput
 
 # Networks #####################################################################
 class BatchedUnreplicatedNet:
-    def __init__(self, cluster_file: str, key_filename: Optional[str],
-                 input: Input) -> None:
-        self._key_filename = key_filename
-        # It's important that we initialize the cluster after we set
-        # _key_filename since _connect reads _key_filename.
-        self._cluster = (cluster.Cluster.from_json_file(cluster_file,
-                                                        self._connect).f(1))
+    def __init__(self, cluster: cluster.Cluster, input: Input) -> None:
+        self._cluster = cluster.f(1)
         self._input = input
-
-    def _connect(self, address: str) -> host.Host:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
-        if self._key_filename:
-            client.connect(address, key_filename=self._key_filename)
-        else:
-            client.connect(address)
-        return host.RemoteHost(client)
 
     class Placement(NamedTuple):
         clients: List[host.Endpoint]
@@ -158,15 +145,24 @@ class BatchedUnreplicatedNet:
 
 # Suite ########################################################################
 class BatchedUnreplicatedSuite(benchmark.Suite[Input, Output]):
+    def __init__(self) -> None:
+        super().__init__()
+        self._cluster = cluster.Cluster.from_json_file(self.args()['cluster'],
+                                                       self._connect)
+
+    def _connect(self, address: str) -> host.Host:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
+        if self.args()['identity_file']:
+            client.connect(address, key_filename=self.args()['identity_file'])
+        else:
+            client.connect(address)
+        return host.RemoteHost(client)
+
     def run_benchmark(self, bench: benchmark.BenchmarkDirectory,
                       args: Dict[Any, Any], input: Input) -> Output:
-        net = BatchedUnreplicatedNet(args['cluster'], args['identity_file'],
-                                     input)
-        return self._run_benchmark(bench, args, input, net)
+        net = BatchedUnreplicatedNet(self._cluster, input)
 
-    def _run_benchmark(self, bench: benchmark.BenchmarkDirectory,
-                       args: Dict[Any, Any], input: Input,
-                       net: BatchedUnreplicatedNet) -> Output:
         # Write config file.
         config = net.config()
         config_filename = bench.abspath('config.pbtxt')
@@ -344,6 +340,8 @@ class BatchedUnreplicatedSuite(benchmark.Suite[Input, Output]):
                     client.host.ip(),
                     '--prometheus_port',
                     str(client.port + 1) if input.monitored else '-1',
+                    '--measurement_group_size',
+                    f'{input.measurement_group_size}',
                     '--warmup_duration',
                     f'{input.warmup_duration.total_seconds()}s',
                     '--warmup_timeout',
@@ -380,11 +378,11 @@ class BatchedUnreplicatedSuite(benchmark.Suite[Input, Output]):
             bench.abspath(f'client_{i}_data.csv')
             for i in range(input.num_client_procs)
         ]
-        return benchmark.parse_recorder_data(
+        return benchmark.parse_labeled_recorder_data(
             bench,
             client_csvs,
             drop_prefix=datetime.timedelta(seconds=0),
-            save_data=False)
+            save_data=False)['write']
 
 
 def get_parser() -> argparse.ArgumentParser:

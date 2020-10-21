@@ -2,7 +2,7 @@ from .batchedunreplicated import *
 
 
 def main(args) -> None:
-    class SmokeBatchedUnreplicatedSuite(BatchedUnreplicatedSuite):
+    class SmokeSuite(BatchedUnreplicatedSuite):
         def args(self) -> Dict[Any, Any]:
             return vars(args)
 
@@ -18,6 +18,7 @@ def main(args) -> None:
                     batcher_jvm_heap_size='100m',
                     server_jvm_heap_size='100m',
                     proxy_server_jvm_heap_size='100m',
+                    measurement_group_size=1,
                     warmup_duration=datetime.timedelta(seconds=2),
                     warmup_timeout=datetime.timedelta(seconds=3),
                     warmup_sleep=datetime.timedelta(seconds=0),
@@ -49,7 +50,7 @@ def main(args) -> None:
                 'start_throughput_1s.p90': f'{output.start_throughput_1s.p90:.6}',
             })
 
-    suite = SmokeBatchedUnreplicatedSuite()
+    suite = SmokeSuite()
     with benchmark.SuiteDirectory(args.suite_directory,
                                   'batchedunreplicated_smoke') as dir:
         suite.run_suite(dir)

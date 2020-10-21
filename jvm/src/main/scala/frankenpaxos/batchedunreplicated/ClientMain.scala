@@ -33,6 +33,7 @@ object ClientMain extends App {
       prometheusHost: String = "0.0.0.0",
       prometheusPort: Int = 0,
       // Benchmark flags.
+      measurementGroupSize: Int = 1,
       warmupDuration: java.time.Duration = java.time.Duration.ofSeconds(5),
       warmupTimeout: Duration = 10 seconds,
       warmupSleep: java.time.Duration = java.time.Duration.ofSeconds(0),
@@ -61,6 +62,9 @@ object ClientMain extends App {
       .text(s"Prometheus port; -1 to disable")
 
     // Benchmark flags.
+    opt[Int]("measurement_group_size")
+      .required()
+      .action((x, f) => f.copy(measurementGroupSize = x))
     opt[java.time.Duration]("warmup_duration")
       .required()
       .action((x, f) => f.copy(warmupDuration = x))
@@ -129,8 +133,12 @@ object ClientMain extends App {
       })
   }
 
-  val recorder =
-    new BenchmarkUtil.Recorder(s"${flags.outputFilePrefix}_data.csv")
+  // val recorder =
+  //   new BenchmarkUtil.Recorder(s"${flags.outputFilePrefix}_data.csv")
+  val recorder = new BenchmarkUtil.LabeledRecorder(
+    s"${flags.outputFilePrefix}_data.csv",
+    groupSize = flags.measurementGroupSize
+  )
   def run(): Future[Unit] = {
     implicit val context = transport.executionContext
     BenchmarkUtil
@@ -145,8 +153,7 @@ object ClientMain extends App {
             start = timing.startTime,
             stop = timing.stopTime,
             latencyNanos = timing.durationNanos,
-            host = flags.host,
-            port = flags.port
+            label = "write"
           )
           Future.successful(())
       })
