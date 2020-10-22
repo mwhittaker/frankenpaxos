@@ -44,13 +44,23 @@ def main(args) -> None:
         df['latency'] = df['latency.median_ms']
 
     # Prune the data.
+    coupled_df = coupled_df[
+        coupled_df['num_clients'] <= 500
+    ]
     compartmentalized_df = compartmentalized_df[
-        (compartmentalized_df['num_clients'] != 400)
+        compartmentalized_df['num_acceptors'] == 4
     ]
     unreplicated_df = unreplicated_df[
-        (unreplicated_df['num_clients'] != 50) &
-        (unreplicated_df['num_clients'] != 30 * 100)
+        (unreplicated_df['server_options.flush_every_n'] == 25) |
+        ((unreplicated_df['server_options.flush_every_n'] == 1) &
+         (unreplicated_df['num_clients'] <= 10))
     ]
+    unreplicated_df = unreplicated_df[
+        (unreplicated_df['num_clients'] != 25) &
+        (unreplicated_df['num_clients'] != 100)
+    ]
+    unreplicated_df = unreplicated_df[unreplicated_df['num_clients'] <= 1400]
+
 
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
     plot_lt(coupled_df, ax, '^-', 'MultiPaxos')
