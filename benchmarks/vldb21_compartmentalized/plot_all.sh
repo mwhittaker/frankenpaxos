@@ -15,6 +15,7 @@ main() {
     run_script "$d/batched_compartmentalized_lt/plot.sh"
     run_script "$d/ablation/plot.sh"
     run_script "$d/batched_ablation/plot.sh"
+    run_script "$d/read_scale/plot.sh"
 }
 
 main "$@"

@@ -6,6 +6,7 @@ matplotlib.rc('font', **font)
 
 from typing import Any, List
 import argparse
+import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -13,63 +14,64 @@ import pandas as pd
 import re
 
 
-def plot_lt(df: pd.DataFrame, ax: plt.Axes, marker: str, label: str) -> None:
-    grouped = df.groupby('num_clients')
-    throughput = grouped['throughput'].agg(np.mean).sort_index() / 1000
-    throughput_std = grouped['throughput'].agg(np.std).sort_index() / 1000
-    latency = grouped['latency'].agg(np.mean).sort_index()
-    line = ax.plot(throughput, latency, marker, label=label, linewidth=2)[0]
-    ax.fill_betweenx(latency,
-                     throughput - throughput_std,
-                     throughput + throughput_std,
-                     color = line.get_color(),
-                     alpha=0.25)
+MARKERS = itertools.cycle(['o', '*', '^', 's', 'P', 'x', '1'])
+
+
+def outlier_throughput(df: pd.DataFrame) -> float:
+    cutoff = 0.5 * df['throughput'].max()
+    return df[df['throughput'] >= cutoff]['throughput'].mean()
+
+
+def outlier_throughput_std(df: pd.DataFrame) -> float:
+    cutoff = 0.5 * df['throughput'].max()
+    return df[df['throughput'] >= cutoff]['throughput'].std()
 
 
 def main(args) -> None:
-    coupled_df = pd.read_csv(args.coupled_results)
-    compartmentalized_df = pd.read_csv(args.compartmentalized_results)
-    unreplicated_df = pd.read_csv(args.unreplicated_results)
+    df = pd.read_csv(args.results)
+
+    # Replace -1's with 0's.
+    def replace_with_zero(df, label):
+        df[label] = df[label].apply(lambda x: x if x > 0 else 0)
+    replace_with_zero(df, 'write_output.start_throughput_1s.p90')
+    replace_with_zero(df, 'read_output.start_throughput_1s.p90')
+    replace_with_zero(df, 'write_output.latency.median_ms')
+    replace_with_zero(df, 'read_output.latency.median_ms')
 
     # Abbreviate fields.
-    for df in [compartmentalized_df]:
-        df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
-        df['num_acceptors'] = (df['num_acceptor_groups'] *
-                               df['num_acceptors_per_group'])
-        df['throughput'] = df['write_output.start_throughput_1s.p90']
-        df['latency'] = df['write_output.latency.median_ms']
-    for df in [coupled_df, unreplicated_df]:
-        df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
-        df['throughput'] = df['start_throughput_1s.p90']
-        df['latency'] = df['latency.median_ms']
-
-    # Prune the data.
-    coupled_df = coupled_df[
-        coupled_df['num_clients'] <= 500
-    ]
-    compartmentalized_df = compartmentalized_df[
-        compartmentalized_df['num_acceptors'] == 4
-    ]
-    unreplicated_df = unreplicated_df[
-        (unreplicated_df['server_options.flush_every_n'] == 25) |
-        ((unreplicated_df['server_options.flush_every_n'] == 1) &
-         (unreplicated_df['num_clients'] <= 10))
-    ]
-    unreplicated_df = unreplicated_df[
-        (unreplicated_df['num_clients'] != 25) &
-        (unreplicated_df['num_clients'] != 100)
-    ]
-    unreplicated_df = unreplicated_df[unreplicated_df['num_clients'] <= 1400]
-
+    df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
+    df['read_throughput'] = df['read_output.start_throughput_1s.p90']
+    df['read_latency'] = df['read_output.latency.median_ms']
+    df['write_throughput'] = df['write_output.start_throughput_1s.p90']
+    df['write_latency'] = df['write_output.latency.median_ms']
+    df['throughput'] = df['write_throughput'] + df['read_throughput']
+    df['latency'] = df['write_latency'] + df['read_latency']
 
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    plot_lt(coupled_df, ax, '^-', 'MultiPaxos')
-    plot_lt(compartmentalized_df, ax, 'o-', 'Compartmentalized MultiPaxos')
-    plot_lt(unreplicated_df, ax, 's-', 'Unreplicated')
+
+    by_read_fraction = df.groupby('workload.read_fraction')
+    for (read_fraction, group) in by_read_fraction:
+        by_replicas = group.groupby('num_replicas')
+        throughput = by_replicas.apply(outlier_throughput).sort_index() / 1000
+        std = by_replicas.apply(outlier_throughput_std).sort_index() / 1000
+        lines = ax.plot(
+            throughput.index,
+            throughput,
+            '-',
+            marker = next(MARKERS),
+            label=f'{int(read_fraction * 100)}% reads',
+            linewidth=1.5
+        )
+        ax.fill_between(throughput.index,
+                        throughput - std,
+                        throughput + std,
+                        color=lines[0].get_color(),
+                        alpha=0.3)
+
     ax.set_title('')
-    ax.set_xlabel('Throughput (thousands of commands per second)')
-    ax.set_ylabel('Median latency (ms)')
-    ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1))
+    ax.set_xlabel('Number of replicas')
+    ax.set_ylabel('Throughput\n(thousands of commands per second)')
+    ax.legend(loc='best', bbox_to_anchor=(0.5, 1))
     ax.grid()
     fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')
@@ -78,19 +80,12 @@ def main(args) -> None:
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--coupled_results',
+    parser.add_argument('--results',
                         type=argparse.FileType('r'),
-                        help='Coupled Multipaxos results.csv file')
-    parser.add_argument('--compartmentalized_results',
-                        type=argparse.FileType('r'),
-                        help='Compartmentalized Multipaxos results.csv file')
-    parser.add_argument('--unreplicated_results',
-                        type=argparse.FileType('r'),
-                        help='Unreplicated results.csv file')
-
+                        help='results.csv file')
     parser.add_argument('--output',
                         type=str,
-                        default='compartmentalized_lt.pdf',
+                        default='read_scale.pdf',
                         help='Output filename')
 
     return parser

@@ -133,36 +133,15 @@ def main(args) -> None:
                 )
 
                 # Hyperparameter tuning.
-                for workload_label in ['scaling_writes']
-                for (
-                    num_proxy_leaders,          # 0
-                    flexible,                   # 1
-                    num_acceptor_groups,        # 2
-                    num_acceptors_per_group,    # 3
-                    num_replicas,               # 4
-                    leader_flush_every_n,       # 5
-                    proxy_leader_flush_every_n, # 6
-                    read_fraction,              # 7
-                    num_client_procs,           # 8
-                    num_clients_per_proc,       # 9
-                ) in [
-                    # 0      1  2  3  4   5  6            7  8    9
-                    ( 2, False, 1, 3, 2, 10, 1, r( 25, 500), 5, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r( 50, 500), 5, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r( 75, 500), 5, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r(100, 500), 5, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r(150, 500), 5, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r(200, 500), 5, 100),
-
-                    ( 2, False, 1, 3, 2, 10, 1, r( 25, 1000), 10, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r( 50, 1000), 10, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r( 75, 1000), 10, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r(100, 1000), 10, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r(150, 1000), 10, 100),
-                    ( 2, False, 1, 3, 2, 10, 1, r(200, 1000), 10, 100),
-                ]
-
-                # Benchmark.
+                # for workload_label in ['fixed_percentange_writes_v3']
+                # for read_fraction in [0.6]
+                # for num_replicas in [5, 6]
+                # for (num_client_procs, num_clients_per_proc) in [
+                #     (12, 100),
+                #     (24, 100),
+                # ]
+                # for num_proxy_leaders in [11, 13, 15, 17]
+                # for num_acceptor_groups in [num_replicas]
                 # for (
                 #     num_proxy_leaders,          # 0
                 #     flexible,                   # 1
@@ -175,23 +154,57 @@ def main(args) -> None:
                 #     num_client_procs,           # 8
                 #     num_clients_per_proc,       # 9
                 # ) in [
-                #     # 100% reads
-                #     # 0     1  2  3  4  5  6    7   8   9
-                #     ( 2, True, 2, 2, 2, 1, 1, 1.0, 20, 100),
-                #     ( 2, True, 3, 2, 3, 1, 1, 1.0, 20, 100),
-                #     ( 2, True, 4, 2, 4, 1, 1, 1.0, 25, 100),
-                #     ( 2, True, 5, 2, 5, 1, 1, 1.0, 25, 100),
-                #     ( 2, True, 6, 2, 6, 1, 1, 1.0, 40, 100),
-                #
-                #     # 100% writes
-                #     # 0      1  2  3  4   5  6    7  8    9
-                #     ( 6, False, 1, 3, 2, 10, 1, 0.0, 5, 100),
-                #     ( 8, False, 1, 3, 3, 10, 1, 0.0, 5, 100),
-                #     ( 9, False, 1, 3, 4, 10, 1, 0.0, 5, 100),
-                #     (10, False, 1, 3, 5, 10, 1, 0.0, 5, 100),
-                #     (11, False, 1, 3, 6, 10, 1, 0.0, 5, 100),
+                #     #                 0     1                    2  3             4   5  6              7                 8                     9
+                #     ( num_proxy_leaders, True, num_acceptor_groups, 2, num_replicas, 10, 1, read_fraction, num_client_procs, num_clients_per_proc),
                 # ]
-            ] * 3
+
+                # Benchmark.
+                for workload_label in ['read_scale_v1']
+                for (
+                    num_proxy_leaders,          # 0
+                    flexible,                   # 1
+                    num_acceptor_groups,        # 2
+                    num_acceptors_per_group,    # 3
+                    num_replicas,               # 4
+                    leader_flush_every_n,       # 5
+                    proxy_leader_flush_every_n, # 6
+                    read_fraction,              # 7
+                    num_client_procs,           # 8
+                    num_clients_per_proc,       # 9
+                ) in [
+                    # 100% reads
+                    # 0     1  2  3  4  5  6    7   8   9
+                    # ( 2, True, 2, 2, 2, 1, 1, 1.0, 20, 100),
+                    # ( 2, True, 3, 2, 3, 1, 1, 1.0, 20, 100),
+                    # ( 2, True, 4, 2, 4, 1, 1, 1.0, 25, 100),
+                    # ( 2, True, 5, 2, 5, 1, 1, 1.0, 25, 100),
+                    # ( 2, True, 6, 2, 6, 1, 1, 1.0, 40, 100),
+
+                    # 90% reads
+                    # 0     1  2  3  4   5  6    7   8   9
+                    ( 5, True, 2, 2, 2, 10, 1, 0.9, 25, 100),
+                    ( 5, True, 3, 2, 3, 10, 1, 0.9, 25, 100),
+                    ( 5, True, 4, 2, 4, 10, 1, 0.9, 25, 100),
+                    ( 5, True, 5, 2, 5, 10, 1, 0.9, 25, 100),
+                    ( 5, True, 6, 2, 6, 10, 1, 0.9, 25, 100),
+
+                    # 60% reads
+                    # 0     1  2  3  4   5  6    7   8   9
+                    ( 7, True, 2, 2, 2, 10, 1, 0.6, 15, 100),
+                    ( 7, True, 3, 2, 3, 10, 1, 0.6, 15, 100),
+                    ( 7, True, 4, 2, 4, 10, 1, 0.6, 15, 100),
+                    (11, True, 5, 2, 5, 10, 1, 0.6, 15, 100),
+                    (11, True, 6, 2, 6, 10, 1, 0.6, 15, 100),
+
+                    # 0% reads (100% writes)
+                    # 0      1  2  3  4   5  6    7  8    9
+                    ( 6, False, 1, 3, 2, 10, 1, 0.0, 5, 100),
+                    ( 8, False, 1, 3, 3, 10, 1, 0.0, 5, 100),
+                    ( 9, False, 1, 3, 4, 10, 1, 0.0, 5, 100),
+                    (10, False, 1, 3, 5, 10, 1, 0.0, 5, 100),
+                    (11, False, 1, 3, 6, 10, 1, 0.0, 5, 100),
+                ]
+            ] * 5
 
         def summary(self, input: Input, output: Output) -> str:
             return str({

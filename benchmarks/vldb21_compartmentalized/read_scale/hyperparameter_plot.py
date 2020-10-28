@@ -83,20 +83,50 @@ def main(args) -> None:
     df['read_throughput'] = df['read_output.start_throughput_1s.p90']
     df['read_latency'] = df['read_output.latency.median_ms']
     df['throughput'] = df['read_throughput'] + df['write_throughput']
-    df['read_fraction'] = df['workload_label']
 
 
-    num_figures = 3
+    num_figures = 7
     fig, ax = plt.subplots(num_figures, 1, figsize=(6.4, num_figures * 4.8 * 1.25))
-    plot_throughput(df[df['read_fraction'] == 1.0], ax[0],
-                    ('num_replicas', 'num_clients'), 'num_acceptors',
+    plot_throughput(df[df['workload.read_fraction'] == 1.0],
+                    ax[0],
+                    ('num_replicas', 'num_clients'),
+                    'num_acceptors',
                     y_columns=['throughput'])
-    plot_throughput(df[df['read_fraction'] == 0.0], ax[1],
-                    ('num_replicas', 'num_clients'), 'num_proxy_leaders',
+    plot_throughput(df[df['workload.read_fraction'] == 0.0],
+                    ax[1],
+                    ('num_replicas', 'num_clients'),
+                    'num_proxy_leaders',
                     y_columns=['throughput'])
-    plot_throughput(df[(df['read_fraction'] != 0.0) & (df['read_fraction'] != 1.0)],
-                    ax[2], ('num_clients',), 'workload.read_fraction',
-                    y_columns=['read_throughput', 'write_throughput', 'throughput'])
+    plot_throughput(df[(df['workload_label'] == 'fixed_percentange_writes') &
+                       (df['workload.read_fraction'] == 0.6)],
+                    ax[2],
+                    ('num_clients', 'num_proxy_leaders', 'num_acceptors'),
+                    'num_replicas',
+                    y_columns=['throughput'])
+    plot_throughput(df[(df['workload_label'] == 'fixed_percentange_writes') &
+                       (df['workload.read_fraction'] == 0.85)],
+                    ax[3],
+                    ('num_clients', 'num_proxy_leaders', 'num_acceptors'),
+                    'num_replicas',
+                    y_columns=['throughput'])
+    plot_throughput(df[(df['workload_label'] == 'fixed_percentange_writes_v2') &
+                       (df['workload.read_fraction'] == 0.6)],
+                    ax[4],
+                    ('num_clients', 'num_proxy_leaders'),
+                    'num_replicas',
+                    y_columns=['throughput'])
+    plot_throughput(df[(df['workload_label'] == 'fixed_percentange_writes_v2') &
+                       (df['workload.read_fraction'] == 0.9)],
+                    ax[5],
+                    ('num_clients', 'num_proxy_leaders'),
+                    'num_replicas',
+                    y_columns=['throughput'])
+    plot_throughput(df[(df['workload_label'] == 'fixed_percentange_writes_v3')],
+                    ax[6],
+                    ('num_clients', 'num_proxy_leaders'),
+                    'num_replicas',
+                    y_columns=['throughput'])
+    fig.savefig(args.output, bbox_inches='tight')
     fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')
 
