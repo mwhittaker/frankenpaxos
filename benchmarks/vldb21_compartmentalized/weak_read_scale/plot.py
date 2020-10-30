@@ -50,32 +50,32 @@ def main(args) -> None:
     df['latency'] = df['write_latency'] + df['read_latency']
 
     # Select data.
-    df = df[
-        # 100% reads.
-        (df['workload_label'] == 'all_reads_v1') |
-
-        # 90% reads.
-        (
-            (df['workload_label'] == 'some_writes_v1') &
-            (df['workload.read_fraction'] == 0.9) &
-            (df['num_acceptors'] == 3) &
-            (df['num_clients'] == 2500)
-        ) |
-
-        # 60% reads.
-        (
-            (df['workload_label'] == 'some_writes_v1') &
-            (df['workload.read_fraction'] == 0.6) &
-            (df['num_acceptors'] == 3) &
-            (df['num_clients'] == 500)
-        ) |
-
-        # 0% reads.
-        (
-            (df['workload_label'] == 'read_scale_v1') &
-            (df['workload.read_fraction'] == 0.0)
-        )
-    ]
+    # df = df[
+    #     # 100% reads.
+    #     (df['workload_label'] == 'all_reads_v1') |
+    #
+    #     # 90% reads.
+    #     (
+    #         (df['workload_label'] == 'some_writes_v1') &
+    #         (df['workload.read_fraction'] == 0.9) &
+    #         (df['num_acceptors'] == 3) &
+    #         (df['num_clients'] == 2500)
+    #     ) |
+    #
+    #     # 60% reads.
+    #     (
+    #         (df['workload_label'] == 'some_writes_v1') &
+    #         (df['workload.read_fraction'] == 0.6) &
+    #         (df['num_acceptors'] == 3) &
+    #         (df['num_clients'] == 500)
+    #     ) |
+    #
+    #     # 0% reads.
+    #     (
+    #         (df['workload_label'] == 'read_scale_v1') &
+    #         (df['workload.read_fraction'] == 0.0)
+    #     )
+    # ]
 
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
 
