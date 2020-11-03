@@ -59,7 +59,7 @@ def main(args) -> None:
                         read_fraction=0.0,
                         write_size_mean=16,
                         write_size_std=0),
-                    read_consistency = 'eventual',
+                    read_consistency = read_consistency,
                     profiled = args.profile,
                     monitored = args.monitor,
                     prometheus_scrape_interval =
@@ -189,7 +189,9 @@ def main(args) -> None:
                 # ]
 
                 # Benchmark.
-                for workload_label in ['weak_read_scale_v1']
+                for workload_label in ['sequential_read_scale_v1']
+                # for read_consistency in ['eventual', 'sequential']
+                for read_consistency in ['sequential']
                 for (
                     num_proxy_leaders,          # 0
                     flexible,                   # 1
@@ -254,8 +256,8 @@ def main(args) -> None:
                     input.leader_options.flush_phase2as_every_n,
                 'proxy_leader_flush_every_n':
                     input.proxy_leader_options.flush_phase2as_every_n,
-                'read_fraction':
-                    input.workload_label,
+                'read_consistency':
+                    input.read_consistency,
                 'write.latency.median_ms': \
                     f'{output.write_output.latency.median_ms:.6}',
                 'write.start_throughput_1s.p90': \
