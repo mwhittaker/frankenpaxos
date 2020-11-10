@@ -122,14 +122,15 @@ def main(args) -> None:
                 )
 
                 # Hyperparameter tuning.
-                for workload_label in ['write_only_v3']
+                for workload_label in ['read_only_v3']
                 for num_replicas in [2, 3, 4, 5, 6]
                 for (num_client_procs, num_clients_per_proc) in [
-                    (5, 100),
-                    (6, 100),
-                    (7, 100),
-                    (8, 100),
-                    (9, 100),
+                    (15, 100),
+                    (20, 100),
+                    (25, 100),
+                    (30, 100),
+                    (35, 100),
+                    (40, 100),
                 ]
                 for (
                     num_proxy_leaders,          # 0
@@ -144,9 +145,8 @@ def main(args) -> None:
                     num_client_procs,           # 9
                     num_clients_per_proc,       # 10
                 ) in [
-                    # 0     1                 2  3             4  5  6    7   8                 9                    10
-                    ( 6, True, num_replicas,     2, num_replicas, 1, 1, 0.0, 50, num_client_procs, num_clients_per_proc),
-                    ( 6, True, num_replicas + 1, 2, num_replicas, 1, 1, 0.0, 50, num_client_procs, num_clients_per_proc),
+                    # 0     1             2  3             4  5  6    7   8                 9                    10
+                    ( 2, True, num_replicas, 2, num_replicas, 1, 1, 1.0, 50, num_client_procs, num_clients_per_proc),
                 ]
 
                 # # Benchmark.
@@ -165,11 +165,11 @@ def main(args) -> None:
                 # ) in [
                 #     # 100% reads
                 #     # 0     1  2  3  4  5  6    7   8   9
-                #     ( 2, True, 2, 2, 2, 1, 1, 1.0, 20, 100),
+                #     ( 2, True, 2, 2, 2, 1, 1, 1.0, 15, 100),
                 #     ( 2, True, 3, 2, 3, 1, 1, 1.0, 20, 100),
                 #     ( 2, True, 4, 2, 4, 1, 1, 1.0, 25, 100),
-                #     ( 2, True, 5, 2, 5, 1, 1, 1.0, 25, 100),
-                #     ( 2, True, 6, 2, 6, 1, 1, 1.0, 40, 100),
+                #     ( 2, True, 5, 2, 5, 1, 1, 1.0, 30, 100),
+                #     ( 2, True, 6, 2, 6, 1, 1, 1.0, 35, 100),
                 #
                 #     # 90% reads
                 #     # 0     1  2  3  4   5  6    7   8   9
@@ -188,12 +188,12 @@ def main(args) -> None:
                 #     (11, True, 6, 2, 6, 10, 1, 0.6, 15, 100),
                 #
                 #     # 0% reads (100% writes)
-                #     # 0      1  2  3  4   5  6    7  8    9
-                #     ( 6, False, 1, 3, 2, 10, 1, 0.0, 5, 100),
-                #     ( 8, False, 1, 3, 3, 10, 1, 0.0, 5, 100),
-                #     ( 9, False, 1, 3, 4, 10, 1, 0.0, 5, 100),
-                #     (10, False, 1, 3, 5, 10, 1, 0.0, 5, 100),
-                #     (11, False, 1, 3, 6, 10, 1, 0.0, 5, 100),
+                #     # 0     1  2  3  4  5  6    7  8    9
+                #     ( 6, True, 2, 2, 2, 1, 1, 0.0, 5, 100),
+                #     ( 6, True, 3, 2, 3, 1, 1, 0.0, 5, 100),
+                #     ( 6, True, 4, 2, 4, 1, 1, 0.0, 5, 100),
+                #     ( 6, True, 5, 2, 5, 1, 1, 0.0, 5, 100),
+                #     ( 6, True, 6, 2, 6, 1, 1, 0.0, 5, 100),
                 # ]
             ] * 3
 

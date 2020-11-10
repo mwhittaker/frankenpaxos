@@ -86,7 +86,7 @@ def main(args) -> None:
     df['throughput'] = df['read_throughput'] + df['write_throughput']
     df['latency'] = df['read_latency'] + df['write_latency']
 
-    num_figures = 48
+    num_figures = 54
     fig, ax = plt.subplots(num_figures, 1,
                            figsize=(6.4, num_figures * 4.8 * 1.25))
     axes = iter(ax)
@@ -191,6 +191,42 @@ def main(args) -> None:
             title=(f'100% writes, num proxy leaders == 6, batch size = 50, ' +
                    f'num_acceptor_groups == num_replicas + 1'),
         )
+    for y_columns in ['throughput', 'latency']:
+        plot(
+            df=df[
+                (df['workload_label'] == 'write_only_v3') &
+                (df['num_acceptor_groups'] == df['num_replicas'])
+            ],
+            ax=next(axes),
+            grouping_columns=('num_clients',),
+            x_column='num_replicas',
+            y_columns=[y_columns],
+            title=(f'100% writes, num proxy leaders == 6, batch size = 50' +
+                   f'num_acceptor_groups == num_replicas'),
+        )
+    for y_columns in ['throughput', 'latency']:
+        plot(
+            df=df[
+                (df['workload_label'] == 'write_only_v3') &
+                (df['num_acceptor_groups'] == df['num_replicas'] + 1)
+            ],
+            ax=next(axes),
+            grouping_columns=('num_clients',),
+            x_column='num_replicas',
+            y_columns=[y_columns],
+            title=(f'100% writes, num proxy leaders == 6, batch size = 50, ' +
+                   f'num_acceptor_groups == num_replicas + 1'),
+        )
+    for y_columns in ['throughput', 'latency']:
+        plot(
+            df=df[(df['workload_label'] == 'read_only_v3')],
+            ax=next(axes),
+            grouping_columns=('num_clients',),
+            x_column='num_replicas',
+            y_columns=[y_columns],
+            title=(f'100% reads, batch size = 50'),
+        )
+
 
     fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')
