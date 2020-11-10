@@ -140,6 +140,26 @@ class NettyTcpTransport(private val logger: Logger)
           )
       }
     }
+
+    override def exceptionCaught(
+        ctx: ChannelHandlerContext,
+        cause: Throwable
+    ): Unit = {
+      val localAddress = NettyTcpAddress(ctx.channel.localAddress)
+      val remoteAddress = NettyTcpAddress(ctx.channel.remoteAddress)
+
+      val stringWriter = new java.io.StringWriter()
+      cause.printStackTrace(new java.io.PrintWriter(stringWriter));
+
+      logger.warn(
+        s"An exception was caught from $remoteAddress to $localAddress.\n" +
+          s"$cause\n" +
+          s"$stringWriter"
+      )
+
+      // TODO(mwhittaker): Close the channel? I'm not sure how exceptions and
+      // unregistering channels relate.
+    }
   }
 
   private class ServerHandler(actor: Actor[NettyTcpTransport])
@@ -330,7 +350,7 @@ class NettyTcpTransport(private val logger: Logger)
           )
           channel.pipeline.addLast(
             "frameDecoder",
-            new LengthFieldBasedFrameDecoder(1048576, 0, 4, 0, 4)
+            new LengthFieldBasedFrameDecoder(10485760, 0, 4, 0, 4)
           )
           channel.pipeline.addLast("bytesDecoder", new ByteArrayDecoder())
           channel.pipeline.addLast(new ServerHandler(actor))
@@ -394,7 +414,7 @@ class NettyTcpTransport(private val logger: Logger)
             override def initChannel(channel: SocketChannel) {
               channel.pipeline.addLast(
                 "frameDecoder",
-                new LengthFieldBasedFrameDecoder(1048576, 0, 4, 0, 4)
+                new LengthFieldBasedFrameDecoder(10485760, 0, 4, 0, 4)
               )
               channel.pipeline
                 .addLast("bytesDecoder", new ByteArrayDecoder())
