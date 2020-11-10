@@ -574,7 +574,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       chosen: Chosen
   ): Unit = {
     // If `numChosen != executedWatermark`, then the recover timer is running.
-    val recoverTimerRunning = numChosen != executedWatermark
+    val isRecoverTimerRunning = numChosen != executedWatermark
+    val oldExecutedWatermark = executedWatermark
 
     log.get(chosen.slot) match {
       case Some(_) =>
@@ -605,15 +606,23 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
 
-    // If `numChosen != executedWatermark`, then there's a hole in the log. We
-    // start or stop the timer depending on whether it is already running. If
-    // `options.unsafeDontRecover`, though, we skip all this.
+    // The recover timer should be running if there are more chosen commands
+    // than executed commands. If the recover timer should be running, it's
+    // either for a slot for which the timer was already running
+    // (shouldRecoverTimerBeReset = false) or for a new slot for which the
+    // timer wasn't yet running (shouldRecoverTimerBeReset = true).
+    val shouldRecoverTimerBeRunning = numChosen != executedWatermark
+    val shouldRecoverTimerBeReset = oldExecutedWatermark != executedWatermark
     if (options.unsafeDontRecover) {
       // Do nothing.
-    } else if (!recoverTimerRunning && numChosen != executedWatermark) {
+    } else if (isRecoverTimerRunning) {
+      (shouldRecoverTimerBeRunning, shouldRecoverTimerBeReset) match {
+        case (true, true)  => recoverTimer.foreach(_.reset())
+        case (true, false) => // Do nothing.
+        case (false, _)    => recoverTimer.foreach(_.stop())
+      }
+    } else if (shouldRecoverTimerBeRunning) {
       recoverTimer.foreach(_.start())
-    } else if (recoverTimerRunning && numChosen == executedWatermark) {
-      recoverTimer.foreach(_.stop())
     }
   }
 
