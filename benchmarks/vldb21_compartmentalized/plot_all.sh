@@ -17,6 +17,7 @@ main() {
     run_script "$d/batched_ablation/plot.sh"
     run_script "$d/read_scale/plot.sh"
     run_script "$d/weak_read_scale/plot.sh"
+    run_script "$d/batched_read_scale/plot.sh"
 }
 
 main "$@"

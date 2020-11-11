@@ -40,9 +40,12 @@ def main(args) -> None:
 
     # Abbreviate fields.
     df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
-    df['read_throughput'] = df['read_output.start_throughput_1s.p90']
+    df['batch_size'] = df['workload.num_operations']
+    df['read_throughput'] = (df['read_output.start_throughput_1s.p90'] *
+                             df['batch_size'])
     df['read_latency'] = df['read_output.latency.median_ms']
-    df['write_throughput'] = df['write_output.start_throughput_1s.p90']
+    df['write_throughput'] = (df['write_output.start_throughput_1s.p90'] *
+                              df['batch_size'])
     df['write_latency'] = df['write_output.latency.median_ms']
     df['throughput'] = df['write_throughput'] + df['read_throughput']
     df['latency'] = df['write_latency'] + df['read_latency']
@@ -52,8 +55,8 @@ def main(args) -> None:
     by_read_fraction = df.groupby('workload.read_fraction')
     for (read_fraction, group) in by_read_fraction:
         by_replicas = group.groupby('num_replicas')
-        throughput = by_replicas.apply(outlier_throughput).sort_index() / 1000
-        std = by_replicas.apply(outlier_throughput_std).sort_index() / 1000
+        throughput = by_replicas.apply(outlier_throughput).sort_index() / 1000000
+        std = by_replicas.apply(outlier_throughput_std).sort_index() / 1000000
         lines = ax.plot(
             throughput.index,
             throughput,
@@ -70,7 +73,7 @@ def main(args) -> None:
 
     ax.set_title('')
     ax.set_xlabel('Number of replicas')
-    ax.set_ylabel('Throughput\n(thousands of commands per second)')
+    ax.set_ylabel('Throughput\n(millions of commands per second)')
     ax.legend(loc='best', bbox_to_anchor=(0.5, 1))
     ax.grid()
     fig.savefig(args.output, bbox_inches='tight')
@@ -85,7 +88,7 @@ def get_parser() -> argparse.ArgumentParser:
                         help='results.csv file')
     parser.add_argument('--output',
                         type=str,
-                        default='read_scale.pdf',
+                        default='batched_read_scale.pdf',
                         help='Output filename')
 
     return parser

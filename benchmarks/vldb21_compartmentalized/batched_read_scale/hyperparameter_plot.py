@@ -86,7 +86,7 @@ def main(args) -> None:
     df['throughput'] = df['read_throughput'] + df['write_throughput']
     df['latency'] = df['read_latency'] + df['write_latency']
 
-    num_figures = 54
+    num_figures = 58
     fig, ax = plt.subplots(num_figures, 1,
                            figsize=(6.4, num_figures * 4.8 * 1.25))
     axes = iter(ax)
@@ -226,6 +226,19 @@ def main(args) -> None:
             y_columns=[y_columns],
             title=(f'100% reads, batch size = 50'),
         )
+    for read_fraction in [0.9, 0.6]:
+        for y_columns in ['throughput', 'latency']:
+            plot(
+                df=df[
+                    (df['workload_label'] == 'mixed_v1') &
+                    (df['workload.read_fraction'] == read_fraction)
+                ],
+                ax=next(axes),
+                grouping_columns=('num_clients',),
+                x_column='num_replicas',
+                y_columns=[y_columns],
+                title=(f'{read_fraction} reads, batch size = 50'),
+            )
 
 
     fig.savefig(args.output, bbox_inches='tight')

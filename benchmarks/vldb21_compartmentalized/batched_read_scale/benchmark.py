@@ -122,35 +122,17 @@ def main(args) -> None:
                 )
 
                 # Hyperparameter tuning.
-                for workload_label in ['read_only_v3']
-                for num_replicas in [2, 3, 4, 5, 6]
-                for (num_client_procs, num_clients_per_proc) in [
-                    (15, 100),
-                    (20, 100),
-                    (25, 100),
-                    (30, 100),
-                    (35, 100),
-                    (40, 100),
-                ]
-                for (
-                    num_proxy_leaders,          # 0
-                    flexible,                   # 1
-                    num_acceptor_groups,        # 2
-                    num_acceptors_per_group,    # 3
-                    num_replicas,               # 4
-                    leader_flush_every_n,       # 5
-                    proxy_leader_flush_every_n, # 6
-                    read_fraction,              # 7
-                    batch_size,                 # 8
-                    num_client_procs,           # 9
-                    num_clients_per_proc,       # 10
-                ) in [
-                    # 0     1             2  3             4  5  6    7   8                 9                    10
-                    ( 2, True, num_replicas, 2, num_replicas, 1, 1, 1.0, 50, num_client_procs, num_clients_per_proc),
-                ]
-
-                # # Benchmark.
-                # for workload_label in ['read_scale_v1']
+                # for workload_label in ['mixed_v1']
+                # for num_replicas in [2, 3, 4, 5, 6]
+                # for (num_client_procs, num_clients_per_proc) in [
+                #     ( 5, 100),
+                #     (10, 100),
+                #     (15, 100),
+                #     (20, 100),
+                #     (25, 100),
+                #     (30, 100),
+                #     (35, 100),
+                # ]
                 # for (
                 #     num_proxy_leaders,          # 0
                 #     flexible,                   # 1
@@ -160,42 +142,63 @@ def main(args) -> None:
                 #     leader_flush_every_n,       # 5
                 #     proxy_leader_flush_every_n, # 6
                 #     read_fraction,              # 7
-                #     num_client_procs,           # 8
-                #     num_clients_per_proc,       # 9
+                #     batch_size,                 # 8
+                #     num_client_procs,           # 9
+                #     num_clients_per_proc,       # 10
                 # ) in [
-                #     # 100% reads
-                #     # 0     1  2  3  4  5  6    7   8   9
-                #     ( 2, True, 2, 2, 2, 1, 1, 1.0, 15, 100),
-                #     ( 2, True, 3, 2, 3, 1, 1, 1.0, 20, 100),
-                #     ( 2, True, 4, 2, 4, 1, 1, 1.0, 25, 100),
-                #     ( 2, True, 5, 2, 5, 1, 1, 1.0, 30, 100),
-                #     ( 2, True, 6, 2, 6, 1, 1, 1.0, 35, 100),
-                #
-                #     # 90% reads
-                #     # 0     1  2  3  4   5  6    7   8   9
-                #     ( 5, True, 2, 2, 2, 10, 1, 0.9, 25, 100),
-                #     ( 5, True, 3, 2, 3, 10, 1, 0.9, 25, 100),
-                #     ( 5, True, 4, 2, 4, 10, 1, 0.9, 25, 100),
-                #     ( 5, True, 5, 2, 5, 10, 1, 0.9, 25, 100),
-                #     ( 5, True, 6, 2, 6, 10, 1, 0.9, 25, 100),
-                #
-                #     # 60% reads
-                #     # 0     1  2  3  4   5  6    7   8   9
-                #     ( 7, True, 2, 2, 2, 10, 1, 0.6, 15, 100),
-                #     ( 7, True, 3, 2, 3, 10, 1, 0.6, 15, 100),
-                #     ( 7, True, 4, 2, 4, 10, 1, 0.6, 15, 100),
-                #     (11, True, 5, 2, 5, 10, 1, 0.6, 15, 100),
-                #     (11, True, 6, 2, 6, 10, 1, 0.6, 15, 100),
-                #
-                #     # 0% reads (100% writes)
-                #     # 0     1  2  3  4  5  6    7  8    9
-                #     ( 6, True, 2, 2, 2, 1, 1, 0.0, 5, 100),
-                #     ( 6, True, 3, 2, 3, 1, 1, 0.0, 5, 100),
-                #     ( 6, True, 4, 2, 4, 1, 1, 0.0, 5, 100),
-                #     ( 6, True, 5, 2, 5, 1, 1, 0.0, 5, 100),
-                #     ( 6, True, 6, 2, 6, 1, 1, 0.0, 5, 100),
+                #     # 0     1             2  3             4  5  6    7   8                 9                    10
+                #     ( 6, True, num_replicas, 2, num_replicas, 1, 1, 0.9, 50, num_client_procs, num_clients_per_proc),
+                #     ( 6, True, num_replicas, 2, num_replicas, 1, 1, 0.6, 50, num_client_procs, num_clients_per_proc),
                 # ]
-            ] * 3
+
+                # # Benchmark.
+                for workload_label in ['batched_read_scale_v1']
+                for batch_size in [50]
+                for (
+                    num_proxy_leaders,          # 0
+                    flexible,                   # 1
+                    num_acceptor_groups,        # 2
+                    num_acceptors_per_group,    # 3
+                    num_replicas,               # 4
+                    leader_flush_every_n,       # 5
+                    proxy_leader_flush_every_n, # 6
+                    read_fraction,              # 7
+                    num_client_procs,           # 8
+                    num_clients_per_proc,       # 9
+                ) in [
+                    # 100% reads
+                    # 0     1  2  3  4  5  6    7   8   9
+                    ( 2, True, 2, 2, 2, 1, 1, 1.0, 15, 100),
+                    ( 2, True, 3, 2, 3, 1, 1, 1.0, 20, 100),
+                    ( 2, True, 4, 2, 4, 1, 1, 1.0, 25, 100),
+                    ( 2, True, 5, 2, 5, 1, 1, 1.0, 30, 100),
+                    ( 2, True, 6, 2, 6, 1, 1, 1.0, 35, 100),
+
+                    # 90% reads
+                    # 0     1  2  3  4  5  6    7   8   9
+                    ( 6, True, 2, 2, 2, 1, 1, 0.9, 10, 100),
+                    ( 6, True, 3, 2, 3, 1, 1, 0.9, 10, 100),
+                    ( 6, True, 4, 2, 4, 1, 1, 0.9, 15, 100),
+                    ( 6, True, 5, 2, 5, 1, 1, 0.9, 15, 100),
+                    ( 6, True, 6, 2, 6, 1, 1, 0.9, 15, 100),
+
+                    # 60% reads
+                    # 0     1  2  3  4  5  6    7   8   9
+                    ( 6, True, 2, 2, 2, 1, 1, 0.6, 10, 100),
+                    ( 6, True, 3, 2, 3, 1, 1, 0.6, 10, 100),
+                    ( 6, True, 4, 2, 4, 1, 1, 0.6, 10, 100),
+                    ( 6, True, 5, 2, 5, 1, 1, 0.6, 10, 100),
+                    ( 6, True, 6, 2, 6, 1, 1, 0.6, 10, 100),
+
+                    # 0% reads (100% writes)
+                    # 0     1  2  3  4  5  6    7  8    9
+                    ( 6, True, 2, 2, 2, 1, 1, 0.0, 5, 100),
+                    ( 6, True, 3, 2, 3, 1, 1, 0.0, 5, 100),
+                    ( 6, True, 4, 2, 4, 1, 1, 0.0, 5, 100),
+                    ( 6, True, 5, 2, 5, 1, 1, 0.0, 5, 100),
+                    ( 6, True, 6, 2, 6, 1, 1, 0.0, 5, 100),
+                ]
+            ] * 5
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
