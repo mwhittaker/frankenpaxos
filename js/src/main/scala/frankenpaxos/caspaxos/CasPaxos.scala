@@ -20,12 +20,12 @@ class CasPaxos {
       JsTransportAddress("Leader 2"),
       JsTransportAddress("Leader 3")
     ),
-    acceptorAddresses = Seq(
-      JsTransportAddress("Acceptor 1"),
-      JsTransportAddress("Acceptor 2"),
-      JsTransportAddress("Acceptor 3")
-    )
+  acceptorAddresses = Seq(
+    JsTransportAddress("Acceptor 1"),
+    JsTransportAddress("Acceptor 2"),
+    JsTransportAddress("Acceptor 3")
   )
+)
 
   // Clients.
   val clients = for (i <- 1 to 3) yield {
@@ -37,8 +37,8 @@ class CasPaxos {
       options = ClientOptions.default.copy(
         resendClientRequestTimerPeriod = java.time.Duration.ofSeconds(10)
       ),
-      metrics = new ClientMetrics(FakeCollectors)
-    )
+    metrics = new ClientMetrics(FakeCollectors)
+  )
   }
   val client1 = clients(0)
   val client2 = clients(1)
@@ -57,8 +57,8 @@ class CasPaxos {
         minNackSleepPeriod = java.time.Duration.ofSeconds(1),
         maxNackSleepPeriod = java.time.Duration.ofSeconds(5)
       ),
-      metrics = new LeaderMetrics(FakeCollectors)
-    )
+    metrics = new LeaderMetrics(FakeCollectors)
+  )
   }
   val leader1 = leaders(0)
   val leader2 = leaders(1)
@@ -84,10 +84,4 @@ class CasPaxos {
 @JSExportTopLevel("frankenpaxos.caspaxos.CasPaxos")
 object CasPaxos {
   val CasPaxos = new CasPaxos();
-}
-
-@JSExportAll
-@JSExportTopLevel("foobar")
-object Foo {
-  val bar = 1
 }
