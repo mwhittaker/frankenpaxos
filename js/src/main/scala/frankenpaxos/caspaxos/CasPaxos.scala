@@ -85,3 +85,9 @@ class CasPaxos {
 object CasPaxos {
   val CasPaxos = new CasPaxos();
 }
+
+@JSExportAll
+@JSExportTopLevel("foobar")
+object Foo {
+  val bar = 1
+}

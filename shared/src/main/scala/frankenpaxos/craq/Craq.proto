@@ -1,0 +1,110 @@
+syntax = "proto2";
+
+package frankenpaxos.craq;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.craq"
+  flat_package: true
+};
+
+// Helper messages. ////////////////////////////////////////////////////////////
+message CommandId {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // A client's address, pseudonym, and id uniquely identify a command.
+  required bytes client_address = 1;
+  required int32 client_pseudonym = 2;
+  required int32 client_id = 3;
+}
+
+message Write {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required string key = 2;
+  required string value = 3;
+}
+
+message WriteBatch {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+  repeated Write write = 1;
+}
+
+message Read {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required string key = 2;
+  optional string value = 3;
+}
+
+message ReadBatch {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+  repeated Read read = 1;
+}
+
+message Ack {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  required WriteBatch write_batch = 1;
+}
+
+message TailRead {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  required ReadBatch read_batch = 1;
+}
+
+// Protocol messages. //////////////////////////////////////////////////////////
+message ClientReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required int32 slot = 2;
+  required bytes result = 3;
+}
+
+message ReadReply {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required CommandId command_id = 1;
+  required int32 slot = 2;
+  required bytes result = 3;
+}
+
+// Inbound messages. ///////////////////////////////////////////////////////////
+message ClientInbound {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    ClientReply client_reply = 1;
+    ReadReply read_reply = 2;
+  }
+}
+
+message ChainNodeInbound {
+  option (scalapb.message).annotations =
+      "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof request {
+    Write write = 1;
+    Read read = 2;
+    WriteBatch write_batch = 3;
+    ReadBatch read_batch = 4;
+    Ack ack = 5;
+    TailRead tail_read = 6;
+  }
+}
+
