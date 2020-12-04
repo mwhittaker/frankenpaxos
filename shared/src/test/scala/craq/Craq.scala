@@ -1,26 +1,13 @@
-package craq
+package frankenpaxos.craq
 
-import frankenpaxos.craq.{
-  ChainNode,
-  ChainNodeMetrics,
-  ChainNodeOptions,
-  Client,
-  ClientMetrics,
-  ClientOptions,
-  Config,
-  Hash
-}
 import frankenpaxos.monitoring.FakeCollectors
-import frankenpaxos.simulator.{
-  FakeLogger,
-  FakeTransport,
-  FakeTransportAddress,
-  SimulatedSystem
-}
+import frankenpaxos.simulator.FakeLogger
+import frankenpaxos.simulator.FakeTransport
+import frankenpaxos.simulator.FakeTransportAddress
+import frankenpaxos.simulator.SimulatedSystem
 import frankenpaxos.statemachine.ReadableAppendLog
 import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
-
 import scala.collection.mutable
 
 class Craq(val f: Int, batched: Boolean, seed: Long) {
@@ -38,7 +25,6 @@ class Craq(val f: Int, batched: Boolean, seed: Long) {
     f,
     chainNodeAddresses =
       (1 to numChainNodes).map(i => FakeTransportAddress(s"ChainNode $i")),
-    distributionScheme = Hash,
     numBatchers
   )
 
@@ -94,7 +80,7 @@ class SimulatedCraq(val f: Int, batched: Boolean) extends SimulatedSystem {
   override type System = Craq
   // For every replica, we record the prefix of the log that has been executed.
   override type State = mutable.Buffer[mutable.Map[String, String]]
-  override type Command = craq.SimulatedCraq.Command
+  override type Command = SimulatedCraq.Command
 
   // True if some value has been chosen in some execution of the system. Seeing
   // whether any value has been chosen is a very coarse way of testing
@@ -124,7 +110,7 @@ class SimulatedCraq(val f: Int, batched: Boolean) extends SimulatedSystem {
           value <- Gen.alphaLowerStr.filter(_.size > 0)
         } yield Write(clientId, clientPseudonym = 0, key, value)
 
-      },
+      }
       // Read.
       /*craq.numClients -> {
         for {
@@ -166,7 +152,8 @@ class SimulatedCraq(val f: Int, batched: Boolean) extends SimulatedSystem {
       for (key <- lhs.keys) {
         if (!lhs.get(key).get.equalsIgnoreCase(rhs.get(key).get)) {
           return SimulatedSystem.InvariantViolated(
-            s"Logs $lhs and $rhs are not compatible.")
+            s"Logs $lhs and $rhs are not compatible."
+          )
         }
       }
     }
@@ -181,7 +168,8 @@ class SimulatedCraq(val f: Int, batched: Boolean) extends SimulatedSystem {
     for ((oldLog, newLog) <- oldState.zip(newState)) {
       if (oldLog.size < newLog.size) {
         return SimulatedSystem.InvariantViolated(
-          s"Old kvs $oldLog is not a prefix of new kvs $newLog")
+          s"Old kvs $oldLog is not a prefix of new kvs $newLog"
+        )
       }
     }
     SimulatedSystem.InvariantHolds

@@ -23,8 +23,7 @@ class Craq(batch: Boolean) {
       JsTransportAddress("ChainNode 2"),
       JsTransportAddress("ChainNode 3")
     ),
-    distributionScheme = Hash,
-    // Num Batchers acts as a boolean of whether to batch or not
+    // numBatchers acts as a boolean of whether to batch or not.
     numBatchers = if (batch) 1 else 0
   )
 

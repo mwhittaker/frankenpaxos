@@ -6,36 +6,48 @@ const client_info = {
 
   data: function() {
     return {
+      write_key: "",
       write_value: "",
+      read_key: "",
     };
   },
 
   methods: {
     read: function() {
-      this.node.actor.read(0, this.write_value_key);
+      if (this.read_key === "") {
+        return;
+      }
+      this.node.actor.read(0, this.read_key);
+      this.read_key = "";
     },
 
     read_ten: function() {
-      for (let i = 0; i < 10; ++i) {
-        this.node.actor.read(i, this.write_value_key);
+      if (this.read_key === "") {
+        return;
       }
+      for (let i = 0; i < 10; ++i) {
+        this.node.actor.read(i, this.read_key);
+      }
+      this.read_key = "";
     },
 
     write: function() {
-      if (this.write_value === "") {
+      if (this.write_key === "") {
         return;
       }
-      this.node.actor.write(0, this.write_value_key, this.write_value);
+      this.node.actor.write(0, this.write_key, this.write_value);
+      this.write_key = "";
       this.write_value = "";
     },
 
     write_ten: function() {
-      if (this.write_value === "") {
+      if (this.write_key === "") {
         return;
       }
       for (let i = 0; i < 10; ++i) {
-        this.node.actor.write(i, this.write_value);
+        this.node.actor.write(i, this.write_key, this.write_value);
       }
+      this.write_key = "";
       this.write_value = "";
     },
   },
@@ -43,17 +55,19 @@ const client_info = {
   template: `
     <div>
       <div>
-        round = {{node.actor.round}}
-      </div>
-
-      <div>
         ids = <frankenpaxos-map :map="node.actor.ids"></frankenpaxos-map>
       </div>
 
       <div>
-        largestSeenSlots =
-        <frankenpaxos-map :map="node.actor.largestSeenSlots">
-        </frankenpaxos-map>
+        growingBatch =
+        <frankenpaxos-seq :seq="node.actor.growingBatch">
+        </frankenpaxos-seq>
+      </div>
+
+      <div>
+        growingReadBatch =
+        <frankenpaxos-seq :seq="node.actor.growingReadBatch">
+        </frankenpaxos-seq>
       </div>
 
       <div>
@@ -62,7 +76,6 @@ const client_info = {
           <div v-if="state.constructor.name.includes('PendingWrite')">
             PendingWrite
             <fp-object>
-              <fp-field :name="'pseudonym'">{{state.pseudonym}}</fp-field>
               <fp-field :name="'id'">{{state.id}}</fp-field>
               <fp-field :name="'command'">{{state.command}}</fp-field>
               <fp-field :name="'result'">{{state.result}}</fp-field>
@@ -76,7 +89,6 @@ const client_info = {
           <div v-if="state.constructor.name.includes('PendingRead')">
             PendingRead
             <fp-object>
-              <fp-field :name="'pseudonym'">{{state.pseudonym}}</fp-field>
               <fp-field :name="'id'">{{state.id}}</fp-field>
               <fp-field :name="'command'">{{state.command}}</fp-field>
               <fp-field :name="'result'">{{state.result}}</fp-field>
@@ -89,35 +101,15 @@ const client_info = {
       </div>
 
       <div>
-        <button v-on:click="read">Linearizable Read</button>
-        <button v-on:click="read_ten">Linearizable Read Ten</button>
+        <button v-on:click="read">Read</button>
+        <button v-on:click="read_ten">Read Ten</button>
+        <input v-model="read_key"></input>
       </div>
       <div>
         <button v-on:click="write">Write</button>
         <button v-on:click="write_ten">Write Ten</button>
-        <input v-model="write_value" v-on:keyup.enter="write"></input>
-        <input v-model="write_value_key" v-on:keyup.enter="key"></input>
-      </div>
-    </div>
-  `,
-}
-
-
-const election_info = {
-  props: {
-    node: Object,
-  },
-
-  template: `
-    <div>
-      <div>
-        round = {{node.actor.round}}
-      </div>
-      <div>
-        leaderIndex = {{node.actor.leaderIndex}}
-      </div>
-      <div>
-        state = {{node.actor.state}}
+        <input v-model="write_key"></input>
+        <input v-model="write_value"></input>
       </div>
     </div>
   `,
@@ -131,8 +123,38 @@ const chain_node_info = {
   template: `
     <div>
       <div>
-        clientTable =
-        <frankenpaxos-map :map="node.actor.clientTable">
+        index = {{node.actor.index}}
+      </div>
+
+      <div>
+        nextIndex = {{node.actor.nextIndex}}
+      </div>
+
+      <div>
+        prevIndex = {{node.actor.prevIndex}}
+      </div>
+
+      <div>
+        isHead = {{node.actor.isHead}}
+      </div>
+
+      <div>
+        isTail = {{node.actor.isTail}}
+      </div>
+
+      <div>
+        versions = {{node.actor.versions}}
+      </div>
+
+      <div>
+        pendingWrites =
+        <frankenpaxos-seq :seq="node.actor.pendingWrites">
+        </frankenpaxos-seq>
+      </div>
+
+      <div>
+        stateMachine =
+        <frankenpaxos-map :map="node.actor.stateMachine">
         </frankenpaxos-map>
       </div>
     </div>
@@ -168,8 +190,8 @@ function make_nodes(Craq, snap, batched) {
     'stroke-width': '1px',
   }
 
-  const client_x        = batch ? 100  : 100;
-  const chain_node_x       = batch ? 900  : 850;
+  const client_x = 100;
+  const chain_node_x = 400;
 
   const nodes = {};
 
@@ -180,7 +202,6 @@ function make_nodes(Craq, snap, batched) {
     {client: Craq.client3, y: 300},
     {client: Craq.client4, y: 400},
   ]
-  console.log(Craq.client1)
   for (const [index, {client, y}] of clients.entries()) {
     const color = flat_red;
     nodes[client.address] = {
@@ -196,11 +217,11 @@ function make_nodes(Craq, snap, batched) {
 
   // Chain Nodes.
   const chainNodes = [
-    {chainNode: Craq.chainNode1, y: 200},
-    {chainNode: Craq.chainNode2, y: 300},
-    {chainNode: Craq.chainNode3, y: 400},
+    {chainNode: Craq.chainNode1, y: 150, name: 'H'},
+    {chainNode: Craq.chainNode2, y: 250, name: 'M'},
+    {chainNode: Craq.chainNode3, y: 350, name: 'T'},
   ]
-  for (const [index, {chainNode, y}] of chainNodes.entries()) {
+  for (const [index, {chainNode, y, name}] of chainNodes.entries()) {
     const color = flat_dark_blue;
     nodes[chainNode.address] = {
       actor: chainNode,
@@ -208,7 +229,7 @@ function make_nodes(Craq, snap, batched) {
       component: chain_node_info,
       svgs: [
         snap.circle(chain_node_x, y, 20).attr(colored(color)),
-        snap.text(chain_node_x, y, (index + 1).toString()).attr(number_style),
+        snap.text(chain_node_x, y, name).attr(number_style),
       ],
     };
   }
@@ -216,7 +237,7 @@ function make_nodes(Craq, snap, batched) {
   // Node titles.
   const anchor_middle = (text) => text.attr({'text-anchor': 'middle'});
   anchor_middle(snap.text(client_x, 50, 'Clients'));
-  anchor_middle(snap.text(chain_node_x, 50, 'Replicas'));
+  anchor_middle(snap.text(chain_node_x, 50, 'Chain Nodes'));
 
   return nodes;
 }
@@ -250,7 +271,7 @@ function unbatched() {
         let dst_x = dst.svgs[0].attr("cx");
         let dst_y = dst.svgs[0].attr("cy");
         let d = distance(src_x, src_y, dst_x, dst_y);
-        let speed = 400 + (Math.random() * 50); // px per second.
+        let speed = 400; // px per second.
 
         let svg_message = snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
         snap.prepend(svg_message);

@@ -42,14 +42,14 @@ object ChainNodeOptions {
 class ChainNodeMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("craq_leader_requests_total")
+    .name("craq_chain_node_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("craq_leader_requests_latency")
+    .name("craq_chain_node_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
@@ -74,19 +74,11 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
   type ClientId = Int
   type ClientPseudonym = Int
 
-  @JSExportAll
-  sealed trait State
-
-  @JSExportAll
-  case object Inactive extends State
-
-  @JSExportAll
-  case object Active extends State
-
   // Fields ////////////////////////////////////////////////////////////////////
-  // A random number generator instantiated from `seed`. This allows us to
-  // perform deterministic randomized tests.
-  private val rand = new Random(seed)
+  // ChainNode channels.
+  private val chainNodes: Seq[Chan[ChainNode[Transport]]] =
+    for (a <- config.chainNodeAddresses)
+      yield chan[ChainNode[Transport]](a, ChainNode.serializer)
 
   // The client table used to ensure exactly once execution semantics. Every
   // entry in the client table is keyed by a clients address and its pseudonym
@@ -94,28 +86,33 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
   // executing the command. Note that unlike with generalized protocols like
   // BPaxos and EPaxos, we don't need to use the more complex ClientTable
   // class. A simple map suffices.
+  //
+  // TODO(mwhittaker): Right now, the clientTable is unsused.
   @JSExport
   protected var clientTable =
     mutable.Map[(ByteString, ClientPseudonym), (ClientId, ByteString)]()
 
-  private val index = config.chainNodeAddresses.indexOf(address)
-  private val nextIndex = index + 1
-  private val prevIndex = index - 1
-  private val isHead = index == 0
-  private val isTail = index == config.chainNodeAddresses.size - 1
-
-  private val pendingWrites: mutable.Buffer[WriteBatch] = mutable.Buffer()
-  val stateMachine: mutable.Map[String, String] = mutable.Map[String, String]()
-  var versions: Int = 0
-
-  // ChainNode channels.
-  private val chainNodes: Seq[Chan[ChainNode[Transport]]] =
-    for (address <- config.chainNodeAddresses)
-      yield chan[ChainNode[Transport]](address, ChainNode.serializer)
-
-  // The chain node's state.
   @JSExport
-  protected var state: State = Active
+  protected val index = config.chainNodeAddresses.indexOf(address)
+
+  @JSExport
+  protected val nextIndex = index + 1
+
+  @JSExport
+  protected val prevIndex = index - 1
+
+  @JSExport
+  protected val isHead = index == 0
+
+  @JSExport
+  protected val isTail = index == config.chainNodeAddresses.size - 1
+
+  @JSExport
+  protected val pendingWrites: mutable.Buffer[WriteBatch] = mutable.Buffer()
+
+  val stateMachine: mutable.Map[String, String] = mutable.Map[String, String]()
+
+  var versions: Int = 0
 
   // Timers ////////////////////////////////////////////////////////////////////
 

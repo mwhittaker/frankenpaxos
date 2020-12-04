@@ -1,6 +1,7 @@
-package craq
+package frankenpaxos.craq
 
-import frankenpaxos.simulator.{BadHistory, Simulator}
+import frankenpaxos.simulator.BadHistory
+import frankenpaxos.simulator.Simulator
 import org.scalatest.FlatSpec
 
 class CraqTest extends FlatSpec {

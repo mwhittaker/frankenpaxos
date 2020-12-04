@@ -78,75 +78,57 @@ object ClientOptions {
 class ClientMetrics(collectors: Collectors) {
   val requestsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_requests_total")
+    .name("craq_client_requests_total")
     .labelNames("type")
     .help("Total number of processed requests.")
     .register()
 
   val requestsLatency: Summary = collectors.summary
     .build()
-    .name("multipaxos_client_requests_latency")
+    .name("craq_client_requests_latency")
     .labelNames("type")
     .help("Latency (in milliseconds) of a request.")
     .register()
 
   val clientRequestsSentTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_client_requests_sent_total")
+    .name("craq_client_client_requests_sent_total")
     .help("Total number of client requests sent.")
     .register()
 
   val clientRepliesReceivedTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_replies_received_total")
+    .name("craq_client_replies_received_total")
     .help("Total number of successful replies responses received.")
     .register()
 
   val staleClientRepliesReceivedTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_stale_client_replies_received_total")
+    .name("craq_client_stale_client_replies_received_total")
     .help("Total number of stale client replies received.")
     .register()
 
   val resendClientRequestTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_resend_client_request_total")
+    .name("craq_client_resend_client_request_total")
     .help("Total number of times a client resends a ClientRequest.")
-    .register()
-
-  val resendMaxSlotRequestsTotal: Counter = collectors.counter
-    .build()
-    .name("multipaxos_client_resend_max_slot_requests_total")
-    .help("Total number of times a client resends a MaxSlotRequest.")
     .register()
 
   val resendReadRequestsTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_resend_read_requests_total")
+    .name("craq_client_resend_read_requests_total")
     .help("Total number of times a client resends a ReadRequest.")
-    .register()
-
-  val resendSequentialReadRequestsTotal: Counter = collectors.counter
-    .build()
-    .name("multipaxos_client_resend_sequential_read_requests_total")
-    .help("Total number of times a client resends an SequentialReadRequest.")
-    .register()
-
-  val resendEventualReadRequestsTotal: Counter = collectors.counter
-    .build()
-    .name("multipaxos_client_resend_eventual_read_requests_total")
-    .help("Total number of times a client resends an EventualReadRequest.")
     .register()
 
   val writeChannelsFlushedTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_write_channels_flushed_total")
+    .name("craq_client_write_channels_flushed_total")
     .help("Total number of times a client flushes its write channels.")
     .register()
 
   val readChannelsFlushedTotal: Counter = collectors.counter
     .build()
-    .name("multipaxos_client_read_channels_flushed_total")
+    .name("craq_client_read_channels_flushed_total")
     .help("Total number of times a client flushes its read channels.")
     .register()
 }
@@ -236,11 +218,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   // client ids increase over time, even after crashes and restarts.
   @JSExport
   protected var ids = mutable.Map[Pseudonym, Id]()
-
-  // To implement sequentially consistent reads, a client must keep track of
-  // the largest slot in which any previous read or write has occured.
-  @JSExport
-  protected var largestSeenSlots = mutable.Map[Pseudonym, Int]()
 
   // Clients can only propose one request at a time (per pseudonym), so if
   // there is a pending command, no other command can be proposed. This
@@ -531,10 +508,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         pendingWrite.resendClientRequest.stop()
         pendingWrite.result.success(clientReply.result.toByteArray())
-        largestSeenSlots(pseudonym) = Math.max(
-          largestSeenSlots.getOrElse(pseudonym, -1),
-          clientReply.slot
-        )
         states -= pseudonym
         metrics.clientRepliesReceivedTotal.inc()
     }
@@ -566,10 +539,6 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
 
         pendingRead.resendReadRequest.stop()
         pendingRead.result.success(readReply.result.toByteArray())
-        largestSeenSlots(pseudonym) = Math.max(
-          largestSeenSlots.getOrElse(pseudonym, -1),
-          readReply.slot
-        )
         states -= pseudonym
     }
   }

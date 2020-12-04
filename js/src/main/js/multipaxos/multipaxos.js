@@ -789,7 +789,7 @@ function make_app(MultiPaxos, snap_id, app_id, batched) {
         let dst_x = dst.svgs[0].attr("cx");
         let dst_y = dst.svgs[0].attr("cy");
         let d = distance(src_x, src_y, dst_x, dst_y);
-        let speed = 400 + (Math.random() * 50); // px per second.
+        let speed = 400; // px per second.
 
         let svg_message = snap.circle(src_x, src_y, 9).attr({fill: '#2c3e50'});
         snap.prepend(svg_message);

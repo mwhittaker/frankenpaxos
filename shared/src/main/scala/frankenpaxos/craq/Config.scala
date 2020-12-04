@@ -6,7 +6,6 @@ import scala.scalajs.js.annotation.JSExportAll
 case class Config[Transport <: frankenpaxos.Transport[Transport]](
     f: Int,
     chainNodeAddresses: Seq[Transport#Address],
-    distributionScheme: DistributionScheme,
     numBatchers: Int
 ) {
   val numChainNodes = chainNodeAddresses.size
