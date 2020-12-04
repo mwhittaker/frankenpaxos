@@ -1,19 +1,15 @@
 package frankenpaxos.craq
 
 import com.google.protobuf.ByteString
-
 import collection.mutable
 import frankenpaxos.Actor
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.monitoring.{
-  Collectors,
-  Counter,
-  PrometheusCollectors,
-  Summary
-}
+import frankenpaxos.monitoring.Collectors
+import frankenpaxos.monitoring.Counter
+import frankenpaxos.monitoring.PrometheusCollectors
+import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.RoundSystem
-
 import scala.scalajs.js.annotation._
 import scala.util.Random
 
@@ -159,7 +155,8 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
           ClientInbound().withClientReply(
             ClientReply(command.commandId,
                         -1,
-                        ByteString.copyFromUtf8(reply.getOrElse("default"))))
+                        ByteString.copyFromUtf8(reply.getOrElse("default")))
+          )
         )
         versions += 1
       }
@@ -197,7 +194,8 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
           ClientInbound().withReadReply(
             ReadReply(read.commandId,
                       -1,
-                      ByteString.copyFromUtf8(reply.getOrElse("default"))))
+                      ByteString.copyFromUtf8(reply.getOrElse("default")))
+          )
         )
         versions += 1
       }
@@ -205,7 +203,8 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
     // Send dirty reads to tail
     if (dirtyReads.nonEmpty) {
       chainNodes.last.send(
-        ChainNodeInbound().withTailRead(TailRead(ReadBatch(dirtyReads.toSeq))))
+        ChainNodeInbound().withTailRead(TailRead(ReadBatch(dirtyReads.toSeq)))
+      )
     }
   }
 
@@ -295,7 +294,8 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
         ClientInbound().withReadReply(
           ReadReply(command.commandId,
                     -1,
-                    ByteString.copyFromUtf8(reply.getOrElse("default"))))
+                    ByteString.copyFromUtf8(reply.getOrElse("default")))
+        )
       )
       versions += 1
       //replyBuffer += Write(command.commandId, command.key, reply.get)

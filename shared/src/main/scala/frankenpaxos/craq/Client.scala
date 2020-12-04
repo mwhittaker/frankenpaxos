@@ -11,7 +11,6 @@ import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
 import frankenpaxos.roundsystem.RoundSystem
-
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.scalajs.js.annotation._
@@ -576,9 +575,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
   }
 
   // Interface /////////////////////////////////////////////////////////////////
-  def write(pseudonym: Pseudonym,
-            key: Array[Byte],
-            value: Array[Byte]): Future[Array[Byte]] = {
+  def write(
+      pseudonym: Pseudonym,
+      key: Array[Byte],
+      value: Array[Byte]
+  ): Future[Array[Byte]] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
       () => writeImpl(pseudonym, key, value, promise)
@@ -586,9 +587,11 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
     promise.future
   }
 
-  def write(pseudonym: Pseudonym,
-            key: String,
-            value: String): Future[String] = {
+  def write(
+      pseudonym: Pseudonym,
+      key: String,
+      value: String
+  ): Future[String] = {
     val promise = Promise[Array[Byte]]()
     transport.executionContext.execute(
       () => writeImpl(pseudonym, key.getBytes(), value.getBytes(), promise)
