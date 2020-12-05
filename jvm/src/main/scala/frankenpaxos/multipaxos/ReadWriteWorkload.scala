@@ -57,6 +57,58 @@ class UniformReadWriteWorkload(
   }
 }
 
+// A PointSkewedReadWriteWorkload is a key-value store workload with `numKeys`
+// keys. `readFraction` of all operations are reads, and `pointFraction` of all
+// read and write operations are to a single key. `1 - pointFraction` of all
+// other operations are to some other key chosen uniformly at random. This
+// workload lets us test skewed workloads in an intuitive way. For example, if
+// we set pointFraction to 1, then all writes are to the same key, and if we
+// sent pointFraction to 0, then all operations are to a random key. This is a
+// little more intuitive than varying zipf coefficients.
+class PointSkewedReadWriteWorkload(
+    numKeys: Int,
+    readFraction: Float,
+    pointFraction: Float,
+    writeSizeMean: Int,
+    writeSizeStd: Int
+) extends ReadWriteWorkload {
+  override def toString(): String =
+    s"PointSkewedReadWriteWorkload(" +
+      s"numKeys=$numKeys, readFraction=$readFraction, " +
+      s"pointFraction=$pointFraction, writeSizeMean=$writeSizeMean, " +
+      s"writeSizeStd=$writeSizeStd)"
+
+  override def get(): ReadWrite = {
+    val key = if (Random.nextFloat() <= pointFraction) {
+      "0"
+    } else {
+      1 + Random.nextInt(numKeys - 1).toString()
+    }
+
+    if (Random.nextFloat() <= readFraction) {
+      val command = statemachine
+        .KeyValueStoreInput()
+        .withGetRequest(statemachine.GetRequest(key = Seq(key)))
+      Read(command.toByteArray)
+    } else {
+      val size =
+        Math.max(
+          0,
+          (Random.nextGaussian() * writeSizeStd + writeSizeMean).round.toInt
+        )
+      val value = Random.nextString(size)
+      val command = statemachine
+        .KeyValueStoreInput()
+        .withSetRequest(
+          statemachine.SetRequest(
+            keyValue = Seq(statemachine.SetKeyValuePair(key, value))
+          )
+        )
+      Write(command.toByteArray)
+    }
+  }
+}
+
 // A UniformMultiKeyReadWriteWorkload is like a UniformReadWriteWorkload except
 // with multiple keys. Every key is generated independently.
 class UniformMultiKeyReadWriteWorkload(
@@ -124,6 +176,14 @@ object ReadWriteWorkload {
         new UniformReadWriteWorkload(
           numKeys = w.numKeys,
           readFraction = w.readFraction,
+          writeSizeMean = w.writeSizeMean,
+          writeSizeStd = w.writeSizeStd
+        )
+      case Value.PointSkewedReadWriteWorkload(w) =>
+        new PointSkewedReadWriteWorkload(
+          numKeys = w.numKeys,
+          readFraction = w.readFraction,
+          pointFraction = w.pointFraction,
           writeSizeMean = w.writeSizeMean,
           writeSizeStd = w.writeSizeStd
         )

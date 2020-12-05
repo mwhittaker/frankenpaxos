@@ -17,6 +17,14 @@ message UniformReadWriteWorkloadProto {
   required int32 write_size_std = 4;
 }
 
+message PointSkewedReadWriteWorkloadProto {
+  required int32 num_keys = 1;
+  required float read_fraction = 2;
+  required float point_fraction = 3;
+  required int32 write_size_mean = 4;
+  required int32 write_size_std = 5;
+}
+
 message UniformMultiKeyReadWriteWorkloadProto {
   required int32 num_keys = 1;
   required int32 num_operations = 2;
@@ -40,12 +48,13 @@ message WriteOnlyBernoulliSingleKeyWorkloadProto {
 message ReadWriteWorkloadProto {
   oneof value {
     UniformReadWriteWorkloadProto uniform_read_write_workload = 1;
+    PointSkewedReadWriteWorkloadProto point_skewed_read_write_workload = 2;
     UniformMultiKeyReadWriteWorkloadProto
-      uniform_multi_key_read_write_workload = 2;
-    WriteOnlyStringWorkloadProto write_only_string_workload = 3;
+      uniform_multi_key_read_write_workload = 3;
+    WriteOnlyStringWorkloadProto write_only_string_workload = 4;
     WriteOnlyUniformSingleKeyWorkloadProto
-      write_only_uniform_single_key_workload = 4;
+      write_only_uniform_single_key_workload = 5;
     WriteOnlyBernoulliSingleKeyWorkloadProto
-      write_only_bernoulli_single_key_workload = 5;
+      write_only_bernoulli_single_key_workload = 6;
   }
 }
