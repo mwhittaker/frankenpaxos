@@ -33,44 +33,24 @@ object Client {
 case class ClientOptions(
     // Resend periods.
     resendClientRequestPeriod: java.time.Duration,
-    resendMaxSlotRequestsPeriod: java.time.Duration,
     resendReadRequestPeriod: java.time.Duration,
-    resendSequentialReadRequestPeriod: java.time.Duration,
-    resendEventualReadRequestPeriod: java.time.Duration,
-    // If `unsafeReadAtFirstSlot` is true, all ReadRequests are issued in slot
-    // 0. With this option enabled, our protocol is not safe. Reads are no
-    // longer linearizable. This should be used only for performance debugging.
-    unsafeReadAtFirstSlot: Boolean,
-    // To perform a linearizable quorum read, a client contacts a quorum of
-    // acceptors and asks them for the largest log entry in which they have
-    // voted. It then computes the maximum of these log entries; let's call
-    // this value i. It issues the read at i + n where n is the number of
-    // acceptor groups. If `unsafeReadAtI` is true, the client instead issues
-    // the read at index i. If unsafeReadAtFirstSlot is true, we instead read
-    // at 0.
-    unsafeReadAtI: Boolean,
     // Clients flush write channels every flushWritesEveryN messages sent and
     // flush read channels every flushReadsEveryN messages sent.
     flushWritesEveryN: Int,
     flushReadsEveryN: Int,
-    measureLatencies: Boolean,
-    batchSize: Int
+    batchSize: Int,
+    measureLatencies: Boolean
 )
 
 @JSExportAll
 object ClientOptions {
   val default = ClientOptions(
     resendClientRequestPeriod = java.time.Duration.ofSeconds(10),
-    resendMaxSlotRequestsPeriod = java.time.Duration.ofSeconds(10),
     resendReadRequestPeriod = java.time.Duration.ofSeconds(10),
-    resendSequentialReadRequestPeriod = java.time.Duration.ofSeconds(10),
-    resendEventualReadRequestPeriod = java.time.Duration.ofSeconds(10),
-    unsafeReadAtFirstSlot = false,
-    unsafeReadAtI = false,
     flushWritesEveryN = 1,
     flushReadsEveryN = 1,
-    measureLatencies = true,
-    batchSize = 1
+    batchSize = 1,
+    measureLatencies = true
   )
 }
 
