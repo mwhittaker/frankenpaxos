@@ -151,7 +151,6 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
         client.send(
           ClientInbound().withClientReply(
             ClientReply(command.commandId,
-                        -1,
                         ByteString.copyFromUtf8(reply.getOrElse("default")))
           )
         )
@@ -190,7 +189,6 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
         client.send(
           ClientInbound().withReadReply(
             ReadReply(read.commandId,
-                      -1,
                       ByteString.copyFromUtf8(reply.getOrElse("default")))
           )
         )
@@ -290,7 +288,6 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
       client.send(
         ClientInbound().withReadReply(
           ReadReply(command.commandId,
-                    -1,
                     ByteString.copyFromUtf8(reply.getOrElse("default")))
         )
       )
