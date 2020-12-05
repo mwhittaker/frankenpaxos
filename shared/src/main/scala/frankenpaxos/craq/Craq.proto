@@ -41,7 +41,6 @@ message Read {
 
   required CommandId command_id = 1;
   required string key = 2;
-  optional string value = 3;
 }
 
 message ReadBatch {
