@@ -110,14 +110,14 @@ class SimulatedCraq(val f: Int, batched: Boolean) extends SimulatedSystem {
           value <- Gen.alphaLowerStr.filter(_.size > 0)
         } yield Write(clientId, clientPseudonym = 0, key, value)
 
-      }
+      },
       // Read.
-      /*craq.numClients -> {
+      craq.numClients -> {
         for {
           clientId <- Gen.choose(0, craq.numClients - 1)
           key <- Gen.alphaLowerStr.filter(_.size > 0)
         } yield Read(clientId, clientPseudonym = 0, key)
-      },*/
+      }
     )
     FakeTransport
       .generateCommandWithFrequency(craq.transport)

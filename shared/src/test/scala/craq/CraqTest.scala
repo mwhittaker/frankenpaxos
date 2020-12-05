@@ -11,8 +11,8 @@ class CraqTest extends FlatSpec {
     info(s"runLength = $runLength, numRuns = $numRuns")
 
     for {
-      batched <- Seq(false, false)
-      f <- 1 to 2
+      batched <- Seq(false, true)
+      f <- 1 to 3
     } {
       val sim = new SimulatedCraq(f = f, batched = batched)
 
