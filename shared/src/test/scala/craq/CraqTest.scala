@@ -11,10 +11,10 @@ class CraqTest extends FlatSpec {
     info(s"runLength = $runLength, numRuns = $numRuns")
 
     for {
-      batched <- Seq(false, true)
+      batchSize <- Seq(1, 2)
       f <- 1 to 3
     } {
-      val sim = new SimulatedCraq(f = f, batched = batched)
+      val sim = new SimulatedCraq(f = f, batchSize = batchSize)
 
       Simulator
         .simulate(sim, runLength = runLength, numRuns = numRuns)
@@ -31,7 +31,7 @@ class CraqTest extends FlatSpec {
         case None => {}
       }
 
-      val suffix = s"f=$f, batched=$batched"
+      val suffix = s"f=$f, batchSize=$batchSize"
       if (sim.valueChosen) {
         info(s"Value chosen ($suffix)")
       } else {

@@ -10,22 +10,16 @@ import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
 
-class Craq(val f: Int, batched: Boolean, seed: Long) {
+class Craq(val f: Int, batchSize: Int, seed: Long) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = 2
-  val numBatchers = if (batched) {
-    f + 1
-  } else {
-    0
-  }
   val numChainNodes = 2 * f + 1
 
   val config = Config[FakeTransport](
     f,
     chainNodeAddresses =
-      (1 to numChainNodes).map(i => FakeTransportAddress(s"ChainNode $i")),
-    numBatchers
+      (1 to numChainNodes).map(i => FakeTransportAddress(s"ChainNode $i"))
   )
 
   // Clients.
@@ -35,7 +29,9 @@ class Craq(val f: Int, batched: Boolean, seed: Long) {
       transport = transport,
       logger = new FakeLogger(),
       config = config,
-      options = ClientOptions.default,
+      options = ClientOptions.default.copy(
+        batchSize = batchSize
+      ),
       metrics = new ClientMetrics(FakeCollectors),
       seed = seed
     )
@@ -74,7 +70,7 @@ object SimulatedCraq {
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
-class SimulatedCraq(val f: Int, batched: Boolean) extends SimulatedSystem {
+class SimulatedCraq(val f: Int, batchSize: Int) extends SimulatedSystem {
   import SimulatedCraq._
 
   override type System = Craq
@@ -87,7 +83,7 @@ class SimulatedCraq(val f: Int, batched: Boolean) extends SimulatedSystem {
   // liveness. If no value is every chosen, then clearly something is wrong.
   var valueChosen: Boolean = false
 
-  override def newSystem(seed: Long): System = new Craq(f, batched, seed)
+  override def newSystem(seed: Long): System = new Craq(f, batchSize, seed)
 
   override def getState(craq: System): State = {
     val logs = mutable.Buffer[mutable.Map[String, String]]()

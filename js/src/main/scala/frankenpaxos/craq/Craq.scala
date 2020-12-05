@@ -10,7 +10,7 @@ import frankenpaxos.statemachine.ReadableAppendLog
 import scala.scalajs.js.annotation._
 
 @JSExportAll
-class Craq(batch: Boolean) {
+class Craq(batchSize: Int) {
   // Transport.
   val logger = new JsLogger()
   val transport = new JsTransport(logger)
@@ -22,9 +22,7 @@ class Craq(batch: Boolean) {
       JsTransportAddress("ChainNode 1"),
       JsTransportAddress("ChainNode 2"),
       JsTransportAddress("ChainNode 3")
-    ),
-    // numBatchers acts as a boolean of whether to batch or not.
-    numBatchers = if (batch) 1 else 0
+    )
   )
 
   // Clients.
@@ -35,7 +33,8 @@ class Craq(batch: Boolean) {
       logger = new JsLogger(),
       config = config,
       options = ClientOptions.default.copy(
-        resendClientRequestPeriod = java.time.Duration.ofSeconds(30)
+        resendClientRequestPeriod = java.time.Duration.ofSeconds(30),
+        batchSize = batchSize
       ),
       metrics = new ClientMetrics(FakeCollectors)
     )
@@ -64,11 +63,11 @@ class Craq(batch: Boolean) {
 @JSExportAll
 @JSExportTopLevel("frankenpaxos.craq.Craq")
 object Craq {
-  val Craq = new Craq(batch = false);
+  val Craq = new Craq(batchSize = 1);
 }
 
 @JSExportAll
 @JSExportTopLevel("frankenpaxos.craq.BatchedCraq")
 object BatchedCraq {
-  val Craq = new Craq(batch = true);
+  val Craq = new Craq(batchSize = 2);
 }

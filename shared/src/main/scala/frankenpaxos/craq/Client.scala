@@ -256,7 +256,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       s"resendReadRequest [pseudonym=${pseudonym}; id=${id}]",
       options.resendReadRequestPeriod,
       () => {
-        if (config.numBatchers == 0) {
+        if (options.batchSize == 1) {
           val replica = chainNodes(rand.nextInt(chainNodes.size))
           replica.send(ChainNodeInbound().withRead(readRequest))
         } else {
@@ -289,7 +289,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
       clientRequest: Write,
       forceFlush: Boolean
   ): Unit = {
-    if (config.numBatchers == 0) {
+    if (options.batchSize == 1) {
       // If there are no batchers, then we send to who we think the leader is.
       val inbound = ChainNodeInbound().withWrite(clientRequest)
 
@@ -409,7 +409,7 @@ class Client[Transport <: frankenpaxos.Transport[Transport]](
           key = keyString
         )
 
-        if (config.numBatchers == 0) {
+        if (options.batchSize == 1) {
           val inbound = ChainNodeInbound().withRead(readRequest)
           val node = chainNodes(rand.nextInt(chainNodes.size))
 
