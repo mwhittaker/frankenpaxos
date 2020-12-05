@@ -69,7 +69,6 @@ message ClientReply {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required CommandId command_id = 1;
-  required bytes result = 2;
 }
 
 message ReadReply {
@@ -77,7 +76,7 @@ message ReadReply {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required CommandId command_id = 1;
-  required bytes result = 2;
+  required string value = 2;
 }
 
 // Inbound messages. ///////////////////////////////////////////////////////////

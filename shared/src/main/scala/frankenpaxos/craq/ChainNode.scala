@@ -149,10 +149,7 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
         val client =
           chan[Client[Transport]](clientAddress, Client.serializer)
         client.send(
-          ClientInbound().withClientReply(
-            ClientReply(command.commandId,
-                        ByteString.copyFromUtf8(reply.getOrElse("default")))
-          )
+          ClientInbound().withClientReply(ClientReply(command.commandId))
         )
         versions += 1
       }
@@ -174,23 +171,18 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
     val dirtyReads: mutable.Buffer[Read] = mutable.Buffer[Read]()
     for (read <- readBatch.read) {
       if (keys.contains(read.key)) {
-        // Key is dirty ask the tail
+        // The key is dirty; ask the tail.
         dirtyReads += read
       } else {
-        // Key is clean serve latest value
-        logger.info("Read is clean")
-        val reply = stateMachine.get(read.key)
-        val clientAddress = transport.addressSerializer
-          .fromBytes(
-            read.commandId.clientAddress.toByteArray()
-          )
+        // The key is clean; serve the latest value.
+        val reply = stateMachine.getOrElse(read.key, "default")
+        val clientAddress = transport.addressSerializer.fromBytes(
+          read.commandId.clientAddress.toByteArray()
+        )
         val client =
           chan[Client[Transport]](clientAddress, Client.serializer)
         client.send(
-          ClientInbound().withReadReply(
-            ReadReply(read.commandId,
-                      ByteString.copyFromUtf8(reply.getOrElse("default")))
-          )
+          ClientInbound().withReadReply(ReadReply(read.commandId, reply))
         )
         versions += 1
       }
@@ -278,21 +270,16 @@ class ChainNode[Transport <: frankenpaxos.Transport[Transport]](
       tailRead: TailRead
   ): Unit = {
     for (command <- tailRead.readBatch.read) {
-      val reply = stateMachine.get(command.key)
-      val clientAddress = transport.addressSerializer
-        .fromBytes(
-          command.commandId.clientAddress.toByteArray()
-        )
+      val value = stateMachine.getOrElse(command.key, "default")
+      val clientAddress = transport.addressSerializer.fromBytes(
+        command.commandId.clientAddress.toByteArray()
+      )
       val client =
         chan[Client[Transport]](clientAddress, Client.serializer)
       client.send(
-        ClientInbound().withReadReply(
-          ReadReply(command.commandId,
-                    ByteString.copyFromUtf8(reply.getOrElse("default")))
-        )
+        ClientInbound().withReadReply(ReadReply(command.commandId, value))
       )
       versions += 1
-      //replyBuffer += Write(command.commandId, command.key, reply.get)
     }
 
   }
