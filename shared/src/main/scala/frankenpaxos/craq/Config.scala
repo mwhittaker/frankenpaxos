@@ -10,7 +10,8 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
   val numChainNodes = chainNodeAddresses.size
 
   def checkValid(): Unit = {
-    require(numChainNodes >= 2 * f + 1,
-            s"Number of chain nodes must be >= 1. It's $f.")
+    require(numChainNodes >= f + 1,
+            s"Number of chain nodes must be >= f + 1 ($f + 1). " +
+              s"It's $numChainNodes.")
   }
 }
