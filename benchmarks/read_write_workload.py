@@ -22,6 +22,27 @@ class UniformReadWriteWorkload(NamedTuple):
         }
 
 
+class PointSkewedReadWriteWorkload(NamedTuple):
+    num_keys: int
+    read_fraction: float
+    point_fraction: float
+    write_size_mean: int
+    write_size_std: int
+    # We put the name here so that it appears in benchmark outputs.
+    name: str = 'PointSkewedReadWriteWorkload'
+
+    def to_proto(self) -> proto_util.Message:
+        return {
+            'point_skewed_read_write_workload': {
+                'num_keys': self.num_keys,
+                'read_fraction': self.read_fraction,
+                'point_fraction': self.point_fraction,
+                'write_size_mean': self.write_size_mean,
+                'write_size_std': self.write_size_std,
+            }
+        }
+
+
 class UniformMultiKeyReadWriteWorkload(NamedTuple):
     num_keys: int
     num_operations: int
@@ -82,6 +103,7 @@ class WriteOnlyBernoulliSingleKeyWorkload(NamedTuple):
 
 
 ReadWriteWorkload = Union[UniformReadWriteWorkload,
+                          PointSkewedReadWriteWorkload,
                           UniformMultiKeyReadWriteWorkload,
                           WriteOnlyStringWorkload,
                           WriteOnlyUniformSingleKeyWorkload,
