@@ -48,7 +48,6 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                 )
 
-
                 # - 3 clients are needed to get a peak write-only throughput of
                 #   about 80,000 comands per second with 3 chain nodes. This is
                 #   roughly half of what we're getting with MultiPaxos, but it
@@ -59,7 +58,7 @@ def main(args) -> None:
                 #   nodes. This is mroe than Compartmentalized MultiPaxos which
                 #   makes sense since a Craq read (in the happy case) goes only
                 #   to a single chain node and back.
-                for workload_label in ['craq_sweep_1']
+                for workload_label in ['craq_skew_1']
                 for (
                     num_chain_nodes,      # 0
                     num_client_procs,     # 1
@@ -68,44 +67,18 @@ def main(args) -> None:
                     read_fraction,        # 4
                     point_fraction,       # 5
                 ) in [
-                    # 0   1    2       3     4      5
-                    ( 6,  3, 100, 100000, 0.95, 0.000),
-                    ( 6,  4, 100, 100000, 0.95, 0.000),
-                    ( 6,  5, 100, 100000, 0.95, 0.000),
-
-                    ( 6, 3, 100, 100000, 0.95, 0.125),
+                    # 0  1    2       3     4      5
+                    ( 6, 5, 100, 100000, 0.95, 0.000),
                     ( 6, 5, 100, 100000, 0.95, 0.125),
-                    ( 6, 7, 100, 100000, 0.95, 0.125),
-
-                    ( 6, 3, 100, 100000, 0.95, 0.250),
                     ( 6, 5, 100, 100000, 0.95, 0.250),
-                    ( 6, 7, 100, 100000, 0.95, 0.250),
-
-                    ( 6, 4, 100, 100000, 0.95, 0.375),
-                    ( 6, 6, 100, 100000, 0.95, 0.375),
-                    ( 6, 8, 100, 100000, 0.95, 0.375),
-
-                    ( 6, 4, 100, 100000, 0.95, 0.500),
-                    ( 6, 6, 100, 100000, 0.95, 0.500),
-                    ( 6, 8, 100, 100000, 0.95, 0.500),
-
+                    ( 6, 5, 100, 100000, 0.95, 0.375),
+                    ( 6, 5, 100, 100000, 0.95, 0.500),
                     ( 6, 5, 100, 100000, 0.95, 0.625),
-                    ( 6, 7, 100, 100000, 0.95, 0.625),
-                    ( 6, 9, 100, 100000, 0.95, 0.625),
-
                     ( 6, 5, 100, 100000, 0.95, 0.750),
-                    ( 6, 7, 100, 100000, 0.95, 0.750),
-                    ( 6, 9, 100, 100000, 0.95, 0.750),
-
-                    ( 6, 6, 100, 100000, 0.95, 0.875),
-                    ( 6, 8, 100, 100000, 0.95, 0.875),
-                    ( 6, 10, 100, 100000, 0.95, 0.875),
-
-                    ( 6, 7, 100, 100000, 0.95, 1.000),
-                    ( 6, 9, 100, 100000, 0.95, 1.000),
-                    ( 6, 11, 100, 100000, 0.95, 1.000),
+                    ( 6, 5, 100, 100000, 0.95, 0.875),
+                    ( 6, 5, 100, 100000, 0.95, 1.000),
                 ]
-            ] * 3
+            ] * 5
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
@@ -117,15 +90,15 @@ def main(args) -> None:
                 'write.latency.median_ms': \
                     f'{output.write_output.latency.median_ms:.6}',
                 'write.start_throughput_1s.p90': \
-                    f'{output.write_output.start_throughput_1s.p90:.6}',
+                    f'{output.write_output.start_throughput_1s.p90:.7}',
                 'read.latency.median_ms': \
                     f'{output.read_output.latency.median_ms:.6}',
                 'read.start_throughput_1s.p90': \
-                    f'{output.read_output.start_throughput_1s.p90:.6}',
+                    f'{output.read_output.start_throughput_1s.p90:.7}',
             })
 
     suite = SmokeCraqSuite()
-    with benchmark.SuiteDirectory(args.suite_directory, 'craq_smoke') as dir:
+    with benchmark.SuiteDirectory(args.suite_directory, 'craq_skew') as dir:
         suite.run_suite(dir)
 
 

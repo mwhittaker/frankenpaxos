@@ -49,29 +49,26 @@ def main(args) -> None:
 
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
 
-    by_read_fraction = df.groupby('workload.read_fraction')
-    for (read_fraction, group) in by_read_fraction:
-        by_replicas = group.groupby('num_replicas')
-        throughput = by_replicas.apply(outlier_throughput).sort_index() / 1000
-        std = by_replicas.apply(outlier_throughput_std).sort_index() / 1000
-        lines = ax.plot(
-            throughput.index,
-            throughput,
-            '-',
-            marker = next(MARKERS),
-            label=f'{int(read_fraction * 100)}% reads',
-            linewidth=1.5
-        )
-        ax.fill_between(throughput.index,
-                        throughput - std,
-                        throughput + std,
-                        color=lines[0].get_color(),
-                        alpha=0.3)
+    grouped = df.groupby('workload.point_fraction')
+    throughput = grouped.apply(outlier_throughput).sort_index() / 1000
+    std = grouped.apply(outlier_throughput_std).sort_index() / 1000
+    lines = ax.plot(
+        throughput.index,
+        throughput,
+        '-',
+        marker = next(MARKERS),
+        linewidth=1.5
+    )
+    ax.fill_between(throughput.index,
+                    throughput - std,
+                    throughput + std,
+                    color=lines[0].get_color(),
+                    alpha=0.3)
 
     ax.set_title('')
-    ax.set_xlabel('Number of replicas')
+    ax.set_xlabel('Skew')
     ax.set_ylabel('Throughput\n(thousands of commands per second)')
-    ax.legend(loc='best', bbox_to_anchor=(0.5, 1))
+    # ax.legend(loc='best', bbox_to_anchor=(0.5, 1))
     ax.grid()
     fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')
@@ -85,7 +82,7 @@ def get_parser() -> argparse.ArgumentParser:
                         help='results.csv file')
     parser.add_argument('--output',
                         type=str,
-                        default='read_scale.pdf',
+                        default='skew.pdf',
                         help='Output filename')
 
     return parser

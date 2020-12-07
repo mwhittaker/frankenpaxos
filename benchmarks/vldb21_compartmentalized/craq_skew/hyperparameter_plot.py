@@ -81,7 +81,7 @@ def main(args) -> None:
     df['throughput'] = df['read_throughput'] + df['write_throughput']
     df['latency'] = df['read_latency'] + df['write_latency']
 
-    num_figures = 2
+    num_figures = 4
     fig, ax = plt.subplots(num_figures, 1,
                            figsize=(6.4, num_figures * 4.8 * 1.25))
     axes = iter(ax)
@@ -89,6 +89,15 @@ def main(args) -> None:
     for y_columns in ['throughput', 'latency']:
         plot(
             df=df[(df['workload_label'] == 'craq_sweep_1')],
+            ax=next(axes),
+            grouping_columns=('workload.point_fraction',),
+            x_column='num_clients',
+            y_columns=[y_columns],
+            title=(f'6 chain nodes, 95% reads'),
+        )
+    for y_columns in ['throughput', 'latency']:
+        plot(
+            df=df[(df['workload_label'] == 'craq_sweep_2')],
             ax=next(axes),
             grouping_columns=('workload.point_fraction',),
             x_column='num_clients',
