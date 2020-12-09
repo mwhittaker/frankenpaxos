@@ -35,7 +35,7 @@ def barchart(output_filename: str, labels: List[str], data: List[float],
     ax.set_xticklabels(labels, rotation=-45, ha='left')
     ax.set_title('')
     ax.set_xlabel('')
-    ax.set_ylabel('Throughput (commands per second)')
+    ax.set_ylabel('Throughput\n(thousands of commands per second)')
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
 
@@ -73,8 +73,8 @@ def main(args) -> None:
             '4 unbatchers',
             '5 unbatchers',
         ],
-        data=[avg_tput(df) for df in dfs],
-        yerr=[std_tput(df) for df in dfs],
+        data=[avg_tput(df) / 1000 for df in dfs],
+        yerr=[std_tput(df) / 1000 for df in dfs],
         color=['C0', 'C1', 'C2', 'C2', 'C3', 'C3', 'C3'],
     )
 
