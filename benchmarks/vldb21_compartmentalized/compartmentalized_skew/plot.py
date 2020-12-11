@@ -1,7 +1,7 @@
 # See https://stackoverflow.com/a/19521297/3187068
 import matplotlib
 matplotlib.use('pdf')
-font = {'size': 14}
+font = {'size': 16}
 matplotlib.rc('font', **font)
 
 from typing import Any, List
@@ -49,7 +49,7 @@ def main(args) -> None:
         df['throughput'] = df['write_throughput'] + df['read_throughput']
         df['latency'] = df['write_latency'] + df['read_latency']
 
-    fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
+    fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.0))
 
     for (df, label) in [(paxos_df, 'Compartmentalized MultiPaxos'),
                         (craq_df, 'CRAQ')]:
@@ -70,9 +70,10 @@ def main(args) -> None:
                         color=lines[0].get_color(),
                         alpha=0.3)
 
+    ax.set_ylim(ymin=0)
     ax.set_title('')
     ax.set_xlabel('Skew')
-    ax.set_ylabel('Throughput\n(thousands of commands per second)')
+    ax.set_ylabel('Throughput (thousands)')
     ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1))
     ax.grid()
     fig.savefig(args.output, bbox_inches='tight')

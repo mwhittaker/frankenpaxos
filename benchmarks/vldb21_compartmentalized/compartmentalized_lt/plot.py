@@ -1,7 +1,7 @@
 # See https://stackoverflow.com/a/19521297/3187068
 import matplotlib
 matplotlib.use('pdf')
-font = {'size': 14}
+font = {'size': 16}
 matplotlib.rc('font', **font)
 
 from typing import Any, List
@@ -62,7 +62,7 @@ def main(args) -> None:
     unreplicated_df = unreplicated_df[unreplicated_df['num_clients'] <= 1400]
 
 
-    fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
+    fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.0))
     plot_lt(coupled_df, ax, '^-', 'MultiPaxos')
     plot_lt(compartmentalized_df, ax, 'o-', 'Compartmentalized MultiPaxos')
     plot_lt(unreplicated_df, ax, 's-', 'Unreplicated')

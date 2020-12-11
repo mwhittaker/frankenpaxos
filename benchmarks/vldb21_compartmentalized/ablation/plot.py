@@ -1,7 +1,7 @@
 # See https://stackoverflow.com/a/19521297/3187068
 import matplotlib
 matplotlib.use('pdf')
-font = {'size': 14}
+font = {'size': 16}
 matplotlib.rc('font', **font)
 
 from typing import Any, List
@@ -28,14 +28,14 @@ def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
 
 def barchart(output_filename: str, labels: List[str], data: List[float],
              yerr: List[float], color: List[str]) -> None:
-    fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
+    fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.0))
     x_pos = range(len(data))
     ax.bar(x_pos, data, yerr=yerr, align='center', capsize=10, color=color)
     ax.set_xticks(x_pos)
     ax.set_xticklabels(labels, rotation=-45, ha='left')
     ax.set_title('')
     ax.set_xlabel('')
-    ax.set_ylabel('Throughput\n(thousands of commands per second)')
+    ax.set_ylabel('Throughput (thousands)')
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
 

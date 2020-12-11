@@ -19,6 +19,7 @@ main() {
     run_script "$d/weak_read_scale/plot.sh"
     run_script "$d/batched_read_scale/plot.sh"
     run_script "$d/compartmentalized_skew/plot.sh"
+    run_script "$d/theory/plot.sh"
 }
 
 main "$@"
