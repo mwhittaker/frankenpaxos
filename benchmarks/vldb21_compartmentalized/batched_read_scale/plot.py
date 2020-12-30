@@ -71,10 +71,20 @@ def main(args) -> None:
                         color=lines[0].get_color(),
                         alpha=0.3)
 
+    # Add MultiPaxos line.
+    ax.plot(
+        [2, 3, 4, 5, 6],
+        [200000 / 1000000] * 5,
+        '-',
+        marker = next(MARKERS),
+        label=f'MultiPaxos',
+        linewidth=1.5
+    )
+
     ax.set_ylim(ymin=0)
     ax.set_title('')
     ax.set_xlabel('Number of replicas')
-    ax.set_ylabel('Throughput (millions)')
+    ax.set_ylabel('Throughput\n(millions cmds/second)')
     ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1), ncol=2)
     ax.grid()
     fig.savefig(args.output, bbox_inches='tight')

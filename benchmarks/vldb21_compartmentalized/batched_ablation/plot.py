@@ -35,7 +35,7 @@ def barchart(output_filename: str, labels: List[str], data: List[float],
     ax.set_xticklabels(labels, rotation=-45, ha='left')
     ax.set_title('')
     ax.set_xlabel('')
-    ax.set_ylabel('Throughput (thousands)')
+    ax.set_ylabel('Throughput\n(thousands cmds/second)')
     fig.savefig(output_filename, bbox_inches='tight')
     print(f'Wrote plot to {output_filename}.')
 

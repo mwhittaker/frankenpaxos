@@ -101,7 +101,7 @@ def main(args) -> None:
     ax.set_ylim(ymin=0)
     ax.set_title('')
     ax.set_xlabel('Number of replicas')
-    ax.set_ylabel('Throughput (thousands)')
+    ax.set_ylabel('Throughput\n(thousands cmds/second)')
     ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1), ncol=2)
     ax.grid()
     fig.savefig(args.output, bbox_inches='tight')
