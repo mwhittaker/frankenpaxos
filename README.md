@@ -1,24 +1,36 @@
 # FrankenPaxos
 
 ## Getting Started
-You can build and run all of frankenpaxos's code using `sbt`. All the code in
+Make sure you have Java, Scala, and sbt installed. We tested everything with
+Java version 1.8.0_131 and with sbt version 1.1.6 on Ubuntu 18.04. You can
+install these however you like, but one way is to use [this
+script](https://raw.githubusercontent.com/mwhittaker/vms/master/install_java8.sh)
+and [this
+script](https://raw.githubusercontent.com/mwhittaker/vms/master/install_scala.sh).
+
+You can build and run all of frankenpaxos' code using `sbt`. All the code in
 this repository can be compiled to bytecode that you can run on the JVM and can
 also be compiled to Javascript that you can run in the browser. As a result,
 the project is split into two subprojects: `frankenpaxosJVM` for the code that
 compiles to bytecode and `frankenpaxosJS` for the code that compiles to
 Javascript. `frankenpaxos` is a parent project of the two.
 
-```
+```bash
 $ sbt
 sbt:frankenpaxos> frankenpaxosJVM/compile  # Build the JVM code.
 sbt:frankenpaxos> frankenpaxosJS/compile   # Build the Javascript code.
 sbt:frankenpaxos> frankenpaxos/compile     # Build all the code.
 sbt:frankenpaxos> frankenpaxosJVM/test     # Run the tests.
-sbt:frankenpaxos> frankenpaxosJS/fastOptJs # Compile to Javascript.
+sbt:frankenpaxos> frankenpaxosJS/fastOptJS # Compile to Javascript.
 sbt:frankenpaxos> frankenpaxosJVM/assembly # Assemble a JAR.
 
-$ # Run the JAR.
+$ # Run the JAR. Replace <main> with one of the executable classes. You can use
+$ # tab completion to see the full list of possibilities.
 $ java -cp jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar <main>
+$
+$ # For example, we can run the echo server.
+$ java -cp jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar \
+>     frankenpaxos.echo.ServerMain --help
 ```
 
 Core code is in the [`shared`](shared/) directory, JVM-specific code is in the
@@ -34,7 +46,7 @@ visualization of a simple echo protocol.
 
 To run the visualization locally, run `sbt frankenpaxosJS/fastOptJs` and then
 run an HTTP server on port 8000 in the root `frankenpaxos` directory (e.g., by
-running `python -m SimpleHTTPServer`). Open
+running `python -m http.server 8000`). Open
 `http://localhost:8000/js/src/main/js/echo/echo.html`.  The source code for
 this example can be found in the following files:
 
