@@ -66,7 +66,7 @@ execution of the benchmark in a directory in the EFS mount. Later, we can read
 the data from the EFS file system, analyze it, plot it, etc.
 
 We can run this exact scenario for real on our local machine. Make sure you've
-run `frankenpaxosJMV/assembly` in sbt and then run the following from the
+run `frankenpaxosJVM/assembly` in sbt and then run the following from the
 frankenpaxos directory where `~/.ssh/id_rsa` is the private SSH key you can use
 to run `ssh localhost`:
 
