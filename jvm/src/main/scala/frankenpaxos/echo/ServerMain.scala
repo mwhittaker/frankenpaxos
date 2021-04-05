@@ -19,6 +19,7 @@ object ServerMain extends App {
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
+    help("help")
     opt[String]("host").action((x, f) => f.copy(host = x))
     opt[Int]("port").action((x, f) => f.copy(port = x))
     opt[String]("prometheus_host").action((x, f) => f.copy(prometheusHost = x))

@@ -16,6 +16,7 @@ object ClientMain extends App {
   )
 
   val parser = new scopt.OptionParser[Flags]("") {
+    help("help")
     opt[String]("server_host").action((x, f) => f.copy(serverHost = x))
     opt[Int]("server_port").action((x, f) => f.copy(serverPort = x))
     opt[String]("host").action((x, f) => f.copy(host = x))
