@@ -9,7 +9,7 @@ def main(args) -> None:
         def inputs(self) -> Collection[Input]:
             return [
                 Input(
-                    num_client_procs=1,
+                    num_client_procs=num_client_procs,
                     num_warmup_clients_per_proc=1,
                     num_clients_per_proc=1,
                     jvm_heap_size='100m',
@@ -31,6 +31,8 @@ def main(args) -> None:
                     server_options=ServerOptions(),
                     server_log_level=args.log_level,
                 )
+
+                for num_client_procs in [1, 2, 3]
             ]
 
         def summary(self, input: Input, output: Output) -> str:
