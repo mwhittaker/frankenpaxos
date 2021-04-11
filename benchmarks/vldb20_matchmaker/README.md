@@ -1,8 +1,10 @@
 # Matchmaker Paxos
 
+## Running Benchmarks
 This directory contains the benchmark plotting code for Matchmaker Paxos. The
 benchmarks themselves are in the `matchmakermultipaxos` directory and can be
-run from the root `frankenpaxos/` directory like this.
+run from the root `frankenpaxos/` directory like this. There are also some
+benchmarks in `horizontal` that work the same way.
 
 ```bash
 python -m benchmarks.matchmakermultipaxos.vldb_ablation --help
@@ -126,3 +128,29 @@ If the experiment needs 4 clients, for example, and you only list 2 in the
 cluster file, that's ok. The benchmark will run 2 clients on each machine.
 Generally, if you have fewer machines than are required, things will still
 work, though the throughput might be impacted by co-locating nodes together.
+
+To run the benchmarks in our PaPoC submission, run a command like the
+following:
+
+```
+cp jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar /mnt/efs/tmp/ && \
+python -m benchmarks.matchmakermultipaxos.vldb_leader_reconfiguration -j /mnt/efs/tmp/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar -s /mnt/efs/tmp/ -m -l info -i <your pem file> --cluster <your cluster file> && \
+python -m benchmarks.matchmakermultipaxos.vldb_leader_failure -j /mnt/efs/tmp/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar -s /mnt/efs/tmp/ -m -l info -i <your pem file> --cluster <your cluster file> && \
+python -m benchmarks.matchmakermultipaxos.vldb_matchmaker_reconfiguration -j /mnt/efs/tmp/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar -s /mnt/efs/tmp/ -m -l info -i <your pem file> --cluster <your cluster file>
+```
+
+## Plotting Benchmarks
+Let's look at the `leader_reconfiguration` benchmark. After we run this
+benchmark, we'll have a suite directory with a bunch of benchmark directories.
+Let's go into `001/`. There will be a file `data.csv.gz` that contains data
+(e.g., throughput and latency) about the execution of the benchmark. Copy these
+data files into the `leader_reconfiguration` subdirectory, naming them
+according to their value of `f` and the number of clients `n`. `001/` has 1
+client and has `f=1`, so we copy it to `f1n1.csv.gz`. Then, we can run
+`plot.sh` from the root `frankenpaxos` directory.
+
+But note that the plotting scripts have hard coded times they use to draw
+vertical lines (see
+[here](https://github.com/mwhittaker/frankenpaxos/blob/master/benchmarks/vldb20_matchmaker/leader_reconfiguration/plot.py#L148-L153)).
+If you change the data, you'll have to change these times, or comment them out.
+You can find the correct times in `driver_out.txt` in `001/`.
