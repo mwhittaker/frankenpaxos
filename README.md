@@ -1,12 +1,21 @@
 # FrankenPaxos
 
+This directory contains Scala implementations of various state machine
+replication protocols including [Compartmentalized
+MultiPaxos](https://mwhittaker.github.io/publications/compartmentalized_paxos.pdf),
+[Matchmaker
+Paxos](https://mwhittaker.github.io/publications/matchmaker_paxos.pdf),
+[Bipartisan
+Paxos](https://mwhittaker.github.io/publications/compartmentalized_bipartisan_paxos.pdf),
+MultiPaxos, CASPaxos, CRAQ, EPaxos, Fast Paxos, and Mencius.
+
 ## Getting Started
 Make sure you have Java, Scala, and sbt installed. We tested everything with
 Java version 1.8.0_131 and with sbt version 1.1.6 on Ubuntu 18.04. You can
-install these however you like, but one way is to use [this
+install these however you like (e.g., we use [this
 script](https://raw.githubusercontent.com/mwhittaker/vms/master/install_java8.sh)
 and [this
-script](https://raw.githubusercontent.com/mwhittaker/vms/master/install_scala.sh).
+script](https://raw.githubusercontent.com/mwhittaker/vms/master/install_scala.sh)).
 
 You can build and run all of frankenpaxos' code using `sbt`. All the code in
 this repository can be compiled to bytecode that you can run on the JVM and can
@@ -36,6 +45,9 @@ $ java -cp jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar \
 Core code is in the [`shared`](shared/) directory, JVM-specific code is in the
 [`jvm/`](jvm/) directory, and Javascript-specific code is in the [`js/`](js/)
 directory.
+
+## Running Benchmarks
+See the `benchmarks/` directory for information on running benchmarks.
 
 ## Running in the Browser
 The code in this repository is compiled to Javascript using Scala.js. With a
@@ -79,9 +91,6 @@ following:
    ```
 5. Open up vim and run `:ProjectCreate . -n scala` or `:ProjectRefresh` if the
    project already exists.
-
-## Running Benchmarks
-See the `benchmarks/` directory for information on running benchmarks.
 
 ## Updating Github Pages
 ```bash
