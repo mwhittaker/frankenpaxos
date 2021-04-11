@@ -464,6 +464,11 @@ echo JKLRZCAJCZOQGMWGLXJUDDEHBYXUGTKNZLOXEDOLORRAKMWEFLXLSPCDDNLGFIBIYXKIVPYNGRM
 Yup, we passed in `-Xmx100f` which is not a valid heap size. It should have
 been `100m`. If we fix this in `smoke.py` and run it again, things work fine.
 
+For more information on running and plotting specific benchmarks, refer to the
+READMEs in the subdirectories of `benchmarks/`. For example,
+`benchmarks/vldb20_matchmaker/README.md` has information on how to run and plot
+Matchmaker Paxos benchmarks.
+
 ## Getting Started
 The benchmarks use [Prometheus](https://prometheus.io/) to monitor code and
 [Grafana](https://grafana.com/) to analyze monitoring information. You might
@@ -481,38 +486,123 @@ pip install -r benchmarks/requirements.txt
 ```
 
 ## Running on EC2
-To run on EC2, create an EFS file system, launch a bunch of machines, and then
-run the following on each of the machines. You'll have to install Java and
-Scala however you like.
+To debug benchmarks and make sure that they run correctly, we recommend that
+you run benchmarks locally, but to get accurate performance numbers, we
+recommend you run them on multiple machines. Here, we describe how to run the
+benchmarks on EC2.
+
+__Step 1: Launch EC2 Machines.__
+We recommend you launch m5.xlarge machines with Ubuntu 18.04, which have 4
+vcpus and 16 GB of memory. The benchmarks may work on smaller instances, but we
+have not tested that. Make sure to configure security groups so that the
+machines can communicate with each other. Launch all the machines in the same
+region and same availability zone.
+
+How many machines should you launch? That depends on the benchmark you're
+running. For example, if we read
+`benchmarks/matchmakermultipaxos/vldb_leader_reconfiguration.py`, we see the
+benchmark needs 4 client machines, 2 leader machines, 3 matchmaker machines, 2
+reconfigurer machines, 6 acceptor machines, 3 replica machines, 1 driver
+machine, and 1 machine for running the script.
+
+__Step 2: Create an EFS File System.__
+As mentioned above, the benchmarks assume access to a shared file system. When
+we run benchmarks on EC2, this shared file system is EFS. Refer to [the
+official
+documentation](https://docs.aws.amazon.com/efs/latest/ug/gs-step-two-create-efs-resources.html)
+on how to create an EFS file system. Make sure to note the region and security
+groups when creating the EFS instance to make sure that your EC2 machines can
+mount it successfully. Every EFS instance is associated with a unique file
+system ID that looks something like `fs-0a8f0a8e`. Make sure to note this down;
+we'll need it later.
+
+__Step 3: Provision the Machines.__
+Every machine needs to be able to run the JVM executables and mount the EFS
+file system. You can do this manually, or you can use the provisioning tools
+provided by EC2 (e.g., see
+[here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html)). We
+recommend you run something like the following.
 
 ```bash
+# Make sure that everything is up to date and that we have all the basic tools
+# we need.
 sudo apt-get update && sudo apt-get upgrade
-sudo apt-get install git tmux vim
-# Install dotfiles if wanted.
-# Install Java (https://github.com/mwhittaker/vms/blob/master/install_java8.sh)
-# Install Scala (https://github.com/mwhittaker/vms/blob/master/install_scala.sh)
-# Install efs-utils (https://docs.aws.amazon.com/efs/latest/ug/gs-step-three-connect-to-ec2-instance.html)
+sudo apt-get install git
+
+# Install Java and Scala. You can do this however you like. We use the
+# following scripts, but this is not necessary.
+curl https://raw.githubusercontent.com/mwhittaker/vms/master/install_java8.sh -sSf | sh
+curl https://raw.githubusercontent.com/mwhittaker/vms/master/install_scala.sh -sSf | sh
+echo "source ~/.bash_path" >> ~/.bash_profile
+source ~/.bash_path
+
+# Mount the EFS file system. We do this as follows. If this doesn't work for
+# you, consult the documentation (e.g.,
+# https://docs.aws.amazon.com/efs/latest/ug/gs-step-three-connect-to-ec2-instance.html,
+# https://docs.aws.amazon.com/efs/latest/ug/installing-amazon-efs-utils.html,
+# and https://docs.aws.amazon.com/efs/latest/ug/mount-multiple-ec2-instances.html).
 git clone git@github.com:aws/efs-utils.git
 cd efs-utils
 sudo apt-get install binutils nfs-common stunnel4
 ./build-deb.sh
 sudo dpkg -i ./build/amazon-efs-utils*.deb
 sudo mkdir /mnt/efs
-# Use your EFS file system id here.
+# Use your EFS file system ID here.
 sudo mount -t efs <fs-id> /mnt/efs
+# Make sure you can read and write files to the mounted EFS. The default
+# permissions of the mounted file system may be overly strict, so you might
+# have to chmod things. You should be able to do things like the following:
+mkdir /mnt/efs/tmp
+touch /mnt/efs/tmp/test.txt
+cat /mnt/efs/tmp/test.txt
 ```
 
-Then, on one of the machines, run something like looks like this:
+__Step 4: Run the Benchmarks.__
+Choose one of the EC2 machines on which we'll run the benchmark scripts. You'll
+have to install Python on this machine (see the "Getting Started" section
+above). Then,
+
+- Build the code by running `frankenpaxosJVM/assembly` from within sbt.
+- Create a cluster file with the private IP addresses of your EC2 machines. For
+  example, to create a cluster file for running Matchmaker Paxos, copy the
+  example cluster file `benchmarks/matchmakermultipaxos/local_cluster.json`,
+  and insert the private (not public) IP addresses of your EC2 machines.
+- Copy over the `.pem` file that you use to SSH into the EC2 machines. You
+  should be able to run `ssh -i <the pem file> <the private IP address of any
+  of the EC2 machines>` successfully without getting prompted for a password.
+
+Finally, run a benchmark. That should look something like this:
 
 ```
 cp jvm/target/scala-2.12/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar /mnt/efs/tmp/ && python -m benchmarks.<some_benchmark> -j /mnt/efs/tmp/frankenpaxos-assembly-0.1.0-SNAPSHOT.jar -s /mnt/efs/tmp/ -m -l info -i <path_to_ssh_key> --cluster <path_to_cluster_file>
 ```
 
-Assuming you've mounted the EFS file system on `/mnt/efs` and made a
-`/mnt/efs/tmp` directory, this will run `<some_benchmark>` (e.g.,
-`unreplicated.smoke`) and write the results to `/mnt/efs/tmp`. You'll have to
-populate `<path_to_cluster_file>` with the private IP addresses of the EC2
-machines. Every benchmark directory has an example cluster file for reference.
+Here, we copy the jar file created by `frankenpaxosJVM/assembly` over to
+`/mnt/efs/tmp` so that every machine can access it. We run the benchmark,
+pointing it at this jar (`-j ...`) and we tell it to write output to
+`/mnt/efs/tmp` (`-s ...`). We perform monitoring (`-m`), have a log level of
+info (`-l info`), and provide the SSH key and cluster file (`-i ...` and
+`--cluster ...`).
+
+## Gotchas
+- Remember that the benchmark scripts launch processes over SSH. When running a
+  benchmark on a single machine, it's possible that the script attempts to make
+  too many SSH connections too quickly. In this case, the SSH connections may
+  be rejected by your OS. You can fix this on Ubuntu, for example, by modifying
+  the values of `MaxSessions` and `MaxStartups` in `/etc/ssh/sshd_config`. For
+  example, we have `MaxSessions 100` and `MaxStartups 100:30:200`. You probably
+  want to restart the machines after making these modifications.
+- Because processes are launched over SSH, your local path and the path on the
+  remote machine may not be the same. For example, just because you can run
+  `java` locally doesn't mean that you can run `ssh -i <pem file> 1.2.3.4 java`
+  successfully. Make sure your paths are set up properly on all machines.
+- Make sure you have the write permissions to read and write from your EFS file
+  system. If you can't do something like `mkdir /mnt/efs/tmp` or `touch
+  /mnt/efs/tmp/foo.txt`, the scripts probably won't work.
+- Make sure you're using _private_ IP addresses in the cluster file, not
+  public.
+- Use bash, not zsh. This is a weird technical detail of how the scripts manage
+  the life cycle of the processes they launch over SSH. I know it's janky.
 
 ## Analyzing Benchmarks
 To dissect the performance of a particular benchmark, we can use Prometheus and
@@ -544,4 +634,22 @@ prometheus \
     --config.file=<(echo "") \
     --storage.tsdb.path=prometheus_data \
     --web.listen-address=0.0.0.0:8003
+```
+
+## Private Install Instructions
+```bash
+sudo apt-get update && sudo apt-get upgrade
+sudo apt-get install git tmux vim
+# Install dotfiles if wanted.
+# Install Java (https://github.com/mwhittaker/vms/blob/master/install_java8.sh)
+# Install Scala (https://github.com/mwhittaker/vms/blob/master/install_scala.sh)
+# Install efs-utils (https://docs.aws.amazon.com/efs/latest/ug/gs-step-three-connect-to-ec2-instance.html)
+git clone git@github.com:aws/efs-utils.git
+cd efs-utils
+sudo apt-get install binutils nfs-common stunnel4
+./build-deb.sh
+sudo dpkg -i ./build/amazon-efs-utils*.deb
+sudo mkdir /mnt/efs
+# Use your EFS file system id here.
+sudo mount -t efs <fs-id> /mnt/efs
 ```
