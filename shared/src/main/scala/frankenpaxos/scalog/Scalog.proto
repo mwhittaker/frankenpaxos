@@ -12,6 +12,7 @@
 //      aggregator node. As with the servers, we assume the aggregator does not
 //      fail, we do not monitor its failure, and we do not handle its failure.
 //      If it fails, the entire protocol grinds to a halt.
+//   3. Servers are never added or removed. We have a fixed set of servers.
 //
 // Here are a couple high level design decisions that are not obvious from the
 // paper.
@@ -69,6 +70,14 @@
 //      |        | <----- |        |        |        |        CutChosen
 //      |        | -------^--------^--------^------> |        Chosen
 //
+// The aggregator may also have holes in its log, in which case it sends a
+// Recover to the Paxos leader. If the leader doesn't have the slot, it ignores
+// the request.
+//
+//   Client   Server Aggregator Leader  Acceptor  Replica
+//      |        |        | -----> |        |        |        Recover
+//      |        |        | <----- |        |        |        RawCutChosen
+//
 // ## Nacks
 //
 // Acceptors nack messages in stale rounds.
@@ -81,12 +90,12 @@
 
 syntax = "proto2";
 
-package frankenpaxos.multipaxos;
+package frankenpaxos.scalog;
 
 import "scalapb/scalapb.proto";
 
 option (scalapb.options) = {
-  package_name: "frankenpaxos.multipaxos"
+  package_name: "frankenpaxos.scalog"
   flat_package: true
 };
 
@@ -131,32 +140,40 @@ message CommandBatchOrNoop {
   }
 }
 
+message GlobalCut {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // A global cut is the concatenation of shard cuts from every shard. For
+  // example, consider a Scalog deployment with 2 shards with cuts [2, 2] and
+  // [1, 3]. The corresponding global cut is [2, 2, 1, 3]. See ShardInfo for
+  // more information on cuts.
+  repeated int32 watermark = 1;
+}
+
+message GlobalCutOrNoop {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  oneof value {
+    GlobalCut global_cut = 1;
+    Noop noop = 2;
+  }
+}
+
+
 // Protocol messages. //////////////////////////////////////////////////////////
-message ClientRequest {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required Command command = 1;
-}
-
-message ClientRequestBatch {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required CommandBatch batch = 1;
-}
-
 message Phase1a {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
 
-  // The leader knows that all entries in slots less than `chosenWatermark`
+  // The leader knows that all entries in slots less than `chosen_watermark`
   // have been chosen. Acceptors do not have to include slots below
-  // `chosenWatermark` in their phase1b response.
+  // `chosen_watermark` in their Phase1b responses.
   //
-  // The leader may know that some entries larger than `chosenWatermark` have
+  // The leader may know that some entries larger than `chosen_watermark` have
   // also been chosen, but that's okay. It's not unsafe for acceptors to return
   // too much information.
   required int32 chosen_watermark = 2;
@@ -168,17 +185,54 @@ message Phase1bSlotInfo {
 
   required int32 slot = 1;
   required int32 vote_round = 2;
-  required CommandBatchOrNoop vote_value = 3;
+  required GlobalCutOrNoop global_cut_or_noop = 3;
 }
 
 message Phase1b {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 group_index = 1;
-  required int32 acceptor_index = 2;
-  required int32 round = 3;
-  repeated Phase1bSlotInfo info = 4;
+  required int32 acceptor_index = 1;
+  required int32 round = 2;
+  repeated Phase1bSlotInfo info = 3;
+}
+
+message ClientRequest {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required Command command = 1;
+}
+
+message ShardInfo {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  // Every Scalog server is the primary for a log. This log gets filled in from
+  // left to right, without ever having holes. The watermark w is the number of
+  // log entries in the log. Equivalently, every log entry less than w has a
+  // log entry in it, and every log entry greater than or equal to w doesn't.
+  //
+  // Every shard has a number of servers. Every server in a shard is the
+  // primary for its log and is a backup for the other servers shards. Thus, if
+  // a shard has n servers, every server has n watermarks. A ShardInfo includes
+  // a servers watermarks. We assume there is an ordering over the servers. The
+  // watermarks are in the same order.
+  //
+  // For example, consider a Scalog deployment with 2 shards, with 2 servers
+  // per shard. The ShardCut {shard_index: 1, servers_index: 0, watermark: [1,
+  // 3]} represents a shard cut from the first server in second shard with 1
+  // entry in the first log and 3 in the second.
+  required int32 shard_index = 1;
+  required int32 server_index = 2;
+  repeated int32 watermark = 3;
+}
+
+message ProposeCut {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required GlobalCut global_cut = 1;
 }
 
 message Phase2a {
@@ -187,25 +241,43 @@ message Phase2a {
 
   required int32 slot = 1;
   required int32 round = 2;
-  required CommandBatchOrNoop command_batch_or_noop = 3;
+  required GlobalCutOrNoop global_cut_or_noop = 3;
 }
 
 message Phase2b {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required int32 group_index = 1;
-  required int32 acceptor_index = 2;
-  required int32 slot = 3;
-  required int32 round = 4;
+  required int32 acceptor_index = 1;
+  required int32 slot = 2;
+  required int32 round = 3;
+}
+
+message RawCutChosen {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required GlobalCutOrNoop raw_cut_or_noop = 2;
+}
+
+message CutChosen {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 slot = 1;
+  required GlobalCut cut = 2;
 }
 
 message Chosen {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
+  // A command batch that starts at slot `slot`. For example, if `slot` is 1,
+  // and `command_batch` is [x, y, z], then the commands x, y, and z should
+  // appear in slots 1, 2, and 3 respectively.
   required int32 slot = 1;
-  required CommandBatchOrNoop command_batch_or_noop = 2;
+  required CommandBatch command_batch = 2;
 }
 
 message ClientReply {
@@ -217,150 +289,23 @@ message ClientReply {
   required bytes result = 3;
 }
 
-message ClientReplyBatch {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  repeated ClientReply batch = 1;
-}
-
-message MaxSlotRequest {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required CommandId command_id = 1;
-}
-
-message MaxSlotReply {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required CommandId command_id = 1;
-  required int32 group_index = 2;
-  required int32 acceptor_index = 3;
-  required int32 slot = 4;
-}
-
-message BatchMaxSlotRequest {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 read_batcher_index = 1;
-  required int32 read_batcher_id = 2;
-}
-
-message BatchMaxSlotReply {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 read_batcher_index = 1;
-  required int32 read_batcher_id = 2;
-  required int32 acceptor_index = 3;
-  required int32 slot = 4;
-}
-
-message ReadRequest {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  // If a client sends a ReadRequest to a ReadBatcher, the slot is set to -1.
-  required int32 slot = 1;
-  required Command command = 2;
-}
-
-message ReadRequestBatch {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 slot = 1;
-  repeated Command command = 2;
-}
-
-message SequentialReadRequest {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 slot = 1;
-  required Command command = 2;
-}
-
-message SequentialReadRequestBatch {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 slot = 1;
-  repeated Command command = 2;
-}
-
-message EventualReadRequest {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required Command command = 1;
-}
-
-message EventualReadRequestBatch {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  repeated Command command = 1;
-}
-
-message ReadReply {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required CommandId command_id = 1;
-  required int32 slot = 2;
-  required bytes result = 3;
-}
-
-message ReadReplyBatch {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  repeated ReadReply batch = 1;
-}
-
-// If a client or batcher sends a request to a leader, but the leader is
-// inactive, then the leader sends back a NotLeader{Client,Batcher} message.
-// The client or batcher then sends a LeaderInfoRequest{Client,Batcher} request
-// to all leaders, and the active leader replies with a
-// LeaderInfoReply{Client,Batcher} request with its current round.
-message NotLeaderClient {
+message LeaderInfoRequest {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 }
 
-message LeaderInfoRequestClient {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-}
-
-message LeaderInfoReplyClient {
+message LeaderInfoReply {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required int32 round = 1;
 }
 
-message NotLeaderBatcher {
+message Recover {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
-  required ClientRequestBatch client_request_batch = 1;
-}
-
-message LeaderInfoRequestBatcher {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-}
-
-message LeaderInfoReplyBatcher {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  required int32 round = 1;
+  required int32 slot = 1;
 }
 
 message Nack {
@@ -370,32 +315,6 @@ message Nack {
   required int32 round = 1;
 }
 
-message ChosenWatermark {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  // Replicas periodically send ChosenWatermark messages to the leaders
-  // informing them that every log entry smaller than `slot` has been chosen.
-  // For example, if `slot` is 3, then slots 0, 1, and 2 have been chosen.
-  // Slots above `slot` may also be chosen, but that's okay.
-  //
-  // If replicas didn't send these messages, then leaders would have no idea
-  // which commands have been chosen and which haven't. This can significantly
-  // slow things down after a leader change.
-  required int32 slot = 1;
-}
-
-message Recover {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  // Replicas execute logs in prefix order. Thus, if the log permanently has a
-  // hole in it, the algorithm remains forever blocked. To solve this, if a
-  // replica notices a hole in its log for a certain amount of time, it sends a
-  // Recover message to the leader to get the hole plugged.
-  required int32 slot = 1;
-}
-
 // Inbound messages. ///////////////////////////////////////////////////////////
 message ClientInbound {
   option (scalapb.message).annotations =
@@ -403,33 +322,27 @@ message ClientInbound {
 
   oneof request {
     ClientReply client_reply = 1;
-    NotLeaderClient not_leader_client = 2;
-    LeaderInfoReplyClient leader_info_reply_client = 3;
-    MaxSlotReply max_slot_reply = 4;
-    ReadReply read_reply = 5;
   }
 }
 
-message BatcherInbound {
+message ServerInbound {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
   oneof request {
     ClientRequest client_request = 1;
-    NotLeaderBatcher not_leader_batcher = 2;
-    LeaderInfoReplyBatcher leader_info_reply_batcher = 3;
+    CutChosen cut_chosen = 2;
   }
 }
 
-message ReadBatcherInbound {
+message AggregatorInbound {
   option (scalapb.message).annotations =
     "@scala.scalajs.js.annotation.JSExportAll";
 
   oneof request {
-    ReadRequest read_request = 1;
-    SequentialReadRequest sequential_read_request = 2;
-    EventualReadRequest eventual_read_request = 3;
-    BatchMaxSlotReply batch_max_slot_reply = 4;
+    ShardInfo shard_info = 1;
+    RawCutChosen raw_cut_chosen = 2;
+    LeaderInfoReply leader_info_reply = 3;
   }
 }
 
@@ -439,23 +352,12 @@ message LeaderInbound {
 
   oneof request {
     Phase1b phase1b = 1;
-    ClientRequest client_request = 2;
-    ClientRequestBatch client_request_batch = 3;
-    LeaderInfoRequestClient leader_info_request_client = 4;
-    LeaderInfoRequestBatcher leader_info_request_batcher = 5;
-    Nack nack = 6;
-    ChosenWatermark chosen_watermark = 7;
-    Recover recover = 8;
-  }
-}
-
-message ProxyLeaderInbound {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  oneof request {
-    Phase2a phase2a = 1;
-    Phase2b phase2b = 2;
+    ProposeCut propose_cut = 2;
+    Phase2b phase2b = 3;
+    RawCutChosen raw_cut_chosen = 4;
+    LeaderInfoRequest leader_info_request = 5;
+    Recover recover = 6;
+    Nack nack = 7;
   }
 }
 
@@ -466,8 +368,6 @@ message AcceptorInbound {
   oneof request {
     Phase1a phase1a = 1;
     Phase2a phase2a = 2;
-    MaxSlotRequest max_slot_request = 3;
-    BatchMaxSlotRequest batch_max_slot_request = 4;
   }
 }
 
@@ -477,23 +377,5 @@ message ReplicaInbound {
 
   oneof request {
     Chosen chosen = 1;
-    ReadRequest read_request = 2;
-    SequentialReadRequest sequential_read_request = 3;
-    EventualReadRequest eventual_read_request = 4;
-    ReadRequestBatch read_request_batch = 5;
-    SequentialReadRequestBatch sequential_read_request_batch = 6;
-    EventualReadRequestBatch eventual_read_request_batch = 7;
-  }
-}
-
-message ProxyReplicaInbound {
-  option (scalapb.message).annotations =
-    "@scala.scalajs.js.annotation.JSExportAll";
-
-  oneof request {
-    ClientReplyBatch client_reply_batch = 1;
-    ReadReplyBatch read_reply_batch = 2;
-    ChosenWatermark chosen_watermark = 3;
-    Recover recover = 4;
   }
 }
