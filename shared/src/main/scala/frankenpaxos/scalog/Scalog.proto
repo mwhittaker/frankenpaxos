@@ -36,6 +36,8 @@
 //      |        |        |        | -----> |        |        Phase1a
 //      |        |        |        | <----- |        |        Phase1b
 //      | -----> |        |        |        |        |        ClientRequest
+//      |        | ---.   |        |        |        |        Backup
+//      |        | <--'   |        |        |        |
 //      |        | -----> |        |        |        |        ShardInfo
 //      |        |        | -----> |        |        |        ProposeCut
 //      |        |        |        | -----> |        |        Phase2a
@@ -77,6 +79,12 @@
 //   Client   Server Aggregator Leader  Acceptor  Replica
 //      |        |        | -----> |        |        |        Recover
 //      |        |        | <----- |        |        |        RawCutChosen
+//
+// A server may also have a hole in one of its backup logs.
+//
+//   Client   Server Aggregator Leader  Acceptor  Replica
+//      |        | ---.   |        |        |        |        Recover
+//      |        | <--'   |        |        |        |
 //
 // ## Nacks
 //
@@ -202,6 +210,15 @@ message ClientRequest {
     "@scala.scalajs.js.annotation.JSExportAll";
 
   required Command command = 1;
+}
+
+message Backup {
+  option (scalapb.message).annotations =
+    "@scala.scalajs.js.annotation.JSExportAll";
+
+  required int32 server_index = 1;
+  required int32 slot = 2;
+  required Command command = 3;
 }
 
 message ShardInfo {
@@ -331,7 +348,9 @@ message ServerInbound {
 
   oneof request {
     ClientRequest client_request = 1;
-    CutChosen cut_chosen = 2;
+    Backup backup = 2;
+    CutChosen cut_chosen = 3;
+    Recover recover = 4;
   }
 }
 
