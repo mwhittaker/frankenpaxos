@@ -13,6 +13,7 @@
 //      fail, we do not monitor its failure, and we do not handle its failure.
 //      If it fails, the entire protocol grinds to a halt.
 //   3. Servers are never added or removed. We have a fixed set of servers.
+//   4. We assume every shard has the same number of servers.
 //
 // Here are a couple high level design decisions that are not obvious from the
 // paper.
