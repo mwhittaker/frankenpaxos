@@ -5,17 +5,12 @@ import frankenpaxos.Actor
 import frankenpaxos.Chan
 import frankenpaxos.Logger
 import frankenpaxos.ProtoSerializer
-import frankenpaxos.election.basic.ElectionOptions
-import frankenpaxos.election.basic.Participant
 import frankenpaxos.monitoring.Collectors
 import frankenpaxos.monitoring.Counter
 import frankenpaxos.monitoring.PrometheusCollectors
 import frankenpaxos.monitoring.Summary
-import frankenpaxos.quorums.Grid
-import frankenpaxos.roundsystem.RoundSystem
 import frankenpaxos.util
 import scala.scalajs.js.annotation._
-import scala.util.Random
 
 @JSExportAll
 object ServerInboundSerializer extends ProtoSerializer[ServerInbound] {
@@ -110,12 +105,24 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   type ShardIndex = Int
   type ServerIndex = Int
   type Slot = Int
+  type Cut = Seq[Slot]
 
   // Fields ////////////////////////////////////////////////////////////////////
-  private val shardIndex: ShardIndex =
+  @JSExportAll
+  protected val shardIndex: ShardIndex =
     config.serverAddresses.indexWhere(_.contains(address))
-  private val index: ServerIndex =
+
+  @JSExportAll
+  protected val index: ServerIndex =
     config.serverAddresses(shardIndex).indexOf(address)
+
+  @JSExportAll
+  protected val globalIndex: ServerIndex =
+    config.serverAddresses.take(shardIndex).map(_.size).sum + index
+
+  @JSExportAll
+  protected val numServers: Int =
+    config.serverAddresses.map(_.size).sum
 
   // Server channels.
   private val servers: Seq[Chan[Server[Transport]]] =
@@ -126,8 +133,13 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     for ((c, i) <- servers.zipWithIndex if i != index) yield c
 
   // Aggregator channel.
-  val aggregator =
+  private val aggregator =
     chan[Aggregator[Transport]](config.aggregatorAddress, Acceptor.serializer)
+
+  // Replica channels.
+  private val replicas: Seq[Chan[Replica[Transport]]] =
+    for (a <- config.replicaAddresses)
+      yield chan[Replica[Transport]](a, Replica.serializer)
 
   @JSExportAll
   class Log(i: ShardIndex) {
@@ -203,6 +215,12 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   protected val logs: mutable.Buffer[Log] =
     mutable.Buffer.tabulate(servers.size)(new Log(_))
 
+  // The aggregator gets a series of global cuts chosen by Paxos and replicates
+  // them to the servers. This is that log of cuts.
+  @JSExportAll
+  protected val cuts: util.BufferMap[Cut] =
+    new util.BufferMap(options.logGrowSize)
+
   @JSExportAll
   protected val pushTimer: Transport#Timer = {
     lazy val t: Transport#Timer = timer(
@@ -270,31 +288,166 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       clientRequest: ClientRequest
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    // Append the command to our log.
+    val log = logs(index)
+    val slot = log.watermark
+    log.put(slot, clientRequest.command)
+
+    // Replicate the command to the other servers.
+    for (server <- otherServers) {
+      server.send(
+        ServerInbound().withBackup(
+          Backup(serverIndex = index,
+                 slot = slot,
+                 command = clientRequest.command)
+        )
+      )
+    }
   }
 
   private def handleBackup(
       src: Transport#Address,
       backup: Backup
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    logs(backup.serverIndex).put(backup.slot, backup.command)
+  }
+
+  // Imagine we have a Scalog deployment with two servers. Consider the
+  // following log of cuts:
+  //
+  //       0   1   2   3   4
+  //     +---+---+---+---+---+---
+  //     |1,0|1,2|3,3|   |5,5| ...
+  //     +---+---+---+---+---+---
+  //
+  // Imagine server 1 and 2 have the following logs of commands.
+  //
+  //                 0   1   2   3   4
+  //               +---+---+---+---+---+---
+  //     Server 1: | a | b | c | d | e | ...
+  //               +---+---+---+---+---+---
+  //
+  //                 0   1   2   3   4
+  //               +---+---+---+---+---+---
+  //     Server 2: | u | v | w | x | y | ...
+  //               +---+---+---+---+---+---
+  //
+  // Then the global log of commands should look like this:
+  //
+  //       0   1   2   3   4   5   6   7   8   9
+  //     +---+---+---+---+---+---+---+---+---+---+---
+  //     | a | u | v | b | c | w |   |   |   |   | ...
+  //     +---+---+---+---+---+---+---+---+---+---+---
+  //      \_/ \_____/ \_________/
+  //      1,0   1,2       3,3
+  //
+  // projectCut(slot) takes in a slot in the log of cuts and returns the
+  // corresponding commands and their start slot in the global log of commands.
+  // For example, on server 1:
+  //
+  //     projectCut(0) = (0, [a])
+  //     projectCut(1) = (1, [])
+  //     projectCut(2) = (3, [b])
+  //
+  // And on server 2:
+  //
+  //     projectCut(0) = (0, [])
+  //     projectCut(1) = (1, [u, v])
+  //     projectCut(2) = (5, [w])
+  //
+  // If a cut doesn't have a cut before it, we cannot make the projection.
+  // Here, for example, projectCut(5) = None.
+  private def projectCut(slot: Slot): Option[(Slot, Seq[Command])] = {
+    // Grab the corresponding cut.
+    val cut = cuts.get(slot) match {
+      case Some(cut) => cut
+      case None      => return None
+    }
+
+    // Grab the previous cut.
+    val previousCut = if (slot == 0) {
+      Seq.fill(numServers)(0)
+    } else {
+      cuts.get(slot - 1) match {
+        case Some(cut) => cut
+        case None      => return None
+      }
+    }
+
+    // The start slot in the global log of commands.
+    val globalStartSlot =
+      previousCut.sum + cut.take(globalIndex).sum
+
+    // The start slot in our local log of commands.
+    val localStartSlot = previousCut(globalIndex)
+    val localEndSlot = cut(globalIndex)
+
+    val commands = for (i <- localStartSlot until localEndSlot) yield {
+      logs(index).log.get(i) match {
+        case Some(command) =>
+          command
+
+        case None =>
+          logger.fatal(
+            s"Server $index doesn't have log entry $i, but it was chosen in " +
+              s"a cut. This should be impossible."
+          )
+      }
+    }
+
+    Some((globalStartSlot, commands.toList))
   }
 
   private def handleCutChosen(
       src: Transport#Address,
       cutChosen: CutChosen
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    val alreadyContains = cuts.contains(cutChosen.slot)
+    cuts.put(cutChosen.slot, cutChosen.cut.watermark)
+
+    // If our log didn't have this cut before but there's a cut right after,
+    // then we should also process that entry.
+    val slots = if (alreadyContains) {
+      Seq(cutChosen.slot)
+    } else {
+      Seq(cutChosen.slot, cutChosen.slot + 1)
+    }
+
+    for (s <- slots) {
+      projectCut(s) match {
+        case Some((slot, commands)) =>
+          for (replica <- replicas) {
+            replica.send(
+              ReplicaInbound().withChosen(
+                Chosen(slot = slot, commandBatch = CommandBatch(commands))
+              )
+            )
+          }
+
+        case None =>
+          // Do nothing.
+          ()
+      }
+    }
   }
 
   private def handleRecover(
       src: Transport#Address,
       recover: Recover
   ): Unit = {
-    // TODO(mwhittaker): Implement.
-    ???
+    logs(index).log.get(recover.slot) match {
+      case None =>
+        // We don't have a command in the slot that is being recovered. We just
+        // ignore the recovery.
+        ()
+
+      case Some(command) =>
+        val server = chan[Server[Transport]](src, Server.serializer)
+        server.send(
+          ServerInbound().withBackup(
+            Backup(serverIndex = index, slot = recover.slot, command = command)
+          )
+        )
+    }
   }
 }

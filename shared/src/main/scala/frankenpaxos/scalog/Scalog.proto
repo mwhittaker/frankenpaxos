@@ -363,6 +363,7 @@ message AggregatorInbound {
     ShardInfo shard_info = 1;
     RawCutChosen raw_cut_chosen = 2;
     LeaderInfoReply leader_info_reply = 3;
+    Recover recover = 4;
   }
 }
 
