@@ -357,6 +357,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   //
   // If a cut doesn't have a cut before it, we cannot make the projection.
   // Here, for example, projectCut(5) = None.
+  //
+  // TODO(mwhittaker): Extract logic and add unit test.
   private def projectCut(slot: Slot): Option[(Slot, Seq[Command])] = {
     // Grab the corresponding cut.
     val cut = cuts.get(slot) match {
