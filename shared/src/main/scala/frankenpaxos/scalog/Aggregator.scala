@@ -81,9 +81,9 @@ class AggregatorMetrics(collectors: Collectors) {
     .help("Total number of proposals sent.")
     .register()
 
-  val numPrunedCuts: Counter = collectors.counter
+  val rawCutsPruned: Counter = collectors.counter
     .build()
-    .name("scalog_aggregator_num_pruned_cuts")
+    .name("scalog_aggregator_raw_cuts_pruned")
     .help(
       "Total number of raw cuts that the aggregator prunes because it does " +
         "not obey the monotonic order of cuts."
@@ -217,38 +217,28 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
   @JSExportAll
   protected var rawCutsWatermark: Int = 0
 
-  // The set of all proposals for which we have not received a reply.
+  // The number of entries in rawCuts.
   @JSExportAll
-  protected val pendingProposals: mutable.Map[Nonce, Proposal] = mutable.Map()
+  protected var numRawCutsChosen: Int = 0
 
-  // The aggregator could have one timer for every pending proposal, but this
-  // would generate a lot of timers, and I'm nervous this would be slow,
-  // especially since the timers would fire very rarely. Instead, we have a
-  // single timer that tracks a single proposal. If the proposal doesn't
-  // receive a response in time, the timer is fired and the proposal is resent.
-  // If a response is received in time, the timer is reset for another
-  // proposal. If it is rare for the timer to fire, then this approach requires
-  // only one timer and has good performance. If it is common for the timer to
-  // fire, then this approach is very slow, as only one proposal is resent at a
-  // time.
   @JSExportAll
-  protected val timedNonce: Option[Int] = None
-
-  // TODO(mwhittaker): Rename resend timer. Add a recover timer as well.
-  @JSExportAll
-  protected val recoverTimer: Transport#Timer = {
-    lazy val t: Transport#Timer = timer(
-      s"recoverTimer",
-      options.recoverPeriod,
-      () => {
-        // TODO(mwhittaker): Implement.
-        metrics.recoversSent.inc()
-        t.start()
-      }
-    )
-    t.start()
-    t
-  }
+  protected val recoverTimer: Option[Transport#Timer] =
+    if (options.unsafeDontRecover) {
+      None
+    } else {
+      lazy val t: Transport#Timer = timer(
+        s"recoverTimer",
+        options.recoverPeriod,
+        () => {
+          metrics.recoversSent.inc()
+          leaders(roundSystem.leader(round)).send(
+            LeaderInbound().withRecover(Recover(slot = rawCutsWatermark))
+          )
+          t.start()
+        }
+      )
+      Some(t)
+    }
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
@@ -326,6 +316,7 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
         )
       )
       numShardCutsSinceLastProposal = 0
+      metrics.proposalsSent.inc()
     }
   }
 
@@ -333,6 +324,13 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       rawCutChosen: RawCutChosen
   ): Unit = {
+    // If `numRawCutsChosen != rawCutsWatermark`, then the recover timer is running.
+    val isRecoverTimerRunning = numRawCutsChosen != rawCutsWatermark
+    val oldRawCutsWatermark = rawCutsWatermark
+
+    if (rawCuts.get(rawCutChosen.slot).isEmpty) {
+      numRawCutsChosen += 1
+    }
     rawCuts.put(rawCutChosen.slot, rawCutChosen.rawCutOrNoop)
 
     while (rawCuts.get(rawCutsWatermark).isDefined) {
@@ -356,6 +354,8 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
                 )
               )
             }
+          } else {
+            metrics.rawCutsPruned.inc()
           }
 
         case Some(GlobalCutOrNoop.Value.Empty) =>
@@ -365,7 +365,19 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
       rawCutsWatermark += 1
     }
 
-    // TODO(mwhittaker): Update the recovery timer.
+    val shouldRecoverTimerBeRunning = numRawCutsChosen != rawCutsWatermark
+    val shouldRecoverTimerBeReset = oldRawCutsWatermark != rawCutsWatermark
+    if (options.unsafeDontRecover) {
+      // Do nothing.
+    } else if (isRecoverTimerRunning) {
+      (shouldRecoverTimerBeRunning, shouldRecoverTimerBeReset) match {
+        case (true, true)  => recoverTimer.foreach(_.reset())
+        case (true, false) => // Do nothing.
+        case (false, _)    => recoverTimer.foreach(_.stop())
+      }
+    } else if (shouldRecoverTimerBeRunning) {
+      recoverTimer.foreach(_.start())
+    }
   }
 
   private def handleLeaderInfoReply(

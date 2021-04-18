@@ -160,22 +160,23 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // timer expires, a recover message is sent to the primary to try and
     // recover the hole. Note that if we're the primary of the log, we don't
     // need a recovery timer.
-    val recoverTimer: Option[Transport#Timer] = if (index == i) {
-      None
-    } else {
-      lazy val t: Transport#Timer = timer(
-        s"recoverTimer${i}",
-        options.recoverPeriod,
-        () => {
-          metrics.recoversSent.inc()
-          servers(i).send(
-            ServerInbound().withRecover(Recover(slot = watermark))
-          )
-          t.start()
-        }
-      )
-      Some(t)
-    }
+    val recoverTimer: Option[Transport#Timer] =
+      if (options.unsafeDontRecover || index == i) {
+        None
+      } else {
+        lazy val t: Transport#Timer = timer(
+          s"recoverTimer${i}",
+          options.recoverPeriod,
+          () => {
+            metrics.recoversSent.inc()
+            servers(i).send(
+              ServerInbound().withRecover(Recover(slot = watermark))
+            )
+            t.start()
+          }
+        )
+        Some(t)
+      }
 
     def put(index: Slot, command: Command): Unit = {
       // If `numCommands != watermark`, then the recover timer is running.
@@ -230,8 +231,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
         metrics.pushesSent.inc()
         aggregator.send(
           AggregatorInbound().withShardInfo(
-            ShardInfo(shard_index = shardIndex,
-                      server_index = index,
+            ShardInfo(shardIndex = shardIndex,
+                      serverIndex = index,
                       watermark = logs.map(_.watermark))
           )
         )
