@@ -134,7 +134,7 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
 
   // The largest round we know of. roundSystem.leader(round) is who we think is
   // the current active leader.
-  @JSExportAll
+  @JSExport
   protected var round = 0
 
   // a log for the raw cuts
@@ -169,7 +169,7 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
   //      +----------+
   //
   // We would collapse this into the global cut [1, 2, 2, 4, 4, 3].
-  @JSExportAll
+  @JSExport
   protected val shardCuts: mutable.Buffer[mutable.Buffer[Cut]] =
     config.serverAddresses
       .map(shard => {
@@ -177,14 +177,14 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
       })
       .to[mutable.Buffer]
 
-  @JSExportAll
+  @JSExport
   protected var numShardCutsSinceLastProposal: Int = 0
 
   // The aggregator periodically proposes global cuts to the Paxos leader. It
   // associates every proposal with a nonce to make tracking the proposals
   // easier. This is a nonce that is attached to every proposal and
   // subsequently incremented.
-  @JSExportAll
+  @JSExport
   protected var proposalNonce: Int = 0
 
   // The log of raw cuts decided by Paxos. cuts is a pruned version of rawCuts
@@ -205,23 +205,23 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
   // cuts that the aggregator proposes are monotonically increasing, but they
   // may arrive out of order at the Paxos leader and may be ordered in
   // non-monontically increasing order.
-  @JSExportAll
+  @JSExport
   protected val rawCuts: util.BufferMap[GlobalCutOrNoop] =
     new util.BufferMap(options.logGrowSize)
 
-  @JSExportAll
+  @JSExport
   protected val cuts: mutable.Buffer[Cut] = mutable.Buffer()
 
   // Every log entry < rawCutsWatermark is chosen in rawCuts. Entry
   // rawCutsWatermark is not chosen.
-  @JSExportAll
+  @JSExport
   protected var rawCutsWatermark: Int = 0
 
   // The number of entries in rawCuts.
-  @JSExportAll
+  @JSExport
   protected var numRawCutsChosen: Int = 0
 
-  @JSExportAll
+  @JSExport
   protected val recoverTimer: Option[Transport#Timer] =
     if (options.unsafeDontRecover) {
       None

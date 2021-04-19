@@ -134,7 +134,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
   // Aggregator channel.
   private val aggregator =
-    chan[Aggregator[Transport]](config.aggregatorAddress, Acceptor.serializer)
+    chan[Aggregator[Transport]](config.aggregatorAddress, Aggregator.serializer)
 
   // Replica channels.
   private val replicas: Seq[Chan[Replica[Transport]]] =
@@ -222,7 +222,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   protected val cuts: util.BufferMap[Cut] =
     new util.BufferMap(options.logGrowSize)
 
-  @JSExportAll
+  @JSExport
   protected val pushTimer: Transport#Timer = {
     lazy val t: Transport#Timer = timer(
       s"pushTimer",
