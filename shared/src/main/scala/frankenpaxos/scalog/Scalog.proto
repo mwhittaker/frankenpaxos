@@ -194,7 +194,7 @@ message Phase1bSlotInfo {
 
   required int32 slot = 1;
   required int32 vote_round = 2;
-  required GlobalCutOrNoop global_cut_or_noop = 3;
+  required GlobalCutOrNoop vote_value = 3;
 }
 
 message Phase1b {
