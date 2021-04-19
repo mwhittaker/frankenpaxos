@@ -108,19 +108,19 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   type Cut = Seq[Slot]
 
   // Fields ////////////////////////////////////////////////////////////////////
-  @JSExportAll
+  @JSExport
   protected val shardIndex: ShardIndex =
     config.serverAddresses.indexWhere(_.contains(address))
 
-  @JSExportAll
+  @JSExport
   protected val index: ServerIndex =
     config.serverAddresses(shardIndex).indexOf(address)
 
-  @JSExportAll
+  @JSExport
   protected val globalIndex: ServerIndex =
     config.serverAddresses.take(shardIndex).map(_.size).sum + index
 
-  @JSExportAll
+  @JSExport
   protected val numServers: Int =
     config.serverAddresses.map(_.size).sum
 
@@ -212,13 +212,13 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   // If there are n servers in every shard, then logs has n logs in it. This
   // server is the primary for logs[index] and is a backup for all the other
   // logs.
-  @JSExportAll
+  @JSExport
   protected val logs: mutable.Buffer[Log] =
     mutable.Buffer.tabulate(servers.size)(new Log(_))
 
   // The aggregator gets a series of global cuts chosen by Paxos and replicates
   // them to the servers. This is that log of cuts.
-  @JSExportAll
+  @JSExport
   protected val cuts: util.BufferMap[Cut] =
     new util.BufferMap(options.logGrowSize)
 
