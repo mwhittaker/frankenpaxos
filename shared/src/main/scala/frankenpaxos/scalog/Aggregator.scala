@@ -317,14 +317,17 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       rawCutChosen: RawCutChosen
   ): Unit = {
+    // Ignore redundantly chosen raw cuts.
+    if (rawCuts.get(rawCutChosen.slot).isDefined) {
+      return
+    }
+
     // If `numRawCutsChosen != rawCutsWatermark`, then the recover timer is running.
     val isRecoverTimerRunning = numRawCutsChosen != rawCutsWatermark
     val oldRawCutsWatermark = rawCutsWatermark
 
-    if (rawCuts.get(rawCutChosen.slot).isEmpty) {
-      numRawCutsChosen += 1
-    }
     rawCuts.put(rawCutChosen.slot, rawCutChosen.rawCutOrNoop)
+    numRawCutsChosen += 1
 
     while (rawCuts.get(rawCutsWatermark).isDefined) {
       rawCuts.get(rawCutsWatermark).map(_.value) match {
@@ -337,7 +340,7 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
 
         case Some(GlobalCutOrNoop.Value.GlobalCut(globalCut)) =>
           val cut = globalCut.watermark
-          if (cuts.isEmpty || monotonicallyLt(cuts(rawCutsWatermark - 1), cut)) {
+          if (cuts.isEmpty || monotonicallyLt(cuts.last, cut)) {
             val slot = cuts.size
             cuts += cut
             for (server <- servers) {

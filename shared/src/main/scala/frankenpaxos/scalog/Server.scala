@@ -366,7 +366,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   // If a cut doesn't have a cut before it, we cannot make the projection.
   // Here, for example, projectCut(5) = None.
   //
-  // TODO(mwhittaker): Extract logic and add unit test.
+  // TODO(mwhittaker): Extract logic and add unit test. I think this code has a
+  // bug.
   private def projectCut(slot: Slot): Option[(Slot, Seq[Command])] = {
     // Grab the corresponding cut.
     val cut = cuts.get(slot) match {
@@ -426,12 +427,14 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     for (s <- slots) {
       projectCut(s) match {
         case Some((slot, commands)) =>
-          for (replica <- replicas) {
-            replica.send(
-              ReplicaInbound().withChosen(
-                Chosen(slot = slot, commandBatch = CommandBatch(commands))
+          if (!commands.isEmpty) {
+            for (replica <- replicas) {
+              replica.send(
+                ReplicaInbound().withChosen(
+                  Chosen(slot = slot, commandBatch = CommandBatch(commands))
+                )
               )
-            )
+            }
           }
 
         case None =>

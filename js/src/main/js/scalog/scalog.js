@@ -192,8 +192,8 @@ const aggregator_info = {
       <div>
         shardCuts =
         <frankenpaxos-seq :seq="node.actor.shardCuts" v-slot="{value: shard}">
-          <frankenpaxos-seq :seq="shard">
-          </frankenpaxos-seq>
+          <frankenpaxos-horizontal-seq :seq="shard">
+          </frankenpaxos-horizontal-seq>
         </frankenpaxos-seq>
       </div>
 
@@ -204,14 +204,14 @@ const aggregator_info = {
 
       <div>
         rawCuts =
-        <frankenpaxos-seq :seq="node.actor.rawCuts">
-        </frankenpaxos-seq>
+        <frankenpaxos-buffer-map :value="node.actor.rawCuts">
+        </frankenpaxos-buffer-map>
       </div>
 
       <div>
         cuts =
-        <frankenpaxos-seq :seq="node.actor.cuts">
-        </frankenpaxos-seq>
+        <frankenpaxos-horizontal-seq :seq="node.actor.cuts">
+        </frankenpaxos-horizontal-seq>
       </div>
 
       <div>
@@ -219,7 +219,7 @@ const aggregator_info = {
       </div>
 
       <div>
-        numRawCutschosen = {{node.actor.numRawCutschosen}}
+        numRawCutsChosen = {{node.actor.numRawCutsChosen}}
       </div>
     </div>
   `,
