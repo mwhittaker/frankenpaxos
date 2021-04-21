@@ -146,7 +146,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     // The log for which a server is primary won't have any holes in it, but
     // the logs for which a server is a backup may have holes in it, hence the
     // BufferMap instead of something simpler like a Buffer.
-    val log: util.BufferMap[Command] = new util.BufferMap(options.logGrowSize)
+    val log: util.BufferMap[Command] =
+      new util.BufferMap(options.logGrowSize)
 
     // `watermark` is the largest integer w such that `log` contains an entry
     // in every index < w.
@@ -179,11 +180,17 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       }
 
     def put(index: Slot, command: Command): Unit = {
+      // Return early if we already have a command.
+      if (log.contains(index)) {
+        return
+      }
+
       // If `numCommands != watermark`, then the recover timer is running.
       val isRecoverTimerRunning = numCommands != watermark
       val oldWatermark = watermark
 
       log.put(index, command)
+      numCommands += 1
       while (log.get(watermark).isDefined) {
         watermark += 1
       }

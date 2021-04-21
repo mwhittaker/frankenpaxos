@@ -180,13 +180,6 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var numShardCutsSinceLastProposal: Int = 0
 
-  // The aggregator periodically proposes global cuts to the Paxos leader. It
-  // associates every proposal with a nonce to make tracking the proposals
-  // easier. This is a nonce that is attached to every proposal and
-  // subsequently incremented.
-  @JSExport
-  protected var proposalNonce: Int = 0
-
   // The log of raw cuts decided by Paxos. cuts is a pruned version of rawCuts
   // that is guaranteed to have monotonically increasing cuts. For example:
   //

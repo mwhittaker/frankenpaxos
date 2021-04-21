@@ -407,6 +407,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
         }
 
         // Wait until we have a quorum of responses.
+        phase1.phase1bs(phase1b.acceptorIndex) = phase1b
         if (phase1.phase1bs.size < config.f + 1) {
           return
         }

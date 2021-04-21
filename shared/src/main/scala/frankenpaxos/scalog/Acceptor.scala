@@ -97,12 +97,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected var states = mutable.SortedMap[Slot, State]()
 
-  // `maxVotedSlot` is the largest slot in which an acceptor has voted (i.e.
-  // sent a Phase2a). Initially the value is -1 to indicate that there is no
-  // slot in which the acceptor has voted.
-  @JSExport
-  protected var maxVotedSlot: Int = -1
-
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
     if (options.measureLatencies) {
@@ -198,7 +192,6 @@ class Acceptor[Transport <: frankenpaxos.Transport[Transport]](
       voteRound = round,
       voteValue = phase2a.globalCutOrNoop
     )
-    maxVotedSlot = Math.max(maxVotedSlot, phase2a.slot)
 
     leader.send(
       LeaderInbound().withPhase2B(
