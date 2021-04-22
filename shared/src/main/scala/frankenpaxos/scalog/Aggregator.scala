@@ -24,6 +24,45 @@ object AggregatorInboundSerializer extends ProtoSerializer[AggregatorInbound] {
 @JSExportAll
 object Aggregator {
   val serializer = AggregatorInboundSerializer
+
+  type Slot = Int
+  type Cut = Seq[Int]
+
+  // Given a list of cuts and a slot, find the corresponding cut index and
+  // server index. See Server.projectCut for a diagram of this conversion.
+  //
+  // TODO(mwhittaker): For now, we implement this as a linear search. This
+  // performs increasingly poorly over time as the number of cuts increases.
+  // We can implement binary search to implement this much faster.
+  def findSlot(cuts: mutable.Buffer[Cut], slot: Slot): Option[(Int, Int)] = {
+    var start = 0
+    var stop = 0
+
+    for ((cut, i) <- cuts.zipWithIndex) {
+      stop = cut.sum
+      if (start <= slot && slot < stop) {
+        val previousCut = if (slot == 0) {
+          cut.map(_ => 0)
+        } else {
+          cuts(i - 1)
+        }
+
+        val diffs = cut.zip(previousCut).map({ case (x, y) => x - y })
+        stop = start
+        for ((diff, j) <- diffs.zipWithIndex) {
+          stop += diff
+          if (start <= slot && slot < stop) {
+            return Some(i, j)
+          }
+          start = stop
+        }
+      }
+      start = stop
+    }
+
+    // We didn't find a corresponding cut.
+    None
+  }
 }
 
 @JSExportAll
@@ -116,9 +155,8 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
   override type InboundMessage = AggregatorInbound
   override val serializer = AggregatorInboundSerializer
 
-  type Slot = Int
-  type Nonce = Int
-  type Cut = Seq[Slot]
+  type Slot = Aggregator.Slot
+  type Cut = Aggregator.Cut
 
   // Fields ////////////////////////////////////////////////////////////////////
   // Server channels.
@@ -398,44 +436,18 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
     round = Math.max(round, leaderInfoReply.round)
   }
 
-  // TODO(mwhittaker): Extract logic and add unit test.
   private def handleRecover(src: Transport#Address, recover: Recover): Unit = {
-    // If a replica has a hole in its log for too long, it sends us a recover
-    // message. We have to figure out which server owns this slot and what is
-    // the corresponding cut. See `projectCut` inside of Server for a picture
-    // to reference when thinking about this translation.
-    //
-    // TODO(mwhittaker): For now, we implement this as a linear search. This
-    // performs increasingly poorly over time as the number of cuts increases.
-    // We can implement binary search to implement this much faster.
+    Aggregator.findSlot(cuts, recover.slot) match {
+      case Some((cutIndex, serverIndex)) =>
+        servers(serverIndex).send(
+          ServerInbound().withCutChosen(
+            CutChosen(slot = cutIndex, cut = GlobalCut(cuts(cutIndex)))
+          )
+        )
 
-    var start = 0
-    var stop = 0
-    for ((cut, i) <- cuts.zipWithIndex) {
-      stop = cut.sum
-      if (start <= recover.slot && recover.slot < stop) {
-        val previousCut = if (recover.slot == 0) {
-          cut.map(_ => 0)
-        } else {
-          cuts(recover.slot - 1)
-        }
-        val diffs = cut.zip(previousCut).map({ case (x, y) => x - y })
-        stop = start
-        for ((diff, j) <- diffs.zipWithIndex) {
-          stop += diff
-          if (start <= recover.slot && recover.slot < stop) {
-            servers(j).send(
-              ServerInbound()
-                .withCutChosen(CutChosen(slot = i, cut = GlobalCut(cut)))
-            )
-            return
-          }
-          start = stop
-        }
-      }
-      start = stop
+      case None =>
+        // Do nothing.
+        ()
     }
-
-    // We didn't find a corresponding cut. We ignore the recover.
   }
 }

@@ -89,6 +89,7 @@ class Scalog(batch: Boolean, flexible: Boolean) {
     options = AggregatorOptions.default.copy(
       numShardCutsPerProposal = 4,
       recoverPeriod = java.time.Duration.ofSeconds(30),
+      leaderInfoPeriod = java.time.Duration.ofSeconds(6),
       logGrowSize = 5
     ),
     metrics = new AggregatorMetrics(FakeCollectors)
