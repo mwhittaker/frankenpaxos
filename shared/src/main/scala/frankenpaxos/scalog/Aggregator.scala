@@ -37,6 +37,8 @@ case class AggregatorOptions(
     // If the aggregator has a hole in its log of cuts for more than
     // `recoverPeriod`, it polls the Paxos leader to fill it.
     recoverPeriod: java.time.Duration,
+    // The aggregator sends leaderInfo requests every `leaderInfoPeriod`.
+    leaderInfoPeriod: java.time.Duration,
     // The aggregator implements its log of raw cuts as a BufferMap. This is
     // the BufferMap's `logGrowSize`.
     logGrowSize: Int,
@@ -53,6 +55,7 @@ object AggregatorOptions {
   val default = AggregatorOptions(
     numShardCutsPerProposal = 2,
     recoverPeriod = java.time.Duration.ofSeconds(1),
+    leaderInfoPeriod = java.time.Duration.ofSeconds(1),
     logGrowSize = 5000,
     unsafeDontRecover = false,
     measureLatencies = true
@@ -136,12 +139,6 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
   // the current active leader.
   @JSExport
   protected var round = 0
-
-  // a log for the raw cuts
-  // a log for the pruned cuts
-  //
-  // a collection of pending proposals
-  // a timer to send out leader infos
 
   // Imagine we have a Scalog deployment with three shards with servers [a, b],
   // [c, d], and [e, f, g]. Then, shardCuts looks something like the following.
@@ -232,6 +229,24 @@ class Aggregator[Transport <: frankenpaxos.Transport[Transport]](
       )
       Some(t)
     }
+
+  @JSExport
+  protected val leaderInfoTimer: Transport#Timer = {
+    lazy val t: Transport#Timer = timer(
+      s"leaderInfoTimer",
+      options.leaderInfoPeriod,
+      () => {
+        for (leader <- leaders) {
+          leader.send(
+            LeaderInbound().withLeaderInfoRequest(LeaderInfoRequest())
+          )
+        }
+        t.start()
+      }
+    )
+    t.start()
+    t
+  }
 
   // Helpers ///////////////////////////////////////////////////////////////////
   private def timed[T](label: String)(e: => T): T = {
