@@ -41,7 +41,7 @@ object Aggregator {
     for ((cut, i) <- cuts.zipWithIndex) {
       stop = cut.sum
       if (start <= slot && slot < stop) {
-        val previousCut = if (slot == 0) {
+        val previousCut = if (i == 0) {
           cut.map(_ => 0)
         } else {
           cuts(i - 1)

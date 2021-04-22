@@ -306,6 +306,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
     // Update our metadata.
     logger.check(!phase2.values.contains(nextSlot))
+    logger.check(!phase2.phase2bs.contains(nextSlot))
     phase2.values(nextSlot) = value
     phase2.phase2bs(nextSlot) = mutable.Map()
     nextSlot += 1
@@ -417,14 +418,17 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Now, we iterate from chosenWatermark to maxSlot proposing safe
         // values to fill in the log.
+        val values = mutable.Map[Slot, GlobalCutOrNoop]()
+        val phase2bs = mutable.Map[Slot, mutable.Map[AcceptorIndex, Phase2b]]()
         for (slot <- chosenWatermark to maxSlot) {
+          val value = safeValue(phase1.phase1bs.values, slot)
+          values(slot) = value
+          phase2bs(slot) = mutable.Map()
+
           for (acceptor <- acceptors) {
             acceptor.send(
               AcceptorInbound().withPhase2A(
-                Phase2a(slot = slot,
-                        round = round,
-                        globalCutOrNoop =
-                          safeValue(phase1.phase1bs.values, slot))
+                Phase2a(slot = slot, round = round, globalCutOrNoop = value)
               )
             )
           }
@@ -436,7 +440,7 @@ class Leader[Transport <: frankenpaxos.Transport[Transport]](
 
         // Update our state.
         phase1.resendPhase1as.stop()
-        val phase2 = Phase2(values = mutable.Map(), phase2bs = mutable.Map())
+        val phase2 = Phase2(values = values, phase2bs = phase2bs)
         state = phase2
 
         // Process any pending client requests.

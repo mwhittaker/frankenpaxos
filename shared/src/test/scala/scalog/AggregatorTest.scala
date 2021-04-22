@@ -69,4 +69,23 @@ class AggregatorTest extends FlatSpec with Matchers with PropertyChecks {
     Aggregator.findSlot(cuts, 5) shouldBe Some((3, 2))
     Aggregator.findSlot(cuts, 6) shouldBe None
   }
+
+  it should "find with four servers an non-zero first cut correctly" in {
+    //   0   1   2   3   4   5   6   7   8   9
+    // +---+---+---+---+---+---+---+---+---+---+
+    // | 0 | 1 | 1 | 2 | 3 |   |   |   |   |   |
+    // +---+---+---+---+---+---+---+---+---+---+
+    //  \_________________/
+    //           0
+    val cuts = mutable.Buffer[Aggregator.Cut](
+      Seq(1, 2, 1, 1)
+    )
+
+    Aggregator.findSlot(cuts, 0) shouldBe Some((0, 0))
+    Aggregator.findSlot(cuts, 1) shouldBe Some((0, 1))
+    Aggregator.findSlot(cuts, 2) shouldBe Some((0, 1))
+    Aggregator.findSlot(cuts, 3) shouldBe Some((0, 2))
+    Aggregator.findSlot(cuts, 4) shouldBe Some((0, 3))
+    Aggregator.findSlot(cuts, 5) shouldBe None
+  }
 }
