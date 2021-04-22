@@ -23,6 +23,96 @@ object ServerInboundSerializer extends ProtoSerializer[ServerInbound] {
 @JSExportAll
 object Server {
   val serializer = ServerInboundSerializer
+
+  type Slot = Int
+  type Cut = Seq[Int]
+
+  // Imagine we have a Scalog deployment with two servers. Consider the
+  // following log of cuts:
+  //
+  //       0   1   2   3   4
+  //     +---+---+---+---+---+---
+  //     |1,0|1,2|3,3|   |5,5| ...
+  //     +---+---+---+---+---+---
+  //
+  // Imagine server 1 and 2 have the following logs of commands.
+  //
+  //                 0   1   2   3   4
+  //               +---+---+---+---+---+---
+  //     Server 1: | a | b | c | d | e | ...
+  //               +---+---+---+---+---+---
+  //
+  //                 0   1   2   3   4
+  //               +---+---+---+---+---+---
+  //     Server 2: | u | v | w | x | y | ...
+  //               +---+---+---+---+---+---
+  //
+  // Then the global log of commands should look like this:
+  //
+  //       0   1   2   3   4   5   6   7   8   9
+  //     +---+---+---+---+---+---+---+---+---+---+---
+  //     | a | u | v | b | c | w |   |   |   |   | ...
+  //     +---+---+---+---+---+---+---+---+---+---+---
+  //      \_/ \_____/ \_________/
+  //      1,0   1,2       3,3
+  //
+  // projectCut(slot) takes in a slot in the log of cuts and returns the
+  // corresponding global and local log entries. For example, on server 1:
+  //
+  //     projectCut(0) = Projection(0, 1, 0, 1) // [a]
+  //     projectCut(1) = Projection(1, 1, 1, 1) // []
+  //     projectCut(2) = Projection(3, 4, 1, 2) // [b]
+  //
+  // And on server 2:
+  //
+  //     projectCut(0) = (0, 0, 0, 0) // []
+  //     projectCut(1) = (1, 3, 0, 2) // [u, v]
+  //     projectCut(2) = (5, 6, 2, 3) // [w]
+  //
+  // If a cut doesn't have a cut before it, we cannot make the projection.
+  // Here, for example, projectCut(5) = None.
+  @JSExportAll
+  case class Projection(
+      val globalStartSlot: Slot,
+      val globalEndSlot: Slot,
+      val localStartSlot: Slot,
+      val localEndSlot: Slot
+  )
+
+  def projectCut(
+      numServers: Int,
+      serverIndex: Int,
+      cuts: util.BufferMap[Cut],
+      slot: Slot
+  ): Option[Projection] = {
+    // Grab the corresponding cut.
+    val cut = cuts.get(slot) match {
+      case Some(cut) => cut
+      case None      => return None
+    }
+
+    // Grab the previous cut.
+    val previousCut = if (slot == 0) {
+      Seq.fill(numServers)(0)
+    } else {
+      cuts.get(slot - 1) match {
+        case Some(cut) => cut
+        case None      => return None
+      }
+    }
+
+    // Compute the slots.
+    val diffs = previousCut.zip(cut).map({ case (x, y) => y - x })
+    val globalStartSlot = previousCut.sum + diffs.take(serverIndex).sum
+    Some(
+      Projection(
+        globalStartSlot = globalStartSlot,
+        globalEndSlot = globalStartSlot + diffs(serverIndex),
+        localStartSlot = previousCut(serverIndex),
+        localEndSlot = cut(serverIndex)
+      )
+    )
+  }
 }
 
 @JSExportAll
@@ -104,8 +194,8 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
 
   type ShardIndex = Int
   type ServerIndex = Int
-  type Slot = Int
-  type Cut = Seq[Slot]
+  type Slot = Server.Slot
+  type Cut = Server.Cut
 
   // Fields ////////////////////////////////////////////////////////////////////
   @JSExport
@@ -320,80 +410,13 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     logs(backup.serverIndex).put(backup.slot, backup.command)
   }
 
-  // Imagine we have a Scalog deployment with two servers. Consider the
-  // following log of cuts:
-  //
-  //       0   1   2   3   4
-  //     +---+---+---+---+---+---
-  //     |1,0|1,2|3,3|   |5,5| ...
-  //     +---+---+---+---+---+---
-  //
-  // Imagine server 1 and 2 have the following logs of commands.
-  //
-  //                 0   1   2   3   4
-  //               +---+---+---+---+---+---
-  //     Server 1: | a | b | c | d | e | ...
-  //               +---+---+---+---+---+---
-  //
-  //                 0   1   2   3   4
-  //               +---+---+---+---+---+---
-  //     Server 2: | u | v | w | x | y | ...
-  //               +---+---+---+---+---+---
-  //
-  // Then the global log of commands should look like this:
-  //
-  //       0   1   2   3   4   5   6   7   8   9
-  //     +---+---+---+---+---+---+---+---+---+---+---
-  //     | a | u | v | b | c | w |   |   |   |   | ...
-  //     +---+---+---+---+---+---+---+---+---+---+---
-  //      \_/ \_____/ \_________/
-  //      1,0   1,2       3,3
-  //
-  // projectCut(slot) takes in a slot in the log of cuts and returns the
-  // corresponding commands and their start slot in the global log of commands.
-  // For example, on server 1:
-  //
-  //     projectCut(0) = (0, [a])
-  //     projectCut(1) = (1, [])
-  //     projectCut(2) = (3, [b])
-  //
-  // And on server 2:
-  //
-  //     projectCut(0) = (0, [])
-  //     projectCut(1) = (1, [u, v])
-  //     projectCut(2) = (5, [w])
-  //
-  // If a cut doesn't have a cut before it, we cannot make the projection.
-  // Here, for example, projectCut(5) = None.
-  //
-  // TODO(mwhittaker): Extract logic and add unit test. I think this code has a
-  // bug.
   private def projectCut(slot: Slot): Option[(Slot, Seq[Command])] = {
-    // Grab the corresponding cut.
-    val cut = cuts.get(slot) match {
-      case Some(cut) => cut
-      case None      => return None
+    val p = Server.projectCut(numServers, globalIndex, cuts, slot) match {
+      case Some(p) => p
+      case None    => return None
     }
 
-    // Grab the previous cut.
-    val previousCut = if (slot == 0) {
-      Seq.fill(numServers)(0)
-    } else {
-      cuts.get(slot - 1) match {
-        case Some(cut) => cut
-        case None      => return None
-      }
-    }
-
-    // The start slot in the global log of commands.
-    val globalStartSlot =
-      previousCut.sum + cut.take(globalIndex).sum
-
-    // The start slot in our local log of commands.
-    val localStartSlot = previousCut(globalIndex)
-    val localEndSlot = cut(globalIndex)
-
-    val commands = for (i <- localStartSlot until localEndSlot) yield {
+    val commands = for (i <- p.localStartSlot until p.localEndSlot) yield {
       logs(index).log.get(i) match {
         case Some(command) =>
           command
@@ -406,7 +429,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
 
-    Some((globalStartSlot, commands.toList))
+    Some((p.globalStartSlot, commands.toList))
   }
 
   private def handleCutChosen(
