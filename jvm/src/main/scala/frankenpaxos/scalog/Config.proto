@@ -1,0 +1,29 @@
+syntax = "proto2";
+
+package frankenpaxos.scalog;
+
+import "scalapb/scalapb.proto";
+
+option (scalapb.options) = {
+  package_name: "frankenpaxos.scalog"
+  flat_package: true
+};
+
+message HostPortProto {
+  required string host = 1;
+  required int32 port = 2;
+}
+
+message Shard {
+  repeated HostPortProto server_address = 1;
+}
+
+message NettyConfigProto {
+  required int32 f = 1;
+  repeated Shard server_address = 2;
+  required HostPortProto aggregator_address = 3;
+  repeated HostPortProto leader_address = 4;
+  repeated HostPortProto leader_election_address = 5;
+  repeated HostPortProto acceptor_address = 6;
+  repeated HostPortProto replica_address = 7;
+}
