@@ -40,10 +40,10 @@ case class LeaderOptions(
     // `flushPhase2asEveryN` Phase2a messages sent. For example, if
     // `flushPhase2asEveryN` is 1, then the leader flushes after every send.
     flushPhase2asEveryN: Int,
-    electionOptions: ElectionOptions,
     // Every leader manages a log, implemented as a BufferMap. This is the
     // BufferMap's `logGrowSize`.
     logGrowSize: Int,
+    electionOptions: ElectionOptions,
     measureLatencies: Boolean
 )
 
@@ -52,8 +52,8 @@ object LeaderOptions {
   val default = LeaderOptions(
     resendPhase1asPeriod = java.time.Duration.ofSeconds(5),
     flushPhase2asEveryN = 1,
-    electionOptions = ElectionOptions.default,
     logGrowSize = 5000,
+    electionOptions = ElectionOptions.default,
     measureLatencies = true
   )
 }
