@@ -163,6 +163,12 @@ class ServerMetrics(collectors: Collectors) {
     .help("Latency (in milliseconds) of a request.")
     .register()
 
+  val batchSize: Summary = collectors.summary
+    .build()
+    .name("scalog_server_batch_size")
+    .help("Size of batches between consecutive pushes.")
+    .register()
+
   val pushesSent: Counter = collectors.counter
     .build()
     .name("scalog_server_pushes_sent")
@@ -319,6 +325,11 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
   protected val cuts: util.BufferMap[Cut] =
     new util.BufferMap(options.logGrowSize)
 
+  // The most recently pushed watermark. We use `lastWatermarkPushed` in
+  // `pushTimer` to compute batch sizes.
+  @JSExport
+  protected var lastWatermarkPushed: Slot = logs(index).watermark
+
   @JSExport
   protected val pushTimer: Transport#Timer = {
     lazy val t: Transport#Timer = timer(
@@ -326,6 +337,9 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       options.pushPeriod,
       () => {
         metrics.pushesSent.inc()
+        metrics.batchSize.observe(logs(index).watermark - lastWatermarkPushed)
+        lastWatermarkPushed = logs(index).watermark
+
         aggregator.send(
           AggregatorInbound().withShardInfo(
             ShardInfo(shardIndex = shardIndex,
