@@ -7,7 +7,7 @@ main() {
                     fasterpaxos supermultipaxos vanillamencius mencius \
                     supermencius fastmultipaxos epaxos simplebpaxos \
                     superbpaxos simplegcbpaxos unanimousbpaxos \
-                    matchmakermultipaxos horizontal; do
+                    matchmakermultipaxos horizontal scalog; do
         echo "Running $protocol."
         python -m "benchmarks.${protocol}.smoke" \
             -m \

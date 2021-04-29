@@ -1,0 +1,10 @@
+{
+  "1": {
+    "clients": ["localhost"],
+    "servers": ["localhost"],
+    "aggregator": ["localhost"],
+    "leaders": ["localhost"],
+    "acceptors": ["localhost"],
+    "replicas": ["localhost"]
+  }
+}
