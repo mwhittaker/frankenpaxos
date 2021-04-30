@@ -59,6 +59,8 @@ object ReplicaMain extends App {
     // Options.
     opt[Int]("options.logGrowSize")
       .optionAction((x, o) => o.copy(logGrowSize = x))
+    opt[Boolean]("options.batchFlush")
+      .optionAction((x, o) => o.copy(batchFlush = x))
     opt[java.time.Duration]("options.recoverLogEntryMinPeriod")
       .optionAction((x, o) => o.copy(recoverLogEntryMinPeriod = x))
     opt[java.time.Duration]("options.recoverLogEntryMaxPeriod")

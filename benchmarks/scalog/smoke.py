@@ -66,6 +66,7 @@ def main(args) -> None:
                     acceptor_log_level = args.log_level,
                     replica_options = ReplicaOptions(
                         log_grow_size = 5000,
+                        batch_flush = batch_flush,
                         recover_log_entry_min_period = \
                             datetime.timedelta(seconds=120),
                         recover_log_entry_max_period = \
@@ -79,6 +80,7 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                 )
                 for num_shards in [1, 2]
+                for batch_flush in [True, False]
             ]
 
         def summary(self, input: Input, output: Output) -> str:
@@ -88,6 +90,7 @@ def main(args) -> None:
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'num_shards': input.num_shards,
                 'num_servers_per_shard': input.num_servers_per_shard,
+                'batch_flush': input.replica_options.batch_flush,
                 'latency.median_ms': \
                     f'{output.output.latency.median_ms:.6}',
                 'start_throughput_1s.p90': \

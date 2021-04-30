@@ -64,6 +64,7 @@ class AcceptorOptions(NamedTuple):
 
 class ReplicaOptions(NamedTuple):
     log_grow_size: int = 5000
+    batch_flush: bool = False
     recover_log_entry_min_period: datetime.timedelta = \
         datetime.timedelta(seconds=10)
     recover_log_entry_max_period: datetime.timedelta = \
@@ -327,6 +328,8 @@ class ScalogSuite(benchmark.Suite[Input, Output]):
                     str(replica.port + 1) if input.monitored else '-1',
                     '--options.logGrowSize',
                     str(input.replica_options.log_grow_size),
+                    '--options.batchFlush',
+                    str(input.replica_options.batch_flush),
                     '--options.recoverLogEntryMinPeriod',
                     '{}s'.format(input.replica_options.
                                  recover_log_entry_min_period.total_seconds()),

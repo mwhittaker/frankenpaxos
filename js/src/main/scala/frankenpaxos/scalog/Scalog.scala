@@ -144,6 +144,7 @@ class Scalog(batch: Boolean, flexible: Boolean) {
       config = config,
       options = ReplicaOptions.default.copy(
         logGrowSize = 5,
+        batchFlush = true,
         recoverLogEntryMinPeriod = java.time.Duration.ofSeconds(60),
         recoverLogEntryMaxPeriod = java.time.Duration.ofSeconds(120)
       ),

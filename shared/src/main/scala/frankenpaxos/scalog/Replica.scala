@@ -35,6 +35,12 @@ case class ReplicaOptions(
     // A Replica implements its log as a BufferMap. `logGrowSize` is the
     // `growSize` argument used to construct the BufferMap.
     logGrowSize: Int,
+    // When a replica receives and executes a batch of chosen commands, it has
+    // two options for how to reply to the clients. If `batchFlush` is false,
+    // then the replica sends back the replies one at a time without any sort
+    // of batching or flushing. If `batchFlush` is true, then the replica
+    // writes all of the replies and then flushes all its channels.
+    batchFlush: Boolean,
     // If a replica has a hole in its log for a certain amount of time, it
     // sends a Recover message to the leader (indirectly through a replica
     // proxy). The time to recover is chosen uniformly at random from the range
@@ -52,6 +58,7 @@ case class ReplicaOptions(
 object ReplicaOptions {
   val default = ReplicaOptions(
     logGrowSize = 5000,
+    batchFlush = false,
     recoverLogEntryMinPeriod = java.time.Duration.ofMillis(5000),
     recoverLogEntryMaxPeriod = java.time.Duration.ofMillis(10000),
     unsafeDontRecover = false,
@@ -127,6 +134,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   private val aggregator: Chan[Aggregator[Transport]] =
     chan[Aggregator[Transport]](config.aggregatorAddress, Aggregator.serializer)
 
+  // Client channels.
+  @JSExport
+  protected val clients =
+    mutable.Map[Transport#Address, Chan[Client[Transport]]]()
+
   // Replica index.
   private val index = config.replicaAddresses.indexOf(address)
 
@@ -201,7 +213,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val clientAddress = transport.addressSerializer.fromBytes(
       commandId.clientAddress.toByteArray()
     )
-    chan[Client[Transport]](clientAddress, Client.serializer)
+    clients.getOrElseUpdate(
+      clientAddress,
+      chan[Client[Transport]](clientAddress, Client.serializer)
+    )
   }
 
   // `executeCommand(slot, command, clientReplies)` attempts to execute the
@@ -307,6 +322,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val isRecoverTimerRunning = numChosen != executedWatermark
     val oldExecutedWatermark = executedWatermark
 
+    // Insert the chosen commands into our log.
     for ((command, i) <- chosen.commandBatch.command.zipWithIndex) {
       val slot = i + chosen.slot
 
@@ -321,9 +337,18 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       }
     }
 
-    for (reply <- executeLog()) {
-      val client = clientChan(reply.commandId)
-      client.send(ClientInbound().withClientReply(reply))
+    // Execute the log and send replies back to the clients.
+    if (options.batchFlush) {
+      for (reply <- executeLog()) {
+        val client = clientChan(reply.commandId)
+        client.sendNoFlush(ClientInbound().withClientReply(reply))
+      }
+      clients.values.foreach(_.flush())
+    } else {
+      for (reply <- executeLog()) {
+        val client = clientChan(reply.commandId)
+        client.send(ClientInbound().withClientReply(reply))
+      }
     }
 
     // The recover timer should be running if there are more chosen commands

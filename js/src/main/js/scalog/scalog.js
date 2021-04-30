@@ -360,6 +360,12 @@ const replica_info = {
   template: `
     <div>
       <div>
+        clients =
+        <frankenpaxos-map :map="node.actor.clients">
+        </frankenpaxos-map>
+      </div>
+
+      <div>
         executedWatermark = {{node.actor.executedWatermark}}
       </div>
 
