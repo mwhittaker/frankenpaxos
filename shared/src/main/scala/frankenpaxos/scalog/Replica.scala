@@ -75,23 +75,16 @@ class ReplicaMetrics(collectors: Collectors) {
     .help("Latency (in milliseconds) of a request.")
     .register()
 
-  val redundantlyChosenTotal: Counter = collectors.counter
-    .build()
-    .name("scalog_replica_redundantly_chosen_total")
-    .help("Total number of Chosen commands that were redundantly received.")
-    .register()
-
-  val executedLogEntriesTotal: Counter = collectors.counter
-    .build()
-    .name("scalog_replica_executed_log_entries_total")
-    .labelNames("type") // "noop" or "command"
-    .help("Total number of log entries that have been executed.")
-    .register()
-
   val executedCommandsTotal: Counter = collectors.counter
     .build()
     .name("scalog_replica_executed_commands_total")
     .help("Total number of commands that have been executed.")
+    .register()
+
+  val redundantlyChosenTotal: Counter = collectors.counter
+    .build()
+    .name("scalog_replica_redundantly_chosen_total")
+    .help("Total number of Chosen commands that were redundantly received.")
     .register()
 
   val reduntantlyExecutedCommandsTotal: Counter = collectors.counter
