@@ -51,8 +51,8 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
 
     // Replicas.
     require(
-      replicaAddresses.size == f + 1,
-      s"There must be f + 1 (${f + 1}) acceptors, but there's " +
+      replicaAddresses.size >= f + 1,
+      s"There must be at least f + 1 (${f + 1}) replicas, but there's " +
         s"${replicaAddresses.size}."
     )
   }
