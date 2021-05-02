@@ -17,7 +17,7 @@ def main(args) -> None:
                     num_servers_per_shard = 2,
                     num_leaders = 2,
                     num_acceptors = 3,
-                    num_replicas = 2,
+                    num_replicas = num_replicas,
                     client_jvm_heap_size = '8g',
                     server_jvm_heap_size = '12g',
                     aggregator_jvm_heap_size = '12g',
@@ -66,6 +66,7 @@ def main(args) -> None:
                     acceptor_log_level = args.log_level,
                     replica_options = ReplicaOptions(
                         log_grow_size = 5000,
+                        batch_flush = batch_flush,
                         recover_log_entry_min_period = \
                             datetime.timedelta(seconds=120),
                         recover_log_entry_max_period = \
@@ -80,27 +81,35 @@ def main(args) -> None:
                 )
 
                 # Hyperparamter tuning.
+                #
+                # - Without batch flushing and with 2 replicas, everything
+                #   seems to bottleneck at just below 200,000 requests per
+                #   second. Looking at grafana, every non-server component has
+                #   very low inbound load. I think the replicas replying to the
+                #   clients are the bottleneck here.
+                # - Adding more replicas, adding batch flushing, and adding
+                #   more shards didn't increase throughput.
+                for ppm in [1, 2, 3, 4, 5]
+                for c in [1, 5, 10, 15, 20]
                 for (
                     num_shards,           # 0
                     push_period_ms,       # 1
-                    num_client_procs,     # 2
-                    num_clients_per_proc, # 3
+                    num_replicas,         # 2
+                    batch_flush,          # 3
+                    num_client_procs,     # 4
+                    num_clients_per_proc, # 5
                 ) in [
-                    # 0  1   2    3
-                    ( 1, 10, 1,  100),
-                    ( 1, 10, 10, 100),
-                    ( 1, 10, 20, 100),
-                    ( 2, 10, 1,  100),
-                    ( 2, 10, 10, 100),
-                    ( 2, 10, 20, 100),
+                    # 0  1  2      3   4    5
+                    ( 1, ppm, 2, True, c, 100),
                 ]
 
                 for push_period in [
                     datetime.timedelta(milliseconds=push_period_ms)
                 ]
-            ]
+            ] * 3
 
         def summary(self, input: Input, output: Output) -> str:
+            push_period_s = input.server_options.push_period.total_seconds()
             return str({
                 'num_client_procs':
                     input.num_client_procs,
@@ -109,7 +118,11 @@ def main(args) -> None:
                 'num_shards':
                     input.num_shards,
                 'push_period':
-                    input.server_options.push_period,
+                    f'{push_period_s * 1000}ms',
+                'num_replicas':
+                    input.num_replicas,
+                'batch_flush':
+                    input.replica_options.batch_flush,
                 'latency.median_ms': \
                     f'{output.output.latency.median_ms:.6}',
                 'start_throughput_1s.p90': \
