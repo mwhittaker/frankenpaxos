@@ -323,31 +323,40 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val oldExecutedWatermark = executedWatermark
 
     // Insert the chosen commands into our log.
-    for ((command, i) <- chosen.commandBatch.command.zipWithIndex) {
-      val slot = i + chosen.slot
+    timed("handleChosen (insert commands)") {
+      for ((command, i) <- chosen.commandBatch.command.zipWithIndex) {
+        val slot = i + chosen.slot
 
-      log.get(slot) match {
-        case Some(_) =>
-          // We've already received a Chosen message for this slot. We ignore
-          // the message.
-          metrics.redundantlyChosenTotal.inc()
-        case None =>
-          log.put(slot, command)
-          numChosen += 1
+        log.get(slot) match {
+          case Some(_) =>
+            // We've already received a Chosen message for this slot. We ignore
+            // the message.
+            metrics.redundantlyChosenTotal.inc()
+          case None =>
+            log.put(slot, command)
+            numChosen += 1
+        }
       }
     }
 
-    // Execute the log and send replies back to the clients.
-    if (options.batchFlush) {
-      for (reply <- executeLog()) {
-        val client = clientChan(reply.commandId)
-        client.sendNoFlush(ClientInbound().withClientReply(reply))
-      }
-      clients.values.foreach(_.flush())
-    } else {
-      for (reply <- executeLog()) {
-        val client = clientChan(reply.commandId)
-        client.send(ClientInbound().withClientReply(reply))
+    // Execute the log.
+    val replies = timed("handleChosen (execute log)") {
+      executeLog()
+    }
+
+    // Send replies back to the clients.
+    timed("handleChosen (send replies)") {
+      if (options.batchFlush) {
+        for (reply <- replies) {
+          val client = clientChan(reply.commandId)
+          client.sendNoFlush(ClientInbound().withClientReply(reply))
+        }
+        clients.values.foreach(_.flush())
+      } else {
+        for (reply <- replies) {
+          val client = clientChan(reply.commandId)
+          client.send(ClientInbound().withClientReply(reply))
+        }
       }
     }
 
