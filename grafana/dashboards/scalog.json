@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1619739765767,
+  "iteration": 1619981691768,
   "links": [],
   "panels": [
     {
@@ -1222,6 +1222,7 @@
       {
         "allValue": null,
         "current": {
+          "selected": true,
           "text": "jvm_gc_collection_seconds_sum",
           "value": "jvm_gc_collection_seconds_sum"
         },
@@ -1608,6 +1609,7 @@
       {
         "allValue": null,
         "current": {
+          "selected": false,
           "tags": [],
           "text": "All",
           "value": [
@@ -1672,6 +1674,7 @@
       {
         "allValue": null,
         "current": {
+          "selected": true,
           "text": "avg_over_time",
           "value": "avg_over_time"
         },
@@ -1699,8 +1702,8 @@
     ]
   },
   "time": {
-    "from": "2021-04-29T23:37:30.701Z",
-    "to": "2021-04-29T23:38:29.332Z"
+    "from": "now-1h",
+    "to": "now"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -1730,5 +1733,5 @@
   "timezone": "",
   "title": "Scalog",
   "uid": "Eldp8x9Gk",
-  "version": 2
+  "version": 3
 }
