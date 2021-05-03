@@ -93,10 +93,13 @@ def main(args) -> None:
                 #   second. Looking at grafana, every non-server component has
                 #   very low inbound load. I think the replicas replying to the
                 #   clients are the bottleneck here.
-                # - Adding more replicas, adding batch flushing, and adding
-                #   more shards didn't increase throughput.
-                for ppm in [1, 2, 3, 4, 5]
-                for c in [1, 5, 10, 15, 20]
+                # - Adding more replicas and adding batch flushing didn't
+                #   increase throughput.
+                # - Adding more shards does increase throughput, but we need a
+                #   lot more clients to fully load it.
+                #
+                # TODO(mwhittaker): Try decreasing the number of shard cuts per
+                # proposal to one?
                 for (
                     num_shards,           # 0
                     push_period_ms,       # 1
@@ -105,8 +108,15 @@ def main(args) -> None:
                     num_client_procs,     # 4
                     num_clients_per_proc, # 5
                 ) in [
-                    # 0  1  2      3   4    5
-                    ( 1, ppm, 2, True, c, 100),
+                    # 0  1  2     3  4    5
+                    ( 1, 3, 2, True, 1, 100),
+                    ( 1, 3, 2, True, 20, 100),
+                    ( 2, 3, 2, True, 1, 100),
+                    ( 2, 3, 2, True, 20, 100),
+                    ( 3, 3, 2, True, 1, 100),
+                    ( 3, 3, 2, True, 20, 100),
+                    ( 4, 3, 2, True, 1, 100),
+                    ( 4, 3, 2, True, 20, 100),
                 ]
 
                 for push_period in [
@@ -127,6 +137,8 @@ def main(args) -> None:
                     f'{push_period_s * 1000}ms',
                 'num_replicas':
                     input.num_replicas,
+                'num_proxy_replicas':
+                    input.num_proxy_replicas,
                 'batch_flush':
                     input.replica_options.batch_flush,
                 'latency.median_ms': \
