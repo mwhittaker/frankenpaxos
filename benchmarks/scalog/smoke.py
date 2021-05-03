@@ -18,12 +18,14 @@ def main(args) -> None:
                     num_leaders = 2,
                     num_acceptors = 3,
                     num_replicas = 2,
+                    num_proxy_replicas = num_proxy_replicas,
                     client_jvm_heap_size = '100m',
                     server_jvm_heap_size = '100m',
                     aggregator_jvm_heap_size = '100m',
                     leader_jvm_heap_size = '100m',
                     acceptor_jvm_heap_size = '100m',
                     replica_jvm_heap_size = '100m',
+                    proxy_replica_jvm_heap_size = '100m',
                     measurement_group_size = 1,
                     warmup_duration = datetime.timedelta(seconds=2),
                     warmup_timeout = datetime.timedelta(seconds=3),
@@ -73,6 +75,10 @@ def main(args) -> None:
                             datetime.timedelta(seconds=240),
                     ),
                     replica_log_level = args.log_level,
+                    proxy_replica_options = ProxyReplicaOptions(
+                        batch_flush = batch_flush,
+                    ),
+                    proxy_replica_log_level = args.log_level,
                     client_options = ClientOptions(
                         resend_client_request_period = \
                             datetime.timedelta(seconds=120),
@@ -80,6 +86,7 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                 )
                 for num_shards in [1, 2]
+                for num_proxy_replicas in [0, 2]
                 for batch_flush in [True, False]
             ]
 
@@ -90,6 +97,7 @@ def main(args) -> None:
                 'num_clients_per_proc': input.num_clients_per_proc,
                 'num_shards': input.num_shards,
                 'num_servers_per_shard': input.num_servers_per_shard,
+                'num_proxy_replicas': input.num_proxy_replicas,
                 'batch_flush': input.replica_options.batch_flush,
                 'latency.median_ms': \
                     f'{output.output.latency.median_ms:.6}',

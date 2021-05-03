@@ -5,6 +5,7 @@
     "aggregator": ["localhost"],
     "leaders": ["localhost"],
     "acceptors": ["localhost"],
-    "replicas": ["localhost"]
+    "replicas": ["localhost"],
+    "proxy_replicas": ["localhost"]
   }
 }

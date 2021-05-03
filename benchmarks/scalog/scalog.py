@@ -72,6 +72,10 @@ class ReplicaOptions(NamedTuple):
     unsafe_dont_recover: bool = False
 
 
+class ProxyReplicaOptions(NamedTuple):
+    batch_flush: bool = False
+
+
 class Input(NamedTuple):
     # System-wide parameters. ##################################################
     f: int
@@ -83,12 +87,14 @@ class Input(NamedTuple):
     num_leaders: int
     num_acceptors: int
     num_replicas: int
+    num_proxy_replicas: int
     client_jvm_heap_size: str
     server_jvm_heap_size: str
     aggregator_jvm_heap_size: str
     leader_jvm_heap_size: str
     acceptor_jvm_heap_size: str
     replica_jvm_heap_size: str
+    proxy_replica_jvm_heap_size: str
 
     # Benchmark parameters. ####################################################
     measurement_group_size: int
@@ -109,7 +115,7 @@ class Input(NamedTuple):
     server_options: ServerOptions
     server_log_level: str
 
-    # Aggregator options. #########################################################
+    # Aggregator options. ######################################################
     aggregator_options: AggregatorOptions
     aggregator_log_level: str
 
@@ -124,6 +130,10 @@ class Input(NamedTuple):
     # Replica options. #########################################################
     replica_options: ReplicaOptions
     replica_log_level: str
+
+    # Proxy Replica options. ###################################################
+    proxy_replica_options: ProxyReplicaOptions
+    proxy_replica_log_level: str
 
     # Client options. ##########################################################
     client_options: ClientOptions
@@ -151,6 +161,7 @@ class ScalogNet:
         leader_elections: List[host.Endpoint]
         acceptors: List[host.Endpoint]
         replicas: List[host.Endpoint]
+        proxy_replicas: List[host.Endpoint]
 
     def placement(self) -> Placement:
         ports = itertools.count(10000, 100)
@@ -195,6 +206,9 @@ class ScalogNet:
             replicas=portify_all(
                 cycle_take_n(self._input.num_replicas,
                              self._cluster['replicas'])),
+            proxy_replicas=portify_all(
+                cycle_take_n(self._input.num_proxy_replicas,
+                             self._cluster['proxy_replicas'])),
         )
 
     def config(self) -> proto_util.Message:
@@ -226,6 +240,10 @@ class ScalogNet:
                 'host': e.host.ip(),
                 'port': e.port
             } for e in self.placement().replicas],
+            'proxy_replica_address': [{
+                'host': e.host.ip(),
+                'port': e.port
+            } for e in self.placement().proxy_replicas],
         }
 
 
@@ -303,6 +321,38 @@ class ScalogSuite(benchmark.Suite[Input, Output]):
                                            f'acceptor_{i}')
             acceptor_procs.append(p)
         bench.log('Acceptors started.')
+
+        # Launch proxy_replicas.
+        proxy_replica_procs: List[proc.Proc] = []
+        for (i, proxy_replica) in enumerate(net.placement().proxy_replicas):
+            p = bench.popen(
+                host=proxy_replica.host,
+                label=f'proxy_replica_{i}',
+                cmd=java(input.proxy_replica_jvm_heap_size) + [
+                    '-cp',
+                    os.path.abspath(args['jar']),
+                    'frankenpaxos.scalog.ProxyReplicaMain',
+                    '--index',
+                    str(i),
+                    '--config',
+                    config_filename,
+                    '--log_level',
+                    input.proxy_replica_log_level,
+                    '--state_machine',
+                    input.state_machine,
+                    '--prometheus_host',
+                    proxy_replica.host.ip(),
+                    '--prometheus_port',
+                    str(proxy_replica.port + 1) if input.monitored else '-1',
+                    '--options.batchFlush',
+                    str(input.proxy_replica_options.batch_flush),
+                ],
+            )
+            if input.profiled:
+                p = perf_util.JavaPerfProc(bench, proxy_replica.host, p,
+                                           f'proxy_replica_{i}')
+            proxy_replica_procs.append(p)
+        bench.log('ProxyReplicas started.')
 
         # Launch replicas.
         replica_procs: List[proc.Proc] = []
@@ -500,6 +550,10 @@ class ScalogSuite(benchmark.Suite[Input, Output]):
                         f'{e.host.ip()}:{e.port+1}'
                         for e in net.placement().replicas
                     ],
+                    'scalog_proxy_replica': [
+                        f'{e.host.ip()}:{e.port+1}'
+                        for e in net.placement().proxy_replicas
+                    ],
                 })
             bench.write_string('prometheus.yml', yaml.dump(prometheus_config))
             prometheus_server = bench.popen(
@@ -577,7 +631,7 @@ class ScalogSuite(benchmark.Suite[Input, Output]):
         for p in client_procs:
             p.wait()
         for p in (server_procs + [aggregator_proc] + leader_procs +
-                  acceptor_procs + replica_procs):
+                  acceptor_procs + replica_procs + proxy_replica_procs):
             p.kill()
         if input.monitored:
             prometheus_server.kill()

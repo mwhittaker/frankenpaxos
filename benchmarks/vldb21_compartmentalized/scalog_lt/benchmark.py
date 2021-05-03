@@ -18,12 +18,14 @@ def main(args) -> None:
                     num_leaders = 2,
                     num_acceptors = 3,
                     num_replicas = num_replicas,
+                    num_proxy_replicas = 0,
                     client_jvm_heap_size = '8g',
                     server_jvm_heap_size = '12g',
                     aggregator_jvm_heap_size = '12g',
                     leader_jvm_heap_size = '12g',
                     acceptor_jvm_heap_size = '12g',
                     replica_jvm_heap_size = '12g',
+                    proxy_replica_jvm_heap_size = '12g',
                     measurement_group_size = 100,
                     warmup_duration = datetime.timedelta(seconds=10),
                     warmup_timeout = datetime.timedelta(seconds=15),
@@ -73,6 +75,10 @@ def main(args) -> None:
                             datetime.timedelta(seconds=240),
                     ),
                     replica_log_level = args.log_level,
+                    proxy_replica_options = ProxyReplicaOptions(
+                        batch_flush = batch_flush,
+                    ),
+                    proxy_replica_log_level = args.log_level,
                     client_options = ClientOptions(
                         resend_client_request_period = \
                             datetime.timedelta(seconds=1),

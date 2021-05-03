@@ -26,4 +26,5 @@ message NettyConfigProto {
   repeated HostPortProto leader_election_address = 5;
   repeated HostPortProto acceptor_address = 6;
   repeated HostPortProto replica_address = 7;
+  repeated HostPortProto proxy_replica_address = 8;
 }

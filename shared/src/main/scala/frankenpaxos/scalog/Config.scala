@@ -10,7 +10,8 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
     leaderAddresses: Seq[Transport#Address],
     leaderElectionAddresses: Seq[Transport#Address],
     acceptorAddresses: Seq[Transport#Address],
-    replicaAddresses: Seq[Transport#Address]
+    replicaAddresses: Seq[Transport#Address],
+    proxyReplicaAddresses: Seq[Transport#Address]
 ) {
   def checkValid(): Unit = {
     require(f >= 1, s"f must be >= 1. It's $f.")
@@ -54,6 +55,13 @@ case class Config[Transport <: frankenpaxos.Transport[Transport]](
       replicaAddresses.size >= f + 1,
       s"There must be at least f + 1 (${f + 1}) replicas, but there's " +
         s"${replicaAddresses.size}."
+    )
+
+    // Proxy Replicas.
+    require(
+      proxyReplicaAddresses.size == 0 || proxyReplicaAddresses.size >= f + 1,
+      s"There must be either 0 proxy replicas or at at least f + 1 " +
+        s"(${f + 1}) proxy replicas, but there's ${proxyReplicaAddresses.size}."
     )
   }
 }

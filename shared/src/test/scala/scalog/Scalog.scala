@@ -13,7 +13,7 @@ import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
 
-class Scalog(val f: Int, seed: Long) {
+class Scalog(val f: Int, numProxyReplicas: Int, seed: Long) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = 2
@@ -37,8 +37,11 @@ class Scalog(val f: Int, seed: Long) {
       (1 to numLeaders).map(i => FakeTransportAddress(s"LeaderElection $i")),
     acceptorAddresses =
       (1 to numAcceptors).map(i => FakeTransportAddress(s"Acceptor $i")),
-    replicaAddresses =
-      (1 to numReplicas).map(i => FakeTransportAddress(s"Replica $i"))
+    replicaAddresses = (1 to numReplicas)
+      .map(i => FakeTransportAddress(s"Replica $i")),
+    proxyReplicaAddresses = (1 to numProxyReplicas).map(
+      i => FakeTransportAddress(s"Proxy Replica $i")
+    )
   )
 
   // Clients.
@@ -120,7 +123,22 @@ class Scalog(val f: Int, seed: Long) {
       options = ReplicaOptions.default.copy(
         logGrowSize = 10
       ),
-      metrics = new ReplicaMetrics(FakeCollectors)
+      metrics = new ReplicaMetrics(FakeCollectors),
+      seed = seed
+    )
+  }
+
+  // Proxy Replicas.
+  val proxyReplicas = for (address <- config.proxyReplicaAddresses) yield {
+    new ProxyReplica[FakeTransport](
+      address = address,
+      transport = transport,
+      logger = new FakeLogger(),
+      config = config,
+      options = ProxyReplicaOptions.default.copy(
+        batchFlush = true
+      ),
+      metrics = new ProxyReplicaMetrics(FakeCollectors)
     )
   }
 }
@@ -132,7 +150,8 @@ object SimulatedScalog {
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
-class SimulatedScalog(val f: Int) extends SimulatedSystem {
+class SimulatedScalog(val f: Int, numProxyReplicas: Int)
+    extends SimulatedSystem {
   import SimulatedScalog._
 
   override type System = Scalog
@@ -145,7 +164,8 @@ class SimulatedScalog(val f: Int) extends SimulatedSystem {
   // liveness. If no value is every chosen, then clearly something is wrong.
   var valueChosen: Boolean = false
 
-  override def newSystem(seed: Long): System = new Scalog(f, seed)
+  override def newSystem(seed: Long): System =
+    new Scalog(f, numProxyReplicas, seed)
 
   override def getState(scalog: System): State = {
     val logs = mutable.Buffer[Seq[frankenpaxos.scalog.Command]]()

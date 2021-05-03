@@ -39,7 +39,8 @@ class Scalog(batch: Boolean, flexible: Boolean) {
     replicaAddresses = Seq(
       JsTransportAddress("Replica 1"),
       JsTransportAddress("Replica 2")
-    )
+    ),
+    proxyReplicaAddresses = Seq()
   )
 
   // Clients.

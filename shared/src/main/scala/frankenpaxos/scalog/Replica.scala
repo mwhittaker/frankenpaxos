@@ -116,7 +116,8 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val stateMachine: StateMachine,
     config: Config[Transport],
     options: ReplicaOptions = ReplicaOptions.default,
-    metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors)
+    metrics: ReplicaMetrics = new ReplicaMetrics(PrometheusCollectors),
+    seed: Long = System.currentTimeMillis()
 ) extends Actor(address, transport, logger) {
   config.checkValid()
   logger.check(config.replicaAddresses.contains(address))
@@ -130,6 +131,10 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   type Slot = Int
 
   // Fields ////////////////////////////////////////////////////////////////////
+  // A random number generator instantiated from `seed`. This allows us to
+  // perform deterministic randomized tests.
+  private val rand = new Random(seed)
+
   // Aggregator channel.
   private val aggregator: Chan[Aggregator[Transport]] =
     chan[Aggregator[Transport]](config.aggregatorAddress, Aggregator.serializer)
@@ -138,6 +143,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
   @JSExport
   protected val clients =
     mutable.Map[Transport#Address, Chan[Client[Transport]]]()
+
+  // Proxy Replica channels.
+  private val proxyReplicas: Seq[Chan[ProxyReplica[Transport]]] =
+    for (a <- config.proxyReplicaAddresses)
+      yield chan[ProxyReplica[Transport]](a, ProxyReplica.serializer)
 
   // Replica index.
   private val index = config.replicaAddresses.indexOf(address)
@@ -344,19 +354,28 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       executeLog()
     }
 
-    // Send replies back to the clients.
+    // Send replies back to the clients or to a proxy replica.
     timed("handleChosen (send replies)") {
-      if (options.batchFlush) {
-        for (reply <- replies) {
-          val client = clientChan(reply.commandId)
-          client.sendNoFlush(ClientInbound().withClientReply(reply))
-        }
-        clients.values.foreach(_.flush())
-      } else {
-        for (reply <- replies) {
-          val client = clientChan(reply.commandId)
-          client.send(ClientInbound().withClientReply(reply))
-        }
+      (config.proxyReplicaAddresses.size == 0, options.batchFlush) match {
+        case (true, true) =>
+          for (reply <- replies) {
+            val client = clientChan(reply.commandId)
+            client.sendNoFlush(ClientInbound().withClientReply(reply))
+          }
+          clients.values.foreach(_.flush())
+
+        case (true, false) =>
+          for (reply <- replies) {
+            val client = clientChan(reply.commandId)
+            client.send(ClientInbound().withClientReply(reply))
+          }
+
+        case (false, _) =>
+          val proxyReplica = proxyReplicas(rand.nextInt(proxyReplicas.size))
+          proxyReplica.send(
+            ProxyReplicaInbound()
+              .withClientReplyBatch(ClientReplyBatch(replies))
+          )
       }
     }
 

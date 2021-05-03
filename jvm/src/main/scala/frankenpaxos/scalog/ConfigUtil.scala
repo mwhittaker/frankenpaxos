@@ -17,7 +17,8 @@ object ConfigUtil {
       leaderAddresses = proto.leaderAddress.map(addr),
       leaderElectionAddresses = proto.leaderElectionAddress.map(addr),
       acceptorAddresses = proto.acceptorAddress.map(addr),
-      replicaAddresses = proto.replicaAddress.map(addr)
+      replicaAddresses = proto.replicaAddress.map(addr),
+      proxyReplicaAddresses = proto.proxyReplicaAddress.map(addr)
     )
   }
 
