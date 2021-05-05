@@ -7,7 +7,7 @@ def main(args) -> None:
             return vars(args)
 
         def inputs(self) -> Collection[Input]:
-            return [
+            return ([
                 Input(
                     f = 1,
                     num_client_procs = num_client_procs,
@@ -18,7 +18,7 @@ def main(args) -> None:
                     num_leaders = 2,
                     num_acceptors = 3,
                     num_replicas = num_replicas,
-                    num_proxy_replicas = 0,
+                    num_proxy_replicas = num_proxy_replicas,
                     client_jvm_heap_size = '8g',
                     server_jvm_heap_size = '12g',
                     aggregator_jvm_heap_size = '12g',
@@ -34,7 +34,7 @@ def main(args) -> None:
                     timeout = datetime.timedelta(seconds=20),
                     client_lag = datetime.timedelta(seconds=5),
                     state_machine = 'KeyValueStore',
-                    workload_label = 'smoke',
+                    workload_label = workload_label,
                     workload = workload.UniformSingleKeyWorkload(
                         num_keys=1, size_mean=16, size_std=0),
                     profiled = args.profile,
@@ -43,12 +43,13 @@ def main(args) -> None:
                         datetime.timedelta(milliseconds=200),
                     server_options = ServerOptions(
                         push_period = push_period,
-                        recover_period = datetime.timedelta(seconds=60),
+                        recover_period = datetime.timedelta(seconds=1),
                     ),
                     server_log_level = args.log_level,
                     aggregator_options = AggregatorOptions(
-                        num_shard_cuts_per_proposal = num_shards * 2,
-                        recover_period = datetime.timedelta(seconds=60),
+                        num_shard_cuts_per_proposal = \
+                            num_shard_cuts_per_proposal,
+                        recover_period = datetime.timedelta(seconds=1),
                         leader_info_period = datetime.timedelta(seconds=60),
                     ),
                     aggregator_log_level = args.log_level,
@@ -70,9 +71,9 @@ def main(args) -> None:
                         log_grow_size = 5000,
                         batch_flush = batch_flush,
                         recover_log_entry_min_period = \
-                            datetime.timedelta(seconds=120),
+                            datetime.timedelta(seconds=1),
                         recover_log_entry_max_period = \
-                            datetime.timedelta(seconds=240),
+                            datetime.timedelta(seconds=5),
                     ),
                     replica_log_level = args.log_level,
                     proxy_replica_options = ProxyReplicaOptions(
@@ -97,32 +98,35 @@ def main(args) -> None:
                 #   increase throughput.
                 # - Adding more shards does increase throughput, but we need a
                 #   lot more clients to fully load it.
-                #
-                # TODO(mwhittaker): Try decreasing the number of shard cuts per
-                # proposal to one?
+                # - Push period has a big impact on throughput at lower number
+                #   of clients.
+                # - No proxy replicas, sweep to 20.
+                # - Proxy leaders don't really help.
+                for workload_label in ['smaller_push_period_v1']
+                for num_shard_cuts_per_proposal in [1]
+                for npr in [0, 3]
+                for ppm in [0.25, 0.5]
                 for (
                     num_shards,           # 0
                     push_period_ms,       # 1
                     num_replicas,         # 2
                     batch_flush,          # 3
-                    num_client_procs,     # 4
-                    num_clients_per_proc, # 5
+                    num_proxy_replicas,   # 4
+                    num_client_procs,     # 5
+                    num_clients_per_proc, # 6
                 ) in [
-                    # 0  1  2     3  4    5
-                    ( 1, 3, 2, True, 1, 100),
-                    ( 1, 3, 2, True, 20, 100),
-                    ( 2, 3, 2, True, 1, 100),
-                    ( 2, 3, 2, True, 20, 100),
-                    ( 3, 3, 2, True, 1, 100),
-                    ( 3, 3, 2, True, 20, 100),
-                    ( 4, 3, 2, True, 1, 100),
-                    ( 4, 3, 2, True, 20, 100),
+                    # 0  1  2     3    4   5    6
+                    ( 2, ppm, 3, True, npr,  5, 100),
+                    ( 2, ppm, 3, True, npr, 10, 100),
+                    ( 2, ppm, 3, True, npr, 15, 100),
+                    ( 2, ppm, 3, True, npr, 20, 100),
+                    ( 2, ppm, 3, True, npr, 25, 100),
                 ]
 
                 for push_period in [
                     datetime.timedelta(milliseconds=push_period_ms)
                 ]
-            ] * 3
+            ] * 3)
 
         def summary(self, input: Input, output: Output) -> str:
             push_period_s = input.server_options.push_period.total_seconds()
@@ -141,6 +145,8 @@ def main(args) -> None:
                     input.num_proxy_replicas,
                 'batch_flush':
                     input.replica_options.batch_flush,
+                'num_shard_cuts_per_proposal':
+                    input.aggregator_options.num_shard_cuts_per_proposal,
                 'latency.median_ms': \
                     f'{output.output.latency.median_ms:.6}',
                 'start_throughput_1s.p90': \
