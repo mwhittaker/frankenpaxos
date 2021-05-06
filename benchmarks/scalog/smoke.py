@@ -42,6 +42,7 @@ def main(args) -> None:
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     server_options = ServerOptions(
+                        push_size = push_size,
                         push_period = datetime.timedelta(milliseconds=50),
                         recover_period = datetime.timedelta(seconds=60),
                     ),
@@ -86,9 +87,10 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for (num_shards, num_proxy_replicas, batch_flush, yolo) in [
-                    (1, 0, False, False),
-                    (2, 2, True, True),
+                for (push_size, num_shards, num_proxy_replicas, batch_flush,
+                     yolo) in [
+                    (1, 1, 0, False, False),
+                    (0, 2, 2, True, True),
                 ]
             ]
 

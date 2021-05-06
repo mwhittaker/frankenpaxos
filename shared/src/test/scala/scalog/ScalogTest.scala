@@ -10,8 +10,14 @@ class ScalogTest extends FlatSpec {
     val numRuns = 250
     info(s"runLength = $runLength, numRuns = $numRuns")
 
-    for (f <- 1 to 3; numProxyReplicas <- Seq(0, f + 1)) {
-      val sim = new SimulatedScalog(f = f, numProxyReplicas = numProxyReplicas)
+    for {
+      f <- 1 to 3;
+      pushSize <- Seq(0, 1)
+      numProxyReplicas <- Seq(0, f + 1)
+    } {
+      val sim = new SimulatedScalog(f = f,
+                                    numProxyReplicas = numProxyReplicas,
+                                    pushSize = pushSize)
       Simulator
         .simulate(sim, runLength = runLength * f, numRuns = numRuns)
         .flatMap(b => Simulator.minimize(sim, b.seed, b.history)) match {
@@ -27,7 +33,8 @@ class ScalogTest extends FlatSpec {
         case None => {}
       }
 
-      val suffix = s"f=$f, numProxyReplicas=$numProxyReplicas"
+      val suffix = s"f=$f, " + s"numProxyReplicas=$numProxyReplicas, " +
+        s"pushSize=$pushSize"
       if (sim.valueChosen) {
         info(s"Value chosen ($suffix)")
       } else {

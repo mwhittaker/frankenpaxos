@@ -117,8 +117,13 @@ object Server {
 
 @JSExportAll
 case class ServerOptions(
-    // A server periodically pushes its shard cut to the aggregrator.
-    // `pushPeriod` determines how often the server performs this push.
+    // A server periodically pushes its shard cut to the aggregrator. How often
+    // it pushes this cut is determined by `pushSize` and `pushPeriod`. If
+    // `pushSize` is not positive, then the server pushes periodically
+    // according to `pushPeriod`. If `pushPeriod` is positive, then the server
+    // pushes every `pushSize` requests, or every `pushPeriod`, whichever
+    // happens first.
+    pushSize: Int,
     pushPeriod: java.time.Duration,
     // A server acts as a backup for the other servers in its shard. If the
     // server has a hole in a log that its backing up for more than
@@ -139,6 +144,7 @@ case class ServerOptions(
 @JSExportAll
 object ServerOptions {
   val default = ServerOptions(
+    pushSize = 0,
     pushPeriod = java.time.Duration.ofMillis(100),
     recoverPeriod = java.time.Duration.ofSeconds(1),
     logGrowSize = 5000,
@@ -336,17 +342,7 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
       s"pushTimer",
       options.pushPeriod,
       () => {
-        metrics.pushesSent.inc()
-        metrics.batchSize.observe(logs(index).watermark - lastWatermarkPushed)
-        lastWatermarkPushed = logs(index).watermark
-
-        aggregator.send(
-          AggregatorInbound().withShardInfo(
-            ShardInfo(shardIndex = shardIndex,
-                      serverIndex = index,
-                      watermark = logs.map(_.watermark))
-          )
-        )
+        push()
         t.start()
       }
     )
@@ -367,6 +363,20 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
     } else {
       e
     }
+  }
+
+  private def push(): Unit = {
+    metrics.pushesSent.inc()
+    metrics.batchSize.observe(logs(index).watermark - lastWatermarkPushed)
+    lastWatermarkPushed = logs(index).watermark
+
+    aggregator.send(
+      AggregatorInbound().withShardInfo(
+        ShardInfo(shardIndex = shardIndex,
+                  serverIndex = index,
+                  watermark = logs.map(_.watermark))
+      )
+    )
   }
 
   // Handlers //////////////////////////////////////////////////////////////////
@@ -414,6 +424,15 @@ class Server[Transport <: frankenpaxos.Transport[Transport]](
                  command = clientRequest.command)
         )
       )
+    }
+
+    // Push our shard cut, if needed.
+    if (options.pushSize > 0) {
+      val numSinceLastPush = logs(index).watermark - lastWatermarkPushed
+      if (numSinceLastPush >= options.pushSize) {
+        push()
+        pushTimer.reset()
+      }
     }
   }
 

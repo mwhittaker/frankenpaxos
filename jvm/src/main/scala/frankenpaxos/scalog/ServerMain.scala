@@ -54,6 +54,8 @@ object ServerMain extends App {
       .text(s"-1 to disable")
 
     // Options.
+    opt[Int]("options.pushSize")
+      .optionAction((x, o) => o.copy(pushSize = x))
     opt[java.time.Duration]("options.pushPeriod")
       .optionAction((x, o) => o.copy(pushPeriod = x))
     opt[java.time.Duration]("options.recoverPeriod")

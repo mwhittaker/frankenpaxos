@@ -69,6 +69,7 @@ class Scalog(batch: Boolean, flexible: Boolean) {
       logger = new JsLogger(),
       config = config,
       options = ServerOptions.default.copy(
+        pushSize = 0,
         pushPeriod = java.time.Duration.ofSeconds(10),
         recoverPeriod = java.time.Duration.ofSeconds(30),
         logGrowSize = 5

@@ -13,7 +13,7 @@ import org.scalacheck.Gen
 import org.scalacheck.rng.Seed
 import scala.collection.mutable
 
-class Scalog(val f: Int, numProxyReplicas: Int, seed: Long) {
+class Scalog(val f: Int, numProxyReplicas: Int, pushSize: Int, seed: Long) {
   val logger = new FakeLogger()
   val transport = new FakeTransport(logger)
   val numClients = 2
@@ -65,7 +65,8 @@ class Scalog(val f: Int, numProxyReplicas: Int, seed: Long) {
       logger = new FakeLogger(),
       config = config,
       options = ServerOptions.default.copy(
-        logGrowSize = 10
+        logGrowSize = 10,
+        pushSize = pushSize
       ),
       metrics = new ServerMetrics(FakeCollectors)
     )
@@ -150,7 +151,7 @@ object SimulatedScalog {
   case class TransportCommand(command: FakeTransport.Command) extends Command
 }
 
-class SimulatedScalog(val f: Int, numProxyReplicas: Int)
+class SimulatedScalog(val f: Int, numProxyReplicas: Int, pushSize: Int)
     extends SimulatedSystem {
   import SimulatedScalog._
 
@@ -165,7 +166,7 @@ class SimulatedScalog(val f: Int, numProxyReplicas: Int)
   var valueChosen: Boolean = false
 
   override def newSystem(seed: Long): System =
-    new Scalog(f, numProxyReplicas, seed)
+    new Scalog(f, numProxyReplicas, pushSize, seed)
 
   override def getState(scalog: System): State = {
     val logs = mutable.Buffer[Seq[frankenpaxos.scalog.Command]]()

@@ -29,6 +29,7 @@ class ClientOptions(NamedTuple):
 
 
 class ServerOptions(NamedTuple):
+    push_size: int = 0
     push_period: datetime.timedelta = datetime.timedelta(seconds=1)
     recover_period: datetime.timedelta = datetime.timedelta(seconds=1)
     log_grow_size: int = 5000
@@ -504,6 +505,8 @@ class ScalogSuite(benchmark.Suite[Input, Output]):
                         server.host.ip(),
                         '--prometheus_port',
                         str(server.port + 1) if input.monitored else '-1',
+                        '--options.pushSize',
+                        str(input.server_options.push_size),
                         '--options.pushPeriod',
                         '{}s'.format(input.server_options
                                           .push_period
