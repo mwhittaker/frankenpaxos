@@ -59,6 +59,15 @@ case class ReplicaOptions(
     // overheads of storing commands in the log and waiting to execute them in
     // order.
     unsafeYoloExecution: Boolean,
+    // By default, client replies are sent in a round robin fashion. For
+    // example, with two replicas, the first replica is responsible for sending
+    // replies for log entries 0, 2, 4, etc, and the second replica is
+    // responsible for sending replies for log entries 1, 3, 5, etc. When
+    // `unsafeRoundRobinByChunk` is set to true, the replicas instead round
+    // robin by chunks. Specifically, the round-robin partitioning is done by
+    // the first index in the chunk. This is only performed if
+    // unsafeYoloExecution is true.
+    unsafeRoundRobinByChunk: Boolean = false,
     measureLatencies: Boolean
 )
 
@@ -342,7 +351,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     val clientReplies = mutable.Buffer[ClientReply]()
     timed("yoloExecute (execute commands))") {
       for ((command, i) <- chosen.commandBatch.command.zipWithIndex) {
-        val slot = i + chosen.slot
+        val slot = if (options.unsafeRoundRobinByChunk) {
+          chosen.slot
+        } else {
+          chosen.slot + i
+        }
         executeCommand(slot, command, clientReplies)
       }
     }

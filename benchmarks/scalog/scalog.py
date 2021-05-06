@@ -72,6 +72,7 @@ class ReplicaOptions(NamedTuple):
         datetime.timedelta(seconds=20)
     unsafe_dont_recover: bool = False
     unsafe_yolo_execution: bool = False
+    unsafe_round_robin_by_chunk: bool = False
 
 
 class ProxyReplicaOptions(NamedTuple):
@@ -392,6 +393,8 @@ class ScalogSuite(benchmark.Suite[Input, Output]):
                     str(input.replica_options.unsafe_dont_recover),
                     '--options.unsafeYoloExecution',
                     str(input.replica_options.unsafe_yolo_execution),
+                    '--options.unsafeRoundRobinByChunk',
+                    str(input.replica_options.unsafe_round_robin_by_chunk),
                 ],
             )
             if input.profiled:

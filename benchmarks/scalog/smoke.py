@@ -75,6 +75,7 @@ def main(args) -> None:
                         recover_log_entry_max_period = \
                             datetime.timedelta(seconds=240),
                         unsafe_yolo_execution = yolo,
+                        unsafe_round_robin_by_chunk = yolo,
                     ),
                     replica_log_level = args.log_level,
                     proxy_replica_options = ProxyReplicaOptions(

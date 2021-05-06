@@ -69,6 +69,8 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(unsafeDontRecover = x))
     opt[Boolean]("options.unsafeYoloExecution")
       .optionAction((x, o) => o.copy(unsafeYoloExecution = x))
+    opt[Boolean]("options.unsafeRoundRobinByChunk")
+      .optionAction((x, o) => o.copy(unsafeRoundRobinByChunk = x))
   }
 
   // Parse flags.
