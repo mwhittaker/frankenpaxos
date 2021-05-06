@@ -38,7 +38,8 @@ def plot_lt(df: pd.DataFrame, ax: plt.Axes, title: str) -> None:
                           'num_replicas',
                           'num_proxy_replicas',
                           'server_options.push_period',
-                          'aggregator_options.num_shard_cuts_per_proposal'])
+                          'aggregator_options.num_shard_cuts_per_proposal',
+                          'replica_options.unsafe_yolo_execution'])
     for (name, group) in grouped:
         print(f'## {name}')
         print(group[['throughput', 'latency']])
@@ -71,7 +72,7 @@ def main(args) -> None:
     df['server_options.push_period'] = \
         pd.to_timedelta(df['server_options.push_period'])
 
-    num_plots = 9
+    num_plots = 11
     fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, 4.8 * num_plots * 1.25))
     axes = iter(ax)
 
@@ -97,6 +98,12 @@ def main(args) -> None:
 
     filter = (df['workload_label'] == 'smaller_push_period_v1')
     plot_lt(df[filter], next(axes), f'Smaller push periods')
+
+    filter = (df['workload_label'] == 'yolo_v1')
+    plot_lt(df[filter], next(axes), f'With yolo')
+
+    filter = (df['workload_label'] == 'yolo_v2')
+    plot_lt(df[filter], next(axes), f'yolo sweep')
 
     fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')

@@ -74,6 +74,7 @@ def main(args) -> None:
                             datetime.timedelta(seconds=1),
                         recover_log_entry_max_period = \
                             datetime.timedelta(seconds=5),
+                        unsafe_yolo_execution = yolo,
                     ),
                     replica_log_level = args.log_level,
                     proxy_replica_options = ProxyReplicaOptions(
@@ -102,10 +103,15 @@ def main(args) -> None:
                 #   of clients.
                 # - No proxy replicas, sweep to 20.
                 # - Proxy leaders don't really help.
-                for workload_label in ['smaller_push_period_v1']
+                for workload_label in ['yolo_v2']
                 for num_shard_cuts_per_proposal in [1]
-                for npr in [0, 3]
-                for ppm in [0.25, 0.5]
+                for yolo in [True]
+                for (ppm, npr, nr, ns) in [
+                    (1, 4, 2, 2),
+                    (1, 2, 2, 2),
+                    (0.5, 4, 2, 2),
+                    (0.5, 2, 2, 2),
+                ]
                 for (
                     num_shards,           # 0
                     push_period_ms,       # 1
@@ -116,11 +122,12 @@ def main(args) -> None:
                     num_clients_per_proc, # 6
                 ) in [
                     # 0  1  2     3    4   5    6
-                    ( 2, ppm, 3, True, npr,  5, 100),
-                    ( 2, ppm, 3, True, npr, 10, 100),
-                    ( 2, ppm, 3, True, npr, 15, 100),
-                    ( 2, ppm, 3, True, npr, 20, 100),
-                    ( 2, ppm, 3, True, npr, 25, 100),
+                    (ns, ppm, nr, True, npr,  5, 100),
+                    (ns, ppm, nr, True, npr, 10, 100),
+                    (ns, ppm, nr, True, npr, 15, 100),
+                    (ns, ppm, nr, True, npr, 20, 100),
+                    (ns, ppm, nr, True, npr, 25, 100),
+                    (ns, ppm, nr, True, npr, 30, 100),
                 ]
 
                 for push_period in [
@@ -147,6 +154,8 @@ def main(args) -> None:
                     input.replica_options.batch_flush,
                 'num_shard_cuts_per_proposal':
                     input.aggregator_options.num_shard_cuts_per_proposal,
+                'yolo':
+                    input.replica_options.unsafe_yolo_execution,
                 'latency.median_ms': \
                     f'{output.output.latency.median_ms:.6}',
                 'start_throughput_1s.p90': \
