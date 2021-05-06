@@ -70,6 +70,7 @@ class ReplicaOptions(NamedTuple):
     recover_log_entry_max_period: datetime.timedelta = \
         datetime.timedelta(seconds=20)
     unsafe_dont_recover: bool = False
+    unsafe_yolo_execution: bool = False
 
 
 class ProxyReplicaOptions(NamedTuple):
@@ -388,6 +389,8 @@ class ScalogSuite(benchmark.Suite[Input, Output]):
                                  recover_log_entry_max_period.total_seconds()),
                     '--options.unsafeDontRecover',
                     str(input.replica_options.unsafe_dont_recover),
+                    '--options.unsafeYoloExecution',
+                    str(input.replica_options.unsafe_yolo_execution),
                 ],
             )
             if input.profiled:

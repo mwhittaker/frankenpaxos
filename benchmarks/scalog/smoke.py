@@ -73,6 +73,7 @@ def main(args) -> None:
                             datetime.timedelta(seconds=120),
                         recover_log_entry_max_period = \
                             datetime.timedelta(seconds=240),
+                        unsafe_yolo_execution = yolo,
                     ),
                     replica_log_level = args.log_level,
                     proxy_replica_options = ProxyReplicaOptions(
@@ -85,9 +86,10 @@ def main(args) -> None:
                     ),
                     client_log_level = args.log_level,
                 )
-                for num_shards in [1, 2]
-                for num_proxy_replicas in [0, 2]
-                for batch_flush in [True, False]
+                for (num_shards, num_proxy_replicas, batch_flush, yolo) in [
+                    (1, 0, False, False),
+                    (2, 2, True, True),
+                ]
             ]
 
         def summary(self, input: Input, output: Output) -> str:

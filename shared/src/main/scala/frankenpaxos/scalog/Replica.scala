@@ -51,6 +51,14 @@ case class ReplicaOptions(
     // recover log entries. This is not live and should only be used for
     // performance debugging.
     unsafeDontRecover: Boolean,
+    // If `unsafeYoloExecution` is true, replicas don't insert commands into
+    // their logs, and they execute commands as soon as they receive them, even
+    // if they receive commands out of order. This flag is not safe and should
+    // only be set for performance debugging. In particular, if we set
+    // `unsafeYoloExecution` to true, we can try to measure the performance
+    // overheads of storing commands in the log and waiting to execute them in
+    // order.
+    unsafeYoloExecution: Boolean,
     measureLatencies: Boolean
 )
 
@@ -62,6 +70,7 @@ object ReplicaOptions {
     recoverLogEntryMinPeriod = java.time.Duration.ofMillis(5000),
     recoverLogEntryMaxPeriod = java.time.Duration.ofMillis(10000),
     unsafeDontRecover = false,
+    unsafeYoloExecution = false,
     measureLatencies = true
   )
 }
@@ -303,6 +312,47 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
     throw new IllegalStateException()
   }
 
+  // sendClientReplies sends a batch of ClientReplies either to a randomly
+  // chosen proxy replica (if there are proxy replicas) or directly back to the
+  // client (if there are no proxy replicas).
+  private def sendClientReplies(replies: mutable.Buffer[ClientReply]): Unit = {
+    if (config.proxyReplicaAddresses.isEmpty) {
+      if (options.batchFlush) {
+        for (reply <- replies) {
+          val client = clientChan(reply.commandId)
+          client.sendNoFlush(ClientInbound().withClientReply(reply))
+        }
+        clients.values.foreach(_.flush())
+      } else {
+        for (reply <- replies) {
+          val client = clientChan(reply.commandId)
+          client.send(ClientInbound().withClientReply(reply))
+        }
+      }
+    } else {
+      val proxyReplica = proxyReplicas(rand.nextInt(proxyReplicas.size))
+      proxyReplica.send(
+        ProxyReplicaInbound().withClientReplyBatch(ClientReplyBatch(replies))
+      )
+    }
+  }
+
+  private def yoloExecute(chosen: Chosen): Unit = {
+    // Execute the commands. Note that we don't place the commands in the log.
+    val clientReplies = mutable.Buffer[ClientReply]()
+    timed("yoloExecute (execute commands))") {
+      for ((command, i) <- chosen.commandBatch.command.zipWithIndex) {
+        val slot = i + chosen.slot
+        executeCommand(slot, command, clientReplies)
+      }
+    }
+
+    // Send the replies to a proxy leader or back to the clients.
+    timed("yoloExecute (send replies)") {
+      sendClientReplies(clientReplies)
+    }
+  }
+
   // Handlers //////////////////////////////////////////////////////////////////
   override def receive(src: Transport#Address, inbound: InboundMessage) = {
     import ReplicaInbound.Request
@@ -328,6 +378,11 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
       src: Transport#Address,
       chosen: Chosen
   ): Unit = {
+    if (options.unsafeYoloExecution) {
+      yoloExecute(chosen)
+      return
+    }
+
     // If `numChosen != executedWatermark`, then the recover timer is running.
     val isRecoverTimerRunning = numChosen != executedWatermark
     val oldExecutedWatermark = executedWatermark
@@ -356,27 +411,7 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Send replies back to the clients or to a proxy replica.
     timed("handleChosen (send replies)") {
-      (config.proxyReplicaAddresses.size == 0, options.batchFlush) match {
-        case (true, true) =>
-          for (reply <- replies) {
-            val client = clientChan(reply.commandId)
-            client.sendNoFlush(ClientInbound().withClientReply(reply))
-          }
-          clients.values.foreach(_.flush())
-
-        case (true, false) =>
-          for (reply <- replies) {
-            val client = clientChan(reply.commandId)
-            client.send(ClientInbound().withClientReply(reply))
-          }
-
-        case (false, _) =>
-          val proxyReplica = proxyReplicas(rand.nextInt(proxyReplicas.size))
-          proxyReplica.send(
-            ProxyReplicaInbound()
-              .withClientReplyBatch(ClientReplyBatch(replies))
-          )
-      }
+      sendClientReplies(replies)
     }
 
     // The recover timer should be running if there are more chosen commands

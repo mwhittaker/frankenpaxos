@@ -67,6 +67,8 @@ object ReplicaMain extends App {
       .optionAction((x, o) => o.copy(recoverLogEntryMaxPeriod = x))
     opt[Boolean]("options.unsafeDontRecover")
       .optionAction((x, o) => o.copy(unsafeDontRecover = x))
+    opt[Boolean]("options.unsafeYoloExecution")
+      .optionAction((x, o) => o.copy(unsafeYoloExecution = x))
   }
 
   // Parse flags.
