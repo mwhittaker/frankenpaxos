@@ -106,12 +106,14 @@ def main(args) -> None:
                 # - No proxy replicas, sweep to 20.
                 # - Proxy leaders don't really help.
                 # - Yolo helps a bit but not as much as I'd like.
-                for workload_label in ['push_size_v1']
+                # - 125 best batch size.
+                for workload_label in ['batch_size_sweep_v1']
                 for num_shard_cuts_per_proposal in [1]
                 for yolo in [True]
-                for ns in [2, 3]
-                for nr in [3, 4]
-                for push_size in [25, 100]
+                for nr in [2]
+                for npr in [4]
+                for ns in [4]
+                for push_size in [75, 100, 125, 150, 175, 200, 225, 250]
                 for (
                     num_shards,           # 0
                     push_period_ms,       # 1
@@ -122,11 +124,12 @@ def main(args) -> None:
                     num_clients_per_proc, # 6
                 ) in [
                     # 0    1   2     3  4   5    6
-                    (ns, 100, nr, True, 4,  5, 100),
-                    (ns, 100, nr, True, 4, 10, 100),
-                    (ns, 100, nr, True, 4, 15, 100),
-                    (ns, 100, nr, True, 4, 20, 100),
-                    (ns, 100, nr, True, 4, 30, 100),
+                    (ns, 100, nr, True, npr,  5, 100),
+                    (ns, 100, nr, True, npr, 10, 100),
+                    (ns, 100, nr, True, npr, 15, 100),
+                    (ns, 100, nr, True, npr, 20, 100),
+                    (ns, 100, nr, True, npr, 30, 100),
+                    (ns, 100, nr, True, npr, 40, 100),
                 ]
 
                 for push_period in [

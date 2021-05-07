@@ -73,7 +73,7 @@ def main(args) -> None:
     df['server_options.push_period'] = \
         pd.to_timedelta(df['server_options.push_period'])
 
-    num_plots = 12
+    num_plots = 16
     fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, 4.8 * num_plots * 1.25))
     axes = iter(ax)
 
@@ -108,6 +108,35 @@ def main(args) -> None:
 
     filter = (df['workload_label'] == 'push_size_v1')
     plot_lt(df[filter], next(axes), f'improved yolo + more sweep')
+
+    filter = (
+        (df['workload_label'] == 'big_sweep_v1') &
+        (df['latency'] < 50) &
+        (df['num_replicas'] == 3)
+    )
+    plot_lt(df[filter], next(axes), f'big yolo sweep (3 replicas)')
+
+    filter = (
+        (df['workload_label'] == 'big_sweep_v1') &
+        (df['latency'] < 50) &
+        (df['num_replicas'] == 2) &
+        (df['num_shards'] <= 4)
+    )
+    plot_lt(df[filter], next(axes), f'big yolo sweep (2 replicas)')
+
+    filter = (
+        (df['workload_label'] == 'big_sweep_v1') &
+        (df['latency'] < 50) &
+        (df['num_replicas'] == 2) &
+        (df['num_shards'] >= 5)
+    )
+    plot_lt(df[filter], next(axes), f'big yolo sweep (2 replicas)')
+
+    filter = (
+        (df['workload_label'] == 'batch_size_sweep_v1') &
+        (df['latency'] < 20)
+    )
+    plot_lt(df[filter], next(axes), f'batch size sweep')
 
     fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')
