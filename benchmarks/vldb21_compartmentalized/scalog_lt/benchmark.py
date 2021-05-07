@@ -42,6 +42,7 @@ def main(args) -> None:
                     prometheus_scrape_interval =
                         datetime.timedelta(milliseconds=200),
                     server_options = ServerOptions(
+                        push_size = push_size,
                         push_period = push_period,
                         recover_period = datetime.timedelta(seconds=1),
                     ),
@@ -75,6 +76,7 @@ def main(args) -> None:
                         recover_log_entry_max_period = \
                             datetime.timedelta(seconds=5),
                         unsafe_yolo_execution = yolo,
+                        unsafe_round_robin_by_chunk = yolo,
                     ),
                     replica_log_level = args.log_level,
                     proxy_replica_options = ProxyReplicaOptions(
@@ -103,15 +105,13 @@ def main(args) -> None:
                 #   of clients.
                 # - No proxy replicas, sweep to 20.
                 # - Proxy leaders don't really help.
-                for workload_label in ['yolo_v2']
+                # - Yolo helps a bit but not as much as I'd like.
+                for workload_label in ['push_size_v1']
                 for num_shard_cuts_per_proposal in [1]
                 for yolo in [True]
-                for (ppm, npr, nr, ns) in [
-                    (1, 4, 2, 2),
-                    (1, 2, 2, 2),
-                    (0.5, 4, 2, 2),
-                    (0.5, 2, 2, 2),
-                ]
+                for ns in [2, 3]
+                for nr in [3, 4]
+                for push_size in [25, 100]
                 for (
                     num_shards,           # 0
                     push_period_ms,       # 1
@@ -121,13 +121,12 @@ def main(args) -> None:
                     num_client_procs,     # 5
                     num_clients_per_proc, # 6
                 ) in [
-                    # 0  1  2     3    4   5    6
-                    (ns, ppm, nr, True, npr,  5, 100),
-                    (ns, ppm, nr, True, npr, 10, 100),
-                    (ns, ppm, nr, True, npr, 15, 100),
-                    (ns, ppm, nr, True, npr, 20, 100),
-                    (ns, ppm, nr, True, npr, 25, 100),
-                    (ns, ppm, nr, True, npr, 30, 100),
+                    # 0    1   2     3  4   5    6
+                    (ns, 100, nr, True, 4,  5, 100),
+                    (ns, 100, nr, True, 4, 10, 100),
+                    (ns, 100, nr, True, 4, 15, 100),
+                    (ns, 100, nr, True, 4, 20, 100),
+                    (ns, 100, nr, True, 4, 30, 100),
                 ]
 
                 for push_period in [
@@ -144,6 +143,8 @@ def main(args) -> None:
                     input.num_clients_per_proc,
                 'num_shards':
                     input.num_shards,
+                'push_size':
+                    f'{input.server_options.push_size}',
                 'push_period':
                     f'{push_period_s * 1000}ms',
                 'num_replicas':

@@ -37,6 +37,7 @@ def plot_lt(df: pd.DataFrame, ax: plt.Axes, title: str) -> None:
     grouped = df.groupby(['num_shards',
                           'num_replicas',
                           'num_proxy_replicas',
+                          'server_options.push_size',
                           'server_options.push_period',
                           'aggregator_options.num_shard_cuts_per_proposal',
                           'replica_options.unsafe_yolo_execution'])
@@ -72,7 +73,7 @@ def main(args) -> None:
     df['server_options.push_period'] = \
         pd.to_timedelta(df['server_options.push_period'])
 
-    num_plots = 11
+    num_plots = 12
     fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, 4.8 * num_plots * 1.25))
     axes = iter(ax)
 
@@ -104,6 +105,9 @@ def main(args) -> None:
 
     filter = (df['workload_label'] == 'yolo_v2')
     plot_lt(df[filter], next(axes), f'yolo sweep')
+
+    filter = (df['workload_label'] == 'push_size_v1')
+    plot_lt(df[filter], next(axes), f'improved yolo + more sweep')
 
     fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')
