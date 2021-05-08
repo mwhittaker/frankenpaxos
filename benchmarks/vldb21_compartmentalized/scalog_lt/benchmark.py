@@ -107,13 +107,38 @@ def main(args) -> None:
                 # - Proxy leaders don't really help.
                 # - Yolo helps a bit but not as much as I'd like.
                 # - 125 best batch size.
-                for workload_label in ['proxy_replica_fix_v1']
+                # for workload_label in ['proxy_replica_fix_v1']
+                # for num_shard_cuts_per_proposal in [1]
+                # for yolo in [True]
+                # for nr in [2]
+                # for push_size in [100]
+                # for npr in [4]
+                # for ns in [4]
+                # for (
+                #     num_shards,           # 0
+                #     push_period_ms,       # 1
+                #     num_replicas,         # 2
+                #     batch_flush,          # 3
+                #     num_proxy_replicas,   # 4
+                #     num_client_procs,     # 5
+                #     num_clients_per_proc, # 6
+                # ) in [
+                #     # 0    1   2     3  4   5    6
+                #     (ns, 100, nr, True, npr,  5, 100),
+                #     (ns, 100, nr, True, npr, 10, 100),
+                #     (ns, 100, nr, True, npr, 15, 100),
+                #     (ns, 100, nr, True, npr, 20, 100),
+                #     (ns, 100, nr, True, npr, 30, 100),
+                #     (ns, 100, nr, True, npr, 40, 100),
+                # ]
+                #
+                # for push_period in [
+                #     datetime.timedelta(milliseconds=push_period_ms)
+                # ]
+
+                for workload_label in ['final_v1']
                 for num_shard_cuts_per_proposal in [1]
-                for yolo in [True]
-                for nr in [2]
-                for push_size in [125, 100, 150, 50]
-                for npr in [2, 3, 4]
-                for ns in [4]
+                for push_size in [100]
                 for (
                     num_shards,           # 0
                     push_period_ms,       # 1
@@ -122,20 +147,36 @@ def main(args) -> None:
                     num_proxy_replicas,   # 4
                     num_client_procs,     # 5
                     num_clients_per_proc, # 6
+                    yolo,                 # 7
                 ) in [
-                    # 0    1   2     3  4   5    6
-                    (ns, 100, nr, True, npr,  5, 100),
-                    (ns, 100, nr, True, npr, 10, 100),
-                    (ns, 100, nr, True, npr, 15, 100),
-                    (ns, 100, nr, True, npr, 20, 100),
-                    (ns, 100, nr, True, npr, 30, 100),
-                    (ns, 100, nr, True, npr, 40, 100),
+                    # 0    1  2     3  4   5    6     7
+                    ( 4, 100, 2, True, 4,  1,   1, True),
+                    ( 4, 100, 2, True, 4,  1,  50, True),
+                    ( 4, 100, 2, True, 4,  1, 100, True),
+                    ( 4, 100, 2, True, 4,  2, 100, True),
+                    ( 4, 100, 2, True, 4,  3, 100, True),
+                    ( 4, 100, 2, True, 4,  4, 100, True),
+                    ( 4, 100, 2, True, 4,  5, 100, True),
+                    ( 4, 100, 2, True, 4,  6, 100, True),
+                    ( 4, 100, 2, True, 4,  7, 100, True),
+                    ( 4, 100, 2, True, 4,  8, 100, True),
+                    ( 4, 100, 2, True, 4,  9, 100, True),
+                    ( 4, 100, 2, True, 4, 10, 100, True),
+                    ( 4, 100, 2, True, 4, 12, 100, True),
+                    ( 4, 100, 2, True, 4, 14, 100, True),
+                    ( 4, 100, 2, True, 4, 16, 100, True),
+                    ( 4, 100, 2, True, 4, 18, 100, True),
+                    ( 4, 100, 2, True, 4, 20, 100, True),
+                    ( 4, 100, 2, True, 4, 25, 100, True),
+                    ( 4, 100, 2, True, 4, 30, 100, True),
+                    ( 4, 100, 2, True, 4, 35, 100, True),
+                    ( 4, 100, 2, True, 4, 40, 100, True),
                 ]
 
                 for push_period in [
                     datetime.timedelta(milliseconds=push_period_ms)
                 ]
-            ] * 3)
+            ] * 5)
 
         def summary(self, input: Input, output: Output) -> str:
             push_period_s = input.server_options.push_period.total_seconds()
