@@ -107,13 +107,13 @@ def main(args) -> None:
                 # - Proxy leaders don't really help.
                 # - Yolo helps a bit but not as much as I'd like.
                 # - 125 best batch size.
-                for workload_label in ['batch_size_sweep_v1']
+                for workload_label in ['proxy_replica_fix_v1']
                 for num_shard_cuts_per_proposal in [1]
                 for yolo in [True]
                 for nr in [2]
-                for npr in [4]
+                for push_size in [125, 100, 150, 50]
+                for npr in [2, 3, 4]
                 for ns in [4]
-                for push_size in [75, 100, 125, 150, 175, 200, 225, 250]
                 for (
                     num_shards,           # 0
                     push_period_ms,       # 1

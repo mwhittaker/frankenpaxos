@@ -362,7 +362,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Send the replies to a proxy leader or back to the clients.
     timed("yoloExecute (send replies)") {
-      sendClientReplies(clientReplies)
+      if (!clientReplies.isEmpty) {
+        sendClientReplies(clientReplies)
+      }
     }
   }
 
@@ -424,7 +426,9 @@ class Replica[Transport <: frankenpaxos.Transport[Transport]](
 
     // Send replies back to the clients or to a proxy replica.
     timed("handleChosen (send replies)") {
-      sendClientReplies(replies)
+      if (!replies.isEmpty) {
+        sendClientReplies(replies)
+      }
     }
 
     // The recover timer should be running if there are more chosen commands
