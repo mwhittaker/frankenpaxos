@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1619981691768,
+  "iteration": 1620503763703,
   "links": [],
   "panels": [
     {
@@ -315,7 +315,7 @@
           "refId": "D"
         },
         {
-          "expr": "rate(scalog_server_batch_size_sum{job=~\"$job\"}[1s])\n/ rate(scalog_server_batch_size_count{job=~\"$job\"}[1s])",
+          "expr": "rate(scalog_server_batch_size_sum[1s])\n/ rate(scalog_server_batch_size_count[1s])",
           "format": "time_series",
           "hide": false,
           "intervalFactor": 1,
@@ -801,6 +801,104 @@
     {
       "aliasColors": {},
       "bars": false,
+      "cacheTimeout": null,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "",
+      "fill": 1,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "id": 28,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pluginVersion": "6.1.3",
+      "pointradius": 1,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(scalog_proxy_replica_requests_total[1s])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "{{type}} ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(scalog_proxy_replica_requests_total[1s])) by (instance)",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Total Inbound ({{instance}})",
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Proxy Replica Request Throughput",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "none",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
       "dashLength": 10,
       "dashes": false,
       "datasource": "Prometheus",
@@ -809,7 +907,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 56
       },
       "id": 6,
       "legend": {
@@ -930,7 +1028,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 63
       },
       "id": 4,
       "legend": {
@@ -1030,7 +1128,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 64
+        "y": 71
       },
       "id": 7,
       "legend": {
@@ -1123,7 +1221,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 72
+        "y": 79
       },
       "id": 8,
       "legend": {
@@ -1609,7 +1707,6 @@
       {
         "allValue": null,
         "current": {
-          "selected": false,
           "tags": [],
           "text": "All",
           "value": [
@@ -1648,6 +1745,11 @@
             "selected": false,
             "text": "scalog_leader",
             "value": "scalog_leader"
+          },
+          {
+            "selected": false,
+            "text": "scalog_proxy_replica",
+            "value": "scalog_proxy_replica"
           },
           {
             "selected": false,
@@ -1733,5 +1835,5 @@
   "timezone": "",
   "title": "Scalog",
   "uid": "Eldp8x9Gk",
-  "version": 3
+  "version": 4
 }
