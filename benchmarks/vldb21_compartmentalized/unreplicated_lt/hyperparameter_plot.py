@@ -22,20 +22,38 @@ def add_num_clients(df: pd.DataFrame) -> pd.DataFrame:
     df['num_clients'] = df['num_client_procs'] * df['num_clients_per_proc']
     return df
 
+def plot_lt(df: pd.DataFrame, ax: plt.Axes, title: str) -> None:
+    def outlier_throughput(g: pd.DataFrame) -> float:
+        cutoff = 0.5 * g['throughput'].max()
+        return g[g['throughput'] >= cutoff]['throughput'].mean() / 100000
 
-def plot_lt(df: pd.DataFrame, ax: plt.Axes) -> None:
-    grouped = df.groupby('server_options.flush_every_n')
-    for flush_every_n, n_group in grouped:
-        grouped = n_group.groupby('num_clients')
-        throughput = grouped['throughput'].agg(np.mean).sort_index()
-        throughput_std = grouped['throughput'].agg(np.std).sort_index().fillna(0)
-        latency = grouped['latency'].agg(np.mean).sort_index()
-        latency_std = grouped['latency'].agg(np.std).sort_index().fillna(0)
-        print(throughput_std)
-        ax.errorbar(throughput / 100000, latency, yerr=latency_std,
-                    xerr=throughput_std / 100000, fmt='.-', label=flush_every_n,
-                    barsabove=True)
+    def outlier_throughput_std(g: pd.DataFrame) -> float:
+        cutoff = 0.5 * g['throughput'].max()
+        return g[g['throughput'] >= cutoff]['throughput'].std() / 100000
 
+    grouped = df.groupby(['server_options.flush_every_n',
+                          'workload.size_mean'])
+    for (name, group) in grouped:
+        print(f'## {name}')
+        print(group[['throughput', 'latency']])
+
+        by_clients = group.groupby('num_clients')
+        throughput = by_clients['throughput'].agg(np.mean).sort_index() / 1000
+        throughput_std = by_clients['throughput'].agg(np.std).sort_index() / 1000
+        latency = by_clients['latency'].agg(np.mean).sort_index()
+        line = ax.plot(throughput, latency, '-', marker=next(MARKERS),
+                       label=name, linewidth=2)[0]
+        ax.fill_betweenx(latency,
+                         throughput - throughput_std,
+                         throughput + throughput_std,
+                         color = line.get_color(),
+                         alpha=0.25)
+
+    ax.set_title(title)
+    ax.set_xlabel('Throughput (100,000 commands per second)')
+    ax.set_ylabel('Latency\n(milliseconds)')
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    ax.grid(b=True)
 
 
 def main(args) -> None:
@@ -45,13 +63,19 @@ def main(args) -> None:
     df['throughput'] = df['start_throughput_1s.p90']
     df['latency'] = df['latency.median_ms']
 
-    fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.8))
-    plot_lt(df, ax)
-    ax.set_title('')
-    ax.set_xlabel('Throughput (100,000 commands per second)')
-    ax.set_ylabel('Latency (ms)')
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-    ax.grid()
+    num_figures = 3
+    fig, axes = plt.subplots(3, 1, figsize=(6.4, 4.8 * num_figures * 1.5))
+    axes_iter = iter(axes)
+
+    filtered = df[df['workload.size_mean'] == 16]
+    plot_lt(filtered, next(axes_iter), '16 byte values')
+
+    filtered = df[df['workload.size_mean'] == 100]
+    plot_lt(filtered, next(axes_iter), '100 byte values')
+
+    filtered = df[df['workload.size_mean'] == 1000]
+    plot_lt(filtered, next(axes_iter), '1000 byte values')
+
     fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')
 
