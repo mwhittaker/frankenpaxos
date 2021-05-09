@@ -73,7 +73,7 @@ def main(args) -> None:
     df['server_options.push_period'] = \
         pd.to_timedelta(df['server_options.push_period'])
 
-    num_plots = 16
+    num_plots = 17
     fig, ax = plt.subplots(num_plots, 1, figsize=(6.4, 4.8 * num_plots * 1.25))
     axes = iter(ax)
 
@@ -137,6 +137,12 @@ def main(args) -> None:
         (df['latency'] < 20)
     )
     plot_lt(df[filter], next(axes), f'batch size sweep')
+
+    filter = (
+        (df['workload_label'] == 'no_yolo_v1') &
+        (df['latency'] < 20)
+    )
+    plot_lt(df[filter], next(axes), f'no yolo sweep')
 
     fig.savefig(args.output, bbox_inches='tight')
     print(f'Wrote plot to {args.output}.')

@@ -107,13 +107,13 @@ def main(args) -> None:
                 # - Proxy leaders don't really help.
                 # - Yolo helps a bit but not as much as I'd like.
                 # - 125 best batch size.
-                # for workload_label in ['proxy_replica_fix_v1']
+                # for workload_label in ['no_yolo_v1']
                 # for num_shard_cuts_per_proposal in [1]
-                # for yolo in [True]
-                # for nr in [2]
+                # for yolo in [False]
                 # for push_size in [100]
-                # for npr in [4]
-                # for ns in [4]
+                # for ns in [3]
+                # for nr in [8]
+                # for npr in [0]
                 # for (
                 #     num_shards,           # 0
                 #     push_period_ms,       # 1
@@ -129,14 +129,13 @@ def main(args) -> None:
                 #     (ns, 100, nr, True, npr, 15, 100),
                 #     (ns, 100, nr, True, npr, 20, 100),
                 #     (ns, 100, nr, True, npr, 30, 100),
-                #     (ns, 100, nr, True, npr, 40, 100),
                 # ]
                 #
                 # for push_period in [
                 #     datetime.timedelta(milliseconds=push_period_ms)
                 # ]
 
-                for workload_label in ['final_v1']
+                for workload_label in ['final_v2']
                 for num_shard_cuts_per_proposal in [1]
                 for push_size in [100]
                 for (
@@ -150,33 +149,56 @@ def main(args) -> None:
                     yolo,                 # 7
                 ) in [
                     # 0    1  2     3  4   5    6     7
-                    ( 4, 100, 2, True, 4,  1,   1, True),
-                    ( 4, 100, 2, True, 4,  1,  50, True),
-                    ( 4, 100, 2, True, 4,  1, 100, True),
-                    ( 4, 100, 2, True, 4,  2, 100, True),
-                    ( 4, 100, 2, True, 4,  3, 100, True),
-                    ( 4, 100, 2, True, 4,  4, 100, True),
-                    ( 4, 100, 2, True, 4,  5, 100, True),
-                    ( 4, 100, 2, True, 4,  6, 100, True),
-                    ( 4, 100, 2, True, 4,  7, 100, True),
-                    ( 4, 100, 2, True, 4,  8, 100, True),
-                    ( 4, 100, 2, True, 4,  9, 100, True),
-                    ( 4, 100, 2, True, 4, 10, 100, True),
-                    ( 4, 100, 2, True, 4, 12, 100, True),
-                    ( 4, 100, 2, True, 4, 14, 100, True),
-                    ( 4, 100, 2, True, 4, 16, 100, True),
-                    ( 4, 100, 2, True, 4, 18, 100, True),
-                    ( 4, 100, 2, True, 4, 20, 100, True),
-                    ( 4, 100, 2, True, 4, 25, 100, True),
-                    ( 4, 100, 2, True, 4, 30, 100, True),
-                    ( 4, 100, 2, True, 4, 35, 100, True),
-                    ( 4, 100, 2, True, 4, 40, 100, True),
+                    ( 3, 100, 5, True, 0,  1,   1, False),
+                    ( 3, 100, 5, True, 0,  1,  50, False),
+                    ( 3, 100, 5, True, 0,  1, 100, False),
+                    ( 3, 100, 5, True, 0,  2, 100, False),
+                    ( 3, 100, 5, True, 0,  3, 100, False),
+                    ( 3, 100, 5, True, 0,  4, 100, False),
+                    ( 3, 100, 5, True, 0,  5, 100, False),
+                    ( 3, 100, 5, True, 0,  6, 100, False),
+                    ( 3, 100, 5, True, 0,  7, 100, False),
+                    ( 3, 100, 5, True, 0,  8, 100, False),
+                    ( 3, 100, 5, True, 0,  9, 100, False),
+                    ( 3, 100, 5, True, 0, 10, 100, False),
+                    ( 3, 100, 5, True, 0, 12, 100, False),
+                    ( 3, 100, 5, True, 0, 14, 100, False),
+                    ( 3, 100, 5, True, 0, 16, 100, False),
+                    ( 3, 100, 5, True, 0, 18, 100, False),
+                    ( 3, 100, 5, True, 0, 20, 100, False),
+                    ( 3, 100, 5, True, 0, 25, 100, False),
+                    ( 3, 100, 5, True, 0, 30, 100, False),
+                    ( 3, 100, 5, True, 0, 35, 100, False),
+                    ( 3, 100, 5, True, 0, 40, 100, False),
+
+                    # # 0    1  2     3  4   5    6     7
+                    # ( 4, 100, 2, True, 4,  1,   1, True),
+                    # ( 4, 100, 2, True, 4,  1,  50, True),
+                    # ( 4, 100, 2, True, 4,  1, 100, True),
+                    # ( 4, 100, 2, True, 4,  2, 100, True),
+                    # ( 4, 100, 2, True, 4,  3, 100, True),
+                    # ( 4, 100, 2, True, 4,  4, 100, True),
+                    # ( 4, 100, 2, True, 4,  5, 100, True),
+                    # ( 4, 100, 2, True, 4,  6, 100, True),
+                    # ( 4, 100, 2, True, 4,  7, 100, True),
+                    # ( 4, 100, 2, True, 4,  8, 100, True),
+                    # ( 4, 100, 2, True, 4,  9, 100, True),
+                    # ( 4, 100, 2, True, 4, 10, 100, True),
+                    # ( 4, 100, 2, True, 4, 12, 100, True),
+                    # ( 4, 100, 2, True, 4, 14, 100, True),
+                    # ( 4, 100, 2, True, 4, 16, 100, True),
+                    # ( 4, 100, 2, True, 4, 18, 100, True),
+                    # ( 4, 100, 2, True, 4, 20, 100, True),
+                    # ( 4, 100, 2, True, 4, 25, 100, True),
+                    # ( 4, 100, 2, True, 4, 30, 100, True),
+                    # ( 4, 100, 2, True, 4, 35, 100, True),
+                    # ( 4, 100, 2, True, 4, 40, 100, True),
                 ]
 
                 for push_period in [
                     datetime.timedelta(milliseconds=push_period_ms)
                 ]
-            ] * 5)
+            ] * 5)[81:]
 
         def summary(self, input: Input, output: Output) -> str:
             push_period_s = input.server_options.push_period.total_seconds()
