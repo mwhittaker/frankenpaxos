@@ -45,7 +45,7 @@ def main(args) -> None:
                       read_write_workload.UniformReadWriteWorkload(
                         num_keys=1,
                         read_fraction=0.0,
-                        write_size_mean=16,
+                        write_size_mean=value_size,
                         write_size_std=0),
                     read_workload =
                       read_write_workload.UniformReadWriteWorkload(
@@ -127,12 +127,34 @@ def main(args) -> None:
                     client_log_level = args.log_level,
                 )
 
+                # for num_batchers in [0]
+                # for batch_size in [0]
+                # for num_proxy_replicas in [0]
+                # for proxy_leader_flush_every_n in [1]
+                # for proxy_replica_flush_every_n in [1]
+                #
+                # for (flexible, num_acceptor_groups, num_acceptors_per_group) in [
+                #     (True, 2, 2),
+                #     (True, 3, 2),
+                # ]
+                # for leader_flush_every_n in [10, 5, 20]
+                # for value_size in [1000, 100]
+                # for num_replicas in [4, 5]
+                # for num_proxy_leaders in [10, 13, 7]
+                # for (num_client_procs, num_clients_per_proc) in [
+                #     (2, 100),
+                #     (5, 100),
+                #     (8, 100),
+                #     (10, 100),
+                # ]
+
+                # for value_size in [16, 100, 1000]
+                for value_size in [100, 1000]
                 for num_batchers in [0]
                 for batch_size in [0]
                 for num_proxy_replicas in [0]
                 for proxy_leader_flush_every_n in [1]
                 for proxy_replica_flush_every_n in [1]
-
                 for num_replicas in [4]
                 for num_proxy_leaders in [10]
                 for (flexible, num_acceptor_groups, num_acceptors_per_group) in [
@@ -140,24 +162,26 @@ def main(args) -> None:
                 ]
                 for (num_client_procs, num_clients_per_proc, leader_flush_every_n) in [
                     (1, 1, 1),
-                    # (1, 50, 10),
-                    # (1, 100, 10),
-                    # (2, 100, 10),
-                    # (3, 100, 10),
-                    # (4, 100, 10),
-                    # (5, 100, 10),
-                    # (6, 100, 10),
-                    # (7, 100, 10),
-                    # (8, 100, 10),
-                    # (9, 100, 10),
-                    # (10, 100, 10),
+                    (1, 50, 10),
+                    (1, 100, 10),
+                    (2, 100, 10),
+                    (3, 100, 10),
+                    (4, 100, 10),
+                    (5, 100, 10),
+                    (6, 100, 10),
+                    (7, 100, 10),
+                    (8, 100, 10),
+                    (9, 100, 10),
+                    (10, 100, 10),
                 ]
-            ] * 3
+            ] * 5
 
         def summary(self, input: Input, output: Output) -> str:
             return str({
                 'f':
                     input.f,
+                'value_size':
+                    input.workload,
                 'num_client_procs':
                     input.num_client_procs,
                 'num_clients_per_proc':
